@@ -821,7 +821,15 @@ function applyCoachEventToState(state, event, { plan, now, dayKey, legacy = {} }
   return next;
 }
 
-export function coachFeedback(result, task) {
+const defaultBarLabel = (start, end) => (start === end ? `Bar ${start + 1}` : `Bars ${start + 1}-${end + 1}`);
+const lowerFirst = (text) => String(text).charAt(0).toLowerCase() + String(text).slice(1);
+
+/**
+ * The take's answer in words. `barLabel(start, end)` names measure indices as the page prints them
+ * (a score with a pickup numbers it 0, so index + 1 is one bar too many); a surface without the
+ * score's numbers leaves it out and gets index + 1.
+ */
+export function coachFeedback(result, task, { barLabel = defaultBarLabel } = {}) {
   if (result?.validity === 'invalid' || result?.status === 'error') return {
     title: 'This take could not be checked', detail: 'Your progress is safe. Try again when the music is ready.', reason: 'operational',
   };
@@ -829,13 +837,13 @@ export function coachFeedback(result, task) {
     title: 'No notes were received', detail: 'Check the piano connection, then try when you’re ready. Your progress is safe.', reason: 'no-input',
   };
   if (task.assist === 'none') {
-    const bars = `bars ${task.range.start + 1}-${task.range.end + 1}`;
+    const bars = lowerFirst(barLabel(task.range.start, task.range.end));
     if (passedFor(result, task)) return { title: 'Silver!', detail: `You can play ${bars} on your own.`, reason: 'silver' };
     if ((result?.criteria?.completeness ?? 0) < task.criteria.completeness) {
       const measures = Object.entries(result?.spans ?? {}).filter(([, span]) => span.diagnostics?.missed_notes > 0)
         .map(([id]) => Number(id.replace(/^measure:/, ''))).filter(Number.isInteger);
-      const bar = (measures.length ? Math.min(...measures) : task.range.start) + 1;
-      return { title: `Bar ${bar} is the tricky spot`, detail: 'Practice that spot, then try again.', reason: 'stopped', bar };
+      const measureIndex = measures.length ? Math.min(...measures) : task.range.start;
+      return { title: `${barLabel(measureIndex, measureIndex)} is the tricky spot`, detail: 'Practice that spot, then try again.', reason: 'stopped', bar: measureIndex + 1, measureIndex };
     }
     return { title: 'Almost on your own', detail: 'Aim for fewer extra notes, then try again.', reason: 'notes' };
   }

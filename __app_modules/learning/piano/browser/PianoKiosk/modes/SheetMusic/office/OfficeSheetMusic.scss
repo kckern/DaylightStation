@@ -1,6 +1,8 @@
 // Sheet Music on the office screen (1280×720, keyboard only).
 // Fixed heights top to bottom, so nothing is ever pushed off the canvas: the
-// launcher's chrome strip above, the body, and — on a piece — the key strip.
+// launcher's chrome strip above and the body (the strip steps aside while a
+// Learn drill is open: the drill's status line carries the player). Every navigation is the menu (an
+// opaque modal over the body), so the drill has no row of keys under it.
 // No hover, focus rings or pointer affordances: nothing here is touched.
 
 .office-sheet-music {
@@ -8,7 +10,6 @@
   --osm-ivory: var(--pg-ivory, #f1f1f4);
   --osm-ebony: var(--pg-shelf, #1f1f26);
   --osm-brass: var(--pg-brass, #5fe39a);
-  --osm-strip-h: 6.75rem;
 
   position: absolute;
   inset: 0;
@@ -29,7 +30,7 @@
     overflow: hidden;
   }
 
-  // Learn's own stage: the tablet's drill, given exactly the room above the strip.
+  // Learn's own stage: the tablet's drill, given the whole body.
   &__learn {
     position: absolute;
     inset: 0;
@@ -53,13 +54,6 @@
     text-wrap: balance;
   }
 
-  &__strip {
-    flex: 0 0 var(--osm-strip-h);
-    height: var(--osm-strip-h);
-    border-top: 1px solid var(--pg-hairline, #34343f);
-    background: var(--osm-ebony);
-  }
-
   // The drill's touch-only furniture, where a host cannot hide it by prop.
   .piano-passage-path { pointer-events: none; }
   .piano-passage-path__all,
@@ -68,12 +62,13 @@
   // under the player's hands. Its height goes to the score.
   .piano-exercise-run__keys { display: none; }
   .piano-exercise-run[data-surface='learn-lab'] { --run-keys-row: 0px; }
-  // The result card's touch icons (continue, leave): nothing can press them. The
-  // strip names the next action on its key instead.
+  // The result card's touch icons (continue, leave): nothing can press them. Any
+  // key continues; Try again and the rest are in the menu.
   .piano-exercise-run__onward,
   .piano-exercise-run__leave { display: none; }
-  // Right / Wrong, read from the bench.
-  .piano-exercise-run__tally span { min-height: 2.6rem; padding: 0.3rem 0.8rem; font-size: 1.3rem; }
+  // Two rails (2026-11-24): the status line is 56 CSS px here (64 on the tablet); the coach rail 72 on both.
+  .piano-learn-lab,
+  .piano-learn-coach__loading { --learn-status-h: 56px; --learn-prompt-w: 26rem; }
 
   // The "who is practising" roster reuses the launcher's own row, as a page not an overlay.
   &--who .note-launcher { position: absolute; inset: 0; }
@@ -98,174 +93,272 @@
   span { font-size: 1.2rem; color: var(--pg-brass, #5fe39a); }
 }
 
-// ── The key strip ────────────────────────────────────────────────────────────
-.office-key-strip {
-  --key-card-h: 5.4rem;
-  list-style: none;
-  margin: 0;
-  height: 100%;
-  padding: 0.55rem 1rem 0.65rem;
+// ── The menu (the board's lowest + highest keys, held) ──────────────────────
+// Opaque over everything Sheet Music draws: while it is up the music is paused
+// and every key is navigation. One row of key faces from C4, each on its own
+// key; a choice with nothing to do now is a plain empty key in its place.
+.office-menu {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
   display: grid;
-  grid-template-columns: repeat(var(--strip-count, 6), minmax(0, 1fr));
-  gap: 0.45rem;
-
-  &__key {
-    min-width: 0;
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    padding: 0.35rem 0.7rem 0.35rem 0.4rem;
-    border-radius: 0 0 9px 9px;
-    // A dim key: drawn in solid greys so it never reads as a half-faded button.
-    background: #3a3a43;
-    color: #9d9daa;
-
-    &[data-enabled] {
-      background: linear-gradient(180deg, #ffffff 0%, var(--pg-ivory, #f1f1f4) 70%, #dcdce2 100%);
-      color: var(--pg-shelf, #1f1f26);
-    }
-  }
-
-  &__card { flex: 0 0 auto; display: flex; align-items: center; }
-
-  // A dim key keeps a whole, readable card: only its paper goes grey.
-  &__key:not([data-enabled]) .chess-staff-label { filter: grayscale(1) brightness(0.8); }
-
-  &__text {
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.1rem;
-  }
-
-  &__note {
-    font-size: 1.2rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    font-variant-numeric: tabular-nums;
-    opacity: 0.75;
-  }
-
-  &__label {
-    font-size: 1.35rem;
-    font-weight: 700;
-    line-height: 1.1;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    overflow-wrap: break-word;
-  }
-}
-
-// ── The piece picker ─────────────────────────────────────────────────────────
-.office-piece-picker {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  padding: 1.1rem 1.5rem 1rem;
-  gap: 0.9rem;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 1.25rem;
+  padding: 1.5rem 1.5rem 1.25rem;
+  background: var(--osm-case, #16161b);
+  color: #ece6d8;
+  font-family: 'Roboto Condensed', sans-serif;
 
   &__head {
-    flex: 0 0 auto;
     display: flex;
     align-items: baseline;
-    justify-content: space-between;
-    gap: 1.5rem;
-
-    h2 { margin: 0; font-size: 1.7rem; letter-spacing: 0.02em; }
-    p { margin: 0; font-size: 1rem; opacity: 0.7; text-align: right; }
+    gap: 1.25rem;
+    h2 { margin: 0; font-size: 2rem; line-height: 1.1; }
+    p { margin: 0; font-size: 1.3rem; color: #a9a59a; }
   }
 
   &__keys {
     list-style: none;
     margin: 0;
     padding: 0;
-    flex: 1 1 0;
-    min-height: 0;
-    display: flex;
-    justify-content: center;
-    gap: 0.55rem;
+    align-self: center;
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 0.75rem;
+    height: 17rem;
+  }
 
-    > li { flex: 0 0 calc((100% - (var(--key-count, 6) - 1) * 0.55rem) / var(--key-count, 6)); }
+  &__key {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6rem;
+    padding: 1rem 0.5rem;
+    border: 1px solid #34343f;
+    border-radius: 12px;
+    background: #24242c;
+    text-align: center;
+
+    .office-key-card { --key-card-h: 7rem; }
+    // Nothing to do now: the key keeps its place, plain and empty.
+    &:not([data-enabled]) { background: transparent; border-style: solid; }
+  }
+
+  &__note { font-size: 1.5rem; font-weight: 800; letter-spacing: 0.06em; font-variant-numeric: tabular-nums; }
+  &__label { font-size: 1.45rem; font-weight: 700; line-height: 1.15; text-wrap: balance; }
+
+  &__foot { margin: 0; font-size: 1.1rem; color: #a9a59a; }
+
+  // In a piece: the passage map (Learn's coach-rail coins, the current one ringed), the picker that
+  // Previous and Next move along.
+  &__map {
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    height: 4.5rem;
+    min-width: 0;
+  }
+  &__map-label { flex: 0 0 auto; font-size: 1.3rem; font-weight: 700; color: #a9a59a; }
+  &__map-coins { flex: 1 1 auto; min-width: 0; height: 100%; display: flex; }
+}
+// The menu's grid gains the map row when it has one; a row Learn has not drawn into (the piece still
+// loading) is not shown as a label beside nothing.
+.office-menu:has(> .office-menu__map .piano-passage-path) { grid-template-rows: auto auto minmax(0, 1fr) auto; }
+.office-menu__map:not(:has(.piano-passage-path)) { display: none; }
+
+// While a Learn drill is open its status line is the only bar: the launcher's chrome (the game's name and
+// the player) steps aside, and the status line carries the player's avatar (LearnLab).
+.tetris-fullscreen:has(.piano-learn-lab) > .office-game-chrome,
+.tetris-fullscreen:has(.piano-learn-coach__loading) > .office-game-chrome { display: none; }
+
+// ── The picker ───────────────────────────────────────────────────────────────
+// A setlist of key rows on the dark case: up to three stacked in one column,
+// more in two (filled down the left column first, as the keys run under the
+// hands). Every card is one anatomy — key, poster, text — in fixed columns, so
+// keys, posters and titles line up down the screen whatever the art's shape.
+// Solid surfaces only: the staff cards are the one light thing on the page.
+.office-piece-picker {
+  --opp-card: #24242c;
+  --opp-rule: #34343f;
+  --opp-text: #ece6d8;
+  --opp-muted: #a9a59a;
+  --opp-gap: 0.875rem;
+
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) 5.25rem;
+  gap: 0.75rem;
+  padding: 0.9rem 1.5rem 0;
+  color: var(--opp-text);
+
+  &__head {
+    display: flex;
+    align-items: baseline;
+    gap: 1.25rem;
+    min-width: 0;
+
+    h2 { margin: 0; font-size: 1.75rem; line-height: 1.1; letter-spacing: 0.01em; white-space: nowrap; }
+    p { margin: 0; font-size: 1.15rem; color: var(--opp-muted); }
+  }
+
+  &__keys {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    min-height: 0;
+    display: grid;
+    grid-auto-flow: column;
+    grid-template-columns: repeat(var(--columns, 1), minmax(0, 1fr));
+    grid-template-rows: repeat(var(--rows, 1), minmax(0, 1fr));
+    gap: var(--opp-gap);
+  }
+
+  // A message in the list's place: one sentence where the first card would be.
+  &__status {
+    margin: 0;
+    align-self: start;
+    max-width: 44rem;
+    padding-top: 0.5rem;
+    font-size: 1.5rem;
+    line-height: 1.3;
+    color: var(--opp-text);
+  }
+
+  // ── The footer: browse keys from the left, the way to the menu at the end ──
+  &__browse {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    border-top: 1px solid var(--opp-rule);
+    min-width: 0;
   }
 
   &__pages {
     list-style: none;
     margin: 0;
     padding: 0;
-    flex: 0 0 5.4rem;
-    display: flex;
-    gap: 0.5rem;
-  }
-
-  // A browse key: ivory when it does something now, solid grey when it does not
-  // (the key strip's rule), and always on its own key so a face never moves.
-  &__page {
-    flex: 0 0 14rem;
     display: flex;
     align-items: center;
-    gap: 0.7rem;
-    padding: 0.3rem 0.8rem 0.3rem 0.35rem;
-    border-radius: 0 0 8px 8px;
-    background: #3a3a43;
-    color: #9d9daa;
-    font-weight: 700;
+    gap: 0.75rem;
+  }
 
-    &[data-enabled] {
-      background: linear-gradient(180deg, #ffffff 0%, var(--pg-ivory, #f1f1f4) 70%, #dcdce2 100%);
-      color: var(--pg-shelf, #1f1f26);
-    }
-    &:not([data-enabled]) .chess-staff-label { filter: grayscale(1) brightness(0.8); }
-    .office-key-card { --key-card-h: 4.8rem; }
+  // A browse key, in a piece key's language: staff card, note name over its label.
+  // Fixed width, so Next never slides when Previous is not drawn.
+  &__page {
+    flex: 0 0 12.5rem;
+    height: 4.25rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+
+    .office-key-card { --key-card-h: 4.25rem; }
   }
 
   &__page-text { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
-  &__page-label { font-size: 1.35rem; line-height: 1.1; }
-  &__page-note + * { margin-top: 0.05rem; }
+  &__page-note { font-size: 1.05rem; font-weight: 700; letter-spacing: 0.08em; color: var(--opp-muted); font-variant-numeric: tabular-nums; }
+  &__page-label { font-size: 1.4rem; font-weight: 700; line-height: 1.1; white-space: nowrap; }
 
-  // The way out, said where the eye already is: at the end of the browse keys.
-  &__leave { margin-left: auto; align-self: center; font-size: 1.2rem; font-weight: 700; color: var(--osm-ivory); opacity: 0.85; text-align: right; }
+  &__page-count {
+    flex: 0 0 4.5rem;
+    text-align: center;
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--opp-muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
 
-  // A message in the list's place keeps the browse keys under it.
-  &__status { flex: 1 1 0; min-height: 0; height: auto; }
-
-  &__page-note { font-size: 0.95rem; letter-spacing: 0.08em; font-variant-numeric: tabular-nums; opacity: 0.75; }
+  &__hint { margin: 0 0 0 auto; font-size: 1.05rem; color: var(--opp-muted); text-align: right; }
 }
 
 .office-piece-key {
+  --opp-key-h: 4.6rem;
+  --opp-title: 1.5rem;
+  --opp-coin: 1.5rem;
+
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto auto auto auto;
-  justify-items: center;
-  gap: 0.45rem;
-  padding: 0.6rem 0.6rem 0.8rem;
-  border-radius: 0 0 12px 12px;
-  background: linear-gradient(180deg, #ffffff 0%, var(--pg-ivory, #f1f1f4) 64%, #dcdce2 100%);
-  color: var(--pg-shelf, #1f1f26);
+  grid-template-columns: 5.25rem auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  align-items: center;
+  gap: 1rem;
+  padding: 0.55rem 1rem 0.55rem 0.6rem;
+  border: 1px solid var(--opp-rule, #34343f);
+  border-radius: 12px;
+  background: var(--opp-card, #24242c);
+  color: var(--opp-text, #ece6d8);
   overflow: hidden;
 
-  &__poster {
-    width: 100%;
-    min-height: 0;
-    border-radius: 6px;
-    background: #d4d4db;
-    overflow: hidden;
+  // The key: its staff card with the note name under it, in one column down the screen.
+  &__tip {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.2rem;
 
-    display: grid;
-    place-items: center;
-
-    img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .office-key-card { --key-card-h: var(--opp-key-h); }
   }
 
-  // No poster: the sheet-music mark on the stand-in, solid grey ink.
-  &__stand-in { font-size: 3.5rem; color: #8b8b96; }
+  &__note {
+    font-size: 1.4rem;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: 0.06em;
+    font-variant-numeric: tabular-nums;
+  }
 
-  // The desk's badge, on ivory.
-  &__badge.piano-desk__badge {
-    max-width: 100%;
-    padding: 0.15rem 0.6rem;
+  &__poster {
+    height: 100%;
+    aspect-ratio: 2 / 3;
+    border-radius: 6px;
+    overflow: hidden;
+    background: #2e2e38;
+    display: block;
+
+    &[data-empty] { display: flex; align-items: center; justify-content: center; }
+
+    img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 0; display: block; }
+  }
+
+  // No poster: the sheet-music mark on a solid stand-in.
+  &__stand-in { font-size: 2.5rem; color: #6f6f7c; }
+
+  &__text {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.55rem;
+  }
+
+  &__title {
+    font-size: var(--opp-title);
+    font-weight: 700;
+    line-height: 1.15;
+    text-wrap: balance;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+  }
+
+  &__status {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-width: 0;
+  }
+
+  // The desk's level badge, solid on the dark card.
+  &__badge {
+    flex: 0 0 auto;
+    padding: 0.2rem 0.65rem;
     border-radius: 999px;
-    font-size: 0.82rem;
+    font-size: 0.95rem;
     font-weight: 700;
     letter-spacing: 0.05em;
     text-transform: uppercase;
@@ -278,45 +371,41 @@
     &[data-level='new'] { background: #d9e6f5; color: #1b2f45; }
   }
 
-  // A shelf: poster, its name, its key.
-  &--shelf { grid-template-rows: minmax(0, 1fr) auto auto auto; }
-  &--shelf &__title { font-size: 1.3rem; }
-  &__count { min-height: 1.2em; font-size: 0.95rem; opacity: 0.65; }
-
-  &__title {
-    max-width: 100%;
-    font-size: 1.05rem;
-    line-height: 1.15;
-    text-align: center;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-
-  &__map {
-    max-width: 100%;
-    display: flex;
-    justify-content: center;
-
-    .piano-desk__map { display: grid; gap: 3px; width: 100%; }
-    .piano-desk__map i { display: block; aspect-ratio: 1; }
-  }
-
-  &__tip {
+  // One line, never two: a coin per passage, or one coin and a count.
+  &__progress {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: 0.3rem;
+    min-width: 0;
 
-    .office-key-card { --key-card-h: 4.6rem; }
+    i { flex: 0 0 auto; display: block; width: var(--opp-coin); height: var(--opp-coin); border-radius: 50%; }
+    i[data-current] { padding: 2px; box-shadow: inset 0 0 0 2px var(--osm-brass, #5fe39a); }
+    svg { display: block; width: 100%; height: 100%; }
   }
 
-  &__note {
-    font-size: 1.5rem;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    opacity: 0.8;
+  &__tally { font-size: 1.2rem; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  // A shelf: its name and how many pieces open here.
+  &__count { font-size: 1.15rem; color: var(--opp-muted, #a9a59a); }
+
+  // Eight shelves: rows are shorter, so the key and the type step down.
+  .office-piece-picker[data-kind='shelves'] & {
+    --opp-key-h: 3.6rem;
+    grid-template-columns: 4.5rem auto minmax(0, 1fr);
+    padding-block: 0.4rem;
   }
+  .office-piece-picker[data-kind='shelves'] &__note { font-size: 1.15rem; }
+  .office-piece-picker[data-kind='shelves'] &__title { -webkit-line-clamp: 1; }
+
+  // One or two on a page: the rows are tall, so everything reads larger.
+  .office-piece-picker__keys[data-size='large'] & {
+    --opp-key-h: 6rem;
+    --opp-title: 2.25rem;
+    --opp-coin: 2rem;
+    grid-template-columns: 6.5rem auto minmax(0, 1fr);
+    gap: 1.5rem;
+  }
+  .office-piece-picker__keys[data-size='large'] &__note { font-size: 1.75rem; }
 }
 
 // ── A key's note card ────────────────────────────────────────────────────────

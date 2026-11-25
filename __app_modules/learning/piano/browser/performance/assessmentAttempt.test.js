@@ -575,3 +575,73 @@ describe('concurrent-onset held matching', () => {
     expect(result.attempt.wrong).toHaveLength(1);
   });
 });
+
+/**
+ * A tie (owner, 2026-11-24): an eighth tied to a quarter in both hands, as Santa Claus bar 23 has it.
+ * The tied quarter is the eighth held on: it is never a separate note to strike, it is judged with the
+ * note that started it, and striking it again is neither required nor wrong.
+ */
+describe('tied notes', () => {
+  // Bar of 4/4 at onset 0: RH C4 half; LH C3+G3 half. Then (2.5) RH E4 eighth tied to (3) E4 quarter;
+  // LH F3+G3 eighth tied to F3+G3 quarter. Next bar (4): RH C4, LH C3.
+  const tiedBar = () => compileScoreExpectation({
+    source: { id: 'tied' }, fallbackBpm: 60,
+    notes: [
+      { midi: 60, staff: 0, onsetQuarter: 0, durationQuarters: 2, measureIndex: 0 },
+      { midi: 48, staff: 1, onsetQuarter: 0, durationQuarters: 2, measureIndex: 0 },
+      { midi: 64, staff: 0, onsetQuarter: 2.5, durationQuarters: 0.5, measureIndex: 0, tie: 'start' },
+      { midi: 53, staff: 1, onsetQuarter: 2.5, durationQuarters: 0.5, measureIndex: 0, tie: 'start' },
+      { midi: 55, staff: 1, onsetQuarter: 2.5, durationQuarters: 0.5, measureIndex: 0, tie: 'start' },
+      { midi: 64, staff: 0, onsetQuarter: 3, durationQuarters: 1, measureIndex: 0, tie: 'stop' },
+      { midi: 53, staff: 1, onsetQuarter: 3, durationQuarters: 1, measureIndex: 0, tie: 'stop' },
+      { midi: 55, staff: 1, onsetQuarter: 3, durationQuarters: 1, measureIndex: 0, tie: 'stop' },
+      { midi: 60, staff: 0, onsetQuarter: 4, durationQuarters: 2, measureIndex: 1 },
+      { midi: 48, staff: 1, onsetQuarter: 4, durationQuarters: 2, measureIndex: 1 },
+    ],
+  });
+
+  it('compiles the held quarter into its eighth: no separate attack, a tied note held to the end', () => {
+    const compiled = tiedBar();
+    expect(compiled.events.map((event) => event.onsetQuarter)).toEqual([0, 2.5, 4]);
+    const tied = compiled.events[1].notes;
+    expect(tied.map((note) => [note.midi, note.durationQuarters, note.tied])).toEqual([[64, 1.5, true], [53, 1.5, true], [55, 1.5, true]]);
+    expect(compiled.events[0].notes.every((note) => note.tied === undefined)).toBe(true);
+  });
+
+  const free = (policy = {}) => startAssessmentAttempt(createAssessmentAttempt({ expectation: tiedBar(), matcher: 'cursor', requirement: { policy } }), { time: 0 });
+  const play = (attempt, frames) => frames.reduce((at, [held, time]) => observeAssessment(at, { held: new Map(held.map((midi) => [midi, { timestamp: time }])), time }).attempt, attempt);
+
+  it('free, both hands together: the cursor goes from the tied eighth to the next bar, and a re-strike of the held note is not wrong', () => {
+    let attempt = play(free({ requireConcurrentOnset: true }), [[[60, 48], 10], [[], 20], [[64, 53, 55], 30]]);
+    expect(attempt.cursor).toBe(2);
+    // Lift and strike the tied chord again, as a child re-playing the quarter would.
+    attempt = play(attempt, [[[], 40], [[64], 50], [[], 55], [[53, 55], 60], [[], 70]]);
+    expect(attempt.wrong).toEqual([]);
+    expect(attempt.cursor).toBe(2);
+    attempt = play(attempt, [[[60, 48], 80]]);
+    expect(attempt.status).toBe('completed');
+    expect(finalizeAssessmentAttempt(attempt).result.criteria.cleanliness).toBe(1);
+  });
+
+  it('free, single notes: a re-strike of a tied pitch while it is still the last thing played is ignored, a later one is wrong', () => {
+    let attempt = startAssessmentAttempt(createAssessmentAttempt({ expectation: tiedBar(), matcher: 'cursor' }), { time: 0 });
+    for (const [midi, time] of [[60, 1], [48, 2], [64, 3], [53, 4], [55, 5]]) attempt = observeAssessment(attempt, { midi, time }).attempt;
+    expect(attempt.cursor).toBe(2);
+    const restruck = observeAssessment(attempt, { midi: 64, time: 6 });
+    expect(restruck.event).toMatchObject({ type: 'ignored', reason: 'tie_restrike' });
+    expect(restruck.attempt.wrong).toEqual([]);
+    attempt = observeAssessment(restruck.attempt, { midi: 60, time: 7 }).attempt;
+    // Past the tie's end (onset 4 is now struck), the same pitch is an extra again.
+    expect(observeAssessment(attempt, { midi: 64, time: 8 }).event.type).toBe('wrong');
+  });
+
+  it('timed: a re-strike of the held note inside the tie is not wrong; after it ends it is', () => {
+    // 60 bpm: a quarter is a second. Tied eighth at 2.5 s, held through 4 s.
+    let attempt = startAssessmentAttempt(createAssessmentAttempt({ expectation: tiedBar(), matcher: 'timed', mode: 'cued' }), { time: 0 });
+    for (const [midi, time] of [[60, 0], [48, 0], [64, 2500], [53, 2500], [55, 2500]]) attempt = observeAssessment(attempt, { midi, time }).attempt;
+    const restruck = observeAssessment(attempt, { midi: 64, time: 3000 });
+    expect(restruck.event).toMatchObject({ type: 'ignored', reason: 'tie_restrike' });
+    expect(restruck.attempt.wrong).toEqual([]);
+    expect(observeAssessment(attempt, { midi: 64, time: 5200 }).event.type).toBe('wrong');
+  });
+});

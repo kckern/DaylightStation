@@ -29,7 +29,10 @@ const NO_NOTES = new Map();
  * @param {Map<number, {velocity: number, timestamp: number}>} args.activeNotes
  * @param {Array<Object>} args.slots - from buildLauncherSlots()
  * @param {string|null} [args.initialGame] - deep-linked game id (URL)
- * @param {Object} [args.options] - {comboNotes, comboWindowMs, timeoutMs, holdExitMs}
+ * @param {Object} [args.options] - {comboNotes, comboWindowMs, timeoutMs, holdExitMs, gameOwnsCombo}
+ *   `gameOwnsCombo(gameId)`: true for a running game that uses the combo itself
+ *   (Sheet Music opens its menu on it). While such a game runs and the launcher
+ *   is shut, the combo neither opens the launcher nor counts a quit.
  */
 export function useNoteLauncher({ activeNotes, slots, initialGame = null, onRequestUser = null, selectionPaused = false, options = {} }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-launcher' }), []);
@@ -43,6 +46,9 @@ export function useNoteLauncher({ activeNotes, slots, initialGame = null, onRequ
   const holdExitMs = options.holdExitMs ?? DEFAULT_HOLD_EXIT_MS;
 
   const liveNotes = activeNotes instanceof Map ? activeNotes : NO_NOTES;
+  // A function from the host, read at press time: a fresh closure per render must not re-run the combo effect.
+  const gameOwnsComboRef = useRef(options.gameOwnsCombo ?? null);
+  gameOwnsComboRef.current = options.gameOwnsCombo ?? null;
 
   const [isOpen, setIsOpen] = useState(false);
   const [activeGameId, setActiveGameId] = useState(initialGame);
@@ -143,6 +149,12 @@ export function useNoteLauncher({ activeNotes, slots, initialGame = null, onRequ
 
     if (held && !comboLatchedRef.current) {
       comboLatchedRef.current = true;
+      // The running game owns this gesture: latch it (so its release re-arms as
+      // usual) and leave the launcher out of it entirely.
+      if (!isOpenRef.current && activeGameIdRef.current !== null && gameOwnsComboRef.current?.(activeGameIdRef.current)) {
+        if (userRequestTimerRef.current) { clearTimeout(userRequestTimerRef.current); userRequestTimerRef.current = null; }
+        return;
+      }
       // Its partner turned up: this was a combo, not a lone top key.
       if (userRequestTimerRef.current) {
         clearTimeout(userRequestTimerRef.current);

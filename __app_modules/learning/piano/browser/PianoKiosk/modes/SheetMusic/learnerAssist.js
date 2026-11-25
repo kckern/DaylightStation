@@ -1,10 +1,12 @@
 /**
  * learnerAssist — per-learner help on the Learn drill (`sheetmusic.learners.<id>`).
  *
- * Learn is a READING surface: by default the drill keyboard lights a key only
- * after a wrong note (`after-wrong`), the Silver check lights nothing, and a
- * wrong note flashes the owed notehead without saying what was played. That is
- * right for a child who reads. A child who is just starting does not know where
+ * Learn is a READING surface: by default the drill draws no keyboard at all
+ * (two rails, 2026-11-24: the score gets the screen), the Silver check lights
+ * nothing, and a wrong note flashes the owed notehead without saying what was
+ * played. That is right for a child who reads. A learner whose entry sets
+ * `keyboardHints` (`always` or `after-wrong`) gets the drill keyboard back, lit
+ * as set; `never` keeps it off. A child who is just starting does not know where
  * a printed note lives on the keys yet, and needs to see both at once.
  *
  *   sheetmusic:

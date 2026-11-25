@@ -142,6 +142,7 @@ vi.mock('./LearnLab.jsx', () => ({
       <button type="button" onClick={() => { props.onMastered(props.segment.id); props.onFinished({ passed: true, score: 1 }); }}>Master segment</button>
       <button type="button" onClick={() => props.onUnavailable('passage-too-dense')}>Fail segment</button>
       {props.onListen && <button type="button" onClick={props.onListen}>Listen</button>}
+      <footer>{props.railStart}{props.railEnd}</footer>
     </section>;
   },
 }));

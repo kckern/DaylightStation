@@ -1,0 +1,98 @@
+/**
+ * THE CHRISTMAS THEME: a deep evergreen ground, gilt rules, cream type.
+ *
+ * Fonts: the Garamonds are served by the classical theme's @font-face sheet,
+ * which builtins.js loads first, so this sheet names the families and does not
+ * declare them a second time.
+ *
+ * Two looks from one sheet: `christmas` snows, `christmas-still` does not. The
+ * snow is two layers of radial-gradient flakes drifting down by
+ * background-position (compositor-only, no layout), on the rail and band only.
+ * It never falls over the picture.
+ */
+
+$pine-deep: #0b2316;
+$pine: #12341f;
+$pine-lit: #1b4a2c;
+$gilt: #c9a24a;
+$gilt-lit: #ecd28a;
+$cream: #f3ead6;
+$cream-soft: #b9b29c;
+
+$looks: ".surround-frame--theme-christmas, .surround-frame--theme-christmas-still";
+
+.surround-frame:where(#{$looks}) {
+  --velvet: #{$pine-deep};
+  --curtain-bleed: 0px;
+  --programme: #{$pine};
+  --programme-fibre: none;
+  --programme-edge: rgba(201, 162, 74, 0.35);
+  --brass: #{$gilt};
+  --brass-lit: #{$gilt-lit};
+  --ink: #{$cream};
+  --ink-soft: #{$cream-soft};
+  --bond-ground: #{$pine-deep};
+  --mat: #{$cream};
+  --mat-edge: #{$gilt};
+  --map-halo: #{$pine-deep};
+  --surround-display: "Cormorant Garamond", "Hoefler Text", "EB Garamond", Georgia, serif;
+  --surround-body: "EB Garamond", "Cormorant Garamond", Garamond, Georgia, serif;
+  --surround-annotation: "Roboto Condensed", "Helvetica Neue Condensed", ui-sans-serif, system-ui, "Segoe UI", Roboto, Arial, sans-serif;
+  background-color: $pine-deep;
+}
+
+:where(#{$looks}) .surround-frame__region {
+  background-color: var(--programme);
+  box-shadow: inset 0 0 0 1px var(--programme-edge);
+}
+
+:where(#{$looks}) .surround-frame__region--top {
+  background-color: transparent;
+  box-shadow: inset 0 -1px 0 0 rgba(201, 162, 74, 0.45);
+}
+
+/* The rail: pine boughs as a darker scalloped edge along the inner side. */
+:where(#{$looks}) .surround-frame__region--right {
+  position: relative;
+  overflow: hidden;
+  background-image:
+    radial-gradient(ellipse 18px 38px at 100% 50%, rgba(11, 35, 22, 0.9) 60%, transparent 62%),
+    linear-gradient(180deg, #{$pine-lit} 0%, #{$pine-deep} 100%);
+  background-size: 24px 44px, cover;
+  background-repeat: repeat-y, no-repeat;
+  background-position: right top, center;
+}
+
+:where(#{$looks}) .surround-frame__region--bottom {
+  position: relative;
+  overflow: hidden;
+  background-color: $pine-deep;
+  box-shadow: inset 0 1px 0 0 rgba(201, 162, 74, 0.55);
+}
+
+/* SNOW: the snowing look only. */
+@keyframes christmas-snow {
+  from { background-position: 0 0, 40px 0; }
+  to { background-position: 0 600px, 40px 400px; }
+}
+
+:where(.surround-frame--theme-christmas) .surround-frame__region--right::after,
+:where(.surround-frame--theme-christmas) .surround-frame__region--bottom::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(circle 2px at 20px 30px, rgba(255, 255, 255, 0.85) 98%, transparent),
+    radial-gradient(circle 1.4px at 60px 90px, rgba(255, 255, 255, 0.6) 98%, transparent);
+  background-size: 120px 150px, 90px 100px;
+  animation: christmas-snow 24s linear infinite;
+  opacity: 0.7;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :where(.surround-frame--theme-christmas) .surround-frame__region--right::after,
+  :where(.surround-frame--theme-christmas) .surround-frame__region--bottom::after {
+    animation: none;
+  }
+}

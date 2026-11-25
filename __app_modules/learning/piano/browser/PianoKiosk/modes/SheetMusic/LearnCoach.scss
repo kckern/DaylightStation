@@ -1,6 +1,6 @@
-// The Learn passage screen is the drill surface: LearnLab's toolbar over the
-// Exercises run, with the passage path (and its board) underneath. This file
-// only stacks them and trims the lab's chrome to one row. It draws no screen.
+// The Learn passage screen is the drill surface: LearnLab's status line, the
+// score, and its coach rail (the passages, the steps, the ladder), with the
+// passage board over it when asked for. This file only stacks them. It draws no screen.
 .piano-learn-coach {
   position: relative;
   display: flex;
@@ -13,33 +13,23 @@
 
   // In the stack the lab is a row, not an overlay over the score.
   > .piano-learn-lab { position: relative; inset: auto; flex: 1 1 auto; min-height: 0; }
-  &__loading { flex: 1 1 auto; min-height: 0; margin: 0.4rem var(--sp-3, 0.75rem); border-radius: var(--r-md, 12px); background: #f5f5f3; }
+  // Loading: the drill's own bands, so nothing moves when the lab arrives (the rails at their heights).
+  &__loading { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  &__loading-status { flex: 0 0 var(--learn-status-h, 64px); background: var(--piano-surface-1); border-bottom: 1px solid var(--piano-border); }
+  &__loading-score { flex: 1 1 auto; min-height: 0; margin: 0.4rem var(--sp-3, 0.75rem); border-radius: var(--r-md, 12px); background: #f5f5f3; }
+  &__loading .piano-learn-lab__rail { --learn-rail-h: 72px; }
 
-  // The board slides over the drill, above the lab's own layers.
-  > .piano-passage-board { z-index: 40; }
-  > .piano-passage-path { z-index: 41; }
-
-  // One toolbar row (PianoApp.scss `.piano-learn-lab__toolbar`, fixed height): where you are, what you are playing, and the controls.
-  .piano-learn-lab--coach .piano-learn-lab__identity strong { font-size: 1.25rem; white-space: nowrap; }
-  .piano-learn-lab--coach .piano-learn-lab__task { strong { font-size: 1.25rem; } span { font-size: 0.95rem; } }
-  // The sets are the child's way to choose a step, so each is a full touch
-  // target and the row is tall enough for its picture.
-  // The row is set through the run's own variable, so the docked result card
-  // (Exercises.scss `.is-docked`) still covers exactly the rail and keyboard.
-  .piano-exercise-run[data-surface='learn-lab'] { --run-rail-row: 4.25rem; }
-  .drill-progress__rail { gap: 0.5rem; flex-wrap: nowrap; }
-  .drill-cluster { min-width: 5rem; gap: 0.3rem; }
-  .drill-cluster__rollup { width: 3.5rem; }
+  // The board slides over the drill (the score's room: between the rails), above the lab's own layers.
+  > .piano-passage-board { z-index: 40; top: var(--learn-status-h, 64px); bottom: var(--learn-rail-h, 72px); }
+  // The ladder on the rail is the tablet's way to the board.
+  &__ladder { display: flex; align-items: center; height: 100%; padding: 0 0.25rem; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
+  &__ladder[aria-expanded='true'] { box-shadow: inset 0 -3px 0 var(--piano-fg); }
   // A step that cannot be started yet: its picture dimmed, a small lock at its corner.
   .piano-learn-coach__locked { position: relative; display: inline-flex; align-items: center; gap: 0.1rem; }
   .piano-learn-coach__locked > :not(.piano-learn-coach__lock) { opacity: 0.4; }
   .piano-learn-coach__lock { position: absolute; right: -0.55rem; bottom: -0.25rem; font-size: 0.85rem; color: var(--drill-muted, currentColor); }
   // A step a pass at the chosen tempo would fill: lit before the take, so going faster shows what it is worth.
   .drill-cluster[data-preview] { box-shadow: inset 0 0 0 2px var(--piano-accent); border-radius: var(--r-sm); }
-  @media (max-width: 900px) {
-    .drill-progress__rail { flex-wrap: wrap; }
-    .drill-cluster { min-width: 0; }
-  }
   // The connection is announced once, by the app's banner.
   .piano-exercise-run__waiting, .piano-exercise-run__ready span { display: none; }
   // The drill's result after a miss is a card docked over the rail and
@@ -58,9 +48,10 @@
   // A finished piece on the curtain: every passage, turning into its coin in a wave.
   &__piece-mark { display: grid; justify-content: center; gap: 0.35em 0.3em; > span { display: grid; } }
 
+  // In the status line's prompt slot (LearnLab): the slot's height, never the heading's room.
   &__save {
-    flex: 0 0 auto; display: flex; align-items: center; gap: 0.5rem; color: var(--piano-warn); font-size: 1rem;
-    button { min-height: 4rem; padding: 0.4rem 0.9rem; border: 1px solid var(--piano-warn); border-radius: var(--r-sm); background: transparent; color: inherit; font: inherit; font-weight: 700; cursor: pointer; }
+    flex: 0 0 auto; display: flex; align-items: center; gap: 0.5rem; color: var(--piano-warn); font-size: 1rem; white-space: nowrap;
+    button { height: var(--learn-control, 48px); padding: 0 0.8rem; border: 1px solid var(--piano-warn); border-radius: var(--r-sm); background: transparent; color: inherit; font: inherit; font-weight: 700; cursor: pointer; }
   }
 
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none; transition: none; } }

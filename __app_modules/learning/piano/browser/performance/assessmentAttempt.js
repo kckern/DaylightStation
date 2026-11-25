@@ -81,6 +81,8 @@ export function compileAssessmentExpectation(input = {}) {
       const note = { id: noteId, midi, part };
       if (sourceNote.durationQuarters != null && Number.isFinite(Number(sourceNote.durationQuarters))) note.durationQuarters = Number(sourceNote.durationQuarters);
       if (Number.isInteger(sourceNote.staff) && sourceNote.staff >= 0) note.staff = sourceNote.staff;
+      // Held on through a tie: `durationQuarters` already runs to the tie's end (compileScoreExpectation).
+      if (sourceNote.tied === true) note.tied = true;
       if (sourceNote.measureIndex != null && Number.isFinite(Number(sourceNote.measureIndex))) note.measureIndex = Number(sourceNote.measureIndex);
       else if (sourceNote.measure != null && Number.isFinite(Number(sourceNote.measure))) note.measure = Number(sourceNote.measure);
       return Object.freeze(note);
@@ -124,6 +126,7 @@ export function compileScoreExpectation({ notes = [], source, tempoMap, fallback
       const attack = tiedAttacks.get(tieKey);
       if (attack) {
         attack.note.durationQuarters = Math.max(attack.note.durationQuarters, onset + duration - attack.onset);
+        attack.note.tied = true;
         attack.event.durationQuarters = Math.max(attack.event.durationQuarters, attack.note.durationQuarters);
       }
       if (scoreNote.tie === 'stop') tiedAttacks.delete(tieKey);
@@ -287,10 +290,40 @@ function completeIfDone(attempt, events) {
   return { attempt: completed, events: [...events, { type: 'attempt_complete' }] };
 }
 
+/**
+ * A tied note struck again while the tie still holds it (owner, 2026-11-24): the held quarter
+ * of an eighth-tied-to-a-quarter is judged with the eighth, so striking it again is neither
+ * asked for nor wrong. Only a note already struck counts, and only on its own pitch.
+ *
+ * Untimed (`index`/`current`): while the tie reaches the cursor's position and nothing there
+ * has been struck yet. Timed (`time`): while the clock is inside the tie.
+ */
+function tieRestrike(attempt, midi, { index = null, current = null, time = null } = {}) {
+  const events = attempt.expectation.events;
+  const currentStarted = current ? current.notes.some((note) => attempt.hits[note.id]) : false;
+  for (let i = 0; i < events.length; i += 1) {
+    const event = events[i];
+    if (index != null && i >= index) break;
+    for (const note of event.notes) {
+      if (!note.tied || note.midi !== midi || !attempt.hits[note.id]) continue;
+      const end = event.onsetQuarter + (note.durationQuarters ?? 0);
+      if (current) {
+        if (end > current.onsetQuarter || (end === current.onsetQuarter && !currentStarted)) return true;
+      } else if (Number.isFinite(time)) {
+        const startMs = timedTarget(attempt, event);
+        const endMs = timedTarget(attempt, { onsetQuarter: end });
+        if (time >= startMs && time <= endMs) return true;
+      }
+    }
+  }
+  return false;
+}
+
 function observeTimed(attempt, input) {
   const fraction = isFractionPolicy(attempt.policy);
   const judged = judgeTimedOnset(attempt, { midi: input.midi, time: input.time });
   const event = judged.eventId == null ? null : attempt.expectation.events.find((candidate) => candidate.id === judged.eventId);
+  if (judged.verdict === 'wrong' && tieRestrike(attempt, input.midi, { time: input.time })) return ignored(attempt, 'tie_restrike', { midi: input.midi, time: input.time });
   if (judged.verdict === 'wrong') {
     const record = { midi: input.midi, time: input.time, spanId: event?.spanId ?? null, eventId: judged.eventId };
     if (fraction && Number.isFinite(judged.driftMs)) record.driftMs = judged.driftMs;
@@ -339,7 +372,7 @@ function observeConcurrentHeld(attempt, input, held, index, current, baseline) {
     if (held.has(Number(midi)) || expired) fresh[midi] = pressedAt;
   }
   for (const midi of pressed) if (owed.has(midi)) fresh[midi] = input.time;
-  const wrongPresses = pressed.filter((midi) => !owed.has(midi));
+  const wrongPresses = pressed.filter((midi) => !owed.has(midi) && !tieRestrike(attempt, midi, { index, current }));
   const wrong = wrongPresses.map((midi) => ({ midi, time: input.time, spanId: current.spanId, eventId: current.id }));
   const wrongEvents = wrongPresses.map((midi) => ({ type: 'wrong', eventId: current.id, midi }));
   const next = {
@@ -461,6 +494,10 @@ export function observeAssessment(attempt, midiOrHeldEvent) {
     const completed = completeIfDone(next, events);
     return { attempt: completed.attempt, event: completed.events[0], events: completed.events };
   }
+  const restruck = heldPitches
+    ? heldPitches.size > 0 && [...heldPitches].every((midi) => tieRestrike(attempt, midi, { index, current }))
+    : tieRestrike(attempt, input.midi, { index, current });
+  if (restruck) return ignored(attempt, 'tie_restrike', { midi: input.midi, time: input.time });
   const pitches = current.notes.map((note) => note.midi);
   const plausible = heldPitches ? heldPitches.size > 0 : pitches.some((midi) => Math.abs(midi - input.midi) <= attempt.policy.wrongWindow);
   return plausible

@@ -295,12 +295,22 @@ export default function ScorePassage({
    * (`el` rides along and is dropped by the compiler's own whitelist — the same
    * thing happens on the Sheet Music surface.)
    */
-  const notes = useMemo(() => (layout?.steps ?? []).flatMap((step) => (step.notes ?? []).map((note) => ({
-    ...note,
-    staff: focused.originalStaffIndices?.[note.staff ?? 0] ?? note.staff,
-    onsetQuarter: step.onsetQuarter ?? 0,
-    measureIndex: excerpt.originalMeasureIndices[step.measure] ?? step.measure,
-  }))), [excerpt.originalMeasureIndices, focused.originalStaffIndices, layout]);
+  const notes = useMemo(() => [
+    ...(layout?.steps ?? []).flatMap((step) => (step.notes ?? []).map((note) => ({
+      ...note,
+      staff: focused.originalStaffIndices?.[note.staff ?? 0] ?? note.staff,
+      onsetQuarter: step.onsetQuarter ?? 0,
+      measureIndex: excerpt.originalMeasureIndices[step.measure] ?? step.measure,
+    }))),
+    // A tie's held heads (never a step: nothing to strike). The compiler folds each into the
+    // note that struck it, which is then held to the tie's end and marked `tied`.
+    ...(layout?.ties ?? []).map((tie) => ({
+      midi: tie.midi, tie: tie.tie,
+      staff: focused.originalStaffIndices?.[tie.staff ?? 0] ?? tie.staff,
+      onsetQuarter: tie.onsetQuarter ?? 0, durationQuarters: tie.durationQuarters ?? 0,
+      measureIndex: excerpt.originalMeasureIndices[tie.measure] ?? tie.measure,
+    })),
+  ], [excerpt.originalMeasureIndices, focused.originalStaffIndices, layout]);
 
   /**
    * The compile, as a DISCRIMINATED answer rather than an expectation-or-null.
@@ -375,6 +385,17 @@ export default function ScorePassage({
       byOnset.set(key, bucket);
     }
     return byOnset;
+  }, [layout]);
+
+  /** A tie's held heads by the onset of the note that struck them: they take its verdict. */
+  const tiesByStart = useMemo(() => {
+    const byStart = new Map();
+    for (const tie of layout?.ties ?? []) {
+      if (!tie.el || !Number.isFinite(tie.startOnsetQuarter)) continue;
+      const key = onsetKey(tie.startOnsetQuarter);
+      byStart.set(key, [...(byStart.get(key) ?? []), tie]);
+    }
+    return byStart;
   }, [layout]);
 
   /**
@@ -513,7 +534,8 @@ export default function ScorePassage({
     verdicts.forEach((byMidi, index) => {
       const event = expectation.events[index];
       if (!event) return;
-      const notes = elsByOnset.get(onsetKey(event.onsetQuarter)) ?? [];
+      // A held head is judged with the note that struck it (owner, 2026-11-24): same verdict, same mark.
+      const notes = [...(elsByOnset.get(onsetKey(event.onsetQuarter)) ?? []), ...(tiesByStart.get(onsetKey(event.onsetQuarter)) ?? [])];
       const wrong = [...byMidi.values()].some((verdict) => verdict.state === 'wrong');
       for (const note of notes) {
         if (!note.el) continue;
@@ -532,7 +554,7 @@ export default function ScorePassage({
       for (const [el, name] of classed) { el.classList.remove(name); el.removeAttribute('data-verdict'); }
       for (const tick of ticks) tick.remove();
     };
-  }, [elsByOnset, expectation, judged, verdicts]);
+  }, [elsByOnset, expectation, judged, tiesByStart, verdicts]);
 
   // Shown only at its final size: an accepted layout, fitted to the stage. A layout the
   // fitter cannot place (no staff boxes) is shown as engraved rather than never.

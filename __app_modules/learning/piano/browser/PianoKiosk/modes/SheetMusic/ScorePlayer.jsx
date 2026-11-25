@@ -32,6 +32,7 @@ import LearnLab from './LearnLab.jsx';
 import LearnCoach from './LearnCoach.jsx';
 import { useKeyboardOnly } from './office/KeyboardOnlyContext.js';
 import useLearnCoach from './useLearnCoach.js';
+import { usePianoUser } from '../../PianoUserContext.jsx';
 import { createCoachPlan } from '../../../../../../../shared/music/learnCoach.mjs';
 import LearnPassageLayer from './LearnPassageLayer.jsx';
 import { segmentNavigationState } from './LearnSegmentRail.jsx';
@@ -83,6 +84,15 @@ import { measureAtPoint } from './measureAtPoint.js';
 import { titleFromScoreId } from './scoreTitle.js';
 import { resolveLearnerAssist } from './learnerAssist.js';
 import { findWorstAssessmentSpan, tallyAssessmentGrades } from './assessmentProjections.js';
+
+/**
+ * A tie's held heads, in the shape the score compiler reads: each is folded into the note that
+ * struck it (held to the tie's end, `tied`), so striking it again is never charged as wrong.
+ */
+const tieHeads = (ties) => (ties || []).map((tie) => ({
+  midi: tie.midi, staff: tie.staff, tie: tie.tie, onsetQuarter: tie.onsetQuarter ?? 0,
+  durationQuarters: tie.durationQuarters ?? 0, measureIndex: tie.measure,
+}));
 
 // One source of truth for the transport's tick rate: the telemetry's stall rule
 // is expressed as a MULTIPLE of it, so the two can never drift apart (audit H1).
@@ -844,11 +854,11 @@ export default function ScorePlayer({ score: scoreMeta }) {
       ...note,
       onsetQuarter: scoreStep.onsetQuarter ?? events[index]?.onsetQuarter ?? 0,
       measureIndex: scoreStep.measure,
-    }))),
+    })).concat(tieHeads(layout.ties))),
     source: { id: scoreMeta.id, revision: fingerprint.contentSha256 },
     tempoMap: tempoMap.map((entry) => ({ ...entry, bpm: entry.bpm * tempoMult })),
     activeParts: parts.filter((part) => activeParts[part.staff]).map((part) => staffPartId(part.staff)),
-  }), [layout.steps, events, tempoMap, tempoMult, activeParts, parts, scoreMeta.id, fingerprint.contentSha256]);
+  }), [layout.steps, layout.ties, events, tempoMap, tempoMult, activeParts, parts, scoreMeta.id, fingerprint.contentSha256]);
 
   const onMeasureGrade = useCallback((g) => {
     setGrades((prev) => ({ ...prev, [g.measure]: g }));
@@ -1074,8 +1084,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
     return (layout.notes || []).map((note) => ({
       ...note,
       measureIndex: note.measureIndex ?? note.measure ?? measureByOnset.get(Number(note.onsetQuarter || 0).toFixed(6)),
-    }));
-  }, [layout.notes, layout.steps]);
+    })).concat(tieHeads(layout.ties));
+  }, [layout.notes, layout.steps, layout.ties]);
   const activePartIds = useMemo(
     () => parts.filter((part) => activeParts[part.staff]).map((part) => staffPartId(part.staff)).sort(),
     [parts, activeParts],
@@ -2228,6 +2238,9 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const coach = useLearnCoach({ plan: coachPlan, legacy: practice ?? {} });
   // Per-learner drill help (`sheetmusic.learners.<id>`): lit keys, wrong-note ghosts. See learnerAssist.js.
   const learnerAssist = useMemo(() => resolveLearnerAssist(config?.sheetmusic?.learners, coach.profileId), [config?.sheetmusic?.learners, coach.profileId]);
+  // Who is playing, for the drill's status line (its avatar).
+  const { currentProfile: learnProfile } = usePianoUser();
+  const learnPlayer = useMemo(() => ({ id: coach.profileId, name: learnProfile?.id === coach.profileId ? learnProfile?.name ?? null : null }), [coach.profileId, learnProfile]);
   // Passages carry the path's letter (A, B, C…) as their number, so the badge on the score names the same thing the path does.
   const coachedPassages = useMemo(() => {
     let order = 0;
@@ -2359,6 +2372,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const learnSession = learnSessionOpen ? (
       <LearnLab
         key={`${selectedPassage.id}:${activeLearnRung.id}:${learnLaunchNonce}`}
+        player={learnPlayer}
         score={learnScore}
         revision={learnPlan.revision}
         segment={selectedPassage}
@@ -2498,6 +2512,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
 
   if (roadmapLearn && selectedPassage) return <div className="piano-score-player piano-score-player--learn-launchpad">
     <LearnCoach score={learnScore} title={meta.title} plan={coachPlan} segment={selectedPassage} coach={coach} measures={layout.measures} skipping={learnPlan.skipping} assist={learnerAssist} polish={polishAwards}
+      player={learnPlayer}
       tempo={{ ...learnPlan.settings.tempo, tempoSource: learnPlan.tempoSource, measureOnsets: layout.measures.map((measure) => layout.steps[measure.firstStep]?.onsetQuarter) }} feedback={learnPlan.settings.feedback}
       onBack={closeLearnPassage} onPassageChange={openLearnPassage}
       onListen={(task) => logger.info('piano.learn.listen', { scoreId: scoreMeta.id, passageId: task.passageId, parts: task.parts })} />

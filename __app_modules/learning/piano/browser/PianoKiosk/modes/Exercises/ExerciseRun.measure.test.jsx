@@ -1510,8 +1510,9 @@ describe('Learn recovery controls at the 1280x800 kiosk canvas', () => {
       expect(controlButtons.map(({ text }) => text)).toEqual(names);
       for (const button of controlButtons) {
         const label = button.text;
-        expect(button.height, `${label} is too short`).toBeGreaterThanOrEqual(56);
-        expect(button.width, `${label} is too narrow`).toBeGreaterThanOrEqual(56);
+        // The status line's controls are 48px (two rails, 2026-11-24).
+        expect(button.height, `${label} is too short`).toBeGreaterThanOrEqual(48);
+        expect(button.width, `${label} is too narrow`).toBeGreaterThanOrEqual(48);
         expect(inside(button, canvas), `${label} leaves the kiosk canvas: ${say(button)}`).toBe(true);
         expect(button.reachable, `${label} is not reachable`).toBe(true);
       }
@@ -1578,20 +1579,22 @@ describe('timed practice groove at 1920x1200 in real Chromium', () => {
   }
   async function chooseFullSpeed() { await chooseSpeed('100%'); }
 
+  // Two rails (2026-11-24): the lab's status line on top, the score, the coach rail (rep progress) at the
+  // bottom. The keyboard row is drawn only for a learner whose keys are lit on every take.
   async function assertRunGeometry() {
-    const runBox = await probe.one('.piano-exercise-run');
+    const lab = await probe.one('.piano-learn-lab');
+    const status = await probe.one('.piano-learn-lab__toolbar');
     const stage = await probe.one(stageSelector);
-    const rail = await probe.one('.piano-exercise-run__rail');
-    const keys = await probe.one('.piano-exercise-run__keys');
+    const rail = await probe.one('.piano-learn-lab__rail');
     const score = await probe.one('.piano-score-passage');
-    for (const box of [runBox, stage, rail, keys, score]) expect(inside(box, canvas), say(box)).toBe(true);
+    for (const box of [lab, status, stage, rail, score]) expect(inside(box, canvas), say(box)).toBe(true);
     expect(inside(score, stage), `notation ${say(score)} escapes stage ${say(stage)}`).toBe(true);
     expect(rail.painted).toBe(true);
-    expect(keys.painted).toBe(true);
+    expect(await probe.count('.piano-exercise-run__keys')).toBe(0);
     expect(overlaps(stage, rail), 'the music stage overlaps rep progress').toBe(false);
-    expect(overlaps(stage, keys), 'the music stage overlaps the keyboard').toBe(false);
-    expect(Math.abs(runBox.bottom - keys.bottom), 'the keyboard must remain pinned to the run bottom').toBeLessThan(1);
-    return { stage, rail, keys };
+    expect(overlaps(stage, status), 'the music stage overlaps the status line').toBe(false);
+    expect(Math.abs(lab.bottom - rail.bottom), 'the coach rail must remain pinned to the bottom').toBeLessThan(1);
+    return { stage, rail, status };
   }
 
   // Removing the sheet, shrinking its hit targets, or losing focus trapping
@@ -1655,20 +1658,21 @@ describe('timed practice groove at 1920x1200 in real Chromium', () => {
     await chooseFullSpeed();
     // The press is beat one: the count shows 1 at once, the key still down.
     await page.evaluate(() => window.__stage.hold([84]));
-    await page.waitForSelector('.piano-exercise-run.is-countdown .piano-learn-countin[data-count="1"]');
+    await page.waitForSelector('.piano-exercise-run.is-countdown');
+    await page.waitForSelector('.piano-learn-lab__prompt .piano-learn-countin[data-count="1"]');
     await page.evaluate(() => window.__stage.hold([]));
-    const { stage, rail, keys } = await assertRunGeometry();
+    const { stage, rail, status } = await assertRunGeometry();
+    // The count is the status line's prompt slot (two rails): never on the score, never on the rail.
     const overlay = await probe.one('.piano-learn-countin');
-    expect(inside(overlay, stage)).toBe(true);
+    expect(inside(overlay, status)).toBe(true);
+    expect(overlaps(overlay, stage)).toBe(false);
     expect(overlaps(overlay, rail)).toBe(false);
-    expect(overlaps(overlay, keys)).toBe(false);
     expect(overlay.reachable, 'the count band must let taps reach the score').toBe(false);
     const ink = await probe.all('.piano-score-passage g.staffline, .piano-score-passage g.vf-notehead');
     expect(ink.length).toBeGreaterThan(0);
     for (const box of ink) expect(overlaps(overlay, box), `count band ${say(overlay)} overlaps notation ink ${say(box)}`).toBe(false);
     // The child is about to read the first notes: no greying on a Learn passage.
     expect(await probe.prop('.piano-score-passage', 'filter')).toBe('none');
-    expect(await probe.prop('.piano-exercise-run__keys', 'filter')).toBe('none');
     geometry('count-up band', { overlay, stage });
     await page.screenshot({ path: '/tmp/piano-groove-countup.png' });
     for (const count of ['2', '3', '4']) {
@@ -1753,7 +1757,8 @@ describe('timed practice groove at 1920x1200 in real Chromium', () => {
     await lab({ reducedMotion: 'reduce' });
     await chooseFullSpeed();
     await probe.press(84);
-    await page.waitForSelector('.piano-exercise-run.is-countdown .piano-learn-countin__pip.is-current');
+    await page.waitForSelector('.piano-exercise-run.is-countdown');
+    await page.waitForSelector('.piano-learn-lab__prompt .piano-learn-countin__pip.is-current');
     expect(await probe.prop('.piano-learn-countin__pip.is-current', 'animation-name')).toBe('none');
     await page.waitForSelector('.piano-exercise-run.is-running');
     expect(await probe.prop(beatSelector, 'animation-name')).toBe('none');
@@ -1770,14 +1775,14 @@ describe('timed practice groove at 1920x1200 in real Chromium', () => {
     const background = luminance(marker.background);
     expect((Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05),
       'the reduced-motion beat numeral must remain readable').toBeGreaterThanOrEqual(4.5);
-    const { stage, rail, keys } = await assertRunGeometry();
+    const { stage, rail, status } = await assertRunGeometry();
     expect(marker.painted).toBe(true);
     expect(marker.text).toBe('1');
     expect(inside(marker, stage)).toBe(true);
     expect(await probe.prop(selector, 'border-top-width')).toBe('3px');
     geometry('reduced-motion marker', { marker, stage });
     await page.screenshot({ path: '/tmp/piano-groove-reduced.png' });
-    for (const box of [...await probe.all('.piano-score-passage g.staffline, .piano-score-passage g.vf-notehead'), rail, keys]) {
+    for (const box of [...await probe.all('.piano-score-passage g.staffline, .piano-score-passage g.vf-notehead'), rail, status]) {
       expect(overlaps(marker, box), `beat marker ${say(marker)} overlaps ${say(box)}`).toBe(false);
     }
     // Geometry reads and the screenshot can outlive beat 2 on a busy runner.

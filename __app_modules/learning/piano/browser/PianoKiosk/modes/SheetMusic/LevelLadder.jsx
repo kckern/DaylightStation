@@ -15,10 +15,11 @@ const Earned = ({ item }) => (item.level === 'diamond' ? <GemIcon size="100%" co
  * ("Bronze · 2 of 3"), later levels are outlines in the muted ink. The path and the board both draw
  * it; the board adds the one quiet "earn a gem" (`gemOffered`) under the count when that lap pays one.
  */
-export default function LevelLadder({ ladder, gemOffered = false, className = '' }) {
+// `variant="word"` (the drill's coach rail, 2026-11-24): the rungs and the level's word only ("Bronze"), no count.
+export default function LevelLadder({ ladder, gemOffered = false, className = '', variant = 'count' }) {
   if (!ladder) return null;
   const gem = gemOffered && ladder.gemLevel;
-  return <div className={`piano-level-ladder${className ? ` ${className}` : ''}`} role="group" data-level={ladder.current}
+  return <div className={`piano-level-ladder${className ? ` ${className}` : ''}`} role="group" data-level={ladder.current} data-variant={variant}
     aria-label={`Levels for this piece: ${ladder.text}${gem ? ', earn a gem' : ''}`}>
     <ol className="piano-level-ladder__rungs" aria-hidden="true">
       {ladder.levels.map((item) => <li key={item.level} data-level={item.level} data-state={item.state}>
@@ -26,7 +27,7 @@ export default function LevelLadder({ ladder, gemOffered = false, className = ''
       </li>)}
     </ol>
     <p className="piano-level-ladder__count" aria-hidden="true">
-      <strong>{ladder.text}</strong>
+      <strong>{variant === 'word' ? ladder.word ?? ladder.text : ladder.text}</strong>
       {gem && <span>earn a gem</span>}
     </p>
   </div>;

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { createPortal } from 'react-dom';
 import getLogger from '../../../../../../../frontend/src/lib/logging/Logger.js';
 import { PianoKeyboard } from '../../../components/PianoKeyboard.jsx';
 import { resolveBoardRange, getNoteName } from '../../../noteUtils.js';
@@ -438,6 +439,14 @@ export function runPassed(result, { challenge = false, passScore = null } = {}) 
  *   the reading surfaces' muted half shade (a learner who is still finding the keys).
  * @param {boolean} [props.wrongNoteGhosts=false] Score passages: a wrong note also draws a
  *   translucent notehead on the staff at the pitch played (per-learner, `sheetmusic.learners`).
+ * @param {{prompt?: Element|null, rail?: Element|null}|null} [props.slots] A host that draws its own
+ *   rails (LearnLab's status line and coach rail, 2026-11-24) hands the run two places to draw into.
+ *   `rail`: the step pills (or Listen's progress), the live Right/Wrong count beside them, and the docked
+ *   result in their place after a take, so nothing of the run's own is drawn over or under the score.
+ *   `prompt`: the count-in, and after a docked result its way on (the host's actions, or "play any key
+ *   to …"). With `rail` set the run's own grid is the score alone (and the keyboard, if drawn).
+ * @param {boolean} [props.keyboard=true] Whether the footer keyboard is drawn where the stage would draw
+ *   one. Learn draws it only for a learner whose keys are lit on every take.
  * @param {'host'|'local'} [props.failurePresentation='host'] Whether an
  *   `onFailed` consumer replaces the result screen or records it while the run
  *   retains its standard feedback and piano-driven retry.
@@ -446,7 +455,7 @@ export function runPassed(result, { challenge = false, passScore = null } = {}) 
 const PEDAL_CONTROLLERS = Object.freeze([64, 66, 67]);
 const NO_TARGETS = new Map();
 
-export default function ExerciseRun({ instance, score, requirement = null, practiceRequirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, drillProjection = null, framing = null, bare = false, hideHeading = false, ask = null, askTuple = null, tier = null, traceContext = null, surface = 'default', scoreCursorPolicy = 'timed', scoreLayoutPolicy = 'readable-system', keyboardHintPolicy = 'always', fullKeyboardHints = false, wrongNoteGhosts = false, incompleteAfterMs = null, failurePresentation = 'host', clickGain, paused = false, resumeDelayMs = 1000, persistInterrupted = true, persistAssessment = true, startOnReady = false, maxCueRestarts = MAX_CUE_RESTARTS, rhythmOnly = false, leadInLoop = false, resultLabel = null, resultActions = null, resultPresentation = 'inline', resultContinueLabel = null, onResultContinue = null, onPickStep = null, demonstration = null, onPhase = null, onStarted, onExit, onPassed, onFailed, onUnavailable }) {
+export default function ExerciseRun({ instance, score, requirement = null, practiceRequirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, drillProjection = null, framing = null, bare = false, hideHeading = false, ask = null, askTuple = null, tier = null, traceContext = null, surface = 'default', scoreCursorPolicy = 'timed', scoreLayoutPolicy = 'readable-system', keyboardHintPolicy = 'always', fullKeyboardHints = false, wrongNoteGhosts = false, incompleteAfterMs = null, failurePresentation = 'host', clickGain, exitHint = 'Hold the lowest and highest keys for two seconds to leave.', paused = false, resumeDelayMs = 1000, persistInterrupted = true, persistAssessment = true, startOnReady = false, maxCueRestarts = MAX_CUE_RESTARTS, rhythmOnly = false, leadInLoop = false, resultLabel = null, resultActions = null, resultPresentation = 'inline', resultContinueLabel = null, onResultContinue = null, onPickStep = null, demonstration = null, onPhase = null, slots = null, keyboard: keyboardDrawn = true, onStarted, onExit, onPassed, onFailed, onUnavailable }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-exercise-run' }), []);
   const { currentUser } = usePianoUser();
   const { activeNotes: pressedNotes } = usePianoMidiNotes();
@@ -1847,7 +1856,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
   // wrong key only teaches the staff half.
   const keyboardFooter = (['sequence', 'notation', 'score'].includes(stage)
     || (stage === 'single-note' && presentation?.secondary === 'keyboard-strip'))
-    && expected.length > 0;
+    && expected.length > 0 && keyboardDrawn;
 
   /**
    * The drill chrome, when this run is one set of a multi-set program.
@@ -1886,7 +1895,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
       {phase === 'ready' && <div className="piano-exercise-run__ready"><p>{!runtime ? 'Getting the music ready…' : cueRestart ? 'You missed the cue — counting in again.' : snapshot.mode === 'cued' ? countInSentence(countIn?.clicks ?? beatsPerMeasure, cuedPace) : 'Play the first note to begin.'}</p>{!connected && <span>Waiting for the piano…</span>}</div>}
       {phase === 'paused' && <p className="piano-exercise-run__status" role="status">Paused. Your place is saved.</p>}
       {phase === 'resume-countdown' && <p className="piano-exercise-run__status" role="status">Get ready…</p>}
-      {['countdown', 'running'].includes(phase) && <p className={`piano-exercise-run__status${isWrong ? ' is-wrong' : ''}`} role="status">{phase === 'countdown' ? 'Listen to the count-in.' : huntSentence ?? (isWrong ? 'That note was not expected — keep going.' : stage === 'recall' ? 'Play the named music from memory.' : snapshot.matcher === 'held' ? 'Play the complete chord.' : 'Follow the highlighted notes.')}{onExit && ' Hold the lowest and highest keys for two seconds to leave.'}</p>}
+      {['countdown', 'running'].includes(phase) && <p className={`piano-exercise-run__status${isWrong ? ' is-wrong' : ''}`} role="status">{phase === 'countdown' ? 'Listen to the count-in.' : huntSentence ?? (isWrong ? 'That note was not expected — keep going.' : stage === 'recall' ? 'Play the named music from memory.' : snapshot.matcher === 'held' ? 'Play the complete chord.' : 'Follow the highlighted notes.')}{onExit && exitHint && ` ${exitHint}`}</p>}
     </>
   );
   /**
@@ -1980,8 +1989,65 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     return { ...meter, value, met: Number.isFinite(criteriaWanted[meter.id]) ? value >= criteriaWanted[meter.id] : value >= 1 };
   }) : [];
 
+  // A host's own rails (`slots`): what this run draws into them instead of its own rows.
+  const railSlot = slots?.rail ?? null;
+  const promptSlot = slots?.prompt ?? null;
+  // The live Right / Wrong count. On a host's rail it is Right and Wrong only, in a slot of its own beside
+  // the pills (the early / late / missed story is the score's verdict marks); never on the music.
+  const tally = snapshot.musicalInput ? <div className="piano-exercise-run__tally" aria-live="polite" aria-label="Practice score">
+    <span className="is-right"><b aria-hidden="true">✓</b> Right {liveTally.right}</span>
+    <span className="is-wrong"><b aria-hidden="true">×</b> Wrong {liveTally.wrong}</span>
+    {timed && !railSlot && <>
+      <span className="is-timing"><b aria-hidden="true"><Icon name="previous" /></b> Early {liveTally.early}</span>
+      <span className="is-timing"><b aria-hidden="true"><Icon name="next" /></b> Late {liveTally.late}</span>
+      <span className="is-missed"><b aria-hidden="true">○</b> Missed {liveTally.missed}</span>
+    </>}
+  </div> : null;
+  // The count-in: on the stage, or in the host's prompt slot.
+  const counts = <>
+    {learnPulse && <CountUpOverlay loop active={Boolean(beatLoop)} clicks={beatLoop?.beats} count={beatLoop?.beat} last={false} />}
+    {learnCued
+      ? <CountUpOverlay active={Boolean(countUp) || Boolean(cueRestart)} clicks={countUp?.clicks ?? countIn?.clicks} count={countUp?.count} last={countUp?.last}
+        slots={countIn?.slots} notehead={rhythmOnly ? 'x' : 'note'}
+        notice={cueRestart && !countUp ? `You missed the cue — come in on the ${rhythmOnly ? '\u2715' : '\u2669'}` : null} />
+      : <CountInOverlay active={(countingDown && countInBeat != null) || playHandoff}
+        remaining={countdown?.remaining} progress={countdown?.progress} play={countdown?.play} />}
+    <CountInOverlay active={resuming} remaining={resumeRemaining} progress={null} play={false} />
+  </>;
+  const dockedShown = phase === 'done' && result && !hostOwnsFailure && resultPresentation === 'docked' && !passed && resultSettled;
+  // THE DOCKED RESULT ON A HOST'S RAIL: the rail's middle, in its place, at its size. A verdict mark, one
+  // short line and a meter per thing asked; the take's Right / Wrong beside them. Its way on is the host's
+  // prompt slot (below), so the rail never holds a button.
+  const railResult = dockedShown ? <section className="piano-exercise-run__result is-docked is-developing is-on-rail"
+    data-result-armed={localRetry && resultArmed ? 'true' : undefined} role="status" aria-label={resultLabel ?? 'Result'}>
+    <span className="piano-exercise-run__verdict" aria-hidden="true"><Icon name="retry" /></span>
+    <div className="piano-exercise-run__verdict-body">
+      <strong className="piano-exercise-run__verdict-line">{resultLabel ?? 'Have another go'}</strong>
+      <ul className="piano-exercise-run__meters" aria-label="How it went">
+        {meters.map((meter) => <li key={meter.id} data-met={meter.met || undefined} aria-label={`${meter.label}: ${Math.round(meter.value * 100)}%`}>
+          <Icon name={meter.icon} /><span className="piano-exercise-run__meter"><i style={{ width: `${Math.round(meter.value * 100)}%` }} /></span>
+        </li>)}
+      </ul>
+    </div>
+    {snapshot.musicalInput && <div className="piano-exercise-run__tally" aria-label="Practice score">
+      <span className="is-right"><b aria-hidden="true">✓</b> Right {liveTally.right}</span>
+      <span className="is-wrong"><b aria-hidden="true">×</b> Wrong {liveTally.wrong}</span>
+    </div>}
+  </section> : null;
+  // What the prompt slot says after a docked result: the host's buttons, or the piano's way on in words.
+  // Held (invisible, its room kept) until the card takes a key.
+  // On a touch screen the buttons follow a key and a pedal glyph (shown once a key would act): the piano
+  // takes the primary too, and the group's name says so.
+  const onwardName = `Play any key or press a pedal to ${resultContinueLabel ?? 'try again'}`;
+  const railOnward = dockedShown ? (resultActions
+    ? <div className="piano-exercise-run__result-actions" role="group" aria-label={onwardName}>
+      <span className="piano-exercise-run__next-keys" data-ready={localRetry && resultArmed ? 'true' : undefined} aria-hidden="true"><Icon name="piano-key" /><Icon name="pedal" /></span>
+      {resultActions}
+    </div>
+    : <p className="piano-exercise-run__next" data-ready={localRetry && resultArmed ? 'true' : undefined} aria-label={onwardName}>Play any key to {resultContinueLabel ?? 'try again'}</p>) : null;
+
   return (
-    <section className={`piano-exercise-run is-${intent} is-${phase} is-tier-${runTier}${resolveHold ? ` is-resolve-held is-resolve-${resolveHold.outcome}${resolveHold.settled ? ' is-resolve-settled' : ''}` : ''}`} data-tier={runTier} data-stage={stage} data-surface={surface} data-rhythm={rhythmOnly ? 'true' : undefined} data-phase={phase} data-listening={demo.active ? (demonstration?.playing === false ? 'paused' : 'playing') : undefined} data-count-style={learnCued ? 'up' : undefined} data-count-band={learnCued || learnPulse ? 'true' : undefined} data-entry-shift={entryShift ? String(entryShift.beats) : undefined} data-armed={runtime ? 'true' : undefined} data-expected-cursor={timeline?.expectedCursor ?? eventIndex} data-displayed-cursor={visualCursor.index} data-hunting={countingDown ? undefined : huntHelp ?? undefined}
+    <section className={`piano-exercise-run is-${intent} is-${phase} is-tier-${runTier}${resolveHold ? ` is-resolve-held is-resolve-${resolveHold.outcome}${resolveHold.settled ? ' is-resolve-settled' : ''}` : ''}`} data-tier={runTier} data-stage={stage} data-surface={surface} data-rails={railSlot ? 'host' : undefined} data-keyboard={keyboardFooter ? 'true' : undefined} data-rhythm={rhythmOnly ? 'true' : undefined} data-phase={phase} data-listening={demo.active ? (demonstration?.playing === false ? 'paused' : 'playing') : undefined} data-count-style={learnCued ? 'up' : undefined} data-count-band={learnCued || learnPulse ? 'true' : undefined} data-entry-shift={entryShift ? String(entryShift.beats) : undefined} data-armed={runtime ? 'true' : undefined} data-expected-cursor={timeline?.expectedCursor ?? eventIndex} data-displayed-cursor={visualCursor.index} data-hunting={countingDown ? undefined : huntHelp ?? undefined}
       data-beat-pulse={beatPulse ?? undefined} data-downbeat={beatPulse == null || timeline.downbeat == null ? undefined : String(timeline.downbeat)}>
       <header className="piano-exercise-run__head">
         {/* WHY YOU ARE HERE, AND NOTHING ELSE, WHEN THERE IS CHROME.
@@ -2022,15 +2088,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
           screen — they keep the run's paper card. Lit keys are not ink, and a
           keyboard on a cream card would read as a picture of a piano. */}
       <div className={`piano-exercise-run__stage ${stage === 'keys' ? 'piano-exercise-run__ask' : 'piano-exercise-run__score'}`}>
-        {snapshot.musicalInput && <div className="piano-exercise-run__tally" aria-live="polite" aria-label="Practice score">
-          <span className="is-right"><b aria-hidden="true">✓</b> Right {liveTally.right}</span>
-          <span className="is-wrong"><b aria-hidden="true">×</b> Wrong {liveTally.wrong}</span>
-          {timed && <>
-            <span className="is-timing"><b aria-hidden="true"><Icon name="previous" /></b> Early {liveTally.early}</span>
-            <span className="is-timing"><b aria-hidden="true"><Icon name="next" /></b> Late {liveTally.late}</span>
-            <span className="is-missed"><b aria-hidden="true">○</b> Missed {liveTally.missed}</span>
-          </>}
-        </div>}
+        {!railSlot && tally}
         {stage === 'keys' && (
           <KeysAsk
             events={keysWindow.events}
@@ -2128,14 +2186,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
         {beatPulse != null && <span key={beatInMeasure == null ? beatPulse : `${timeline.measureIndex}:${beatInMeasure}`} className="piano-exercise-run__beat" aria-hidden="true">
           <span className="piano-exercise-run__beat-marker">{beatInMeasure ?? beatPulse}</span>
         </span>}
-        {learnPulse && <CountUpOverlay loop active={Boolean(beatLoop)} clicks={beatLoop?.beats} count={beatLoop?.beat} last={false} />}
-        {learnCued
-          ? <CountUpOverlay active={Boolean(countUp) || Boolean(cueRestart)} clicks={countUp?.clicks ?? countIn?.clicks} count={countUp?.count} last={countUp?.last}
-            slots={countIn?.slots} notehead={rhythmOnly ? 'x' : 'note'}
-            notice={cueRestart && !countUp ? `You missed the cue — come in on the ${rhythmOnly ? '\u2715' : '\u2669'}` : null} />
-          : <CountInOverlay active={(countingDown && countInBeat != null) || playHandoff}
-            remaining={countdown?.remaining} progress={countdown?.progress} play={countdown?.play} />}
-        <CountInOverlay active={resuming} remaining={resumeRemaining} progress={null} play={false} />
+        {!promptSlot && counts}
       </div>
       {/* No button: the piano starts the run. A cued ask arms on any key and
           counts at most four pulses; every other ask arms on the note it is asking for. */}
@@ -2143,7 +2194,12 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
           first note" there would be a lie a child would act on: nothing is
           listening, and a piano that ignores you is indistinguishable from a
           broken one. */}
-      <div className="piano-exercise-run__rail">
+      {railSlot && createPortal(railResult ?? <>
+        <div className="piano-exercise-run__rail-steps">{listenRail ?? runProgress ?? standingInstruction}</div>
+        <div className="piano-exercise-run__rail-tally">{tally}</div>
+      </>, railSlot)}
+      {promptSlot && createPortal(<>{counts}{railOnward}</>, promptSlot)}
+      {!railSlot && <div className="piano-exercise-run__rail">
       {/* A DRILL SAYS WHERE YOU ARE, NOT WHAT TO DO. Inside a multi-set program
           the pills carry the position and the placard carries the subject, and
           the standing instruction underneath them ("Play the first note to
@@ -2174,7 +2230,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
         <div className="piano-exercise-run__onward" data-ready={localRetry && resultArmed ? 'true' : undefined}
           aria-label={`Play any key or press a pedal to ${resultContinueLabel ?? 'try again'}`}>
           <Icon name="piano-key" /><Icon name="pedal" />
-          {onExit && <span className="piano-exercise-run__leave" aria-label="Hold the lowest and highest keys for two seconds to leave"><Icon name="keys-ends" /></span>}
+          {onExit && exitHint && <span className="piano-exercise-run__leave" aria-label={exitHint.replace(/\.$/, '')}><Icon name="keys-ends" /></span>}
         </div>
         <div className="piano-exercise-run__result-actions">{resultActions}</div>
       </section>}
@@ -2186,10 +2242,10 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
         {scoreReadout
           ? <>{timingCopy && <p className="piano-exercise-run__result-copy">{timingCopy}</p>}<dl><div><dt>All notes</dt><dd>{Math.round((result.criteria.completeness ?? 0) * 100)}%</dd></div><div><dt>Clean notes</dt><dd>{Math.round((result.criteria.cleanliness ?? 0) * 100)}%</dd></div>{Number.isFinite(result.criteria.placement) && <div><dt>On the beat</dt><dd>{Math.round(result.criteria.placement * 100)}%</dd></div>}</dl></>
           : <p className="piano-exercise-run__result-copy">{passed ? 'You played every note that was asked for.' : timingCopy ?? 'Some of the notes are still missing. Have another go.'}</p>}
-        {localRetry && resultArmed && <p className="piano-exercise-run__result-onward">Release the keys, then play any key to {resultContinueLabel ?? 'try again'}.{onExit && ' Hold the lowest and highest keys for two seconds to leave.'}</p>}
+        {localRetry && resultArmed && <p className="piano-exercise-run__result-onward">Release the keys, then play any key to {resultContinueLabel ?? 'try again'}.{onExit && exitHint && ` ${exitHint}`}</p>}
         {resultActions && resultSettled && <div className="piano-exercise-run__result-actions">{resultActions}</div>}
       </section>}
-      </div>
+      </div>}
       {keyboardFooter && (
         /* The whole board, for the same reason KeysAsk draws it: a strip
            cropped to the ask ± 5 semitones has no black-key groups and no ends,

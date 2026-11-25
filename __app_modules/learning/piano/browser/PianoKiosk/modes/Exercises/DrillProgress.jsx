@@ -209,14 +209,6 @@ export default function DrillProgress({
   return (
     <div className="drill-progress" data-phase={phase}>
       <div className="drill-progress__rail">
-        {/* A host may head the strip with the thing these steps belong to (a Learn unit's lettered coin and
-            "C · steps to Bronze"), so the row reads as that thing's and not as a free-floating list. */}
-        {program.head && (
-          <div className="drill-progress__head" role="group" aria-label={program.head.label ?? program.head.text} data-level={program.head.level}>
-            {program.head.mark && <span className="drill-progress__mark" aria-hidden="true">{program.head.mark}</span>}
-            <span className="drill-progress__head-text" aria-hidden="true">{program.head.text}</span>
-          </div>
-        )}
         {program.steps.map((step) => (
           <Cluster
             key={step.id}

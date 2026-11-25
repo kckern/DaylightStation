@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from 'react';
-import { LINK_PX, NEXT_BUMP_PX, pathLayout } from './passageRail.js';
+import { LINK_PX, NEXT_BUMP_PX, RAIL_LINK_PX, pathLayout, railLayout } from './passageRail.js';
 import PassageCoin, { PassageTurn } from './PassageCoin.jsx';
 import LevelLadder from './LevelLadder.jsx';
 import usePassageTomatoes from './usePassageTomatoes.js';
@@ -37,15 +37,20 @@ const before = (token, level) => (level === 'gold' ? (token.kind === 'passage' ?
  * `flipDelayMs` holds the turn until the host's ceremony announces it, and `wave` staggers it along
  * a finished piece. A passage not yet started wears a tomato for a learner (`tomatoes`, else
  * `sheetmusic.learn.tomatoes` for whoever is playing).
+ *
+ * `variant="rail"` is the drill's coach rail (2026-11-24, two rails): the coins only, at about 44px, the
+ * unit being drilled ringed. No caption, no bars under a coin, no play disc, no ladder and no All button:
+ * the status line names the task and its bars, and the rail's right end is the ladder.
  */
-export default function PassagePath({ model, flips = {}, flipDelayMs = 0, wave = false, boardOpen = false, tomatoes: tomatoesProp, onSelect, onOpen, onOpenBoard }) {
+export default function PassagePath({ model, variant = 'path', flips = {}, flipDelayMs = 0, wave = false, boardOpen = false, tomatoes: tomatoesProp, onSelect, onOpen, onOpenBoard }) {
   const track = useRef(null);
   const tomatoesFor = usePassageTomatoes();
   const tomatoes = tomatoesProp ?? tomatoesFor;
   const tokens = model?.tokens ?? [];
   const width = useTrackWidth(track, tokens.length > 0);
   if (!tokens.length) return null;
-  const { size, compact } = pathLayout(tokens.length, width);
+  const onRail = variant === 'rail';
+  const { size, compact } = onRail ? railLayout(tokens.length, width) : pathLayout(tokens.length, width);
   // A finished piece turns every token in a wave that always lasts under a second.
   const stagger = wave ? Math.min(45, 900 / tokens.length) : 0;
   const flipOf = (token) => flips[token.id] || null;
@@ -54,15 +59,16 @@ export default function PassagePath({ model, flips = {}, flipDelayMs = 0, wave =
     else if (token.isTarget || token.isNext) onOpen?.(token.id);
     else onSelect?.(token.id);
   };
-  return <nav className="piano-passage-path" aria-label="Passages in this piece" data-lap={model.lap}
-    style={{ '--token': `${size}px`, '--token-next': `${size + NEXT_BUMP_PX}px`, '--link': `${LINK_PX}px`, '--path-h': `${model.railRem}rem` }}>
-    <p className="piano-passage-path__caption" aria-live="polite">{String(model.caption ?? '').split(' ').flatMap((word, index) => [index ? ' ' : null, word.includes('–') ? <span key={index}>{word}</span> : word])}</p>
+  return <nav className={`piano-passage-path${onRail ? ' piano-passage-path--rail' : ''}`} aria-label="Passages in this piece" data-lap={model.lap}
+    style={onRail ? { '--token': `${size}px`, '--token-next': `${size}px`, '--link': `${RAIL_LINK_PX}px` }
+      : { '--token': `${size}px`, '--token-next': `${size + NEXT_BUMP_PX}px`, '--link': `${LINK_PX}px`, '--path-h': `${model.railRem}rem` }}>
+    {!onRail && <p className="piano-passage-path__caption" aria-live="polite">{String(model.caption ?? '').split(' ').flatMap((word, index) => [index ? ' ' : null, word.includes('–') ? <span key={index}>{word}</span> : word])}</p>}
     <ol ref={track} className="piano-passage-path__track" data-compact={compact || undefined}>
       {tokens.map((token, index) => {
         const flip = flipOf(token);
         return <li key={token.id} data-link={token.link} data-kind={token.kind}>
           <button type="button" className="piano-passage-path__token" data-state={token.state} data-kind={token.kind} data-flip={flip || undefined}
-            data-next={token.isNext || undefined} data-target={token.isTarget || undefined} data-step-down={token.isStepDown || undefined}
+            data-next={(!onRail && token.isNext) || undefined} data-target={token.isTarget || undefined} data-step-down={token.isStepDown || undefined}
             style={flip && (flipDelayMs || wave) ? { '--turn-delay': `${Math.round(flipDelayMs + index * stagger)}ms` } : undefined}
             aria-current={token.isTarget ? 'step' : undefined} aria-pressed={compact ? undefined : token.isSelected}
             aria-label={compact ? `${token.label}. Open the passage board` : token.aria} onClick={() => tap(token)}>
@@ -70,19 +76,19 @@ export default function PassagePath({ model, flips = {}, flipDelayMs = 0, wave =
               <span className="piano-passage-path__disc">
                 {flip ? <PassageTurn from={before(token, flip)} to={token.state} letter={token.letter} ring={token.ring} tomato={tomatoes} size="100%" />
                   : <PassageCoin state={token.state} letter={token.letter} ring={token.ring} tomato={tomatoes} size="100%" />}
-                {token.isTarget && <i className="piano-passage-path__play" aria-hidden="true"><Play /></i>}
+                {token.isTarget && !onRail && <i className="piano-passage-path__play" aria-hidden="true"><Play /></i>}
               </span>
-              <span className="piano-passage-path__bars" aria-hidden="true">{token.isTarget || token.isNext ? lowerBars(token.bars) : ''}</span>
+              {!onRail && <span className="piano-passage-path__bars" aria-hidden="true">{token.isTarget || token.isNext ? lowerBars(token.bars) : ''}</span>}
             </>}
           </button>
         </li>;
       })}
     </ol>
-    <LevelLadder ladder={model.ladder} className="piano-passage-path__ladder" />
-    <button type="button" className="piano-passage-path__all" aria-expanded={boardOpen} aria-label={`All passages, ${model.count.label}`}
+    {!onRail && <LevelLadder ladder={model.ladder} className="piano-passage-path__ladder" />}
+    {!onRail && <button type="button" className="piano-passage-path__all" aria-expanded={boardOpen} aria-label={`All passages, ${model.count.label}`}
       onClick={() => onOpenBoard?.(null)}>
       <Icon name="grid" /><span>All</span>
-    </button>
+    </button>}
   </nav>;
 }
 

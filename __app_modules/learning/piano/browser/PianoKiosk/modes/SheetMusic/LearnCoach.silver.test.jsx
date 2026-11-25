@@ -11,7 +11,7 @@ vi.mock('../../PianoUserContext.jsx', () => ({ usePianoUser: () => ({ currentUse
 vi.mock('../../PianoMidiContext.jsx', () => ({ usePianoMidi: () => ({ connected: true }) }));
 vi.mock('../../PianoConfig.jsx', () => ({ usePianoKioskConfigOptional: () => ({ config: { timezone: 'UTC' } }) }));
 vi.mock('../Exercises/ScorePassage.jsx', () => ({ default: () => <div>Passage music</div> }));
-vi.mock('./LearnLab.jsx', () => ({ default: (props) => { h.lab = props; return <div>Drill surface{props.ceremony}{props.extraControls}{props.resultLabel && <strong>{props.resultLabel}</strong>}{props.resultActions}</div>; } }));
+vi.mock('./LearnLab.jsx', () => ({ default: (props) => { h.lab = props; return <div>Drill surface{props.ceremony}{props.extraControls}{props.resultLabel && <strong>{props.resultLabel}</strong>}{props.resultActions}<footer>{props.railStart}{props.railEnd}</footer></div>; } }));
 
 const seg = (id, a, b) => ({ id, label: `Passage ${id}`, barLabel: `Bars ${a + 1}–${b + 1}`, inMeasure: a, outMeasure: b, playableParts: ['rh', 'lh'] });
 const planOf = (segments) => createCoachPlan({ scoreId: 'score', fingerprint: 'fp', segments, tempoMap: [{ onsetQuarter: 0, bpm: 90 }], certification: { testOutFirst: false } });

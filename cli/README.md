@@ -394,6 +394,28 @@ Commands live in `cli/lib/fitness/`, one module per operation, each exporting
 4. Keep module import **side-effect free** — the dispatcher imports every module just to
    build help text, so all work belongs inside `run()`.
 
+### `cli/concert-index.cli.mjs`
+
+Evidence for where the music and the talk are inside each native chapter of a concert video. It names nothing and writes no sidecar: the evidence is for a person or agent to judge.
+
+```
+concert-index: where the music and the talk are inside a concert video
+
+  chapters <media> [--out chapters.json]
+      List the file's native chapter markers as [{index, start, end, title}].
+  classify <media> --out <dir> [--python <bin>]
+      Score every second for music, speech, applause and the like (PANNs);
+      write <dir>/events.json. Runs audio-events.py with uv, or with <bin>.
+  evidence --chapters <chapters.json> --classified <dir> [--srt <file>] [--out evidence.json]
+      Inside each chapter: the music span, its performances, speech runs
+      (before/between/after the music) and long gaps, with subtitle text.
+      --chapters takes the chapters output or any [{title, start, end}] list.
+  clips <media> --at 120,305.5 [--pad 6] --out <dir>
+      Cut a 360p review clip centred on each boundary.
+```
+
+Typical run: `chapters`, then `classify` where the media lives, then `evidence` from their output. `classify` needs [uv](https://docs.astral.sh/uv/) (the script declares its own dependencies), or `--python` pointing at an interpreter with `panns_inference`, `torch` and `numpy` installed. The first run downloads the model checkpoint.
+
 ## Piano Bridge Bluetooth controls
 
 The standalone bridge CLI runs through `node cli/pianobridge.cli.mjs`. It shares
