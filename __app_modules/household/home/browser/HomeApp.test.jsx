@@ -228,7 +228,7 @@ describe('HomeApp — Rooms', () => {
     expect(screen.getByLabelText('Desk lamp: turn on')).toBeTruthy();
     expect(screen.getByText('Den TV plug')).toBeTruthy();
     expect(screen.queryByText('Remote battery')).toBeNull();
-    fireEvent.click(screen.getByText('Show all 3 readings and switches'));
+    fireEvent.click(screen.getByText('Readings and switches (3)'));
     expect(screen.getByText('Remote battery')).toBeTruthy();
   });
 
