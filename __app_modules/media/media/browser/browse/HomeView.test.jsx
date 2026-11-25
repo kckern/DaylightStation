@@ -190,7 +190,7 @@ describe('HomeView start page', () => {
     await waitFor(() => expect(tile.querySelectorAll('.home-tile-line')).toHaveLength(2));
     fireEvent.click(within(tile).getByTestId('home-tile-carry-on-plex:2-picture'));
     const choice = await screen.findByTestId('spot-choice-1');
-    expect(choice).toHaveTextContent('1 h 20 m on Living Room TV');
+    expect(choice).toHaveTextContent('1:20:00 on Living Room TV');
     fireEvent.click(choice);
     expect(dispatchLeafVerb).toHaveBeenCalledWith('playNow', 'plex:2', expect.objectContaining({ id: 'plex:2' }), { startAt: 4800 });
   });

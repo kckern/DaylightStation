@@ -22,8 +22,9 @@ it('locks only the affected row and an already open editor while another row sta
  const send=vi.fn(async()=>({items:[]}));
  render(<MantineProvider><HealthOperationsProvider userId="u" send={send}><Harness/></HealthOperationsProvider></MantineProvider>);
  fireEvent.click(screen.getByText('Save Apple'));
- expect(screen.getByRole('button',{name:'Edit Apple'}).disabled).toBe(true);
- expect(screen.getByRole('button',{name:'Edit Banana'}).disabled).toBe(false);
+ // The open editor is a modal Sheet (6ccece81c4/8e0803cb6d), so the rows behind it are aria-hidden.
+ expect(screen.getByRole('button',{name:'Edit Apple',hidden:true}).disabled).toBe(true);
+ expect(screen.getByRole('button',{name:'Edit Banana',hidden:true}).disabled).toBe(false);
  expect(screen.getByRole('textbox',{name:'Name'}).disabled).toBe(true);
  expect(screen.getByRole('button',{name:'Save',exact:true}).disabled).toBe(true);
 });
