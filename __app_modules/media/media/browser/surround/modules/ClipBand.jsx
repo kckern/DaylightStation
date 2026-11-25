@@ -49,8 +49,13 @@ function nextWorkLabel(next) {
   return trimmed(next?.subtitle) || null;
 }
 
-/** Columns for the piece grid: two rows once a concert has more than eight pieces. */
-const gridColumns = (n) => (n > 8 ? Math.ceil(n / 2) : n);
+/** The piece grid's shape: as near a square as n allows (ceil(sqrt n) columns). */
+export function gridShape(n) {
+  const cols = Math.max(1, Math.ceil(Math.sqrt(n)));
+  return { cols, rows: Math.max(1, Math.ceil(n / cols)) };
+}
+/** The grid's height budget: cells shrink for a big concert so it always fits the band. */
+const GRID_HEIGHT_REM = 3.2;
 
 export default function ClipBand({ data = null, position = 0 }) {
   const clip = data?.clip;
@@ -79,7 +84,13 @@ export default function ClipBand({ data = null, position = 0 }) {
           <ol
             className="clip-band__grid"
             aria-label={`Piece ${number.k} of ${number.n}`}
-            style={{ gridTemplateColumns: `repeat(${gridColumns(number.n)}, var(--clip-cell, 0.5rem))` }}
+            style={(() => {
+              const { cols, rows } = gridShape(number.n);
+              return {
+                gridTemplateColumns: `repeat(${cols}, var(--clip-cell))`,
+                '--clip-cell': `min(0.55rem, calc(${GRID_HEIGHT_REM}rem / ${rows} - 3px))`,
+              };
+            })()}
           >
             {Array.from({ length: number.n }, (_, i) => (
               <li

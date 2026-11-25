@@ -2,7 +2,7 @@
 import React from 'react';
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
-import ClipBand, { formatClock, clipNumber } from './ClipBand.jsx';
+import ClipBand, { formatClock, clipNumber, gridShape } from './ClipBand.jsx';
 import { SURROUND_BUILTIN_MODULES } from '../builtins.js';
 import { getSurroundRegistry } from '../../../../../../__capabilities/playback/browser/surround-registry.mjs';
 
@@ -151,5 +151,15 @@ describe('ClipBand', () => {
     expect(SURROUND_BUILTIN_MODULES).toContain('clip-band');
     expect(getSurroundRegistry().has('clip-band')).toBe(true);
     expect(getSurroundRegistry().getMeta('clip-band').regions).toEqual(['bottom']);
+  });
+});
+
+describe('clip band piece grid: near-square', () => {
+  it('lays n pieces out in ceil(sqrt(n)) columns, never a long strip', () => {
+    expect(gridShape(1)).toEqual({ cols: 1, rows: 1 });
+    expect(gridShape(4)).toEqual({ cols: 2, rows: 2 });
+    expect(gridShape(15)).toEqual({ cols: 4, rows: 4 });
+    expect(gridShape(19)).toEqual({ cols: 5, rows: 4 });
+    expect(gridShape(51)).toEqual({ cols: 8, rows: 7 });
   });
 });

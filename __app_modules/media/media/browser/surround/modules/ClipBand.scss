@@ -56,6 +56,7 @@
 }
 
 .clip-band__title {
+  text-align: center; /* centred over the progress bar (owner 2026-11-24) */
   font-family: var(--surround-display, Georgia, serif);
   font-size: 1.75rem;
   font-weight: 600;
