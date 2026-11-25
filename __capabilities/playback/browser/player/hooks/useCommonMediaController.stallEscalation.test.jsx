@@ -225,6 +225,17 @@ describe('useCommonMediaController stall detection + ledger-gated nudge', () => 
     expect(nudgeRequests().length).toBe(1);
   });
 
+  it('a starved progressive download is not nudged: a seek cannot conjure bytes, and it spends the recovery budget', () => {
+    const { video } = renderStalled();
+    // Nothing buffered past the playhead, fetch still open (2026-11-25: Plex
+    // fed a workout in bursts; two nudges spent the session cap).
+    act(() => { video.buffered = { length: 1, start: () => 0, end: () => 100.55 }; video.readyState = 2; video.networkState = 2; });
+    act(() => { vi.advanceTimersByTime(HARD_STALL_MS); });
+    expect(strategiesFired()).toEqual([]);
+    expect(nudgeRequests()).toEqual([]);
+    expect(events.some(([e]) => e === 'playback.nudge-skipped-starved')).toBe(true);
+  });
+
   it('falls back to the assetId as ledger scope when no session key is threaded', () => {
     renderStalled({ recoverySessionKey: null });
     act(() => { vi.advanceTimersByTime(HARD_STALL_MS); });

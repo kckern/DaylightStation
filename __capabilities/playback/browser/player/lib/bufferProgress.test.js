@@ -9,6 +9,7 @@ import {
   SLOW_LINK_MAX_HOLD_MS,
   SLOW_LINK_QUIET_MS,
   SLOW_LINK_SESSION_BUDGET_MS,
+  SLOW_LINK_OPEN_QUIET_MS,
 } from './bufferProgress.js';
 import { STALL_JOLT_GRACE_MS } from './stallJolt.js';
 
@@ -181,6 +182,22 @@ describe('decideStuckKind', () => {
     expect(decideStuckKind({ ...base, growth: quietGrowth, showedLife: true }).kind).toBe('slow-link');
     expect(decideStuckKind({ ...base, growth: quietGrowth, showedLife: false }).kind).toBe('stuck');
     expect(decideStuckKind({ ...base, growth: { growthSec: 0, lastGrowthAtMs: base.now - SLOW_LINK_QUIET_MS - 1 }, showedLife: true }).kind).toBe('stuck');
+  });
+
+  it('progressive with its download still open: a server gap up to the open-connection window holds, longer is stuck', () => {
+    // 2026-11-25: Plex fed a workout in bursts with ~30 s gaps; a restart
+    // cannot make the server faster, so an open download is waited on.
+    const quiet = { growthSec: 0, lastGrowthAtMs: null };
+    const open = decideStuckKind({ ...base, growth: quiet, networkProgressAtMs: base.now - 30_000 });
+    expect(open).toEqual({ kind: 'slow-link', reason: 'connection-open' });
+    expect(decideStuckKind({ ...base, growth: quiet, networkProgressAtMs: base.now - SLOW_LINK_OPEN_QUIET_MS - 1 }).kind).toBe('stuck');
+    // A download that is not running (idle / no source) gets the ladder.
+    expect(decideStuckKind({ ...base, reading: { ...base.reading, networkState: 1 }, growth: quiet, networkProgressAtMs: base.now - 30_000 }).kind).toBe('stuck');
+    // MSE never trusts element progress.
+    expect(decideStuckKind({ ...base, reading: { ...base.reading, mse: true }, growth: quiet, networkProgressAtMs: base.now - 30_000 }).kind).toBe('stuck');
+    // Still bounded by the per-hold cap.
+    expect(decideStuckKind({ ...base, growth: quiet, networkProgressAtMs: base.now - 30_000, holdStartedAtMs: base.now - SLOW_LINK_MAX_HOLD_MS - 1 }).kind).toBe('stuck');
+    expect(SLOW_LINK_OPEN_QUIET_MS).toBeGreaterThan(SLOW_LINK_QUIET_MS);
   });
 
   it('a session that has spent its slow-link budget lets the ladder run', () => {

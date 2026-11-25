@@ -43,6 +43,16 @@ export const SLOW_LINK_SESSION_BUDGET_MS = 300_000;
 // no bytes and no growth — is needed before it is declared stuck. Degraded
 // Wi-Fi routinely goes 6–10 s without delivering anything (retries, roams).
 export const SLOW_LINK_QUIET_MS = 15_000;
+// A progressive download whose connection is still open (networkState
+// NETWORK_LOADING) is given this long without bytes before it is declared
+// stuck. 2026-11-25: Plex, starved by another client, fed a workout in bursts
+// with ~30 s gaps; the 15 s quiet window ruled it dead and the ladder
+// restarted a download that a restart could not make faster. Still bounded
+// by SLOW_LINK_MAX_HOLD_MS and the session budget, so a black-holed socket
+// is restarted within two minutes.
+export const SLOW_LINK_OPEN_QUIET_MS = 45_000;
+// NETWORK_LOADING: the element's fetch is open.
+const NETWORK_LOADING = 2;
 // A "frozen" verdict (buffered-but-frozen / ready-but-frozen) must persist this
 // long with the playhead unchanged before a rung may fire: Chromium sets
 // readyState 3/4 a beat before the clock visibly moves, and a rung fired in
@@ -218,6 +228,13 @@ export function decideStuckKind({
   // Progressive download: bytes arriving is life even when 150 KB has not yet
   // decoded into half a second of media. MSE: element progress is not trusted.
   if (!reading.mse && bytesRecent) return { kind: 'slow-link', reason: 'bytes-arriving' };
+  // Progressive, fetch still open, bytes within the longer window: the server
+  // is slow (gaps between bursts), and re-requesting it restarts a download
+  // on the same slow server. Wait.
+  if (!reading.mse && reading.networkState === NETWORK_LOADING
+    && num(networkProgressAtMs) != null && now - networkProgressAtMs <= SLOW_LINK_OPEN_QUIET_MS) {
+    return { kind: 'slow-link', reason: 'connection-open' };
+  }
   return { kind: 'stuck', reason: 'no-download-progress' };
 }
 

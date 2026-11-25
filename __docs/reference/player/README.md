@@ -303,6 +303,7 @@ Rules are checked in order, first match wins:
 | `stuck: ready-but-frozen` *(confirm)* | readyState ≥ 3 and still frozen |
 | `slow-link: buffer-growing` | The buffered end gained ≥ `SLOW_LINK_MIN_GROWTH_SEC` (0.5 s) in `SLOW_LINK_WINDOW_MS` (6 s). After a hold has started, any growth within `SLOW_LINK_QUIET_MS` (15 s) also counts |
 | `slow-link: bytes-arriving` | Progressive only (not MSE/`blob:`): a `progress` event within `SLOW_LINK_QUIET_MS` (15 s), even before a hold and even if under 0.5 s of media decoded. A 6–10 s Wi-Fi gap at the first check therefore does not fire a rung |
+| `slow-link: connection-open` | Progressive only, fetch still open (`networkState` LOADING): a `progress` event within `SLOW_LINK_OPEN_QUIET_MS` (45 s). This covers a server that sends in bursts with long gaps; a busy Plex did this on 2026-11-25. Restarting the download cannot make the server faster. Still bounded by the 120 s hold cap and the session budget, so a black-holed socket is restarted within two minutes |
 | `stuck: no-download-progress` | None of the above |
 
 *Confirm*: a frozen verdict acts only after it has held for
@@ -332,6 +333,7 @@ first rung.
 
 **Logs.**
 - `playback.stalled` now carries (measured over the window *before* the starvation, so read `bufferGrowthRate` together with `networkState`: 1 = the browser had idled the download) `bufferAheadSec`, `bufferedEndSec`, `readyState`, `networkState`, `bufferGrowthSec`, `bufferGrowthRate` (media seconds per wall second, where 1.0 is realtime), `bufferGrowthWindowMs` and `connection` (`navigator.connection`: `effectiveType`, `downlinkMbps`, `rttMs`).
+- The controller's hard-stall nudge (a 1 ms seek) is skipped for a starved progressive element: fetch open, under 0.5 s buffered ahead, readyState below `HAVE_FUTURE_DATA`. It logs `playback.nudge-skipped-starved` (info). A seek cannot conjure bytes, and each nudge spends one of the session's recovery actions.
 - A hold logs `playback.resilience-slow-link-wait` (warn) once per episode. `playback.resilience-slow-link-wait-ended` reports `outcome` and `waitedMs`.
 - The startup deadline logs `playback.startup-deadline-deferred-slow-link`.
 - The controller logs `playback.duration-pending-load` where it would previously have fired `duration-lost`.

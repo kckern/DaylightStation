@@ -48,6 +48,10 @@ function contentProgress(nativeSeconds, nativeDuration, meta, isVideo) {
 
 // Lazy-init child logger for media controller diagnostics
 let _mcLogger;
+// Under this many seconds buffered past the playhead, with the fetch open,
+// the element is starved, not wedged: a nudge has nothing to play.
+const NUDGE_STARVED_AHEAD_SEC = 0.5;
+
 function mcLog() {
   if (!_mcLogger) _mcLogger = getLogger().child({ component: 'media-controller' });
   return _mcLogger;
@@ -993,6 +997,26 @@ export function useCommonMediaController({
             });
             fireStrategy('softReinit', softReinitRecovery, gate);
             return;
+          }
+
+          // A STARVED progressive download is not nudged. The nudge is a
+          // 1 ms seek: it un-wedges a decoder sitting on data, but it cannot
+          // conjure bytes, and every nudge spends one of the session's few
+          // recovery actions. 2026-11-25: Plex fed a workout in bursts; two
+          // nudges spent the cap and the next stall exhausted recovery. The
+          // resilience ladder holds for the slow link instead.
+          {
+            const r = readBufferWindow(mediaEl);
+            if (!r.mse && r.networkState === 2 && r.bufferAheadSec != null
+              && r.bufferAheadSec < NUDGE_STARVED_AHEAD_SEC && (r.readyState ?? 0) < 3) {
+              mcLog().info('playback.nudge-skipped-starved', {
+                mediaKey: assetId,
+                currentTime: mediaEl.currentTime,
+                bufferAheadSec: r.bufferAheadSec,
+                readyState: r.readyState,
+              });
+              return;
+            }
           }
 
           // One ledger-gated nudge per stall episode — and nothing else. The
