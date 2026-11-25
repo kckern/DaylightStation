@@ -6,11 +6,11 @@
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, existsSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, existsSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseSrt, srtTime, parseChapters, chapterList, MUSIC_CLASSES, labelSeconds, runsFrom, refineChapter, classifyArgs, words, lyricOverlap, clipArgs, numberFlag, parseAt, runCliEntry } from './concert-index.cli.mjs';
+import { parseSrt, srtTime, parseChapters, chapterList, MUSIC_CLASSES, labelSeconds, runsFrom, refineChapter, classifyArgs, chapterEvidence, words, lyricOverlap, clipArgs, numberFlag, parseAt, runCliEntry } from './concert-index.cli.mjs';
 
 describe('parseSrt', () => {
   const SRT = '1\r\n00:01:03,160 --> 00:01:11,560\r\nTo buy the table\r\n\r\n'
@@ -197,6 +197,52 @@ describe('classifyArgs', () => {
   });
 });
 
+describe('chapterEvidence', () => {
+  // 60 s of audio: speech 0-10, music 10-40 (sung), gap 40-50 (applause), speech 50-60.
+  const seconds = 60;
+  const series = (f) => Array.from({ length: seconds }, (_, i) => f(i));
+  const classes = {
+    Music: series((i) => (i >= 10 && i < 40 ? 0.9 : 0.05)),
+    Speech: series((i) => (i < 10 || i >= 50 ? 0.8 : 0.02)),
+    Applause: series((i) => (i >= 40 && i < 50 ? 0.4 : 0)),
+  };
+  const cues = [
+    { i: 1, start: 2, end: 6, text: 'welcome to the concert' },
+    { i: 2, start: 20, end: 24, text: 'silent night holy night' },
+    { i: 3, start: 52, end: 56, text: 'and now a reading' },
+  ];
+
+  it('refines each chapter and attaches the subtitle text inside each performance and speech run', () => {
+    const ev = chapterEvidence({ chapters: [{ title: 'Silent Night', start: 0, end: 60 }], classes, seconds, cues });
+    expect(ev.seconds).toBe(60);
+    expect(ev.chapters).toEqual([{
+      index: 1,
+      title: 'Silent Night',
+      start: 0,
+      end: 60,
+      music: [10, 40],
+      performances: [{ start: 10, end: 40, narrationShare: 0, text: 'silent night holy night' }],
+      speech: [
+        { start: 0, end: 10, position: 'before', text: 'welcome to the concert' },
+        { start: 50, end: 60, position: 'after', text: 'and now a reading' },
+      ],
+      gaps: [],
+    }]);
+  });
+  it('keeps chapters apart: a run that crosses a chapter edge is cut there', () => {
+    const ev = chapterEvidence({
+      chapters: [{ title: 'A', start: 0, end: 25 }, { title: 'B', start: 25, end: 60 }],
+      classes, seconds, cues,
+    });
+    expect(ev.chapters.map((c) => c.music)).toEqual([[10, 25], [25, 40]]);
+    expect(ev.chapters[1].speech.map((s) => s.position)).toEqual(['after']);
+  });
+  it('works without subtitles', () => {
+    const ev = chapterEvidence({ chapters: [{ title: 'A', start: 0, end: 60 }], classes, seconds });
+    expect(ev.chapters[0].performances[0].text).toBe('');
+  });
+});
+
 describe('clipArgs', () => {
   it('cuts a small review clip centred on a boundary', () => {
     expect(clipArgs('/m/v.mp4', 120, 6, '/o')).toEqual([
@@ -251,6 +297,30 @@ describe('entry points', () => {
       expect(r.status).toBe(0);
       expect(r.stdout).toContain('clips <media>');
     }
+  });
+  it('evidence reads chapters, classifier output and subtitles from files', () => {
+    const tmp = mkdtempSync(path.join(tmpdir(), 'concert-index-'));
+    try {
+      const n = 30;
+      const classes = { Music: Array.from({ length: n }, (_, i) => (i >= 5 ? 0.9 : 0)), Speech: Array(n).fill(0) };
+      mkdirSync(path.join(tmp, 'cls'));
+      writeFileSync(path.join(tmp, 'cls', 'events.json'), JSON.stringify({ seconds: n, classes }));
+      writeFileSync(path.join(tmp, 'chapters.json'), JSON.stringify([{ title: 'Only', start: 0, end: 30 }]));
+      writeFileSync(path.join(tmp, 'subs.srt'), '1\n00:00:10,000 --> 00:00:12,000\nla la\n');
+      const out = path.join(tmp, 'e.json');
+      const r = cli(['cli/concert-index.cli.mjs', 'evidence', '--chapters', path.join(tmp, 'chapters.json'),
+        '--classified', path.join(tmp, 'cls'), '--srt', path.join(tmp, 'subs.srt'), '--out', out]);
+      expect(r.status).toBe(0);
+      const ev = JSON.parse(readFileSync(out, 'utf8'));
+      expect(ev.seconds).toBe(30);
+      expect(ev.chapters[0]).toMatchObject({ index: 1, title: 'Only', music: [5, 30] });
+      expect(ev.chapters[0].performances[0].text).toBe('la la');
+    } finally { rmSync(tmp, { recursive: true, force: true }); }
+  });
+  it('evidence without --chapters or --classified fails with a message', () => {
+    const r = cli(['cli/concert-index.cli.mjs', 'evidence', '--classified', '/nowhere']);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain('evidence needs --chapters and --classified');
   });
   it('a bad --at fails with a message and exit 1, before creating anything', () => {
     const tmp = mkdtempSync(path.join(tmpdir(), 'concert-index-'));

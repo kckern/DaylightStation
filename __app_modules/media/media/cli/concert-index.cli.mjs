@@ -8,14 +8,14 @@
  * of that structure. It does NOT write a sidecar: the evidence is for a
  * person or agent to judge.
  *
- * Subcommands: chapters, classify, clips. Run with --help.
+ * Subcommands: chapters, classify, evidence, clips. Run with --help.
  *
  * @module cli/concert-index
  */
 
 import { parseArgs } from 'node:util';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -225,6 +225,49 @@ export function refineChapter(chapter, runs, { gapMergeS = 15, minClipS = 2 } = 
 }
 
 /* -------------------------------------------------------------------------- */
+/* Evidence                                                                   */
+/* -------------------------------------------------------------------------- */
+
+/** Subtitle text whose cue midpoint falls in [start, end). */
+function textIn(cues, start, end) {
+  return cues
+    .filter((c) => { const mid = (c.start + c.end) / 2; return mid >= start && mid < end; })
+    .map((c) => c.text)
+    .join(' ');
+}
+
+/**
+ * Refine every chapter against the per-second class scores and attach the
+ * subtitle text inside each performance and each speech run.
+ *
+ * @param {object} o
+ * @param {Array} o.chapters anything chapterList accepts
+ * @param {Record<string, number[]>} o.classes per-second scores by AudioSet class
+ * @param {number} [o.seconds] length of the scores (defaults to the longest series)
+ * @param {Array<{start:number,end:number,text:string}>} [o.cues] subtitle cues
+ */
+export function chapterEvidence({ chapters, classes, seconds, cues = [] }) {
+  const labels = labelSeconds(classes);
+  const runs = runsFrom(labels);
+  return {
+    seconds: seconds ?? labels.length,
+    chapters: chapterList(chapters).map((c) => {
+      const r = refineChapter(c, runs);
+      return {
+        index: c.index,
+        title: c.title ?? null,
+        start: c.start,
+        end: c.end,
+        music: r.music,
+        performances: r.performances.map((p) => ({ ...p, text: textIn(cues, p.start, p.end) })),
+        speech: r.speech.map((p) => ({ ...p, text: textIn(cues, p.start, p.end) })),
+        gaps: r.gaps,
+      };
+    }),
+  };
+}
+
+/* -------------------------------------------------------------------------- */
 /* Matching                                                                   */
 /* -------------------------------------------------------------------------- */
 
@@ -318,6 +361,10 @@ const USAGE = `concert-index: where the music and the talk are inside a concert 
   classify <media> --out <dir> [--python <bin>]
       Score every second for music, speech, applause and the like (PANNs);
       write <dir>/events.json. Runs audio-events.py with uv, or with <bin>.
+  evidence --chapters <chapters.json> --classified <dir> [--srt <file>] [--out evidence.json]
+      Inside each chapter: the music span, its performances, speech runs
+      (before/between/after the music) and long gaps, with subtitle text.
+      --chapters takes the chapters output or any [{title, start, end}] list.
   clips <media> --at 120,305.5 [--pad 6] --out <dir>
       Cut a 360p review clip centred on each boundary.`;
 
@@ -337,6 +384,7 @@ async function dispatch(argv) {
     allowPositionals: true,
     options: {
       out: { type: 'string' }, at: { type: 'string' }, pad: { type: 'string' }, python: { type: 'string' },
+      chapters: { type: 'string' }, classified: { type: 'string' }, srt: { type: 'string' },
       help: { type: 'boolean', short: 'h' },
     },
   });
@@ -363,6 +411,19 @@ async function dispatch(argv) {
     if (r.error) throw r.error;
     if (r.status !== 0) throw new Error(`${bin} exited ${r.status} running audio-events.py`);
     console.log(`classified ${media} -> ${path.join(f.out, 'events.json')}`);
+    return;
+  }
+
+  if (cmd === 'evidence') {
+    if (!f.chapters || !f.classified) throw new Error('evidence needs --chapters and --classified');
+    const events = JSON.parse(readFileSync(path.join(f.classified, 'events.json'), 'utf8'));
+    if (!events.classes) throw new Error(`${path.join(f.classified, 'events.json')} has no "classes"; run classify`);
+    emit(chapterEvidence({
+      chapters: JSON.parse(readFileSync(f.chapters, 'utf8')),
+      classes: events.classes,
+      seconds: events.seconds,
+      cues: f.srt ? parseSrt(readFileSync(f.srt, 'utf8')) : [],
+    }));
     return;
   }
 
