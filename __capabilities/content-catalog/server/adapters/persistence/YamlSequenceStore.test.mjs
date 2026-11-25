@@ -44,7 +44,7 @@ describe('YamlSequenceStore', () => {
     const store = new YamlSequenceStore({ rootDir: root, logger: makeLogger() });
     expect(store.lookup('plex:757556')).toEqual({
       head: 1,
-      idents: { every: [3, 5], pool: ['plex:757863'] },
+      idents: { every: [3, 5], minutes: null, count: [1, 1], order: 'shuffle', pool: ['plex:757863'] },
     });
     expect(store.lookup('plex:1')).toEqual({ head: 2, idents: null });
     expect(store.lookup('plex:999')).toBeNull();

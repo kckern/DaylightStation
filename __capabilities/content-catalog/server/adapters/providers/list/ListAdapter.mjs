@@ -1130,7 +1130,9 @@ export class ListAdapter {
               const resolved_items = await resolved.adapter.resolvePlayables(canonicalId);
               const sequenced = await this._applySequence(canonicalId, resolved_items, shouldShuffle);
               if (sequenced) return sequenced;
-              if (shouldShuffle && resolved_items?.length > 1) {
+              // A source that owns its order (a surround-segments clip shuffle
+              // keeping two clips of one concert apart) already shuffled itself.
+              if (shouldShuffle && !resolved_items?.preserveOrder && resolved_items?.length > 1) {
                 for (let i = resolved_items.length - 1; i > 0; i--) {
                   const j = Math.floor(Math.random() * (i + 1));
                   [resolved_items[i], resolved_items[j]] = [resolved_items[j], resolved_items[i]];
@@ -1205,7 +1207,8 @@ export class ListAdapter {
         items,
         sequence,
         random: Math.random,
-        orderRest: async (rest) => (shuffle ? shuffleItems(rest, Math.random) : rest),
+        // A source that owns its order (a clip shuffle) is never shuffled again.
+        orderRest: async (rest) => (shuffle && !items.preserveOrder ? shuffleItems(rest, Math.random) : rest),
         resolveIds: (ids) => this._resolveIdsToPlayables(ids),
       });
       const { unresolved, ...counts } = stats;
@@ -1219,8 +1222,8 @@ export class ListAdapter {
   }
 
   /**
-   * Resolve each id to its first playable through the registry; null for
-   * anything that does not resolve.
+   * Resolve each id to its playables through the registry (a container gives
+   * all of them); null for anything that does not resolve.
    * @private
    */
   async _resolveIdsToPlayables(ids) {
@@ -1229,7 +1232,7 @@ export class ListAdapter {
         const resolved = this.registry?.resolve(id);
         if (!resolved?.adapter?.resolvePlayables) return [id, null];
         const found = await resolved.adapter.resolvePlayables(`${resolved.adapter.source}:${resolved.localId}`);
-        return [id, Array.isArray(found) ? found[0] ?? null : null];
+        return [id, Array.isArray(found) && found.length ? [...found] : null];
       } catch {
         return [id, null];
       }

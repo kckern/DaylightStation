@@ -94,6 +94,17 @@ describe('ContentAccessService', () => {
       });
     });
 
+    it('takes every item of a pool container as a break, not only its first', async () => {
+      const { service } = build({
+        sequence: { head: 1, idents: { every: [1, 1], pool: ['plex:ads'] } },
+        catalogExtra: { 'plex:ads': [track('plex:c1'), track('plex:c2')] },
+      });
+      const result = await run(service);
+      const breaks = ids(result.items).filter((id) => id.startsWith('plex:c'));
+      expect(breaks).toHaveLength(3);
+      expect(new Set(breaks)).toEqual(new Set(['plex:c1', 'plex:c2']));
+    });
+
     it('drops an unresolvable station ID with a warn and still plays', async () => {
       const { service, logger } = build({
         sequence: { head: 1, idents: { every: [2, 2], pool: ['plex:gone'] } },

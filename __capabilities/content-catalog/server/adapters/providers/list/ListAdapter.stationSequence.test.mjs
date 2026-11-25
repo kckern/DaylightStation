@@ -25,9 +25,13 @@ function makeRegistry() {
         localId,
         adapter: {
           source: 'plex',
-          resolvePlayables: vi.fn(async (id) => (id === 'plex:757556'
-            ? ['plex:j1', ...SONGS].map(track)
-            : [track(id)])),
+          resolvePlayables: vi.fn(async (id) => {
+            if (id === 'plex:757556') return ['plex:j1', ...SONGS].map(track);
+            // A query that owns its order (a clip shuffle keeping two of a concert apart).
+            if (id === 'plex:ordered') return Object.assign(SONGS.map(track), { preserveOrder: true });
+            if (id === 'plex:ads') return ['plex:c1', 'plex:c2'].map(track);
+            return [track(id)];
+          }),
           getStoragePath: vi.fn(() => 'plex'),
         },
       };
@@ -83,6 +87,33 @@ describe('ListAdapter — station sequences in a program Queue item', () => {
     const { adapter } = makeAdapter(null);
     const result = await adapter.resolvePlayables('program:music-queue', { applySchedule: false });
     expect(result).toHaveLength(7);
+  });
+});
+
+describe('ListAdapter — a Queue item whose source owns its order', () => {
+  const seedOrdered = (adapter) => adapter._listCache.set('programs:music-queue', {
+    mtime: 1,
+    data: {
+      title: undefined, description: undefined, image: undefined, metadata: {},
+      sections: [{ items: [{ title: 'Clips', queue: { contentId: 'plex:ordered' }, shuffle: true }] }],
+    },
+  });
+
+  it('is not shuffled a second time', async () => {
+    const { adapter } = makeAdapter(null);
+    seedOrdered(adapter);
+    const result = await adapter.resolvePlayables('program:music-queue', { applySchedule: false });
+    expect(ids(result)).toEqual(SONGS);
+  });
+
+  it('keeps its order under a sequence, with a container of breaks between each song', async () => {
+    const store = { lookup: vi.fn(() => ({ head: 0, idents: { every: [1, 1], pool: ['plex:ads'] } })) };
+    const { adapter } = makeAdapter(store);
+    seedOrdered(adapter);
+    const result = await adapter.resolvePlayables('program:music-queue', { applySchedule: false });
+    expect(ids(result).filter((id) => id.includes(':s'))).toEqual(SONGS);
+    expect(ids(result).map((id) => id.split(':')[1][0]).join('')).toBe('scscscscscs');
+    expect(new Set(ids(result).filter((id) => id.includes(':c')))).toEqual(new Set(['plex:c1', 'plex:c2']));
   });
 });
 

@@ -34,6 +34,52 @@ function normalizeEvery(v) {
   return null;
 }
 
+const BREAK_ORDERS = new Set(['shuffle', 'sequential']);
+
+/**
+ * One break rule: every N items or every M minutes, whichever comes first;
+ * `count` items per break, drawn from `pool` shuffled or in pool order.
+ * @private
+ */
+function normalizeBreaks(raw, key, problems) {
+  if (!isPlainObject(raw)) {
+    problems.push(`${key}-not-a-mapping`);
+    return null;
+  }
+  let every = null;
+  if (isPresent(raw.every)) {
+    every = normalizeEvery(raw.every);
+    if (!every) problems.push(`${key}-every-invalid`);
+  }
+  let minutes = null;
+  if (isPresent(raw.minutes)) {
+    if (typeof raw.minutes === 'number' && Number.isFinite(raw.minutes) && raw.minutes > 0) minutes = raw.minutes;
+    else problems.push(`${key}-minutes-invalid`);
+  }
+  if (!isPresent(raw.every) && !isPresent(raw.minutes)) problems.push(`${key}-trigger-missing`);
+  let count = [1, 1];
+  if (isPresent(raw.count)) {
+    const c = normalizeEvery(raw.count);
+    if (c) count = c;
+    else problems.push(`${key}-count-invalid`);
+  }
+  let order = 'shuffle';
+  if (isPresent(raw.order)) {
+    if (BREAK_ORDERS.has(raw.order)) order = raw.order;
+    else problems.push(`${key}-order-invalid`);
+  }
+  let pool = [];
+  if (!Array.isArray(raw.pool)) {
+    problems.push(`${key}-pool-not-a-list`);
+  } else {
+    pool = raw.pool.map(asId).filter(Boolean);
+    if (pool.length !== raw.pool.length) problems.push(`${key}-pool-entry-invalid`);
+    if (!raw.pool.length) problems.push(`${key}-pool-empty`);
+  }
+  if (!(every || minutes) || !pool.length) return null;
+  return { every, minutes, count, order, pool };
+}
+
 /**
  * Validate an authored `sequence:` block. Invalid fields fall back to the
  * default behaviour (head 1, no idents) and are reported, never thrown.
@@ -58,24 +104,16 @@ export function normalizeSequence(raw) {
     }
   }
 
-  let idents = null;
-  if (isPresent(raw.idents)) {
-    if (!isPlainObject(raw.idents)) {
-      problems.push('idents-not-a-mapping');
-    } else {
-      const every = normalizeEvery(raw.idents.every);
-      if (!every) problems.push('idents-every-invalid');
-      let pool = [];
-      if (!Array.isArray(raw.idents.pool)) {
-        problems.push('idents-pool-not-a-list');
-      } else {
-        pool = raw.idents.pool.map(asId).filter(Boolean);
-        if (pool.length !== raw.idents.pool.length) problems.push('idents-pool-entry-invalid');
-        if (!raw.idents.pool.length) problems.push('idents-pool-empty');
-      }
-      if (every && pool.length) idents = { every, pool };
-    }
+  // `breaks:` is the general name (commercials, family photos, station IDs);
+  // `idents:` is the older radio name for the same block.
+  let key = null;
+  if (isPresent(raw.breaks)) {
+    key = 'breaks';
+    if (isPresent(raw.idents)) problems.push('breaks-and-idents');
+  } else if (isPresent(raw.idents)) {
+    key = 'idents';
   }
+  const idents = key ? normalizeBreaks(raw[key], key, problems) : null;
 
   return { sequence: { head, idents }, problems };
 }
@@ -124,31 +162,51 @@ export function shuffleItems(items, random) {
   return items;
 }
 
+/** Seconds an item plays: a clip's window, else its own duration; 0 when unknown. */
+const playSeconds = (it) => {
+  const seg = it?.segment;
+  if (seg && Number.isFinite(seg.start) && Number.isFinite(seg.end) && seg.end > seg.start) return seg.end - seg.start;
+  const d = Number(it?.duration);
+  return Number.isFinite(d) && d > 0 ? d : 0;
+};
+
 /**
- * Drop station IDs between songs: one after every `every` songs (a fresh count
- * from the range after each ID), never after the final song. IDs rotate
- * through a shuffled bag, refilled when empty, and never repeat back-to-back
- * when the pool has more than one.
+ * Put breaks between songs. A break comes after every `every` songs (a fresh
+ * count from the range after each break) or once `minutes` of songs have
+ * played, whichever comes first, and never after the final song. Each break
+ * is `count` items. In `shuffle` order the pool is a shuffled bag, refilled
+ * when empty, and never repeats back-to-back when it has more than one; in
+ * `sequential` order it is walked in its own order, wrapping.
  *
  * @param {Object[]} songs
- * @param {[number, number]} every
- * @param {Object[]} pool - Resolved ident items
+ * @param {{ every?: [number, number]|null, minutes?: number|null, count?: [number, number],
+ *   order?: 'shuffle'|'sequential' }|[number, number]} rule - A bare pair is `every`
+ * @param {Object[]} pool - Resolved break items
  * @param {() => number} random - Injected; [0, 1)
  * @returns {Object[]} a new array
  */
-export function interleaveIdents(songs, every, pool, random) {
+export function interleaveIdents(songs, rule, pool, random) {
   const list = Array.isArray(songs) ? songs : [];
-  if (!Array.isArray(pool) || !pool.length || !Array.isArray(every)) return [...list];
+  const r = Array.isArray(rule) ? { every: rule } : (rule ?? {});
+  const every = Array.isArray(r.every) ? r.every : null;
+  const limitSeconds = Number.isFinite(r.minutes) && r.minutes > 0 ? r.minutes * 60 : null;
+  if (!Array.isArray(pool) || !pool.length || (!every && !limitSeconds)) return [...list];
 
-  const [min, max] = every;
-  const draw = () => min + Math.floor(random() * (max - min + 1));
+  const drawFrom = ([min, max]) => min + Math.floor(random() * (max - min + 1));
+  const count = Array.isArray(r.count) ? r.count : [1, 1];
   let bag = [];
   let last = null;
-  const nextIdent = () => {
+  let cursor = 0;
+  const nextBreakItem = () => {
+    if (r.order === 'sequential') {
+      last = pool[cursor % pool.length];
+      cursor += 1;
+      return last;
+    }
     if (!bag.length) {
       bag = shuffleItems([...pool], random);
       // The bag is popped from the end: keep the refill from opening with the
-      // ID that just played.
+      // item that just played.
       if (bag.length > 1 && idOf(bag[bag.length - 1]) === idOf(last)) {
         [bag[0], bag[bag.length - 1]] = [bag[bag.length - 1], bag[0]];
       }
@@ -158,15 +216,20 @@ export function interleaveIdents(songs, every, pool, random) {
   };
 
   const out = [];
-  let gap = draw();
-  let count = 0;
+  let gap = every ? drawFrom(every) : Infinity;
+  let played = 0;
+  let seconds = 0;
   list.forEach((song, i) => {
     out.push(song);
-    count += 1;
-    if (count >= gap && i < list.length - 1) {
-      out.push(nextIdent());
-      count = 0;
-      gap = draw();
+    played += 1;
+    seconds += playSeconds(song);
+    const due = played >= gap || (limitSeconds != null && seconds >= limitSeconds);
+    if (due && i < list.length - 1) {
+      // A fixed count draws nothing, so the gap draws keep their old sequence.
+      for (let n = count[0] === count[1] ? count[0] : drawFrom(count); n > 0; n--) out.push(nextBreakItem());
+      played = 0;
+      seconds = 0;
+      gap = every ? drawFrom(every) : Infinity;
     }
   });
   return out;
@@ -179,7 +242,9 @@ export function interleaveIdents(songs, every, pool, random) {
  * @param {Object[]} options.items - The playlist, in playlist order
  * @param {{ head: number|string[], idents: Object|null }} options.sequence
  * @param {(rest: Object[]) => Promise<Object[]>} options.orderRest - Caller's ordering for the songs
- * @param {(ids: string[]) => Promise<Map<string, Object|null>>} options.resolveIds - Resolve ids not in the playlist
+ * @param {(ids: string[]) => Promise<Map<string, Object|Object[]|null>>} options.resolveIds - Resolve ids not in
+ *   the playlist. An id may resolve to a list (a container): a head id takes its first item, a pool id
+ *   contributes every item, so a whole show of commercials can be the break pool.
  * @param {() => number} options.random - Injected; [0, 1)
  * @returns {Promise<{ items: Object[], stats: { head: number, songs: number, idents: number, unresolved: string[] } }>}
  */
@@ -188,16 +253,20 @@ export async function sequenceQueue({ items, sequence, orderRest, resolveIds, ra
   const pool = sequence.idents?.pool ?? [];
   const wanted = [...new Set([...head.filter((h) => !h.item).map((h) => h.id), ...pool])];
   const resolved = wanted.length ? await resolveIds(wanted) : new Map();
-  const unresolved = wanted.filter((id) => !resolved.get(id));
+  const itemsFor = (id) => {
+    const v = resolved.get(id);
+    return (Array.isArray(v) ? v : [v]).filter(Boolean);
+  };
+  const unresolved = wanted.filter((id) => !itemsFor(id).length);
 
-  const headItems = head.map((h) => h.item ?? resolved.get(h.id)).filter(Boolean);
+  const headItems = head.map((h) => h.item ?? itemsFor(h.id)[0]).filter(Boolean);
   // A station ID the playlist also holds as an ordinary track plays only as an
   // ID: left among the songs it would shuffle in beside an inserted ID.
   const poolIds = new Set(sequence.idents ? pool : []);
   const songs = await orderRest(rest.filter((it) => !poolIds.has(idOf(it))));
-  const identItems = pool.map((id) => resolved.get(id)).filter(Boolean);
+  const identItems = pool.flatMap(itemsFor);
   const body = identItems.length
-    ? interleaveIdents(songs, sequence.idents.every, identItems, random)
+    ? interleaveIdents(songs, sequence.idents, identItems, random)
     : [...songs];
 
   return {

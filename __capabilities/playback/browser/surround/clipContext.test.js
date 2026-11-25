@@ -47,6 +47,16 @@ describe('clipContext', () => {
     expect(clipContext(CLIP, handle).next).toMatchObject({ title: 'Third Carol', subtitle: 'Frost Concert (2003)', work: 'plex:3' });
   });
 
+  it('looks past a break (a commercial, a photo) to name the next clip', () => {
+    const clip = (id, title) => ({ ...entry(id, title, null), segment: { start: 0, end: 60 } });
+    const items = [clip('plex:1#1', 'First Carol'), entry('plex:ad', 'Episode 12'), entry('immich:p', 'Photo'), clip('plex:2#4', 'Second Carol')];
+    const handle = {
+      getNowPlaying: () => ({ item: null, queuePosition: 0, queueLength: items.length }),
+      getQueueSnapshot: () => ({ items, executionOrder: items.map((i) => i.queueItemId) }),
+    };
+    expect(clipContext(CLIP, handle).next).toMatchObject({ title: 'Second Carol', work: 'plex:2' });
+  });
+
   it('has no next clip at the end of the queue', () => {
     const ctx = clipContext({ ...CLIP, id: 'plex:3#2' }, handleAt(2));
     expect(ctx).toMatchObject({ index: 2, total: 3, next: null });

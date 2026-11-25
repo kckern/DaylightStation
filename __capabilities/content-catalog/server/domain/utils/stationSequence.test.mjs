@@ -28,7 +28,7 @@ describe('normalizeSequence', () => {
 
   it('normalizes every: integer → [n, n], range → sorted pair', () => {
     const fixed = normalizeSequence({ idents: { every: 4, pool: ['plex:9'] } });
-    expect(fixed.sequence.idents).toEqual({ every: [4, 4], pool: ['plex:9'] });
+    expect(fixed.sequence.idents).toEqual({ every: [4, 4], minutes: null, count: [1, 1], order: 'shuffle', pool: ['plex:9'] });
     const range = normalizeSequence({ idents: { every: [5, 3], pool: ['plex:9'] } });
     expect(range.sequence.idents.every).toEqual([3, 5]);
   });
@@ -50,6 +50,69 @@ describe('normalizeSequence', () => {
     const emptyPool = normalizeSequence({ idents: { every: 3, pool: [] } });
     expect(emptyPool.sequence.idents).toBeNull();
     expect(emptyPool.problems).toContain('idents-pool-empty');
+  });
+});
+
+describe('normalizeSequence — breaks', () => {
+  it('reads breaks: as the general name, with a time trigger, a count per break and an order', () => {
+    const { sequence, problems } = normalizeSequence({
+      head: 0,
+      breaks: { minutes: 15, count: [1, 3], order: 'sequential', pool: ['immich:album:a', 'plex:778766'] },
+    });
+    expect(problems).toEqual([]);
+    expect(sequence.idents).toEqual({
+      every: null, minutes: 15, count: [1, 3], order: 'sequential', pool: ['immich:album:a', 'plex:778766'],
+    });
+  });
+
+  it('takes both triggers, whichever comes first', () => {
+    expect(normalizeSequence({ breaks: { every: 4, minutes: 20, pool: ['plex:9'] } }).sequence.idents)
+      .toMatchObject({ every: [4, 4], minutes: 20 });
+  });
+
+  it('needs a trigger, and reports a bad minutes, count or order', () => {
+    const none = normalizeSequence({ breaks: { pool: ['plex:9'] } });
+    expect(none.sequence.idents).toBeNull();
+    expect(none.problems).toContain('breaks-trigger-missing');
+    const bad = normalizeSequence({ breaks: { every: 2, minutes: -1, count: 0, order: 'random', pool: ['plex:9'] } });
+    expect(bad.problems).toEqual(expect.arrayContaining(['breaks-minutes-invalid', 'breaks-count-invalid', 'breaks-order-invalid']));
+    expect(bad.sequence.idents).toEqual({ every: [2, 2], minutes: null, count: [1, 1], order: 'shuffle', pool: ['plex:9'] });
+  });
+
+  it('prefers breaks: when a file also carries the older idents:', () => {
+    const both = normalizeSequence({ breaks: { every: 2, pool: ['plex:b'] }, idents: { every: 9, pool: ['plex:i'] } });
+    expect(both.sequence.idents.pool).toEqual(['plex:b']);
+    expect(both.problems).toContain('breaks-and-idents');
+  });
+});
+
+describe('interleaveIdents — breaks', () => {
+  const long = (n, seconds) => Array.from({ length: n }, (_, i) => ({ id: `s${i + 1}`, duration: seconds }));
+  const shape = (out) => out.map((it) => (it.id.startsWith('s') ? 's' : 'b')).join('');
+
+  it('breaks on time before the item count when the songs are long', () => {
+    const out = interleaveIdents(long(6, 600), { every: [5, 5], minutes: 15 }, [item('b1')], seeded(0));
+    expect(shape(out)).toBe('ssbssbss');
+  });
+
+  it('times a clip by its segment window, and an item with no length as nothing', () => {
+    const clips = [1, 2, 3, 4].map((n) => ({ id: `s${n}`, duration: 7200, segment: { start: 100, end: 400 } }));
+    expect(shape(interleaveIdents(clips, { minutes: 10 }, [item('b1')], seeded(0)))).toBe('ssbss');
+    const unknown = [1, 2, 3].map((n) => ({ id: `s${n}` }));
+    expect(shape(interleaveIdents(unknown, { minutes: 1 }, [item('b1')], seeded(0)))).toBe('sss');
+  });
+
+  it('plays count items per break, never one twice in the same break', () => {
+    const pool = ['b1', 'b2', 'b3', 'b4', 'b5'].map(item);
+    const out = interleaveIdents(long(4, 60), { every: [1, 1], count: [2, 2] }, pool, Math.random);
+    expect(shape(out)).toBe('sbbsbbsbbs');
+    for (let i = 1; i < out.length; i += 3) expect(out[i].id).not.toBe(out[i + 1].id);
+  });
+
+  it('walks the pool in its own order across breaks when sequential', () => {
+    const pool = ['b1', 'b2', 'b3'].map(item);
+    const out = interleaveIdents(long(5, 60), { every: [1, 1], order: 'sequential' }, pool, seeded(0.5));
+    expect(ids(out).filter((id) => id.startsWith('b'))).toEqual(['b1', 'b2', 'b3', 'b1']);
   });
 });
 
@@ -188,6 +251,35 @@ describe('sequenceQueue', () => {
       random: seeded(0),
     });
     expect(ids(orderRest.mock.calls[0][0])).toEqual(['s1', 'j2']);
+  });
+
+  it('expands a pool container into every item it holds (a commercial break between each song)', async () => {
+    const breaks = ['c1', 'c2', 'c3'].map(item);
+    const { items, stats } = await sequenceQueue({
+      items: ['s1', 's2', 's3', 's4'].map(item),
+      sequence: { head: 0, idents: { every: [1, 1], pool: ['show:ads'] } },
+      orderRest: async (rest) => rest,
+      // A container resolves to all of its playables, not only the first.
+      resolveIds: async (wanted) => new Map(wanted.map((id) => [id, breaks])),
+      random: seeded(0),
+    });
+    expect(ids(items).filter((id) => id.startsWith('s'))).toEqual(['s1', 's2', 's3', 's4']);
+    const ads = ids(items).filter((id) => id.startsWith('c'));
+    expect(ads).toHaveLength(3);
+    expect(new Set(ads)).toEqual(new Set(['c1', 'c2', 'c3']));
+    expect(ids(items).map((id) => id[0]).join('')).toBe('scscscs');
+    expect(stats.idents).toBe(3);
+  });
+
+  it('takes a list-resolved head id as its first item only', async () => {
+    const { items } = await sequenceQueue({
+      items: ['s1'].map(item),
+      sequence: { head: ['intro'], idents: null },
+      orderRest: async (rest) => rest,
+      resolveIds: async (wanted) => new Map(wanted.map((id) => [id, [item('i1'), item('i2')]])),
+      random: seeded(0),
+    });
+    expect(ids(items)).toEqual(['i1', 's1']);
   });
 
   it('does not call resolveIds when nothing needs resolving', async () => {

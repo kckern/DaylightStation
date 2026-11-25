@@ -186,7 +186,11 @@ export class ContentAccessService {
     }
   }
 
-  /** Resolve each id to its first playable; null for anything that does not resolve. */
+  /**
+   * Resolve each id to its playables (a container gives all of them; the
+   * sequence takes a head id's first and a pool id's every item); null for
+   * anything that does not resolve.
+   */
   async #resolveIds(ids) {
     const entries = await Promise.all(ids.map(async (id) => {
       try {
@@ -194,7 +198,7 @@ export class ContentAccessService {
         if (!resolved) return [id, null];
         const found = await this.catalog.resolvePlayables(resolved, id);
         const list = Array.isArray(found) ? found : found?.items;
-        return [id, list?.[0] ?? null];
+        return [id, list?.length ? [...list] : null];
       } catch {
         return [id, null];
       }

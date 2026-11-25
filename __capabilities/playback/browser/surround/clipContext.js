@@ -47,11 +47,14 @@ const describeEntry = (entry) => {
  *     workTitle: string|null, workYear: number|null}|null }|null}
  *   null when the item is not a clip.
  */
+const isClip = (entry) => {
+  const segment = entry && typeof entry === 'object' ? entry.segment : null;
+  return !!segment && isFiniteNumber(segment.start) && isFiniteNumber(segment.end) && segment.end > segment.start;
+};
+
 export function clipContext(item, handle) {
-  const segment = item && typeof item === 'object' ? item.segment : null;
-  if (!segment || !isFiniteNumber(segment.start) || !isFiniteNumber(segment.end) || segment.end <= segment.start) {
-    return null;
-  }
+  if (!isClip(item)) return null;
+  const { segment } = item;
   const nowPlaying = call(handle?.getNowPlaying?.bind(handle));
   const snapshot = call(handle?.getQueueSnapshot?.bind(handle));
   const items = Array.isArray(snapshot?.items) ? snapshot.items : [];
@@ -61,14 +64,17 @@ export function clipContext(item, handle) {
   // Next is what the Player will actually play after this: the second entry of
   // its execution order (shuffle and Up Next already applied), and only by
   // position when the snapshot carries no order.
-  let next = null;
   const order = Array.isArray(snapshot?.executionOrder) ? snapshot.executionOrder : null;
+  let upcoming = [];
   if (order) {
-    const nextId = order[1];
-    next = nextId != null ? items.find((entry) => entry?.queueItemId === nextId) ?? null : null;
+    upcoming = order.slice(1).map((id) => items.find((entry) => entry?.queueItemId === id) ?? null);
   } else if (index != null) {
-    next = items[index + 1] ?? null;
+    upcoming = items.slice(index + 1);
   }
+  // A break between clips (a commercial, a family photo; see the sequence
+  // `breaks:` rule) is not what the band means by next: name the next CLIP.
+  // With no clip ahead at all, the plain next entry stands.
+  const next = upcoming.find((entry) => isClip(entry)) ?? upcoming[0] ?? null;
 
   return {
     segment: { start: segment.start, end: segment.end },
