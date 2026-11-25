@@ -116,6 +116,26 @@ describe('SurroundFrame', () => {
     observers = [];
   });
 
+  it('plays the picture inside a set: backdrop behind, the media box on the screen rect, the bezel over it', () => {
+    const definition = {
+      set: { backdrop: 'sets/tv/room.jpg', bezel: 'sets/tv/set.svg', screen: { x: 0.2, y: 0.25, w: 0.3, h: 0.4 } },
+    };
+    const { container, getByTestId } = renderFrame({ data: { ...DATA, definition } });
+    const root = getByTestId('surround-frame');
+    expect(root.className).toContain('surround-frame--set');
+    expect(root.style.getPropertyValue('--set-x')).toBe('20%');
+    expect(root.style.getPropertyValue('--set-w')).toBe('30%');
+    const backdrop = container.querySelector('.surround-frame__set-backdrop');
+    const bezel = container.querySelector('.surround-frame__set-bezel');
+    expect(backdrop.getAttribute('src')).toMatch(/room\.jpg$/);
+    expect(bezel.getAttribute('src')).toMatch(/set\.svg$/);
+    // Backdrop, then the stage holding the player, then the bezel over it.
+    const order = [...container.querySelectorAll('.surround-frame__set-backdrop, [data-testid="the-player"], .surround-frame__set-bezel')];
+    expect(order.map((el) => el.className || el.dataset.testid)).toEqual([
+      'surround-frame__set-backdrop', 'the-player', 'surround-frame__set-bezel',
+    ]);
+  });
+
   it('renders every declared region through the registry', () => {
     const { getByTestId } = renderFrame();
     expect(getByTestId('segment-stub')).toBeInTheDocument();
