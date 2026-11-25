@@ -113,3 +113,24 @@ curl -s {env.log_store_url}/select/logsql/query -d 'query="station.sequence.appl
 - Time-based spacing ("every ~15 minutes"); `every` counts songs.
 - Title rebind for a stale playlist id — neither queue path has the playlist
   title in hand; `match.title` is authored for it.
+
+## Clip shuffles (`surround-segments` saved queries)
+
+A saved query of `type: surround-segments` turns indexed recordings into a shuffle of
+single pieces: one queue item per timed segment of the sidecars under `params.works`,
+each playing only its own window (`segment: {start, end}`) with the recording's surround.
+
+```yaml
+type: surround-segments
+params:
+  works: christmas/tabernacle      # sidecar folder under content/surround/
+  kinds: [song]                    # segment kinds to keep (all when absent)
+  confidence: [verified, derived]  # confidence levels to keep (all when absent)
+  noRepeatSong: true               # the next clip is never the same song
+  noRepeatRecording: true          # the next clip is never from the same recording
+```
+
+Both `noRepeat*` rules constrain only the very next clip; the one after may repeat
+freely, so a shuffle never has to cycle through every recording. When the rules cannot
+be met (one recording is most of the list) the queue still plays, with the fewest
+repeats the reorder could reach. Code: `__capabilities/content-catalog/server/domain/services/surroundSegments.mjs`.
