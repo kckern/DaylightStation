@@ -6,12 +6,12 @@
 }
 .weight table{
     margin-bottom: 1rem;
-    background-color: #FFFFFF22;
+    background-color: #FFFFFF22; /* data-color: chart-table tint */
     text-align: center;
     flex-grow: 0;
 }
 .weight table th{
-    background-color: #FFFFFF44;
+    background-color: #FFFFFF44; /* data-color: chart-table tint */
     padding: 0.5rem;
     text-align: center;
     white-space: nowrap!important;
@@ -42,10 +42,10 @@
 
  .weight svg > g.highcharts-grid.highcharts-xaxis-grid > path:nth-child(1){
     stroke-width: 3px;
-    stroke: #FFFFFFBB;
+    stroke: #FFFFFFBB; /* data-color: chart-table tint */
 }
 
 .weight .highcharts-xaxis .highcharts-axis-line{
     stroke-width: 3px;
-    stroke: #FFFFFFBB;
+    stroke: #FFFFFFBB; /* data-color: chart-table tint */
 }

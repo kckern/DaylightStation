@@ -775,8 +775,7 @@ $health-aside-gap: 1.5rem;
 .health-row-line--child .health-row__visual { opacity: 0.75; }
 .health-row-line.health-row-line--saving .health-row__visual:is(.health-row__identity, .health-row__macros, .health-row__portion-cell, .health-row__kcal) { opacity: 0.6; filter: grayscale(1); }
 .health-row__saving-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-.health-row__saving-spinner { display: block; animation: health-row-saving-spin 0.9s linear infinite; }
-@keyframes health-row-saving-spin { to { transform: rotate(360deg); } }
+.health-row__saving-spinner { display: block; animation: ds-spin calc(var(--ds-motion-sweep) * 0.5625) linear infinite; }
 @media (prefers-reduced-motion: reduce) { .health-row__saving-spinner { animation: none; } }
 .health-row-line--child .health-row-identity { box-sizing: border-box; padding-left: 16px; }
 .health-row-line--child .health-row__name { font-size: 0.78rem; }
@@ -1029,7 +1028,7 @@ $health-aside-gap: 1.5rem;
   border: 1px solid var(--ds-border);
   border-radius: 9px;
   background: var(--ds-surface);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18); /* data-color: shadow */
   &__list {
     display: grid; grid-template-columns: minmax(0, 1fr);
     gap: 0.05rem 0.2rem; list-style: none; margin: 0.2rem 0 0; padding: 0;

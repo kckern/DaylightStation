@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Button, Menu, TextInput } from '@mantine/core';
 import { ActionMenu } from '@/lib/ui/ActionMenu.jsx';
+import { useHotkey } from '@/lib/hooks/useHotkey.js';
 import { useDismissLayer } from "../../../../../frontend/src/lib/ui/dismiss/useDismissLayer.js";
 import { useDayDropTarget, useMealDragActive } from "./mealDrag.jsx";
 import { addDaysISO, dayLabel, EARLIEST_MOVE_DAY, recentDays } from "./moveDays.js";
@@ -65,14 +66,11 @@ export function MoveDayControl({ date, today, count, onMove, disabled = false, p
   reportMenu.current = onMenuChange;
   useEffect(() => () => reportMenu.current?.(false), []);
   // Embedded controls without the stack still let the date input consume Escape first.
-  useEffect(() => {
-    if (!open || stackHandlesEscape) return undefined;
-    const onKey = event => {
-      if (event.key === 'Escape' && !event.defaultPrevented) dismiss();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, stackHandlesEscape, dismiss]);
+  useHotkey('escape', () => {
+    if (!open || stackHandlesEscape) return false;
+    dismiss();
+    return false; // never preventDefault: the date input may still be cancelling the key
+  });
   // Disable Mantine's capture-phase Escape so the input can cancel the key.
   return <Menu opened={open} onChange={change} position="bottom-start" disabled={busy || disabled} classNames={MENU_CLASSES} closeOnEscape={false}
     zIndex={portalTarget ? 400 : undefined} portalProps={portalTarget ? { target: portalTarget } : undefined}>

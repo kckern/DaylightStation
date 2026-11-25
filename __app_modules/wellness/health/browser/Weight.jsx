@@ -119,7 +119,7 @@ function HealthChart({data}) {
 	const options = {
 		className: 'health-chart',
 		chart: {
-			backgroundColor: '#00000000',
+			backgroundColor: '#00000000', // data-color: chart palette
 			height: 240,
 		},
 		title: {
@@ -129,9 +129,9 @@ function HealthChart({data}) {
 			min: chartMin,
 			max: chartMax,
 			minorTickInterval: 1,
-			minorGridLineColor: '#4E657E',
+			minorGridLineColor: '#4E657E', // data-color: chart palette
 			tickInterval: 1,
-			gridLineColor: '#FFFFFF66',
+			gridLineColor: '#FFFFFF66', // data-color: chart palette
 			opposite: true,
 			offset: -8,
 			title: {
@@ -140,7 +140,7 @@ function HealthChart({data}) {
 			labels: {
 				enabled: true,
 				style: {
-					color: '#C5D2E0',
+					color: '#C5D2E0', // data-color: chart palette
 					fontFamily: "Roboto Condensed",
 					fontSize: "1.1rem"
 				},
@@ -152,19 +152,19 @@ function HealthChart({data}) {
 		},
 		xAxis: {
 			gridLineWidth: 1,
-			gridLineColor: "#88888855",
+			gridLineColor: "#88888855", // data-color: chart palette
 			tickInterval: 7,
 			min: 0,
 			maxPadding: 0,
 			tickLength: 1,
 			categories: times,
-			color: '#C5D2E0',
+			color: '#C5D2E0', // data-color: chart palette
 			labels: {
 				rotation: -35,
 				step: 1,
 				maxStaggerLines: 1,
 				style: {
-					color: '#C5D2E0',
+					color: '#C5D2E0', // data-color: chart palette
 					fontSize: "1.0em",
 					fontFamily: "Roboto Condensed",
 					fontWeight: "bold",
@@ -181,7 +181,7 @@ function HealthChart({data}) {
 			plotLines: times.map((time, index) => {
 				if (moment(time, 'MMM D').date() === 1) {
 					return {
-						color: '#FFFFFF66',
+						color: '#FFFFFF66', // data-color: chart palette
 						width: 2,
 						value: index
 					};
@@ -201,7 +201,7 @@ function HealthChart({data}) {
 					symbol: 'triangle'
 				},
 				lineWidth: 2,
-				lineColor: '#C5D2E0',
+				lineColor: '#C5D2E0', // data-color: chart palette
 				fillOpacity: 0.2,
 				tooltip: {
 					headerFormat: '',
@@ -221,7 +221,7 @@ function HealthChart({data}) {
 			scatter: {
 				marker: {
 					radius: 2.5, // Set point data radius to 1px
-					fillColor: '#C5D2E0AA'
+					fillColor: '#C5D2E0AA' // data-color: chart palette
 				},
 				tooltip: {
 					headerFormat: '',
@@ -241,14 +241,14 @@ function HealthChart({data}) {
 			type: 'line',
 			name: 'No Water Weight',
 			data: nowaterData,
-			color: '#C5D2E0AA', // 30% opacity
+			color: '#C5D2E0AA', // 30% opacity; data-color: chart palette
 			lineWidth: 0.5
 		},
 		{
 			type: 'scatter',
 			name: 'Measurement',
 			data: pointData,
-			color: '#C5D2E0',
+			color: '#C5D2E0', // data-color: chart palette
 		}],
 		credits: {
 			enabled: false

@@ -28,7 +28,7 @@
   position: absolute; z-index: 30; top: calc(100% + 4px); inset-inline: 0;
   display: grid; gap: 0.5rem; max-height: min(50vh, 20rem); overflow-y: auto; padding: 0.5rem;
   font-size: 0.8rem; background: var(--ds-surface, #1f242b); border: 1px solid var(--ds-border, #39414c); border-radius: 6px;
-  box-shadow: 0 4px 16px rgb(0 0 0 / 30%);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 30%); /* data-color: shadow */
 }
 .health-day-input__panel { display: grid; gap: 0.35rem; min-width: 0; overflow-wrap: anywhere; }
 .health-day-input__panel .health-capture-error { max-width: none; }

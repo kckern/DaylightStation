@@ -305,6 +305,11 @@ html[data-browser-app-viewport] {
   56%, 100% { opacity: 0; }
 }
 
+// A full turn, for inline busy spinners (Health row saving). Duration is the caller's.
+@keyframes ds-spin {
+  to { transform: rotate(360deg); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ds-sheet__panel, .ds-sheet--side .ds-sheet__panel { animation: none; }
 }

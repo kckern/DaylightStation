@@ -229,7 +229,7 @@ function BarcodeSession({ onClose, onDecode, onConfirm, onDone, onView, onUnknow
   const camera = phase === 'scanning' && cameraState !== 'denied' && (
     <div onPointerDown={unlockSound} style={{
       position: edgeToEdge ? 'absolute' : 'relative', inset: edgeToEdge ? 0 : undefined,
-      overflow: 'hidden', borderRadius: edgeToEdge ? 0 : 14, background: '#12211b',
+      overflow: 'hidden', borderRadius: edgeToEdge ? 0 : 14, background: '#12211b', // data-color: camera stage
       aspectRatio: edgeToEdge ? undefined : '4 / 3',
     }}>
       <video ref={videoRef} muted playsInline autoPlay
@@ -237,10 +237,10 @@ function BarcodeSession({ onClose, onDecode, onConfirm, onDone, onView, onUnknow
           display: 'block', objectFit: 'cover', objectPosition: 'center' }} />
       <div aria-hidden="true" style={{ position: 'absolute', left: '8%', right: '8%', top: '50%',
         transform: 'translateY(-50%)', height: edgeToEdge ? 'min(22vw, 22dvh)' : '30%',
-        border: '2px solid white', borderRadius: 10, boxShadow: '0 0 0 100vmax #0006',
+        border: '2px solid white', borderRadius: 10, boxShadow: '0 0 0 100vmax #0006', // data-color: scan guide
         pointerEvents: 'none' }} />
       <div aria-hidden="true" style={{ position: 'absolute', top: '50%', left: '8%',
-        right: '8%', height: 2, background: '#6deab0', pointerEvents: 'none' }} />
+        right: '8%', height: 2, background: '#6deab0', pointerEvents: 'none' }} /> // data-color: scan line
     </div>
   );
   const submitManual = event => {
@@ -274,7 +274,7 @@ function BarcodeSession({ onClose, onDecode, onConfirm, onDone, onView, onUnknow
       review: read?.product?.name,
     }[phase];
     const lastCard = last && (
-      <div role="status" style={{ display: 'grid', gap: '0.5rem', justifyItems: 'center', background: '#000a',
+      <div role="status" style={{ display: 'grid', gap: '0.5rem', justifyItems: 'center', background: '#000a', // data-color: scrim card
         borderRadius: 16, padding: '0.75rem 1rem', maxWidth: '92%' }}>
         <Text fw={700}>{last.undone ? 'Removed' : `Logged ${last.name}`}</Text>
         {!last.undone && <Text size="sm">{[last.kcal ? `${last.kcal} kcal` : null, last.meal].filter(Boolean).join(' · ')}</Text>}
