@@ -13,7 +13,7 @@ export const TREND_OFF_PX = 108;
 // decision 2026-10-23: taller is fine when the space is used well). The cap
 // only stops absurd heights on very tall screens. Without a trend: 132.
 export const TREND_SINGLE_CAP_PX = 560;
-// Below this many real readings the card shows a collecting spinner instead
+// Below this many real readings the card shows the collecting state instead
 // of a line too sparse to read. Readings, not ticks: a dropout doesn't count.
 export const TREND_MIN_READINGS = 5;
 // Zone bands are open-ended in practice: the outer bands reach these bounds.

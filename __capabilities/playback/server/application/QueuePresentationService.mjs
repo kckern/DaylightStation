@@ -24,7 +24,7 @@ export class QueuePresentationService {
         // recording it was cut from in `contentId`; the sidecar is the
         // recording's, so that is the id to look up.
         const recordingId = item.contentId ?? item.id;
-        const surround = part?.payload ?? (plan?.refused ? null : this.store?.lookup(recordingId, item.title));
+        const surround = part?.payload ?? (plan?.refused ? null : this.store?.lookup(recordingId, item.title, item));
         if (!surround) return item;
         const result = { ...item, surround };
         if (part) Object.assign(result, { surroundPart: part.part, resumePosition: null, resume: false });

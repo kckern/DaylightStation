@@ -2484,6 +2484,31 @@ const CHIP_MARK_SCALE = 1.35;
       expect(plate.fontPx).toBe(32.8);
       expect(plate.lineHeightPx).toBeCloseTo(32.8 * 1.12, 1);
     }, 60000);
+
+    /**
+     * THE PLATE COVERS LESS OF THE PICTURE (owner, 2026-11-24: "the top plaque
+     * covers too much of the video"). Measured on the living-room TV's own
+     * shape — a recording with a performer credit, three lines on the stone —
+     * the plate stood 94px tall at 960x540 with half of it on the picture: 47px
+     * of a 361px video, under 86% of its width. The rule now: no more than a
+     * THIRD of the plate on the picture, and the overlap no deeper than 7.5% of
+     * the picture's height at any screen in the fleet.
+     */
+    it.each(FLEET)('$name — the plate keeps off the picture', async ({ width, height }) => {
+      const data = { ...EROICA_FULL, piece: { ...EROICA_FULL.piece, performance: 'hr-Sinfonieorchester · Andrés Orozco-Estrada · Alte Oper Frankfurt, 2016' } };
+      await layout(page, css, { width, height, data, position: 1200 });
+      const m = await page.evaluate(() => {
+        const plate = document.querySelector('.surround-frame__header').getBoundingClientRect();
+        const media = document.querySelector('[data-testid="surround-media"]').getBoundingClientRect();
+        return { plateH: plate.height, plateTop: plate.top, overlap: plate.bottom - media.top, mediaH: media.height };
+      });
+      expect(m.plateTop, 'the plate rides off the top of the screen').toBeGreaterThanOrEqual(0);
+      expect(m.overlap, 'the plate no longer straddles the picture at all').toBeGreaterThan(0);
+      expect(m.overlap / m.plateH, `${m.overlap.toFixed(1)}px of a ${m.plateH.toFixed(1)}px plate sits on the picture`)
+        .toBeLessThanOrEqual(0.34);
+      expect(m.overlap / m.mediaH, `${m.overlap.toFixed(1)}px of a ${m.mediaH.toFixed(1)}px picture is under the plate`)
+        .toBeLessThanOrEqual(0.075);
+    }, 60000);
   });
 
   /**

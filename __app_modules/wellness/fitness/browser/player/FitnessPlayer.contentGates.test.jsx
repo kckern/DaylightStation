@@ -375,12 +375,12 @@ describe('unattended playback budget gate', () => {
     fixture.context.playbackBudget = { blocked: true, status: 'exhausted', remainingMs: 0 };
     renderPlayer([KIDS_ITEM, NEXT_ITEM]);
     await waitFor(() => expect(screen.getByTestId('playback')).toHaveAttribute('data-autoplay', 'false'));
-    expect(screen.getByText('Unattended playback limit reached')).toBeInTheDocument();
-    expect(screen.getByText(/A grown-up can join the workout to continue, or unlock this video/)).toBeInTheDocument();
+    expect(screen.getByText('Video time is used up for today')).toBeInTheDocument();
+    expect(screen.getByTestId('playback-budget-overlay').textContent).toMatch(/It starts again tomorrow\. A grown-up can join the workout, or unlock this video\./);
     expect(screen.getByTestId('playback-budget-unlock')).toBeInTheDocument();
     fireEvent.click(screen.getByText('Advance playback'));
     await waitFor(() => expect(screen.getByTestId('playback')).toHaveAttribute('data-content-id', NEXT_ITEM.contentId));
     expect(screen.getByTestId('playback')).toHaveAttribute('data-autoplay', 'false');
-    expect(screen.getByText('Unattended playback limit reached')).toBeInTheDocument();
+    expect(screen.getByText('Video time is used up for today')).toBeInTheDocument();
   });
 });

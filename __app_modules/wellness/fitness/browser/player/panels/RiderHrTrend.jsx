@@ -44,8 +44,8 @@ function frameAt({ chart, prevRange }, f) {
 
 /**
  * Whole-session HR sparkline for a tall rider card. Until the rider has
- * TREND_MIN_READINGS real readings it shows a collecting spinner in the same
- * box. Then: one monotone curve on a log time axis (hrTrendScale.js), drawn in
+ * TREND_MIN_READINGS real readings it shows a faint dashed baseline and a
+ * "Reading heart rate…" label in the same box. Then: one monotone curve on a log time axis (hrTrendScale.js), drawn in
  * (x, bpm) user space and referenced once per zone band, each copy clipped to
  * its band and stroked in the band's colour — so the colour changes exactly
  * where the line crosses a threshold.
@@ -55,7 +55,7 @@ function frameAt({ chart, prevRange }, f) {
  * clock glides the line; frames write `d` and the plot transform through refs,
  * so React never re-renders per frame (the DistanceChart pattern).
  */
-const RiderHrTrend = ({ participantId, getSeries, tickCount, tickMs, zones, profileId, cardHeight }) => {
+const RiderHrTrend = ({ participantId, getSeries, tickCount, tickMs, zones, profileId, cardHeight, noSignal = false }) => {
   const getSeriesRef = useRef(getSeries);
   getSeriesRef.current = getSeries;
   const uid = `hrt${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
@@ -141,9 +141,19 @@ const RiderHrTrend = ({ participantId, getSeries, tickCount, tickMs, zones, prof
   }, [ready]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!ready) {
+    // No live reading: the card already says "No signal", so the box keeps its
+    // height with the baseline alone instead of claiming to be reading.
+    if (noSignal) {
+      return (
+        <div className="rider-hr-trend rider-hr-trend--loading rider-hr-trend--no-signal" aria-hidden="true">
+          <span className="rider-hr-trend__baseline" />
+        </div>
+      );
+    }
     return (
-      <div className="rider-hr-trend rider-hr-trend--loading" role="status" aria-label="Collecting heart rate">
-        <span className="rider-hr-trend__spinner" />
+      <div className="rider-hr-trend rider-hr-trend--loading" role="status" aria-label="Reading heart rate">
+        <span className="rider-hr-trend__baseline" aria-hidden="true" />
+        <span className="rider-hr-trend__label">Reading heart rate…</span>
       </div>
     );
   }

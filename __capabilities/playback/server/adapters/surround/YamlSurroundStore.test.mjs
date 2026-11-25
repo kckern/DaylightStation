@@ -475,6 +475,72 @@ describe('YamlSurroundStore title rebind', () => {
   });
 });
 
+describe('YamlSurroundStore title rebind — another composer\'s numbered work', () => {
+  // The living room, 2026-11-24: a shuffled queue of Mozart symphonies, and the
+  // plate named Sibelius over every one whose title began `Symphony No. 1…`.
+  const sibelius = () => {
+    writeLib('classical/sibelius/_composer.yml', 'name: Jean Sibelius\nborn: 1865\n');
+    writeLib('classical/sibelius/symphony-1.yml',
+      'title: Symphony No. 1 in E minor, Op. 39\nsegments:\n  - { n: 1, name: Andante }\n  - { n: 2, name: Andante (ma non troppo lento) }\n');
+    write('classical/sibelius/symphony-1.hr-2021.yml',
+      'work: sibelius/symphony-1\nsurround: concert-hall\nmatch:\n  contentId: plex:663152\n  title: "Symphony No. 1"\nstarts: [0, 711]\n');
+  };
+  const mozart = (title) => ({ title, grandparentTitle: 'Mozart', parentTitle: 'Symphonies', artist: 'Mozart' });
+
+  it('does not read `Symphony No. 10` as containing `Symphony No. 1`', () => {
+    sibelius();
+    const logger = makeLogger();
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
+    // Even with the maker named, `no 10` is not `no 1`.
+    expect(store.lookup('plex:663108', 'Symphony No. 10 in G Major, K. 74',
+      { grandparentTitle: 'Sibelius' })).toBeNull();
+    expect(logger.warn).not.toHaveBeenCalledWith('surround.match.rebound', expect.anything());
+  });
+
+  it('refuses another composer\'s work of the same number', () => {
+    sibelius();
+    const logger = makeLogger();
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
+    const live = 'Symphony No. 1 in E-flat Major, K. 16';
+    expect(store.lookup('plex:663100', live, mozart(live))).toBeNull();
+    expect(logger.warn).not.toHaveBeenCalledWith('surround.match.rebound', expect.anything());
+    const [, data] = logger.debug.mock.calls.find((c) => c[0] === 'surround.match.creator-mismatch');
+    expect(data.refused[0].file).toBe('classical/sibelius/symphony-1.hr-2021.yml');
+  });
+
+  it('still rebinds when the live item names the composer, and restamps the rail with the live id', () => {
+    sibelius();
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const r = store.lookup('plex:770001', 'Symphony No. 1', { grandparentTitle: 'Sibelius', parentTitle: 'Symphonies' });
+    expect(r.piece.title).toBe('Symphony No. 1 in E minor, Op. 39');
+    // The frame finds what is sounding by matching these stamps against the
+    // PLAYING item's id; the stale id here is a rail with no playhead.
+    expect(r.segments.map((c) => c.contentId)).toEqual(['plex:770001', 'plex:770001']);
+    expect(r.timeline.parts.map((p) => p.contentId)).toEqual(['plex:770001']);
+    // ...and the index keeps its authored id.
+    expect(store.lookup('plex:663152', '').segments[0].contentId).toBe('plex:663152');
+  });
+
+  it('reads the maker off the item\'s metadata too', () => {
+    sibelius();
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    expect(store.lookup('plex:770001', 'Symphony No. 1', { metadata: { grandparentTitle: 'Sibelius' } }))
+      .not.toBeNull();
+  });
+
+  it('does not pre-warn two makers\' same-titled works as ambiguous', () => {
+    sibelius();
+    writeLib('classical/mahler/symphony-1.yml', 'title: Symphony No. 1 in D major\n');
+    write('classical/mahler/symphony-1.x.yml',
+      'work: mahler/symphony-1\nsurround: concert-hall\nmatch:\n  contentId: plex:5\n  title: "Symphony No. 1"\n');
+    const logger = makeLogger();
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
+    expect(logger.warn).not.toHaveBeenCalledWith('surround.titles.ambiguous', expect.anything());
+    expect(store.lookup('plex:9', 'Symphony No. 1', { grandparentTitle: 'Mahler' }).piece.title)
+      .toBe('Symphony No. 1 in D major');
+  });
+});
+
 describe('YamlSurroundStore rebind ambiguity', () => {
   // Two sidecars that both match one live title. Whichever the walk reaches first
   // is an accident of the filesystem, so the store must refuse rather than pick.
@@ -513,7 +579,8 @@ describe('YamlSurroundStore rebind ambiguity', () => {
       'work: vivaldi/spring-full\nsurround: concert-hall\nmatch:\n  contentId: plex:4\n  title: "Violin Concerto No. 1 in E Major, RV 269 Spring"\n');
     const logger = makeLogger();
     const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
-    expect(store.lookup('plex:999999', 'Violin Concerto No. 1 in E Major, RV 269 Spring').piece.title)
+    expect(store.lookup('plex:999999', 'Violin Concerto No. 1 in E Major, RV 269 Spring',
+      { grandparentTitle: 'Vivaldi' }).piece.title)
       .toBe('Spring (full)');
     expect(logger.warn).not.toHaveBeenCalledWith('surround.match.ambiguous', expect.anything());
   });
@@ -542,7 +609,8 @@ describe('YamlSurroundStore rebind ambiguity', () => {
   it('logs ambiguity instead of a plain miss, so the refusal is not mistaken for no sidecar', () => {
     twoSeasons();
     const logger = makeLogger();
-    new YamlSurroundStore({ rootDir: root, libraryDir: library, logger }).lookup('plex:999999', 'The Four Seasons');
+    new YamlSurroundStore({ rootDir: root, libraryDir: library, logger })
+      .lookup('plex:999999', 'The Four Seasons', { grandparentTitle: 'Vivaldi' });
     expect(logger.debug).not.toHaveBeenCalled();
   });
 });

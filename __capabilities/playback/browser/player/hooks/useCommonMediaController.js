@@ -1175,8 +1175,13 @@ export function useCommonMediaController({
     });
     const finishTerminal = ({ reason = 'native-ended' } = {}) => {
       const s = stallStateRef.current;
-      if (!active || terminalBindingRef.current !== terminalBinding || getMediaEl() !== mediaEl
-        || s.hasEnded || (recoveryIdentity && !sameRecoveryTarget(terminalBinding.target, recoveryIdentity.getTarget()))) {
+      if (!active || terminalBindingRef.current !== terminalBinding || getMediaEl() !== mediaEl || s.hasEnded) {
+        return { accepted: false };
+      }
+      if (recoveryIdentity && !sameRecoveryTarget(terminalBinding.target, recoveryIdentity.getTarget())) {
+        mcLog().warn('playback.terminal-rejected', { assetId, reason: 'stale-target', via: reason,
+          bound: terminalBinding.target?.rendererGeneration ?? null,
+          current: recoveryIdentity.getTarget()?.rendererGeneration ?? null });
         return { accepted: false };
       }
       const result = terminalGateRef.current?.({ reason, nativeSeconds: mediaEl.currentTime, target: terminalBinding.target })
@@ -1196,6 +1201,25 @@ export function useCommonMediaController({
     };
     terminalHandlerRef.current = finishTerminal;
     const onEnded = () => finishTerminal({ reason: 'native-ended' });
+    // A recovery that refreshes the URL on the SAME element (stall-jolt-refresh-url,
+    // VideoPlayer.hardReset) bumps only rendererGeneration, which retires the
+    // binding above. When this element starts loading again it IS the new
+    // renderer: adopt the current target so its `ended` still advances
+    // (2026-11-24: a jolted workout video ended and never reached the player).
+    // A deliberately retired old node that still fires loadstart during
+    // teardown could re-adopt here; harmless, as that node never fires `ended`.
+    const onLoadStart = () => {
+      if (!active || terminalBindingRef.current !== terminalBinding || getMediaEl() !== mediaEl || !recoveryIdentity) return;
+      const current = recoveryIdentity.getTarget();
+      const bound = terminalBinding.target;
+      if (!bound || sameRecoveryTarget(bound, current)) return;
+      if (current.ownerId === bound.ownerId && current.visitId === bound.visitId
+        && current.intentRevision === bound.intentRevision
+        && current.rendererGeneration > bound.rendererGeneration) {
+        terminalBinding.target = current;
+        mcLog().info('playback.terminal-rebound', { assetId, from: bound.rendererGeneration, to: current.rendererGeneration });
+      }
+    };
 
     // The play/seeked rate listener onLoadedMetadata attaches must die with
     // THIS effect run: a stale one resets a newer rate. Named here so the
@@ -1518,6 +1542,7 @@ export function useCommonMediaController({
     mediaEl.addEventListener('timeupdate', onTimeUpdate);
     mediaEl.addEventListener('durationchange', onDurationChange);
     mediaEl.addEventListener('ended', onEnded);
+    mediaEl.addEventListener('loadstart', onLoadStart);
     mediaEl.addEventListener('loadedmetadata', onLoadedMetadata);
     mediaEl.addEventListener('seeking', handleSeeking);
     mediaEl.addEventListener('seeked', onSeeked);
@@ -1605,6 +1630,7 @@ export function useCommonMediaController({
       mediaEl.removeEventListener('timeupdate', onTimeUpdate);
       mediaEl.removeEventListener('durationchange', onDurationChange);
       mediaEl.removeEventListener('ended', onEnded);
+      mediaEl.removeEventListener('loadstart', onLoadStart);
       if (terminalHandlerRef.current === finishTerminal) terminalHandlerRef.current = null;
       mediaEl.removeEventListener('loadedmetadata', onLoadedMetadata);
       mediaEl.removeEventListener('waiting', onWaiting);

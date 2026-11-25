@@ -497,4 +497,16 @@ describe('PianoHomeDesk progress strip', () => {
       expect(screen.getByRole('button', { name: 'Kid: Lesson 12: Swing' })).toBeInTheDocument();
     });
   });
+
+  it('draws an assigned piece not yet practised as a fresh card that opens the score', async () => {
+    const fresh = { scoreId: 'files:docs/sheet-music/first-notes/01-middle-c.musicxml', practicedAt: null, cover: null, total: 0, silver: 0, gold: 0,
+      pieceSilver: false, polishReady: false, joins: { total: 0, silver: 0, gold: 0 }, next: null, nextGoldPassageId: null, passages: [], fresh: true, polish: { gem: false, diamond: false } };
+    h.desk = { players: [{ userId: 'kid', name: 'Kid', piece: fresh }] };
+    h.recent = { players: [] };
+    const handlers = mount();
+    expect(await screen.findByText('Start here')).toBeTruthy();
+    expect(document.querySelector('.piano-desk__count')).toBeNull();
+    fireEvent.click(screen.getByText('Start here').closest('button'));
+    expect(handlers.onOpenPassage).toHaveBeenCalledWith('kid', fresh.scoreId, undefined);
+  });
 });

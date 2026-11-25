@@ -183,7 +183,7 @@ export class PlayResponseService {
       // the id. A direct play of the same episode passes none, falls straight
       // to `lookup`, and reads as a whole work exactly as it always has.
       const part = containerId ? this.#surroundStore?.lookupByPart?.(item.id) : null;
-      const surround = part?.payload ?? this.#surroundStore?.lookup(item.id, item.title);
+      const surround = part?.payload ?? this.#surroundStore?.lookup(item.id, item.title, item);
       if (surround) {
         response.surround = surround;
         if (part) response.surroundPart = part.part;

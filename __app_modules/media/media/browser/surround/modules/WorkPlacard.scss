@@ -16,7 +16,9 @@
 // it. Still content-width, still centred, still straddling: the frame's cap
 // (86% of the measured video) keeps it a plate rather than a band.
 .surround-work-placard {
-  padding: 0.75rem 2rem 0.85rem;
+  /* 0.75rem / 0.85rem until 2026-11-24, when the owner found the plate covered
+     too much of the video; the stone keeps a margin, not a mat. */
+  padding: 0.45rem 2rem 0.5rem;
   text-align: center;
   background-color: #18181a;
   background-image:
@@ -163,28 +165,36 @@
    the performer line's own height plus its margin; recovered from padding,
    title leading, and inter-line gaps. */
 .surround-work-placard--has-performer {
-  padding-top: 0.45rem;
-  padding-bottom: 0.5rem;
+  /* TIGHTENED 2026-11-24 ("the top plaque covers too much of the video"): the
+     two provenance lines step down to 0.72rem (the anchor root's label floor)
+     in a 1.2 line box, and the air between lines and at the plate's edges taken down to what the
+     etched rule needs. The title keeps its size — it is the headline — and
+     only its line box comes in (1.12 -> 1.04: italic Cormorant's ink still
+     clears it). 94px -> ~77px on the living-room TV. */
+  padding-top: 0.3rem;
+  padding-bottom: 0.35rem;
 
   .surround-work-placard__title {
     font-size: var(--plate-size, 1.8rem);
-    line-height: calc(1.8rem * 1.12);
+    line-height: calc(1.8rem * 1.04);
   }
 
   .surround-work-placard__set {
-    margin-top: 0.15rem;
+    margin-top: 0.1rem;
     font-size: 0.82rem;
   }
 
   .surround-work-placard__meta {
-    margin-top: 0.12rem;
-    font-size: 0.78rem;
+    margin-top: 0.05rem;
+    font-size: 0.72rem;
+    line-height: 1.2;
   }
 
   .surround-work-placard__performer {
-    margin-top: 0.2rem;
-    padding-top: 0.18rem;
-    font-size: 0.78rem;
+    margin-top: 0.12rem;
+    padding-top: 0.12rem;
+    font-size: 0.72rem;
+    line-height: 1.2;
   }
 }
 

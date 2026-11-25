@@ -17,7 +17,7 @@ beforeAll(async () => {
       import Overlay from ${JSON.stringify(path.join(here, 'FullscreenVitalsOverlay.jsx'))};
       let root;window.renderOverlay=()=>{root=createRoot(document.getElementById('content'));root.render(React.createElement(React.Fragment,null,React.createElement('div',{className:'fitness-video-shell',style:{position:'relative',width:'100%',height:'100%'}},React.createElement(Overlay,{visible:true})),React.createElement('button',{type:'button',className:'fitness-player__voice-memo-fab','aria-label':'Record voice memo'}))); };window.unmountOverlay=()=>root.unmount();`, resolveDir: frontend, loader: 'jsx' },
     bundle: true, write: false, platform: 'browser', format: 'iife',
-    alias: { '@': path.join(frontend, 'src') },
+    alias: { '@': path.join(frontend, 'src'), '@shared-contracts': path.resolve(frontend, '../shared/contracts') },
     // From a worktree, files under __app_modules/ resolve bare imports upward
     // to the ROOT node_modules, which has no react; frontend's tree does.
     nodePaths: [path.join(frontend, 'node_modules')],

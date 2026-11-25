@@ -17,8 +17,10 @@ it('lists no riders of its own on the identity screen: the bike-button panel car
  const riders=[{id:'a',name:'Rider A',position:1,avatarSrc:'/a.jpg'},{id:'b',name:'Rider B',position:2,avatarSrc:'/b.jpg'}];
  const onEvent=vi.fn();
  render(<SkylineMenus state={{...createSkylineControlState({acts:[],riders}),phase:'identity'}} acts={[]} riders={riders} onEvent={onEvent}/>);
- expect(screen.getByTestId('skyline-identity')).toHaveTextContent(/Who’s flying\?/);
- expect(screen.getByText(/Press your rider button on the pad/)).toBeVisible();
+ expect(screen.getByTestId('skyline-identity')).toHaveTextContent('Pick your rider');
+ // No apostrophe or colon: the pixel face has neither glyph (2026-11-17 screenshot).
+ expect(screen.getByRole('heading')).toHaveTextContent(/^Pick your rider$/);
+ expect(screen.getByText('Press your button on the pad. Hold it to pick another rider.')).toBeVisible();
  expect(screen.queryAllByRole('button')).toHaveLength(0);
  expect(screen.queryByText(/Rider A|Rider B|Button [1-4]/)).toBeNull();
 });
@@ -100,4 +102,22 @@ it('a resume reads as continuing, never as a new take-off',()=>{
  expect(screen.getByText(/from the last windsock/)).toBeInTheDocument();
  rerender(<SkylineMenus state={{...base,phase:'ready',resumeIntent:'new'}} riders={[]} acts={acts}/>);
  expect(screen.getByRole('heading')).toHaveTextContent('Pedal to take off');
+});
+// 2026-11-13 kiosk screenshot: the old-course notice sat under the window and ran
+// off the screen, and the footer repeated what the bike-button panel says.
+it('keeps the flight notice inside the window under the list, and no footer repeating the buttons',()=>{
+ const acts=[{id:'one',name:'One',status:'open'},{id:'two',name:'Two',status:'completed'}],riders=[{id:'child',name:'Child',position:1}];
+ const {container}=render(<SkylineMenus state={{...createSkylineControlState({acts,riders}),phase:'flights',riderId:'child',actId:'two'}} acts={acts} riders={riders} onEvent={()=>{}} notice="This saved flight uses an older course."/>);
+ const windowEl=container.querySelector('.skyline-menus'),notice=screen.getByRole('status');
+ expect(windowEl).toContainElement(notice);
+ expect(notice).toHaveTextContent('This saved flight uses an older course.');
+ const options=windowEl.querySelector('.skyline-menus__options');
+ expect(options.compareDocumentPosition(notice)&Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+ expect(windowEl.querySelector('.skyline-menus__position')).toHaveTextContent(/^2 of 2$/);
+ expect(windowEl).not.toHaveTextContent(/Top buttons browse|Bottom right starts/);
+});
+it('shows no notice on the flight list when there is none',()=>{
+ const acts=[{id:'one',name:'One',status:'open'}],riders=[{id:'child',name:'Child',position:1}];
+ render(<SkylineMenus state={{...createSkylineControlState({acts,riders}),phase:'flights',riderId:'child',actId:'one'}} acts={acts} riders={riders} onEvent={()=>{}}/>);
+ expect(screen.queryByRole('status')).toBeNull();
 });

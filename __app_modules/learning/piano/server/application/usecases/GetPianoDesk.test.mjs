@@ -11,10 +11,10 @@ const segments = { 'm0-4': {}, 'm5-8': {}, 'm9-12': {} };
 // Real progress sits on the last passage, so the next step stays at the start.
 const PROGRESS = { 'm9-12': { rungs: { right: { passCount: 6 } } } };
 const record = (over = {}) => ({ fingerprint: { contentSha256: 'c' }, updatedAt: '2026-11-01T00:00:00Z', learn: { segments, passages: PROGRESS }, ...over });
-const deskFor = (byUser, { roster = Object.keys(byUser), ids = [SCORE], pieceLog = undefined, logger = undefined } = {}) => new GetPianoDesk({
+const deskFor = (byUser, { roster = Object.keys(byUser), ids = [SCORE], pieceLog = undefined, logger = undefined, sheetmusic = undefined } = {}) => new GetPianoDesk({
   pieceLog, ...(logger ? { logger } : {}),
   datastore: { listPractice: (user) => byUser[user] ?? [], listSheetMusicIds: () => ids },
-  configProjection: { roster: () => roster, profile: (id) => ({ display_name: id.toUpperCase() }), raw: () => ({}) },
+  configProjection: { roster: () => roster, profile: (id) => ({ display_name: id.toUpperCase() }), raw: () => (sheetmusic ? { sheetmusic } : {}) },
   clock: () => new Date('2026-11-18T20:00:00Z'), timezone: 'UTC',
 });
 
@@ -264,4 +264,75 @@ test('forPlayer offers a score once when two records name it', () => {
   const older = { scoreKey: 'old-key', record: record({ learnCoach: state('2026-11-02T00:00:00Z'), learn: { segments, passages: earned } }) };
   const { pieces } = deskFor({ a: [older, newer] }).forPlayer('a');
   assert.deepEqual(pieces.map((p) => [p.scoreId, p.practicedAt]), [[SCORE, '2026-11-17T00:00:00Z']]);
+});
+
+// ── Desk assignments (`sheetmusic.learners.<id>`): one learner's, never anyone else's ──
+// 2026-11-24: one child's First Notes track (`collection`) was the only entry, the
+// others tried its first score, and the newest-piece rule put that score on every
+// child's card. These pin the rules that went wrong.
+const TRACK = 'files:docs/sheet-music/first-notes';
+const MIDDLE_C = `${TRACK}/01-middle-c.musicxml`;
+const C_AND_D = `${TRACK}/02-c-and-d.musicxml`;
+const CAROL = 'files:docs/sheet-music/christmas/carol.mxl';
+const FUGUE = 'files:docs/sheet-music/classical/fugue.mxl';
+const LIBRARY = [MIDDLE_C, C_AND_D, CAROL, FUGUE];
+const practiced = (scoreId, at) => ({ scoreKey: practiceKeyOfScore(scoreId), record: record({ updatedAt: at, learnCoach: { version: 1, scoreId, fingerprint: 'c', revision: 1, achievements: {}, counts: {}, evidence: [], reviews: {}, resume: null }, learn: { segments, passages: PROGRESS } }) });
+const learners = { little: { collection: TRACK }, reader: { piece: CAROL } };
+const cardOf = (desk, userId) => desk.execute().players.find((p) => p.userId === userId).piece;
+
+test("a track is its learner's: another child's newest piece inside it never takes their card", () => {
+  const byUser = {
+    little: [practiced(FUGUE, '2026-11-24T23:00:00Z')],
+    other: [practiced(CAROL, '2026-11-24T10:00:00Z'), practiced(MIDDLE_C, '2026-11-24T22:00:00Z')],
+  };
+  const desk = deskFor(byUser, { ids: LIBRARY, sheetmusic: { learners: { little: { collection: TRACK } } } });
+  assert.equal(cardOf(desk, 'other').scoreId, CAROL);
+});
+
+test('a learner with a track shows their newest piece in it, over a newer one outside it', () => {
+  const byUser = { little: [practiced(FUGUE, '2026-11-24T23:00:00Z'), practiced(C_AND_D, '2026-11-24T20:00:00Z'), practiced(MIDDLE_C, '2026-11-24T19:00:00Z')] };
+  assert.equal(cardOf(deskFor(byUser, { ids: LIBRARY, sheetmusic: { learners } }), 'little').scoreId, C_AND_D);
+});
+
+test("a learner with a track and nothing started in it shows the track's first score, fresh", () => {
+  const byUser = { little: [practiced(FUGUE, '2026-11-24T23:00:00Z')] };
+  const piece = cardOf(deskFor(byUser, { ids: [C_AND_D, MIDDLE_C, FUGUE], sheetmusic: { learners } }), 'little');
+  assert.equal(piece.scoreId, MIDDLE_C);
+  assert.equal(piece.fresh, true);
+  assert.deepEqual({ total: piece.total, silver: piece.silver, passages: piece.passages, next: piece.next, practicedAt: piece.practicedAt }, { total: 0, silver: 0, passages: [], next: null, practicedAt: null });
+});
+
+test("a learner's assigned piece is their card, over newer practice, with its own progress", () => {
+  const byUser = { reader: [practiced(MIDDLE_C, '2026-11-24T23:00:00Z'), practiced(CAROL, '2026-11-20T00:00:00Z')] };
+  const piece = cardOf(deskFor(byUser, { ids: LIBRARY, sheetmusic: { learners } }), 'reader');
+  assert.equal(piece.scoreId, CAROL);
+  assert.equal(piece.total, 3);
+  assert.equal(piece.fresh, undefined);
+});
+
+test('an assigned piece never practised is shown fresh; one not in the library is ignored', () => {
+  const fresh = cardOf(deskFor({ reader: [] }, { ids: LIBRARY, sheetmusic: { learners } }), 'reader');
+  assert.equal(fresh.scoreId, CAROL);
+  assert.equal(fresh.fresh, true);
+  const gone = cardOf(deskFor({ reader: [practiced(FUGUE, '2026-11-24T23:00:00Z')] }, { ids: [FUGUE], sheetmusic: { learners } }), 'reader');
+  assert.equal(gone.scoreId, FUGUE);
+});
+
+test('an assignment is never anyone else\'s, and a catch-all key enrols nobody', () => {
+  const warnings = [];
+  const logger = { warn: (event, data) => warnings.push([event, data]) };
+  const byUser = { a: [practiced(FUGUE, '2026-11-24T23:00:00Z')], reader: [] };
+  const sheetmusic = { learners: { ...learners, '*': { piece: MIDDLE_C }, all: { collection: TRACK }, everyone: { piece: MIDDLE_C }, default: { piece: MIDDLE_C } } };
+  const desk = deskFor(byUser, { roster: ['a', 'reader', 'little'], ids: LIBRARY, sheetmusic, logger });
+  assert.equal(cardOf(desk, 'a').scoreId, FUGUE);
+  assert.equal(cardOf(desk, 'reader').scoreId, CAROL);
+  assert.deepEqual(warnings.filter(([e]) => e === 'piano.desk.learner-refused').map(([, d]) => d.key).sort(), ['*', 'all', 'default', 'everyone']);
+});
+
+test("the office picker's first piece is always the strip's card", () => {
+  const byUser = { reader: [practiced(MIDDLE_C, '2026-11-24T23:00:00Z'), practiced(CAROL, '2026-11-20T00:00:00Z')], little: [practiced(FUGUE, '2026-11-24T23:00:00Z')] };
+  const desk = deskFor(byUser, { ids: LIBRARY, sheetmusic: { learners } });
+  assert.deepEqual(desk.forPlayer('reader').pieces.map((p) => p.scoreId), [CAROL, MIDDLE_C]);
+  assert.deepEqual(desk.forPlayer('little').pieces.map((p) => p.scoreId), [MIDDLE_C, FUGUE]);
+  assert.equal(desk.forPlayer('little').pieces[0].fresh, true);
 });

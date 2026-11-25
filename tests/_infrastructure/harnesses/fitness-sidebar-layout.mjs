@@ -332,7 +332,7 @@ try {
     }
   }
   // HR trend (RiderHrTrend): with a timeline, cards >= 116px hold the trend box
-  // from session start — a collecting spinner until 5 readings, then the line;
+  // from session start — the collecting baseline until 5 readings, then the line;
   // a single rider grows past 132px to give it room; short cards never draw one.
   for (const options of (has('trend') ? [{count:1,ticks:600},{count:2,ticks:600},{count:5,ticks:600},{count:1,ticks:3},{count:1,ticks:0}] : [])) {
     await page.setViewportSize({width:1381,height:777});
@@ -346,7 +346,7 @@ try {
     for (const card of trend) {
       assert.equal(card.trend, card.height>=116 && options.ticks>=1, 'trend iff tall card with a timeline: '+JSON.stringify({options,card}));
       assert.ok(card.inside,'trend inside its card: '+JSON.stringify(card));
-      if (card.trend && options.ticks<5) assert.ok(card.loading && card.chartHeight>=20,'collecting spinner holds the box: '+JSON.stringify(card));
+      if (card.trend && options.ticks<5) assert.ok(card.loading && card.chartHeight>=20,'collecting state holds the box: '+JSON.stringify(card));
       if (card.trend && options.ticks>=5) assert.ok(!card.loading && card.lines>0 && card.drawn && card.chartHeight>=20,'chart has room and a line: '+JSON.stringify(card));
       if (card.trend && options.ticks>=5) assert.ok(card.zoneColoured,'line is coloured by the rider zone bands: '+JSON.stringify(card));
     }

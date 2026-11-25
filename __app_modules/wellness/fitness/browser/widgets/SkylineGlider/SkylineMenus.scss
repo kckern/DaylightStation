@@ -40,14 +40,16 @@
   p { margin: .55em 0 0; max-width: 32em; font-size: var(--sg-text-m); font-weight: 500; line-height: 1.2; }
   .skyline-menus__kicker { margin: 0 0 .15em; color: var(--sg-gold); font-weight: 700; }
 
-  // The flight list: one row each, a cursor on the chosen one.
-  &__options { display: grid; gap: var(--sg-px); margin: sgvw(1.3) 0 0; }
+  // The flight list: one row each, a cursor on the chosen one. Every row is the
+  // height of the tallest (the name on one line, its status on the next), so a
+  // name that wraps grows all five together rather than doubling one row.
+  &__options { display: grid; grid-auto-rows: 1fr; gap: var(--sg-px); margin: sgvw(.6) 0 0; }
   &__options button {
-    display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: sgvw(1); row-gap: .25em; width: 100%;
+    display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: sgvw(1); row-gap: .1em; width: 100%;
     padding: sgvw(.55) sgvw(1.2) sgvw(.55) sgvw(.8); border: 0; border-radius: 0; text-align: left; font: inherit; line-height: 1;
     color: var(--sg-paper); background: var(--sg-night-lift);
-    strong { grid-column: 2; min-width: 0; min-height: 2.3em; overflow-wrap: anywhere; font-size: var(--sg-text-l); font-weight: 900; line-height: 1.15; }
-    small { grid-column: 2; min-width: 0; min-height: 1.15em; overflow-wrap: anywhere; display: flex; align-items: center; gap: sgvw(.5); font-size: var(--sg-text-s); font-weight: 700; line-height: 1.15; }
+    strong { grid-column: 2; grid-row: 1; min-width: 0; overflow-wrap: anywhere; font-size: var(--sg-text-l); font-weight: 900; line-height: 1.15; }
+    small { grid-column: 2; grid-row: 2; min-width: 0; min-height: 1.15em; overflow-wrap: anywhere; display: flex; align-items: center; gap: sgvw(.5); font-size: var(--sg-text-s); font-weight: 700; line-height: 1.15; }
     // Locked: a solid ink plate with the lock in full-strength lavender — never
     // faded or see-through, which reads as broken from the bike (2026-11-11).
     &[data-status="locked"] { color: var(--sg-locked); background: var(--sg-ink); }
@@ -56,16 +58,23 @@
     &[data-status="locked"][aria-pressed="true"] { color: var(--sg-locked); background: var(--sg-ink); box-shadow: inset 0 0 0 calc(2 * var(--sg-line)) var(--sg-gold); .skyline-menus__cursor { color: var(--sg-gold); } }
     &:focus-visible { outline: var(--sg-line) solid var(--sg-paper); outline-offset: var(--sg-line); }
   }
-  &__cursor { visibility: hidden; }
+  &__cursor { visibility: hidden; grid-column: 1; grid-row: 1 / span 2; }
+  // A note about the chosen flight: a callout inside the window, under the list.
+  p.skyline-menus__notice {
+    max-width: none; margin: sgvw(.6) 0 0; padding: sgvw(.6) sgvw(1.1); color: var(--sg-paper); background: var(--sg-ink);
+    border-left: calc(3 * var(--sg-line)) solid var(--sg-gold); font-size: var(--sg-text-s); font-weight: 700; line-height: 1.25;
+  }
   // Above and below the window: how many flights the buttons can still reach.
   // Always laid out (hidden when empty) so the window never changes height.
-  &__more {
-    display: flex; align-items: center; gap: sgvw(.6); margin: sgvw(.5) 0 0; color: var(--sg-gold); font-size: var(--sg-text-s); font-weight: 900; line-height: 1;
+  &__more, p#{&}__more {
+    display: flex; align-items: center; gap: sgvw(.6); max-width: none; margin: sgvw(.3) 0 0; color: var(--sg-gold); font-size: var(--sg-text-s); font-weight: 900; line-height: 1;
     &[data-empty] { visibility: hidden; }
     &[data-dir="up"] .skyline-menus__more-icon { transform: rotate(-90deg); }
     &[data-dir="down"] .skyline-menus__more-icon { transform: rotate(90deg); }
   }
-  &__position { margin-right: .5em; color: var(--sg-gold); font-weight: 900; }
+  // Shown even when the top line's "more" count is hidden.
+  &__more &__position { visibility: visible; margin-left: auto; }
+  &__position { color: var(--sg-gold); font-weight: 900; }
   &__options button[aria-pressed="true"] .skyline-menus__cursor { visibility: visible; animation: sg-menu-step-right .5s steps(1) infinite; }
 
   &__person {
@@ -119,7 +128,34 @@
     small { font: inherit; }
   }
   &__hint { min-width: 0; min-height: 2.3em; overflow-wrap: anywhere; font-size: var(--sg-text-s); font-weight: 600; line-height: 1.15; }
-  img { width: sgvw(5.4); height: sgvw(5.4); object-fit: cover; box-shadow: sg-ring(var(--sg-ink)); }
+  // A rider's avatar fills its own slot and never more: the ink ring is drawn
+  // inside the box (padding on ink), so it cannot reach the name below. A fixed
+  // size here once beat the slot's max-height and drew the photo over the name
+  // (2026-11-17 kiosk screenshot).
+  button[data-kind="rider"] .skyline-controls__icon { position: relative; height: auto; min-height: sgvw(7); }
+  button[data-kind="rider"] img {
+    position: absolute; inset: 0; margin: auto; box-sizing: border-box; height: 100%; width: auto; max-width: 100%; max-height: 100%; aspect-ratio: 1;
+    padding: var(--sg-px); background: var(--sg-ink); object-fit: cover;
+  }
+}
+
+// The rider picker: the pad is the whole of the right half and the cards share
+// it. Each card reads top to bottom: its pad number, the avatar, the name, and
+// a hint only where a hold picks someone specific.
+[data-control-phase="identity"] .skyline-controls {
+  display: flex; flex-direction: column; block-size: 100%;
+  .skyline-controls__pad { flex: 1 1 auto; min-block-size: 0; }
+  // The pad number is the physical button: big enough to read from the saddle.
+  // 1.3em keeps the face's tall glyph box inside the square (and the card).
+  --sg-badge: max(#{sgvw(2.6)}, calc(1.3 * var(--sg-text-l)));
+  .skyline-controls__position { top: 0; left: 0; width: var(--sg-badge); height: var(--sg-badge); font-size: var(--sg-text-l); }
+  button {
+    display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; gap: sgvw(.5);
+    padding: calc(var(--sg-badge) + #{sgvw(.4)}) sgvw(.8) calc(sgvw(.8) + 2 * var(--sg-px));
+    strong { flex: none; min-height: 0; font-size: var(--sg-text-l); }
+  }
+  .skyline-controls__icon { flex: 1 1 0; }
+  .skyline-controls__hint { flex: none; min-height: 0; &:empty { display: none; } }
 }
 
 @keyframes sg-menu-step-right { 50% { transform: translateX(3px); } }

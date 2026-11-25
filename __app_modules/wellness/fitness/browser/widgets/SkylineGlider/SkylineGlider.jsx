@@ -766,6 +766,7 @@ export default function SkylineGlider() {
     data-testid={controller.state.phase==='denied'?'skyline-glider-school-lock':controller.state.phase==='result'||controller.state.phase==='saving'?'skyline-glider-result':controller.state.phase==='countdown'?'skyline-glider-countdown':'skyline-glider-lobby'} data-control-phase={controller.state.phase}>
     {remoteInput}
     <SkylineMenuLayout key={controller.state.phase} variant="bike" actions={<SkylineControlPanel controls={panelControls} onPress={pressPanel}/>} utility={!['settings','saving','loading'].includes(controller.state.phase)&&!(adminPromptOpen||actUnlock)&&<MoreButton onMore={openSoundSheet} className="skyline-glider__menu-more"/>}><SkylineMenus state={controller.state} riders={controller.state.riders} acts={controller.state.acts} onEvent={controller.dispatch} sound={soundSheet}
+      notice={['incompatible','invalid'].includes(saved.status)?'This saved flight uses an older course. Start begins a fresh flight. Earned completion is kept.':null}
       crashNote={(()=>{const hit=course?.entities?.find(e=>e.id===flight?.lastCollisionEntityId);return crashReason(flight,hit&&{...hit,role:entityRole(hit,!!armory.enabled)})})()}
       summary={saveState.record?.run&&(()=>{const bells=saveState.record.collectibles?.length||0,targets=saveState.record.run.targets||0;
         // A zone with its own pickup sprite (coins) is not counted in bells.
@@ -774,7 +775,6 @@ export default function SkylineGlider() {
     {saveState.status==='unsaved'&&controller.state.phase==='result'&&<p className="skyline-glider__notice" data-tone="bad" role="alert">This flight could not be saved — {saveState.reason}. You can still fly again.</p>}
     {saveState.status==='saved'&&<p className="skyline-glider__notice" data-tone="good">Flight saved{saveState.record?.run.reward_rings?' · +'+saveState.record.run.reward_rings+' rings':''}</p>}
     {storageWarning&&<p className="skyline-glider__notice" role="status">{storageWarning}</p>}
-    {controller.state.phase==='flights'&&['incompatible','invalid'].includes(saved.status)&&<p className="skyline-glider__notice" role="status">This saved flight uses an older course. Start begins a fresh flight; earned completion is kept.</p>}
     {(adminPromptOpen||actUnlock)&&<p className="skyline-glider__notice">Present an admin badge to unlock. Bottom-left cancels.</p>}
     </SkylineMenuLayout>
     <UnlockPrompt open={adminPromptOpen||!!actUnlock} state={unlockState} lockLabel="Skyline Glider" unlockedUser={unlockedUser} onCancel={()=>pressPanel(3)}/>

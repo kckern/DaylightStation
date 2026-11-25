@@ -5,6 +5,17 @@ const acts=[{id:'one',name:'One',status:'completed'},{id:'two',name:'Two',status
 const start=()=>createSkylineControlState({riders,acts});
 const event=(s,e)=>reduceSkylineControl(s,e).state;
 const press=(s,position,gesture='single')=>event(s,{type:'PRESS',position,gesture});
+describe('identity cards',()=>{
+ // The screen subtitle already says how to reach other riders; a card repeats
+ // only a hold or double press that picks someone specific (2026-11-17).
+ it('leaves the hint empty unless the card has a specific gesture',()=>{
+  const s=createSkylineControlState({acts,riders:[{id:'child',name:'Child',position:1,avatarSrc:'/c.jpg'},{id:'kid',name:'Kid',position:2,avatarSrc:'/k.jpg',gestureHint:'Hold for Grown-up'}]});
+  const c=describeSkylineControls(s);
+  expect(c[0].hint).toBe('');expect(c[1].hint).toBe('Hold for Grown-up');
+  expect(c[2]).toMatchObject({label:'Other riders',hint:''});
+  expect(c.map(x=>x.hint).join(' ')).not.toMatch(/:/);
+ });
+});
 describe('seated game lifecycle',()=>{
  it('does not start before course data arrives, even when physical buttons are pressed during loading',()=>{
   let s=createSkylineControlState({riders,acts:[]});

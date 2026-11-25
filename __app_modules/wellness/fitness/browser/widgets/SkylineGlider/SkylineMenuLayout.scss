@@ -65,3 +65,19 @@
   }
   .skyline-menu-layout .skyline-controls button { min-height: 0; }
 }
+
+// The rider picker has one short instruction and four big cards: the pad takes
+// the larger share of the width, and the instruction window fills the left
+// column with its words centred and set large, so neither half is empty sky.
+// Side-by-side only; the stacked narrow layout keeps the shared rules.
+@container skyline-menu (min-width: 761px) {
+  [data-control-phase='identity'] .skyline-menu-layout[data-variant='bike'] > .skyline-menu-layout__grid {
+    grid-template-columns: minmax(0, 1fr) minmax(16rem, 55%);
+  }
+}
+[data-control-phase='identity'] .skyline-menu-layout .skyline-menus--identity {
+  display: flex; flex-direction: column; justify-content: center; gap: sgvw(2);
+  min-block-size: 100%; padding: sgvw(3) sgvw(2.8);
+  h1 { font-size: var(--sg-text-xl); line-height: 1; overflow-wrap: normal; }
+  p { margin: 0; font-size: var(--sg-text-l); line-height: 1.3; }
+}

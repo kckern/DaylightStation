@@ -121,27 +121,41 @@ const budget = (status, extra = {}) => ({ blocked: true, status, remainingMs: 0,
 describe('FitnessPlayer playback budget cover', () => {
   beforeEach(() => { fixture.context.fitnessConfiguration = {}; });
 
+  // "checking" is normally sub-second, so its card waits 1500 ms (the video is
+  // held from the start); the other two show at once.
   it.each([
-    ['checking', 'Checking playback allowance…', /grown-up can unlock this video now/],
-    ['unavailable', 'Playback allowance unavailable', /could not be read; trying again/],
-    ['exhausted', 'Unattended playback limit reached', /join the workout to continue, or unlock/],
-  ])('%s: explains itself and offers Unlock and Back (never a bare "waiting")', async (status, title, body) => {
+    ['checking', 'Getting your video time…', /This only takes a moment\./],
+    ['unavailable', "Couldn't check video time", /Trying again\. A grown.up can unlock this video\./],
+    ['exhausted', 'Video time is used up for today', /starts again tomorrow\. A grown.up can join the workout, or unlock this video\./],
+  ])('%s: explains itself and offers Grown-up unlock and Back (never a bare "waiting")', async (status, title, body) => {
     fixture.context.playbackBudget = budget(status);
-    render(node());
-    const cover = await screen.findByTestId('playback-budget-overlay');
-    expect(cover.getAttribute('data-status')).toBe(status);
-    expect(cover.textContent).toContain(title);
-    expect(cover.textContent).toMatch(body);
-    expect(cover.textContent).not.toContain('Waiting for playback allowance');
-    expect(screen.getByTestId('playback-budget-unlock')).toBeVisible();
-    expect(screen.getByTestId('playback-budget-back')).toBeVisible();
-    expect(autoplay()).toBe('false');
+    if (status === 'checking') vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      render(node());
+      const cover = screen.getByTestId('playback-budget-overlay');
+      expect(cover.getAttribute('data-status')).toBe(status);
+      expect(autoplay()).toBe('false');
+      if (status === 'checking') {
+        expect(cover.textContent).toBe('');
+        expect(screen.queryByTestId('playback-budget-unlock')).toBeNull();
+        await act(async () => { vi.advanceTimersByTime(1500); });
+      }
+      expect(cover.textContent).toContain(title);
+      expect(cover.textContent).toMatch(body);
+      expect(cover.textContent).not.toMatch(/waiting/i);
+      expect(screen.getByTestId('playback-budget-unlock')).toBeVisible();
+      expect(screen.getByTestId('playback-budget-unlock').textContent).toBe('Grown-up unlock');
+      expect(screen.getByTestId('playback-budget-back')).toBeVisible();
+      expect(autoplay()).toBe('false');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('Unlock asks for an admin fingerprint; a match lifts the budget for this item', async () => {
     const verdict = deferred();
     fixture.identity.registerAdmin = vi.fn(() => verdict.promise);
-    fixture.context.playbackBudget = budget('checking');
+    fixture.context.playbackBudget = budget('unavailable');
     render(node());
     fireEvent.pointerDown(await screen.findByTestId('playback-budget-unlock'));
     expect(fixture.identity.registerAdmin).toHaveBeenCalledExactlyOnceWith('playback_budget');

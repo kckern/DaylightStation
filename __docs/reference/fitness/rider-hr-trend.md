@@ -35,9 +35,14 @@ neutral band.
   timebase" is not the test): no chart; single-rider cards keep the 132 px cap.
   A strap that connects before any session starts stays a short card.
 - **Collecting**: from session start the card takes its trend height (single
-  rider: up to `TREND_SINGLE_CAP_PX = 560`) and shows a quiet spinner
-  (`role="status"`) until the rider has `TREND_MIN_READINGS = 5` real readings.
-  Readings, not ticks: a dropout neither counts nor resets.
+  rider: up to `TREND_SINGLE_CAP_PX = 560`) and shows a faint flat dashed
+  baseline where the line will run, with a small `Reading heart rate…` label
+  (16 px, `role="status"`), until the rider has `TREND_MIN_READINGS = 5` real
+  readings. Readings, not ticks: a dropout neither counts nor resets. (It was a
+  lone spinner ring until 2026-11-24; on the garage display that read as stuck.)
+  When the rider has no live reading (the card prints `No signal`), the box
+  keeps its height but shows the baseline alone, with no label, so the card
+  never says both "No signal" and "Reading heart rate…".
 - **Drawn**: the line, logged once per mount as `fitness.sidebar.hr_trend.ready`.
 
 A card shows the trend box at ≥ `TREND_ON_PX = 116` px and hides it below

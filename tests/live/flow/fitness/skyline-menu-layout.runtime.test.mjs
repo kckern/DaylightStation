@@ -58,7 +58,8 @@ test('an unrelated render does not recapture manual scroll @shell-list', async (
   expect((await readMenuGeometry(page)).scrollTop).toBe(0);
 });
 test('a new menu starts at its own heading instead of inheriting prior scroll @shell-list',async({page})=>{
-  await page.setViewportSize({width:700,height:1000});
+  // Short enough that five long-named waves scroll (one-height rows made them fit at 700x1000).
+  await page.setViewportSize({width:700,height:700});
   await scenario(page,{game:'invaders',screen:'waves',longText:true,selectedIndex:13});
   await expectSelectedRowVisible(page);
   expect((await readMenuGeometry(page)).scrollTop).toBeGreaterThan(0);
@@ -205,6 +206,49 @@ test('multiline action text fits at DPR 1.39 @actions', async ({ browser }) => {
   } finally { await context.close(); }
 });
 
+// 2026-11-17 kiosk screenshot: the names sat on top of the avatars, the cards
+// filled a third of the screen and the same hold hint was printed three times.
+test('rider picker cards keep each name clear of its avatar and fill the screen @identity', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1810, height: 1080 });
+  await scenario(page, { game: 'glider', screen: 'identity', longText: false, host: null, notice: '' });
+  await page.waitForFunction(() => [...document.querySelectorAll('.skyline-controls img')].every(i => i.complete));
+  const g = await page.evaluate(() => {
+    const box = e => { const r = e.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height }; };
+    return {
+      layout: box(document.querySelector('.skyline-menu-layout')), pad: box(document.querySelector('.skyline-controls__pad')),
+      window: box(document.querySelector('.skyline-menus--identity')), controls: box(document.querySelector('.skyline-controls')),
+      viewport: { width: innerWidth, height: innerHeight }, document: [document.documentElement.scrollWidth, document.documentElement.scrollHeight],
+      cards: [...document.querySelectorAll('.skyline-controls__pad button')].map(b => ({
+        card: box(b), img: box(b.querySelector('img')), name: box(b.querySelector('strong')), badge: box(b.querySelector('.skyline-controls__position')),
+        hint: b.querySelector('.skyline-controls__hint').textContent,
+      })),
+      everything: [...document.querySelectorAll('.skyline-menu-layout *')].filter(e => e.getClientRects().length).map(box),
+    };
+  });
+  await page.screenshot({ path: testInfo.outputPath('glider-identity-1810.png') });
+  const inside = (a, b) => a.left >= b.left - 1 && a.right <= b.right + 1 && a.top >= b.top - 1 && a.bottom <= b.bottom + 1;
+  const overlaps = (a, b) => Math.min(a.right, b.right) - Math.max(a.left, b.left) > 0.5 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 0.5;
+  expect(g.cards).toHaveLength(4);
+  for (const c of g.cards) {
+    expect(c.img.height).toBeGreaterThan(0);
+    expect(overlaps(c.img, c.name)).toBe(false);
+    expect(inside(c.name, c.card)).toBe(true);
+    expect(inside(c.badge, c.card)).toBe(true);
+    expect(inside(c.img, c.card)).toBe(true);
+  }
+  expect(g.cards.map(c => c.hint)).toEqual(['', 'Hold for Grown-up', '', '']);
+  expect(g.pad.height).toBeGreaterThanOrEqual(0.4 * g.layout.height);
+  // Neither half may leave a dead block of sky (review of the 2026-11-24 fix:
+  // the title window sat at the top of an otherwise empty left half).
+  for (const column of [g.window, g.controls]) {
+    expect(column.top - g.layout.top).toBeLessThanOrEqual(0.4 * g.layout.height);
+    expect(g.layout.bottom - column.bottom).toBeLessThanOrEqual(0.4 * g.layout.height);
+  }
+  expect(g.document).toEqual([g.viewport.width, g.viewport.height]);
+  for (const r of g.everything) expect(inside(r, { left: 0, top: 0, right: g.viewport.width, bottom: g.viewport.height })).toBe(true);
+  await expectMenuGeometry(page);
+});
+
 const screenMatrix = {
   glider: ['identity','roster','flights','ready','countdown','menu','settings','crash','result','save-details','denied','loading','error'],
   invaders: ['who','roster','waves','method','sweep','locked','ready','paused','result','sound','loading','error'],
@@ -220,4 +264,69 @@ for(const game of Object.keys(screenMatrix))for(const [width,height]of sizes)tes
     }
     if(['flights','waves','method','save-details','result'].includes(screen))await page.screenshot({path:testInfo.outputPath(`${game}-${screen}-${width}.png`)});
   }
+});
+
+// 2026-11-13 kiosk screenshot (1810×1080): both panels clipped above the screen,
+// the more button cut in half, the old-course notice stacked under the window
+// and off the bottom, the chosen row twice the height of the others, a dead gap
+// under the list and a footer repeating what the button panel already says.
+const OLD_COURSE = 'This saved flight uses an older course. Start begins a fresh flight. Earned completion is kept.';
+async function readFlightPicker(page) {
+  return page.evaluate(() => {
+    const box = e => { const r = e.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height }; };
+    const scroller = document.querySelector('[data-skyline-scroll]'), clip = box(scroller);
+    // What the rider can see: content inside the scrolling region is clipped to it.
+    const seen = e => { const b = box(e); if (!scroller.contains(e) || e === scroller) return b;
+      const v = { left: Math.max(b.left, clip.left), top: Math.max(b.top, clip.top), right: Math.min(b.right, clip.right), bottom: Math.min(b.bottom, clip.bottom) };
+      return v.right <= v.left || v.bottom <= v.top ? null : v; };
+    const notice = document.querySelector('.skyline-glider__notice');
+    return {
+      viewport: { left: 0, top: 0, right: innerWidth, bottom: innerHeight },
+      document: [document.documentElement.scrollWidth, document.documentElement.scrollHeight], size: [innerWidth, innerHeight],
+      scrolls: scroller.scrollHeight > scroller.clientHeight + 1,
+      window: box(document.querySelector('.skyline-menus')),
+      windowText: document.querySelector(".skyline-menus").textContent,
+      notice: notice && box(notice), noticeText: notice?.textContent, noticeInWindow: !!notice?.closest('.skyline-menus'),
+      more: box(document.querySelector('.skyline-menu-layout__utility button')),
+      rows: [...document.querySelectorAll('.skyline-menus__options button')].map(b => ({ selected: b.getAttribute('aria-pressed') === 'true', ...box(b) })),
+      positionLine: document.querySelector('.skyline-menus__position')?.parentElement.textContent,
+      everything: [...document.querySelectorAll('.skyline-menu-layout *')].filter(e => e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden')
+        .map(e => ({ tag: e.tagName + '.' + e.className, seen: seen(e) })).filter(e => e.seen),
+    };
+  });
+}
+const insideBox = (a, b) => a.left >= b.left - 1 && a.right <= b.right + 1 && a.top >= b.top - 1 && a.bottom <= b.bottom + 1;
+async function expectFlightPickerContained(page) {
+  const g = await readFlightPicker(page);
+  expect(g.document).toEqual(g.size);
+  for (const e of g.everything) expect(insideBox(e.seen, g.viewport), `${e.tag} inside the screen`).toBe(true);
+  expect(insideBox(g.more, g.viewport), 'more button inside the screen').toBe(true);
+  expect(g.noticeText).toBe(OLD_COURSE);
+  expect(g.noticeInWindow, 'notice is part of the window').toBe(true);
+  expect(insideBox(g.notice, g.window), 'notice inside the window').toBe(true);
+  await expectMenuGeometry(page); await expectContentTextContained(page);
+  return g;
+}
+// Kiosk flight names are short: the whole window, notice included, fits without scrolling.
+test('flight picker at kiosk size keeps the notice in the window and every row one height @flights', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1810, height: 1080 });
+  await scenario(page, { game: 'glider', screen: 'flights', count: 14, selectedIndex: 13, longText: false, host: null, notice: OLD_COURSE });
+  await expectSelectedRowVisible(page);
+  const g = await expectFlightPickerContained(page);
+  expect(g.scrolls, 'kiosk-size flight picker fits without scrolling').toBe(false);
+  expect(insideBox(g.window, g.viewport), 'window inside the screen').toBe(true);
+  const selected = g.rows.find(r => r.selected), others = g.rows.filter(r => !r.selected);
+  expect(others.length).toBe(4);
+  for (const r of others) expect(Math.abs(selected.height - r.height)).toBeLessThanOrEqual(2);
+  expect(g.positionLine).toContain('14 of 14');
+  expect(g.windowText.toLowerCase()).not.toContain("top buttons browse");
+  await page.screenshot({ path: testInfo.outputPath('glider-flights-notice-1810.png') });
+});
+// Long names may make the window scroll; nothing may leave the screen or the window.
+for (const [width, height] of [[1810, 1080], [1381, 777], [1024, 600]]) test(`flight picker with long names and the old-course notice stays contained ${width}x${height} @flights`, async ({ page }) => {
+  await page.setViewportSize({ width, height });
+  await scenario(page, { game: 'glider', screen: 'flights', count: 14, selectedIndex: 13, longText: true, host: null, notice: OLD_COURSE });
+  await expectSelectedRowVisible(page);
+  const g = await expectFlightPickerContained(page);
+  expect(g.windowText.toLowerCase()).not.toContain("top buttons browse");
 });

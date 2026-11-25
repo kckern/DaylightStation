@@ -125,16 +125,16 @@ FitnessContext (state management)
 
 | File | Purpose |
 |------|---------|
-| `frontend/src/modules/Fitness/player/overlays/VoiceMemoOverlay.jsx` | Main overlay: 3 modes (list, review, redo), UI rendering |
-| `frontend/src/modules/Fitness/player/panels/hooks/useVoiceMemoRecorder.js` | Recording hook: MediaRecorder, audio levels, upload |
-| `frontend/src/modules/Fitness/player/panels/FitnessVoiceMemo.jsx` | Sidebar component with record/counter buttons |
-| `frontend/src/hooks/fitness/VoiceMemoManager.js` | In-session memo list, duplicate prevention, auto-prompt gate |
-| `frontend/src/context/FitnessContext.jsx` | State: memos array, overlay state, CRUD operations |
-| `__backend/src/4_api/v1/routers/fitness.mjs` | API endpoints under `/api/v1/fitness/voice_memo` |
-| `__backend/src/1_adapters/fitness/FilesystemVoiceMemoArtifactStore.mjs` | Durable capture store: audio + lifecycle record |
-| `__backend/src/2_domains/fitness/services/voiceMemoArtifactLifecycle.mjs` | Failure classification, backoff, retention policy |
-| `__backend/src/3_applications/fitness/services/FitnessVoiceMemoService.mjs` | Capture → transcribe → attach pipeline |
-| `__backend/src/3_applications/fitness/services/VoiceMemoRetryWorker.mjs` | Retry queue, crash recovery, retention sweep |
+| `__app_modules/wellness/fitness/browser/player/overlays/VoiceMemoOverlay.jsx` | Main overlay: 3 modes (list, review, redo), UI rendering |
+| `__app_modules/wellness/fitness/browser/player/panels/hooks/useVoiceMemoRecorder.js` | Recording hook: MediaRecorder, audio levels, upload |
+| `__app_modules/wellness/fitness/browser/player/panels/FitnessVoiceMemo.jsx` | Sidebar component with record/counter buttons |
+| `__app_modules/wellness/fitness/browser/hooks/fitness/VoiceMemoManager.js` | In-session memo list, duplicate prevention, auto-prompt gate |
+| `__app_modules/wellness/fitness/browser/context/FitnessContext.jsx` | State: memos array, overlay state, CRUD operations |
+| `__app_modules/wellness/fitness/server/api/fitness.mjs` | API endpoints under `/api/v1/fitness/voice_memo` |
+| `__app_modules/wellness/fitness/server/adapters/FilesystemVoiceMemoArtifactStore.mjs` | Durable capture store: audio + lifecycle record |
+| `__app_modules/wellness/fitness/server/domain/services/voiceMemoArtifactLifecycle.mjs` | Failure classification, backoff, retention policy |
+| `__app_modules/wellness/fitness/server/application/services/FitnessVoiceMemoService.mjs` | Capture → transcribe → attach pipeline |
+| `__app_modules/wellness/fitness/server/application/services/VoiceMemoRetryWorker.mjs` | Retry queue, crash recovery, retention sweep |
 
 ### Data Flow
 
@@ -207,6 +207,16 @@ const VOICE_MEMO_OVERLAY_INITIAL = {
 | `redo` | New recording or re-record existing | Yes | No |
 | `review` | View/approve transcription | No | Yes |
 | `list` | Browse all session memos | No | All |
+
+### Review panel sizing
+
+The panel keeps a 380px minimum height, so short states (recording, a one-line
+memo) stay the same size. A long transcript grows the panel up to `85vh`, and
+review mode is `min(640px, 90vw)` wide. Past 200 characters
+(`LONG_TRANSCRIPT_CHARS`) the transcript is left-aligned and scrolls from its
+first line, with a fade at the bottom edge. Shorter memos stay centred; the
+centring uses `safe center`, so overflow never pushes the opening lines above
+the scroll origin.
 
 ### Retroactive memos (recorded from a session's detail page)
 

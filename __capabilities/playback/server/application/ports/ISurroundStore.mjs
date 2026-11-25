@@ -42,6 +42,9 @@ export class ISurroundStore {
    * @param {string} contentId - Canonical content identifier (e.g. 'plex:663134')
    * @param {string} [title] - Live item title, used to rebind when a library
    *   rescan has invalidated the authored contentId
+   * @param {Object} [context] - The live item itself (`grandparentTitle`,
+   *   `parentTitle`, `artist`, `album`, or the same under `metadata`). A
+   *   title rebind must find the work's maker named here or in the title.
    * @returns {{
    *   id: string,
    *   definition: Object,
@@ -55,7 +58,7 @@ export class ISurroundStore {
    *   assetBase: string
    * }|null} Resolved payload, or null when no sidecar applies
    */
-  lookup(contentId, title) {
+  lookup(contentId, title, context) {
     throw new Error('ISurroundStore.lookup must be implemented');
   }
 

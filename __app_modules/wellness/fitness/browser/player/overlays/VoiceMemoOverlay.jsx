@@ -13,6 +13,8 @@ import { resolveCurrentMemo } from "./resolveCurrentMemo.js";
 
 // Auto-accept countdown for review mode
 const VOICE_MEMO_AUTO_ACCEPT_MS = 8000;
+// Review transcripts longer than this switch to the left-aligned scrolling layout.
+const LONG_TRANSCRIPT_CHARS = 200;
 
 const Icons = {
   Review: () => (
@@ -672,6 +674,8 @@ const VoiceMemoOverlay = ({
   const displayTranscript = showRedo
     ? (isRecording || (!isProcessing && !isRecording) ? 'Recording…' : 'Processing voice memo…')
     : (showReview && !currentMemo ? 'Finalizing memo…' : transcript);
+  // A long memo reads top-down and scrolls; a short one stays centred.
+  const isLongTranscript = typeof displayTranscript === 'string' && displayTranscript.length > LONG_TRANSCRIPT_CHARS;
   // Redo/Delete act on the LIVE session's memo list. A retroactive memo was
   // saved straight to a historical session, so those controls stay off for it
   // even now that the backend mints it an id.
@@ -697,7 +701,7 @@ const VoiceMemoOverlay = ({
       onDoubleClick={stopEventPropagation}
       onKeyDown={handleUserInteraction}
     >
-      <div ref={panelRef} className="voice-memo-overlay__panel">
+      <div ref={panelRef} className={`voice-memo-overlay__panel${showReview ? ' voice-memo-overlay__panel--review' : ''}`}>
         <div className="voice-memo-overlay__header">
           <div className="voice-memo-overlay__title">{titleText}</div>
           <button type="button" className="voice-memo-overlay__close" onClick={handleClose} aria-label="Close voice memo overlay" ref={closeButtonRef}>
@@ -748,7 +752,12 @@ const VoiceMemoOverlay = ({
             ) : (
               <>
                 {retryError && <div className="voice-memo-overlay__error">{retryError}</div>}
-                <div className="voice-memo-overlay__transcript voice-memo-overlay__transcript--large">{displayTranscript}</div>
+                <div
+                  data-harness-scroll=""
+                  className={`voice-memo-overlay__transcript voice-memo-overlay__transcript--large${isLongTranscript ? ' voice-memo-overlay__transcript--long' : ''}`}
+                >
+                  {displayTranscript}
+                </div>
               </>
             )}
             <div className="voice-memo-overlay__actions">

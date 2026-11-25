@@ -67,7 +67,7 @@ export function PassageMap({ piece, focusId }) {
 }
 
 /** The same counters as the passage board: a coin and how many passages carry it. */
-export const PieceCount = ({ piece }) => (
+export const PieceCount = ({ piece }) => (piece.total > 0 || piece.fresh !== true) && (
   <span className="piano-desk__count" aria-hidden="true">
     <span data-level="silver"><PassageCoin state="silver" />{piece.silver}/{piece.total}</span>
     {piece.gold > 0 && <span data-level="gold"><PassageCoin state="gold" />{piece.gold}/{piece.total}</span>}
