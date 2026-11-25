@@ -212,6 +212,8 @@ every `var(--ds-*)` reference against the manifest of legal names.
 
 Feed keeps its own `--feed-*` aliases (surfaces, text, accent, tints) on `.feed-app`, but every one derives from a `--ds-*` role, using `color-mix()` for tints and status backgrounds. A Feed stylesheet reads `var(--feed-*)` with no literal fallback. The literals left in Feed are data or media hues: source and tier palettes, annotation highlights, the reading themes, and the black and white used as shadow, scrim and glyph ink over photos and video.
 
+Media's `--media-*` aliases on `.media-app` derive from the `--ds` roles (the Media pack sets them to the values of the dark ramp steps). The alias rule on `<html>` stays on the Mantine ramp, because portaled popovers sit outside `.ds-root` and would read the base contract there. Media also styles surfaces that kiosk screens render outside the Media app (the menu, the launch cards, the classical surround, the content filter), so its shadow, scrim and glyph inks resolve at Sass time through `scrim()`, `chalk()` and `tint()` in `theme/_ink.scss`; they compile to the same plain `rgba()` values. Durations that match no token go through `sweep()` in `theme/_motion.scss`, which emits `calc(var(--ds-motion-sweep) * k)`; 120ms uses `--ds-motion-fast`. The literals left in Media are the pack source in `mediaTheme.js`, the Plex-style menu and classical surround palettes, the content-filter review hues and its inks over film frames, and per-title generated hues, each carrying a `data-color` note.
+
 Colors that come from data (a status derived from a value, a chart series, a
 sentiment ramp) are the one place a literal color is legitimate. Mark the line
 with a `data-color` comment so the audit's `raw-color` rule exempts it:

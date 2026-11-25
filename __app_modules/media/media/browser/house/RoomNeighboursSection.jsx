@@ -4,9 +4,9 @@
 // Play-on picker warns about it. The rooms are the ones the screens already
 // have; a neighbour link is mutual and is kept in the screen registry.
 import React, { useMemo, useState } from 'react';
-import { Button, Checkbox, Group, Modal, Stack, Text, Title } from '@mantine/core';
+import { Button, Checkbox, Group, Stack, Text, Title } from '@mantine/core';
 import { IconDoor } from '@tabler/icons-react';
-import { useDismissLayer } from "@/lib/ui/dismiss/useDismissLayer.js";
+import { FormDialog } from "@/lib/ui/FormDialog.jsx";
 import { useSheetSubmission } from "@/lib/ui/useSheetSubmission.js";
 
 const key = (room) => String(room).trim().toLowerCase();
@@ -81,7 +81,6 @@ export function RoomNeighboursSection({ screens, adjacency, savePending, admin }
   const [editing, setEditing] = useState(null);
   const close = () => setEditing(null);
   const open = Boolean(editing) && rooms.length >= 2;
-  const usesDismissStack = useDismissLayer(open, close);
   if (rooms.length < 2) return null;
   return (
     <section className="house-section" aria-labelledby="screen-admin-rooms-title" data-testid="screen-admin-rooms">
@@ -110,10 +109,9 @@ export function RoomNeighboursSection({ screens, adjacency, savePending, admin }
           );
         })}
       </ul>
-      <Modal
+      <FormDialog
         opened={open}
         onClose={close}
-        closeOnEscape={!usesDismissStack}
         title={editing ? `Rooms next to ${editing}` : ''}
         centered
       >
@@ -128,7 +126,7 @@ export function RoomNeighboursSection({ screens, adjacency, savePending, admin }
             onSave={admin.setNeighbours}
           />
         )}
-      </Modal>
+      </FormDialog>
     </section>
   );
 }

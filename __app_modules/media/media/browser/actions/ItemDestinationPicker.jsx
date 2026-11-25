@@ -1,7 +1,6 @@
 import React from 'react';
-import { useDismissLayer } from '@/lib/ui/dismiss/useDismissLayer.js';
+import { FormDialog } from '@/lib/ui/FormDialog.jsx';
 import { useOverlayFocusReturn } from '@/lib/ui/dismiss/useOverlayFocusReturn.js';
-import { Modal } from '@mantine/core';
 import { DispatchTargetPicker } from "../cast/DispatchTargetPicker.jsx";
 import { resultToQueueInput } from "../search/resultToQueueInput.js";
 import { isContainerInput } from "../session/containerExpansion.js";
@@ -13,16 +12,15 @@ const PICKER_Z_INDEX = 600;
 
 export function ItemDestinationPicker({ action, onClose, returnFocusRef }) {
   const open = Boolean(action);
-  const usesDismissStack = useDismissLayer(open, onClose);
   useOverlayFocusReturn(open && Boolean(returnFocusRef), returnFocusRef);
   if (!open) return null;
-  const modalProps = { opened: true, onClose, closeOnEscape: !usesDismissStack, returnFocus: !returnFocusRef, zIndex: PICKER_Z_INDEX };
+  const modalProps = { opened: true, onClose, returnFocus: !returnFocusRef, zIndex: PICKER_Z_INDEX };
   const item = resultToQueueInput(action.item);
   if (action.kind === 'showBrieflyOn') {
     // Show briefly (RQ-PLAY-11): over the screen's programme, which then returns.
-    return <Modal {...modalProps} title="Show briefly on…">
+    return <FormDialog {...modalProps} title="Show briefly on…">
       <DispatchTargetPicker source={{ play: item.contentId, title: item.title, brief: true }} verb="Show briefly" onComplete={onClose} />
-    </Modal>;
+    </FormDialog>;
   }
   const adding = action.kind === 'addOn';
   const showing = !adding && isShowItem(action.item);
@@ -30,7 +28,7 @@ export function ItemDestinationPicker({ action, onClose, returnFocusRef }) {
     [adding ? 'queue' : 'play']: item.contentId, title: item.title,
     itemAction: { kind: adding ? 'add' : 'playNow', item, clearRest: !adding && isContainerInput(item) },
   };
-  return <Modal {...modalProps} title={adding ? 'Add on…' : (showing ? 'Show on…' : 'Play on…')}>
+  return <FormDialog {...modalProps} title={adding ? 'Add on…' : (showing ? 'Show on…' : 'Play on…')}>
     <DispatchTargetPicker source={source} verb={adding ? 'Add' : (showing ? 'Show' : 'Play')} onComplete={onClose} />
-  </Modal>;
+  </FormDialog>;
 }

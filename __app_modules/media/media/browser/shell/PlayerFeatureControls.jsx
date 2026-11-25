@@ -12,7 +12,7 @@
 // behind asks whether to keep the music playing.
 import { UiIcon } from '../../../../../frontend/src/lib/ui/UiIcon.jsx';
 import React, { useCallback, useContext, useLayoutEffect, useMemo, useState, useSyncExternalStore } from 'react';
-import { Button, Group, Menu, Modal, Text } from '@mantine/core';
+import { Button, Group, Menu, Text } from '@mantine/core';
 import {
   IconBadgeCc, IconCheck, IconLanguage, IconMusic, IconPlayerPauseFilled, IconPlayerPlayFilled,
   IconPlayerSkipForwardFilled, IconPlayerStopFilled,
@@ -23,7 +23,6 @@ import { getLocalPlayerFeatures } from "../session/localPlayerFeatures.js";
 import { ContentCombobox } from "../../../../../__capabilities/content-catalog/browser/picker.mjs";
 import { SearchContext } from "../search/SearchProvider.jsx";
 import { FormDialog } from '@/lib/ui/FormDialog.jsx';
-import { useDismissLayer } from "@/lib/ui/dismiss/useDismissLayer.js";
 import { ActionMenu } from '@/lib/ui/ActionMenu.jsx';
 import { commandFailureCopy } from "./stateCopy.js";
 import mediaLog from "../logging/mediaLog.js";
@@ -241,7 +240,6 @@ export function useSlideshowStopGuard(target, snapshotOverride = null, { availab
     setPending({ stop, opener, targetKey });
   }, [ask, targetKey]);
   const close = useCallback(() => setPending(null), []);
-  const usesDismissStack = useDismissLayer(open, close);
   useLayoutEffect(() => {
     if (!pending || open) return;
     setPending(null);
@@ -254,7 +252,7 @@ export function useSlideshowStopGuard(target, snapshotOverride = null, { availab
   }, [available, open, pending, targetKey]);
   // Keep the modal mounted while this prompt is available so Mantine can return focus on cancel.
   const dialog = useMemo(() => !ask && !pending ? null : (
-    <Modal key={targetKey} opened={open} onClose={close} closeOnEscape={!usesDismissStack} title="Stop the slideshow" centered size="sm">
+    <FormDialog key={targetKey} opened={open} onClose={close} title="Stop the slideshow" centered size="sm">
       {open && <div data-testid="pf-stop-guard">
         <Text size="sm" mb="md">Keep the music playing?</Text>
         <Group justify="flex-end" gap="sm">
@@ -273,8 +271,8 @@ export function useSlideshowStopGuard(target, snapshotOverride = null, { availab
           }}>Keep music</Button>
         </Group>
       </div>}
-    </Modal>
-  ), [ask, open, pending, close, usesDismissStack, f, target, targetKey]);
+    </FormDialog>
+  ), [ask, open, pending, close, f, target, targetKey]);
   return [guardStop, dialog];
 }
 
