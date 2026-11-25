@@ -512,8 +512,18 @@ Borrow ArtMode's physical realism, but one plate, not a gallery:
 ## Quality floor
 
 - The corpus's declared aspect ratio is inviolable — letterbox or
-  pillarbox, never distort. 16:9 is the default when a work authors none
-  (`piece.aspectRatio`).
+  pillarbox, never distort (`piece.aspectRatio`). A work that declares none
+  takes the shape its media element reports: `SurroundHost` reads
+  `videoWidth/videoHeight` twice a second and passes it as `pictureAspect`
+  (snapped to `4 / 3` or `16 / 9` within 3%). 16:9 until either is known.
+- **A detected picture narrower than 16:9 keeps the 16:9 picture's height**
+  (`surround-frame--pillared`). Clips from different concerts alternate shapes
+  every few minutes; holding the height keeps the plate, the band and the rail
+  where they were, and the picture narrows inside the same 16:9 window with the
+  theme's ground either side (the christmas theme hangs boughs in those
+  gutters). The band and the plate's cap follow the window
+  (`--surround-window-w`), not the narrower picture. An authored ratio keeps
+  the frame's own geometry.
 - **The band is never crushed to make room for the picture.** A picture taller
   than 16:9 at the column's width would push the band off the bottom of the
   screen — measured at 0.4px on the living-room root before the cap existed,
@@ -563,6 +573,7 @@ else is `neutral`) and carries it on the root as
 |---|---|---|
 | `neutral` | `SurroundFrame.scss`, the zero-specificity `:where(.surround-frame)` ground | Black ground, system sans, no region fill, no curtain. What a definition that names no theme wears, and what a new theme starts from. |
 | `classical` | media module, `surround/themes/classical.scss` (above) | Velvet drape, curtain bleed, paper stock, mahogany band and rail, the Garamonds. |
+| `christmas`, `christmas-still` | media module, `surround/themes/christmas.scss` | Evergreen ground, gilt rules, cream type; a solid pine plate set wholly above the picture (6px overlap); inline-SVG pine garlands with holly along the hall above the picture, the foot of the screen (the footer reserves its height), the rail's inner edge and a pillared picture's gutters. `christmas` also snows: two hand-scattered flake sheets of different tile widths falling by `transform` with a sway, behind everything, full height; still under reduced motion. Used by the `christmas-hall` definition. |
 | `content-filter` | `__app_modules/media/media/browser/content-filter/preview/contentFilterTheme.scss` (palette in `_palette.scss`) | Slate edit bay: no plate inset, no drape, Atkinson Hyperlegible Next. See [Content Filter, Preview surround](../../core/content-filter.md#preview-surround). |
 
 **Who names `classical`.** Every host that wants the concert hall says so:
@@ -592,6 +603,43 @@ two sheets in. Verified pixel-identical against the classical-default build on a
 classical work. A new theme scopes its rules under
 `.surround-frame--theme-<name>` in the host module's own sheet; the capability's
 sheet is never edited for a look.
+
+## Clips: the clip band and the change curtain
+
+A queue item with a `segment: {start, end}` plays one piece cut from a whole
+concert. `clipContext.js` puts `data.clip` on the payload: the window, the
+clip's OWN name (`title`, the item's title; no surround payload holds it), the
+whole it was cut from (`work`, the id less its `#n`), and what plays next
+(`next: {title, subtitle, work, workTitle, workYear}`, read from the Player's
+execution order). The host polls the item every 250ms so a change is seen at
+once, but re-reads the clip context (a deep copy of the queue) only on a change
+or every 2s.
+
+**`clip-band`** (the `christmas-hall` definition's `clip.bottom`): the piece
+now playing is the band's loudest type, beside a small grid of the concert's
+pieces with this one lit, over its own progress bar and clock. The concert is
+not named in the band; the plate and the poster rail carry it. Up next, when
+the next clip is from ANOTHER concert, is partitioned behind a gilt rule with
+that concert's poster (`/api/v1/display/<work>`, which also warms the rail's
+poster) and reads "Next, from <concert> (<year>)" above the piece; from the same
+concert it is just "Up next" and the name.
+
+**`poster-card`** (the rail): the poster as large as the rail allows, one
+rotating fact, and the ensemble's mark at the foot from `composer.logo`,
+resolved against `assetBase` like a composer portrait (the Tabernacle logo is
+`library/christmas/tabernacle/logo.svg` on the media mount, named in that
+domain's `_composer.yml`). Title, year and performers are not repeated: the
+poster prints them and the plate (`Title · Year`, for a dated performance with
+no provenance line) names them.
+
+**The change curtain** (`curtain.js`, `.surround-frame__curtain`): when the
+item changes and either side is a clip, two panels close over the whole frame
+in 380ms and part over 900ms once the new clip is READY: playing, not seeking,
+inside its window, and every `<img>` in the frame settled. Never before 700ms,
+always by 6s (`surround.curtain.timeout`, warn). ArtMode's recipe: `transform`
+only, no filter; reduced motion cuts instead. A theme paints
+`.surround-frame__curtain-panel` (christmas: pine velvet with a gilt seam).
+Logs `surround.curtain.close` / `surround.curtain.open`.
 
 ## Band configuration
 

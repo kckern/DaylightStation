@@ -20,9 +20,11 @@ const makeData = (clip = {}) => ({
   segments: SEGMENTS,
   clip: {
     segment: { start: 425, end: 700 },
+    title: 'Second Carol',
+    work: 'plex:1001',
     index: 3,
     total: 40,
-    next: { title: 'Snow Song', subtitle: 'Snow Concert (2011)' },
+    next: { title: 'Snow Song', subtitle: 'Snow Concert (2011)', work: 'plex:2002', workTitle: 'Snow Concert', workYear: 2011 },
     ...clip,
   },
 });
@@ -54,23 +56,54 @@ describe('clipNumber', () => {
 });
 
 describe('ClipBand', () => {
-  it('renders the three zones: from, progress, up next', () => {
-    const { container, getByText } = render(<ClipBand data={makeData()} position={500} />);
-    expect(container.querySelector('.clip-band__from')).not.toBeNull();
+  it('renders the three zones: now, progress, up next', () => {
+    const { container } = render(<ClipBand data={makeData()} position={500} />);
+    expect(container.querySelector('.clip-band__now')).not.toBeNull();
     expect(container.querySelector('.clip-band__progress')).not.toBeNull();
     expect(container.querySelector('.clip-band__next')).not.toBeNull();
-    getByText('A Winter Concert');
-    getByText('2008');
-    getByText('No. 2 of 4');
-    getByText('Snow Song');
-    getByText('Snow Concert (2011)');
   });
 
-  it('draws one tick per piece with the playing one lit', () => {
+  it('headlines the piece now playing (the clip\'s own name), not the concert', () => {
+    const { container, queryByText } = render(<ClipBand data={makeData()} position={500} />);
+    expect(container.querySelector('.clip-band__title').textContent).toBe('Second Carol');
+    // The placard and the poster rail carry the concert; the band does not repeat it.
+    expect(queryByText('A Winter Concert')).toBeNull();
+    expect(queryByText(/^No\./)).toBeNull();
+  });
+
+  it('marks this piece in a compact grid of the concert\'s pieces', () => {
     const { container } = render(<ClipBand data={makeData()} position={500} />);
-    const ticks = [...container.querySelectorAll('.clip-band__tick')];
-    expect(ticks).toHaveLength(4);
-    expect(ticks.map((t) => t.classList.contains('clip-band__tick--lit'))).toEqual([false, true, false, false]);
+    const cells = [...container.querySelectorAll('.clip-band__cell')];
+    expect(cells).toHaveLength(4);
+    expect(cells.map((c) => c.classList.contains('clip-band__cell--now'))).toEqual([false, true, false, false]);
+    expect(container.querySelector('.clip-band__grid').getAttribute('aria-label')).toBe('Piece 2 of 4');
+  });
+
+  it('partitions up next when the next clip is from another concert, with its poster', () => {
+    const { container } = render(<ClipBand data={makeData()} position={500} />);
+    const next = container.querySelector('.clip-band__next');
+    expect(next.classList.contains('clip-band__next--elsewhere')).toBe(true);
+    expect(next.querySelector('.clip-band__next-label').textContent).toBe('Next, from');
+    expect(next.querySelector('.clip-band__next-work').textContent).toBe('Snow Concert (2011)');
+    expect(next.querySelector('.clip-band__next-title').textContent).toBe('Snow Song');
+    expect(next.querySelector('img.clip-band__next-poster').getAttribute('src')).toBe('/api/v1/display/plex:2002');
+  });
+
+  it('keeps up next simple when the next clip is from the same concert', () => {
+    const data = makeData({ next: { title: 'Last Carol', subtitle: 'A Winter Concert (2008)', work: 'plex:1001', workTitle: 'A Winter Concert', workYear: 2008 } });
+    const { container } = render(<ClipBand data={data} position={500} />);
+    const next = container.querySelector('.clip-band__next');
+    expect(next.classList.contains('clip-band__next--elsewhere')).toBe(false);
+    expect(next.querySelector('.clip-band__next-label').textContent).toBe('Up next');
+    expect(next.querySelector('.clip-band__next-title').textContent).toBe('Last Carol');
+    expect(next.querySelector('img')).toBeNull();
+    expect(next.querySelector('.clip-band__next-work')).toBeNull();
+  });
+
+  it('falls back to the queue subtitle for the other concert\'s name', () => {
+    const data = makeData({ next: { title: 'Snow Song', subtitle: 'Snow Concert (2011)', work: 'plex:2002', workTitle: null, workYear: null } });
+    const { container } = render(<ClipBand data={data} position={500} />);
+    expect(container.querySelector('.clip-band__next-work').textContent).toBe('Snow Concert (2011)');
   });
 
   it('shows elapsed and remaining within the clip only', () => {
@@ -101,10 +134,10 @@ describe('ClipBand', () => {
     expect(container.querySelector('.clip-band__progress')).not.toBeNull();
   });
 
-  it('omits the piece number when the payload has no rail', () => {
-    const { container, queryByText } = render(<ClipBand data={{ ...makeData(), segments: [] }} position={500} />);
-    expect(queryByText(/^No\./)).toBeNull();
-    expect(container.querySelector('.clip-band__ticks')).toBeNull();
+  it('omits the piece grid when the payload has no rail', () => {
+    const { container } = render(<ClipBand data={{ ...makeData(), segments: [] }} position={500} />);
+    expect(container.querySelector('.clip-band__grid')).toBeNull();
+    expect(container.querySelector('.clip-band__title').textContent).toBe('Second Carol');
   });
 
   it('renders nothing without a clip', () => {

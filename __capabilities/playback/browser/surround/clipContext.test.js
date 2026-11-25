@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { clipContext, clipKey } from './clipContext.js';
+import { clipContext, clipKey, clipWork } from './clipContext.js';
 
 const entry = (id, title, subtitle) => ({ queueItemId: `g-${id}`, contentId: id, title, subtitle });
 
@@ -17,7 +17,7 @@ function handleAt(position, { order } = {}) {
   };
 }
 
-const CLIP = { id: 'plex:1#1', segment: { start: 10, end: 200 } };
+const CLIP = { id: 'plex:1#1', title: 'First Carol', segment: { start: 10, end: 200 } };
 
 describe('clipContext', () => {
   it('is null for an item without a segment window', () => {
@@ -34,15 +34,17 @@ describe('clipContext', () => {
   it('carries the window, queue position, length and the next clip', () => {
     expect(clipContext(CLIP, handleAt(0))).toEqual({
       segment: { start: 10, end: 200 },
+      title: 'First Carol',
+      work: 'plex:1',
       index: 0,
       total: 3,
-      next: { title: 'Second Carol', subtitle: 'Snow Concert (2002)' },
+      next: { title: 'Second Carol', subtitle: 'Snow Concert (2002)', work: 'plex:2', workTitle: null, workYear: null },
     });
   });
 
   it('follows the execution order for the next clip', () => {
     const handle = handleAt(0, { order: ['g-plex:1#1', 'g-plex:3#2', 'g-plex:2#4'] });
-    expect(clipContext(CLIP, handle).next).toEqual({ title: 'Third Carol', subtitle: 'Frost Concert (2003)' });
+    expect(clipContext(CLIP, handle).next).toMatchObject({ title: 'Third Carol', subtitle: 'Frost Concert (2003)', work: 'plex:3' });
   });
 
   it('has no next clip at the end of the queue', () => {
@@ -51,10 +53,33 @@ describe('clipContext', () => {
   });
 
   it('still gives the window when the handle has no queue to read', () => {
-    expect(clipContext(CLIP, {})).toEqual({ segment: { start: 10, end: 200 }, index: null, total: null, next: null });
-    expect(clipContext(CLIP, null)).toEqual({ segment: { start: 10, end: 200 }, index: null, total: null, next: null });
+    const bare = { segment: { start: 10, end: 200 }, title: 'First Carol', work: 'plex:1', index: null, total: null, next: null };
+    expect(clipContext(CLIP, {})).toEqual(bare);
+    expect(clipContext(CLIP, null)).toEqual(bare);
     const throwing = { getNowPlaying: () => { throw new Error('x'); }, getQueueSnapshot: () => { throw new Error('y'); } };
     expect(clipContext(CLIP, throwing)).toMatchObject({ index: null, total: null, next: null });
+  });
+});
+
+describe('clipContext: the concert a clip is from', () => {
+  it('names the next clip\'s concert from its own surround piece', () => {
+    const items = [
+      { queueItemId: 'a', contentId: 'plex:1#1', title: 'First Carol' },
+      { queueItemId: 'b', contentId: 'plex:9#3', title: 'Far Carol', subtitle: 'Far Concert (1999)', surround: { piece: { title: 'Far Concert', year: 1999 } } },
+    ];
+    const handle = {
+      getNowPlaying: () => ({ queuePosition: 0, queueLength: 2 }),
+      getQueueSnapshot: () => ({ items, executionOrder: ['a', 'b'] }),
+    };
+    expect(clipContext(CLIP, handle).next).toEqual({
+      title: 'Far Carol', subtitle: 'Far Concert (1999)', work: 'plex:9', workTitle: 'Far Concert', workYear: 1999,
+    });
+  });
+
+  it('strips only the per-clip suffix from the work id', () => {
+    expect(clipWork({ contentId: 'plex:619381#21' })).toBe('plex:619381');
+    expect(clipWork({ id: 'plex:5' })).toBe('plex:5');
+    expect(clipWork(null)).toBeNull();
   });
 });
 

@@ -273,6 +273,14 @@ export default function WorkPlacard({
   // in the fleet.
   const parts = [piece?.opus, piece?.composed, piece?.premiered].filter(Boolean);
 
+  // A DATED PERFORMANCE (a concert, not a composition) sets its year on the
+  // title line — "Ring Christmas Bells · 2008". Only where nothing else dates
+  // it: a work with a provenance line already carries its dates there, and a
+  // container's headline is the segment sounding, not the work.
+  const year = !container && !piece?.composed && (typeof piece?.year === 'number' || /^\d{4}$/.test(String(piece?.year ?? '')))
+    ? String(piece.year)
+    : null;
+
   // PERFORMANCE CREDIT — the recording, not the work. Segment-level override
   // wins (a different pianist for one movement), then the piece-level default.
   const performance = trimmed(perfSegment?.performance) || trimmed(data?.piece?.performance) || '';
@@ -294,7 +302,15 @@ export default function WorkPlacard({
         className="surround-work-placard__title"
         data-testid="surround-placard-title"
       >
-        {smartQuotes(title)}
+        {year ? (
+          // The name gives way (ellipsis) before the year does: the year is
+          // what tells two concerts of the same name apart.
+          <>
+            <span className="surround-work-placard__name">{smartQuotes(title)}</span>
+            <span className="surround-work-placard__year-sep" aria-hidden="true">{' · '}</span>
+            <span className="surround-work-placard__year">{year}</span>
+          </>
+        ) : smartQuotes(title)}
         {container && (
           <span className="surround-work-placard__probe" aria-hidden="true" />
         )}

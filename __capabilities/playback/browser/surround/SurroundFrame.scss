@@ -208,7 +208,7 @@
   transform: translate(-50%, var(--placard-straddle));
   z-index: 30;
   width: max-content;
-  max-width: calc(var(--surround-media-w, 100%) * 0.86);
+  max-width: calc(var(--surround-window-w, var(--surround-media-w, 100%)) * 0.86);
   display: flex;
   flex-direction: column;
   /* The plate straddles the video's top edge, so its box covers real video —
@@ -487,6 +487,56 @@
 @media (prefers-reduced-motion: reduce) {
   .surround-frame--slides .surround-frame__main,
   .surround-frame--slides .surround-frame__rail {
+    transition: none;
+  }
+}
+
+/* ==========================================================================
+   THE CHANGE CURTAIN (curtain.js) — covers the cut between two clips
+   ==========================================================================
+
+   ArtMode's recipe (`ArtMode.css`): two panels that meet at a centre seam and
+   part sideways. TRANSFORM ONLY, so it composites; no filter, no opacity half
+   state. Closing is quick (the cut has already happened under it), parting is
+   slower (it is the reveal). The durations mirror `CURTAIN_CLOSE_MS` and
+   `CURTAIN_OPEN_MS`. The neutral look is a plain dark drape; a theme paints
+   `.surround-frame__curtain-panel`. */
+.surround-frame__curtain {
+  position: absolute;
+  inset: 0;
+  z-index: 60;                /* above the plate (30) and the band (20): everything */
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.surround-frame__curtain-panel {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 50.5%;               /* a hair of overlap at the seam, so no gap shows */
+  transition: transform 900ms cubic-bezier(0.66, 0, 0.2, 1);
+}
+
+:where(.surround-frame__curtain-panel) {
+  background: #0b0b0c;
+}
+
+.surround-frame__curtain-panel--l { left: 0; }
+.surround-frame__curtain-panel--r { right: 0; }
+
+.surround-frame__curtain--open .surround-frame__curtain-panel--l { transform: translateX(-101%); }
+.surround-frame__curtain--open .surround-frame__curtain-panel--r { transform: translateX(101%); }
+
+.surround-frame__curtain--closed .surround-frame__curtain-panel {
+  transform: translateX(0);
+  transition-duration: 380ms;
+  transition-timing-function: cubic-bezier(0.4, 0, 1, 1);
+}
+
+/* Reduced motion: the curtain is a cut to the drape and a cut back. */
+@media (prefers-reduced-motion: reduce) {
+  .surround-frame__curtain-panel,
+  .surround-frame__curtain--closed .surround-frame__curtain-panel {
     transition: none;
   }
 }

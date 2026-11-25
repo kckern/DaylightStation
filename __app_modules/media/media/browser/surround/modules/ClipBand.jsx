@@ -1,8 +1,15 @@
 // The band under a clip: one piece cut from a whole concert. Three zones —
-// where the piece comes from (the concert, its year, and which of its pieces
-// this is), how far into the piece we are (its own clock, not the concert's),
-// and what plays next. Everything comes off the payload: the window and the
-// queue arrive as `data.clip` (see the playback capability's clipContext.js).
+// the piece NOW playing (its own name, the loudest type in the band, beside a
+// small grid of the concert's pieces with this one lit), how far into it we
+// are (its own clock, not the concert's), and what plays next. The concert
+// itself is NOT named here: the placard and the poster rail already carry it.
+//
+// Up next is partitioned when the next clip comes from ANOTHER concert — that
+// concert's poster and "Next, from <concert> (<year>)" behind a rule — so it
+// never reads as the next track of this one. From the same concert it is just
+// the name. Everything comes off the payload: the window, the clip's own name
+// and the queue arrive as `data.clip` (see the playback capability's
+// clipContext.js).
 import React from 'react';
 import PropTypes from 'prop-types';
 import { smartQuotes, trimmed } from "../../../../../../__capabilities/playback/browser/surround-typography.mjs";
@@ -35,6 +42,16 @@ export function clipNumber(segments, clipStart) {
   return { k: best + 1, n: pieces.length };
 }
 
+/** The other concert's name for the partition: its own piece, else the queue's subtitle. */
+function nextWorkLabel(next) {
+  const title = trimmed(next?.workTitle);
+  if (title) return next.workYear ? `${title} (${next.workYear})` : title;
+  return trimmed(next?.subtitle) || null;
+}
+
+/** Columns for the piece grid: two rows once a concert has more than eight pieces. */
+const gridColumns = (n) => (n > 8 ? Math.ceil(n / 2) : n);
+
 export default function ClipBand({ data = null, position = 0 }) {
   const clip = data?.clip;
   const segment = clip?.segment;
@@ -42,8 +59,7 @@ export default function ClipBand({ data = null, position = 0 }) {
     return null;
   }
 
-  const piece = data.piece ?? {};
-  const title = smartQuotes(trimmed(piece.title));
+  const title = smartQuotes(trimmed(clip.title));
   const length = segment.end - segment.start;
   const at = isFiniteNumber(position) ? position : segment.start;
   const elapsed = clamp(at - segment.start, 0, length);
@@ -51,41 +67,54 @@ export default function ClipBand({ data = null, position = 0 }) {
   const number = clipNumber(data.segments, segment.start);
   const next = clip.next;
   const nextTitle = next ? smartQuotes(trimmed(next.title)) : null;
-  const nextSubtitle = next ? smartQuotes(trimmed(next.subtitle)) : null;
+  // Another concert only when both ends know their concert and they differ: an
+  // unknown is read as "same", which keeps the band quiet rather than wrong.
+  const elsewhere = Boolean(next?.work && clip.work && next.work !== clip.work);
+  const nextWork = elsewhere ? smartQuotes(nextWorkLabel(next)) : null;
 
   return (
     <section className="clip-band">
-      <div className="clip-band__from">
-        {title && <div className="clip-band__title">{title}</div>}
-        <div className="clip-band__meta">
-          {piece.year && <span className="clip-band__year">{String(piece.year)}</span>}
-          {number && <span className="clip-band__number">{`No. ${number.k} of ${number.n}`}</span>}
-        </div>
+      <div className="clip-band__now">
         {number && (
-          <ol className="clip-band__ticks" aria-hidden="true">
+          <ol
+            className="clip-band__grid"
+            aria-label={`Piece ${number.k} of ${number.n}`}
+            style={{ gridTemplateColumns: `repeat(${gridColumns(number.n)}, var(--clip-cell, 0.5rem))` }}
+          >
             {Array.from({ length: number.n }, (_, i) => (
               <li
                 key={i}
-                className={`clip-band__tick${i + 1 === number.k ? ' clip-band__tick--lit' : ''}`}
+                className={`clip-band__cell${i + 1 === number.k ? ' clip-band__cell--now' : ''}`}
               />
             ))}
           </ol>
         )}
-      </div>
-
-      <div className="clip-band__progress">
-        <span className="clip-band__elapsed">{formatClock(elapsed)}</span>
-        <div className="clip-band__bar">
-          <div className="clip-band__fill" style={{ width: `${(elapsed / length) * 100}%` }} />
+        <div className="clip-band__heading">
+          {title && <div className="clip-band__title">{title}</div>}
+          <div className="clip-band__progress">
+            <span className="clip-band__elapsed">{formatClock(elapsed)}</span>
+            <div className="clip-band__bar">
+              <div className="clip-band__fill" style={{ width: `${(elapsed / length) * 100}%` }} />
+            </div>
+            <span className="clip-band__remaining">{`-${formatClock(remaining)}`}</span>
+          </div>
         </div>
-        <span className="clip-band__remaining">{`-${formatClock(remaining)}`}</span>
       </div>
 
       {nextTitle && (
-        <div className="clip-band__next">
-          <div className="clip-band__next-label">Up next</div>
-          <div className="clip-band__next-title">{nextTitle}</div>
-          {nextSubtitle && <div className="clip-band__next-subtitle">{nextSubtitle}</div>}
+        <div className={`clip-band__next${elsewhere ? ' clip-band__next--elsewhere' : ''}`}>
+          {elsewhere && (
+            <img className="clip-band__next-poster" src={`/api/v1/display/${next.work}`}
+              alt=""
+              // A poster that will not load leaves the words, not a broken box.
+              onError={(e) => { e.currentTarget.hidden = true; }}
+            />
+          )}
+          <div className="clip-band__next-text">
+            <div className="clip-band__next-label">{elsewhere ? 'Next, from' : 'Up next'}</div>
+            {nextWork && <div className="clip-band__next-work">{nextWork}</div>}
+            <div className="clip-band__next-title">{nextTitle}</div>
+          </div>
         </div>
       )}
     </section>

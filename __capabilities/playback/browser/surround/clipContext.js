@@ -13,15 +13,38 @@ const call = (fn) => {
   try { return typeof fn === 'function' ? fn() : null; } catch (_) { return null; }
 };
 
-const describeEntry = (entry) => (entry
-  ? { title: entry.title ?? null, subtitle: entry.subtitle ?? null }
-  : null);
+/**
+ * The whole a clip was cut from: its id less the `#n` the queue adds per clip
+ * (`plex:619381#21` -> `plex:619381`). Two clips with the same work are two
+ * pieces of one concert; the band says so, and says so differently when the
+ * next clip comes from another.
+ */
+export function clipWork(entry) {
+  const id = entry?.contentId ?? entry?.id ?? null;
+  if (id == null || id === '') return null;
+  return String(id).split('#')[0] || null;
+}
+
+const describeEntry = (entry) => {
+  if (!entry) return null;
+  const piece = entry.surround && typeof entry.surround === 'object' ? entry.surround.piece ?? null : null;
+  return {
+    title: entry.title ?? null,
+    subtitle: entry.subtitle ?? null,
+    work: clipWork(entry),
+    // The concert the next clip is from, when its own surround names it.
+    workTitle: piece?.title ?? null,
+    workYear: piece?.year ?? null,
+  };
+};
 
 /**
  * @param {object|null} item - The now-playing item (`getNowPlaying().item`)
  * @param {object|null} handle - The Player's imperative handle
- * @returns {{ segment: {start: number, end: number}, index: number|null,
- *   total: number|null, next: {title: string|null, subtitle: string|null}|null }|null}
+ * @returns {{ segment: {start: number, end: number}, title: string|null,
+ *   work: string|null, index: number|null, total: number|null,
+ *   next: {title: string|null, subtitle: string|null, work: string|null,
+ *     workTitle: string|null, workYear: number|null}|null }|null}
  *   null when the item is not a clip.
  */
 export function clipContext(item, handle) {
@@ -49,6 +72,10 @@ export function clipContext(item, handle) {
 
   return {
     segment: { start: segment.start, end: segment.end },
+    // The clip's OWN name (the piece sounding), which no surround payload
+    // holds: the payload is the concert's.
+    title: item.title ?? null,
+    work: clipWork(item),
     index,
     total,
     next: describeEntry(next),
@@ -58,5 +85,5 @@ export function clipContext(item, handle) {
 /** A string that changes only when something a clip module shows changes. */
 export function clipKey(clip) {
   if (!clip) return '';
-  return JSON.stringify([clip.segment.start, clip.segment.end, clip.index, clip.total, clip.next]);
+  return JSON.stringify([clip.segment.start, clip.segment.end, clip.title, clip.work, clip.index, clip.total, clip.next]);
 }

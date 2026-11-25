@@ -54,7 +54,15 @@ import { clipContext, clipKey } from "./clipContext.js";
 
 
 /** Matches the session bridge's 1 Hz cadence. */
-const DEFAULT_POLL_MS = 1000;
+const DEFAULT_POLL_MS = 250;
+/**
+ * How often the clip context is re-read under an unchanged item. The poll above
+ * is fast so an item change (Next) is seen within a quarter second and the
+ * frame's curtain can cover it; the clip context is NOT re-read at that rate,
+ * because it reads the Player's queue snapshot, a deep copy of every queue item.
+ * It is read on every item change, and otherwise this often (an Up Next edit).
+ */
+const CLIP_REFRESH_MS = 2000;
 
 /** Handed to the clock while the frame is off: attaches to nothing, ticks nothing. */
 const NO_MEDIA = () => null;
@@ -63,6 +71,44 @@ const NO_MEDIA = () => null;
 function resolveSurround(item) {
   const s = item && typeof item === 'object' ? item.surround : null;
   return (s && typeof s === 'object' && !Array.isArray(s)) ? s : null;
+}
+
+/**
+ * The picture's OWN shape, read off the media element, for a work whose corpus
+ * declares none. Snapped to 4 / 3 or 16 / 9 when within 3% (encoders round
+ * 960x720 to 960x714), else the exact ratio. null until the element knows its
+ * size. Polled rather than subscribed: the Player swaps the element under the
+ * host (a new item, a remount), and a poll needs no re-binding to follow it.
+ */
+export function pictureAspectOf(width, height) {
+  if (!(width > 0) || !(height > 0)) return null;
+  const r = width / height;
+  if (Math.abs(r - 4 / 3) / (4 / 3) < 0.03) return '4 / 3';
+  if (Math.abs(r - 16 / 9) / (16 / 9) < 0.03) return '16 / 9';
+  return `${Math.round(width)} / ${Math.round(height)}`;
+}
+
+function usePictureAspect(getMediaEl, active, logger, contentId) {
+  const [aspect, setAspect] = useState(null);
+  const getRef = useRef(getMediaEl);
+  getRef.current = getMediaEl;
+  useEffect(() => {
+    if (!active) { setAspect(null); return undefined; }
+    const read = () => {
+      let el = null;
+      try { el = getRef.current?.() ?? null; } catch (_) { el = null; }
+      const next = pictureAspectOf(Number(el?.videoWidth) || 0, Number(el?.videoHeight) || 0);
+      if (next == null) return;
+      setAspect((prev) => {
+        if (prev !== next) logger.debug('surround.picture-aspect', { contentId, aspect: next, from: prev });
+        return next;
+      });
+    };
+    read();
+    const timer = setInterval(read, 500);
+    return () => clearInterval(timer);
+  }, [active, contentId, logger]);
+  return aspect;
 }
 
 /**
@@ -78,6 +124,8 @@ function SurroundStage({ contentId, surround, active, mode, logger, getMediaEl, 
     contentId,
     logger,
   });
+
+  const pictureAspect = usePictureAspect(getMediaEl, active, logger, contentId);
 
   useEffect(() => {
     if (!active) return undefined;
@@ -149,6 +197,7 @@ function SurroundStage({ contentId, surround, active, mode, logger, getMediaEl, 
       duration={duration}
       playing={playing}
       seeking={seeking}
+      pictureAspect={pictureAspect}
       logger={logger}
       onModuleError={onModuleError}
     >
@@ -224,6 +273,11 @@ export default function SurroundHost({
 
     // Tracked outside React state so the poll can compare without re-subscribing.
     let seen = { contentId: null, surroundId: null, clip: '' };
+    let clipReadAt = 0;
+    // The ITEM's own identity. Not `contentId`: every clip of one concert
+    // shares the concert's rail id, so two clips of the same concert are the
+    // same contentId and only this tells them apart.
+    let seenItem = null;
 
     const read = () => {
       const handle = readHandle();
@@ -242,9 +296,16 @@ export default function SurroundHost({
       // A clip (an item playing only its `segment` window) also carries where
       // it sits in the queue and what plays next, which can change under the
       // same item (an Up Next edit), so it is part of what "changed" means.
+      const same = nextId === seen.contentId && surroundId === seen.surroundId;
+      const itemId = item?.id ?? item?.contentId ?? null;
+      const itemChanged = itemId !== seenItem;
+      seenItem = itemId;
+      const now = Date.now();
+      if (same && !itemChanged && now - clipReadAt < CLIP_REFRESH_MS) return;
+      clipReadAt = now;
       const clip = surround ? clipContext(item, handle) : null;
       const clipSeen = clipKey(clip);
-      if (nextId === seen.contentId && surroundId === seen.surroundId) {
+      if (same) {
         if (clipSeen === seen.clip) return;
         seen = { ...seen, clip: clipSeen };
         setCurrent((prev) => ({ ...prev, clip }));

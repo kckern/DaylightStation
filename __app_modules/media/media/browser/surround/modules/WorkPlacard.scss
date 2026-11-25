@@ -211,3 +211,23 @@
      and merely register the mark. */
   opacity: 0.65;
 }
+
+/* A DATED title ("Ring Christmas Bells · 2008"): the name takes the ellipsis,
+   the year always sets whole. */
+.surround-work-placard__title:has(.surround-work-placard__year) {
+  display: flex;
+  justify-content: center;
+  text-overflow: clip;
+}
+
+.surround-work-placard__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.surround-work-placard__year-sep,
+.surround-work-placard__year {
+  flex: 0 0 auto;
+  white-space: pre;
+}

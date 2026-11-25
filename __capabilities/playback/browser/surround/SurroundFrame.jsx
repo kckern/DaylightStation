@@ -49,6 +49,7 @@ import {
 } from "./entrance.js";
 import { labelFloorPx, LABEL_FLOOR_ANCHOR_PX } from "./fit.js";
 import { lyricStateAt, railHasText } from "./lyrics.js";
+import { useChangeCurtain } from "./curtain.js";
 import "./SurroundFrame.scss";
 
 const DEFAULT_RAIL_WIDTH = '20%';
@@ -184,6 +185,7 @@ export default function SurroundFrame({
   duration = 0,
   playing = false,
   seeking = false,
+  pictureAspect = null,
   logger = null,
   className = '',
   onModuleError = null,
@@ -264,8 +266,25 @@ export default function SurroundFrame({
     return data.contentId === contentId ? data : { ...data, contentId };
   }, [data, contentId]);
 
-  /** The declared ratio, as a number, for the cap's arithmetic only. */
-  const aspect = ratioOf(payload?.piece?.aspectRatio ?? '16 / 9');
+  /**
+   * THE PICTURE'S SHAPE. The corpus's declared ratio is inviolable; a work that
+   * declares none takes the shape the media element reports (`pictureAspect`,
+   * read by the host), so a 4:3 concert gets a 4:3 box rather than a 16:9 box
+   * with black bars inside it. 16:9 until either is known.
+   */
+  const declaredAspect = payload?.piece?.aspectRatio ?? null;
+  const aspectRatio = declaredAspect ?? pictureAspect ?? '16 / 9';
+  /** The ratio as a number, for the cap's arithmetic only. */
+  const aspect = ratioOf(aspectRatio);
+  /**
+   * A DETECTED picture narrower than 16:9 keeps the 16:9 picture's HEIGHT.
+   * Clips from different concerts alternate shapes every few minutes; holding
+   * the height keeps the placard, the band and the rail exactly where they
+   * were, and the picture narrows inside the same window with the theme's
+   * ground either side of it (`--pillared`). An authored ratio keeps the
+   * frame's own geometry, unchanged.
+   */
+  const pillared = !declaredAspect && aspect != null && aspect < (16 / 9) * 0.99;
 
   const rootRef = useRef(null);
   const mainRef = useRef(null);
@@ -273,6 +292,8 @@ export default function SurroundFrame({
   const mediaRef = useRef(null);
   const footerRef = useRef(null);
   const [mediaWidth, setMediaWidth] = useState(null);
+  const [mediaHeight, setMediaHeight] = useState(null);
+  const [mainWidth, setMainWidth] = useState(null);
   /**
    * THE WIDEST THIS PICTURE MAY BE — measured, and published to the SCSS.
    *
@@ -330,7 +351,9 @@ export default function SurroundFrame({
         const rect = entry.contentRect ?? {};
         if (entry.target === mediaRef.current) {
           const w = Number(rect.width) || 0;
+          const h = Number(rect.height) || 0;
           setMediaWidth(w > 0 ? w : null);
+          setMediaHeight(h > 0 ? h : null);
         } else if (entry.target === rootRef.current) {
           // The screen root's width, which every type floor in the frame scales
           // by. Measured rather than read from screen config: `ScreenRenderer`
@@ -353,7 +376,11 @@ export default function SurroundFrame({
           const padTop = stage && typeof window !== 'undefined' && typeof window.getComputedStyle === 'function'
             ? parseFloat(window.getComputedStyle(stage).paddingTop) || 0
             : 0;
-          const capH = mainH - padTop - mediaReserve;
+          const mainW = Number(rect.width) || 0;
+          setMainWidth(mainW > 0 ? mainW : null);
+          const reserveH = mainH - padTop - mediaReserve;
+          // A pillared picture is no taller than a 16:9 one at this width.
+          const capH = pillared && mainW > 0 ? Math.min(reserveH, mainW * (9 / 16)) : reserveH;
           setMediaCapW(aspect && capH > 0 ? capH * aspect : null);
         } else if (entry.target === footerRef.current) {
           const h = Number(rect.height) || 0;
@@ -369,7 +396,7 @@ export default function SurroundFrame({
     if (rootRef.current) observer.observe(rootRef.current);
     if (mainRef.current) observer.observe(mainRef.current);
     return () => observer.disconnect();
-  }, [enabled, footerFloor, footerRegions.length, mediaReserve, aspect]);
+  }, [enabled, footerFloor, footerRegions.length, mediaReserve, aspect, pillared]);
 
   // Report collapse transitions only — not the steady state on every render.
   const prevCollapsed = useRef(collapsed);
@@ -588,8 +615,25 @@ export default function SurroundFrame({
     slides && 'surround-frame--slides',
     !entered && 'surround-frame--entering',
     arriving && 'surround-frame--arriving',
+    pillared && 'surround-frame--pillared',
     className,
   ].filter(Boolean).join(' ');
+
+  // The band belongs to the picture's WINDOW: the measured media box, or for a
+  // pillared picture the 16:9 window it stands in, so the band does not narrow
+  // when a 4:3 clip comes round.
+  const footerWidth = pillared && mediaHeight && mainWidth
+    ? Math.min(mainWidth, mediaHeight * (16 / 9))
+    : mediaWidth;
+
+  // A clip's identity is its window within its work: two clips of one concert
+  // share the concert's contentId, and the curtain must cover that change too.
+  const changeId = clip
+    ? `${clip.work ?? contentId}@${clip.segment.start}`
+    : contentId;
+  const curtain = useChangeCurtain({
+    enabled, contentId: changeId, clip, playing, seeking, position, rootRef, log,
+  });
 
   // The measured media width, published as a custom property so the SCSS can
   // size the floating placard AGAINST the video (a plate pinned over a painting
@@ -600,8 +644,12 @@ export default function SurroundFrame({
   const rootStyle = enabled
     ? {
       ...entranceVars(),
-      '--surround-aspect-ratio': payload?.piece?.aspectRatio ?? '16 / 9',
+      '--surround-aspect-ratio': aspectRatio,
       ...(mediaWidth ? { '--surround-media-w': `${mediaWidth}px` } : null),
+      // The picture's WINDOW: the media box, or for a pillared picture the
+      // 16:9 window it stands in. The plate is capped against this, so a 4:3
+      // clip does not cut a concert's name the 16:9 one set whole.
+      ...(footerWidth ? { '--surround-window-w': `${footerWidth}px` } : null),
       // The widest the picture may be while the band keeps its reserve. On a
       // 16:9 work this resolves past the column and the `min()` in the SCSS
       // picks `100%`, so the classical frame is untouched.
@@ -655,7 +703,7 @@ export default function SurroundFrame({
             data-testid={enabled ? 'surround-media' : undefined}
             ref={mediaRef}
             style={enabled
-              ? { aspectRatio: payload?.piece?.aspectRatio ?? '16 / 9', maxWidth: '100%', maxHeight: '100%' }
+              ? { aspectRatio, maxWidth: '100%', maxHeight: '100%' }
               : NO_BOX}
           >
             {children}
@@ -667,7 +715,7 @@ export default function SurroundFrame({
             className="surround-frame__footer"
             data-testid="surround-footer"
             ref={footerRef}
-            style={mediaWidth ? { width: `${mediaWidth}px` } : undefined}
+            style={footerWidth ? { width: `${footerWidth}px` } : undefined}
           >
             {visibleFooterRegions.map(renderRegion)}
           </div>
@@ -714,6 +762,20 @@ export default function SurroundFrame({
           {sideRegions.map(renderRegion)}
         </aside>
       )}
+      {/* THE CHANGE CURTAIN (curtain.js): over everything, the picture
+          included, while one clip gives way to the next. Always mounted while
+          the frame is on, so parting is a transition rather than an unmount. */}
+      {enabled && (
+        <div
+          className={`surround-frame__curtain surround-frame__curtain--${curtain}`}
+          data-testid="surround-curtain"
+          data-curtain={curtain}
+          aria-hidden="true"
+        >
+          <div className="surround-frame__curtain-panel surround-frame__curtain-panel--l" />
+          <div className="surround-frame__curtain-panel surround-frame__curtain-panel--r" />
+        </div>
+      )}
     </div>
   );
 }
@@ -729,6 +791,8 @@ SurroundFrame.propTypes = {
   duration: PropTypes.number,
   playing: PropTypes.bool,
   seeking: PropTypes.bool,
+  /** The picture's own ratio as the media element reports it ("4 / 3"), used when the corpus declares none. */
+  pictureAspect: PropTypes.string,
   /** Host logger (carries sessionLog). Falls back to a module-level child. */
   logger: PropTypes.object,
   className: PropTypes.string,

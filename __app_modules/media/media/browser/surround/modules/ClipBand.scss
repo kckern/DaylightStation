@@ -1,10 +1,15 @@
+/* The band under a clip: [piece grid | the piece now playing + its clock] and,
+   at the right, what plays next. The title is the band's loudest type and may
+   wrap to a second line rather than be cut (the house standard: fit by
+   layout, nothing clipped). */
 .clip-band {
+  --clip-cell: 0.55rem;
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.6fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 1.5em;
+  gap: 2rem;
   height: 100%;
-  padding: 0.4em 1.2em;
+  padding: 0.7rem 1.4rem 0.5rem;
   box-sizing: border-box;
   color: var(--ink, #f3ead6);
   font-family: var(--surround-body, Georgia, serif);
@@ -12,60 +17,58 @@
   z-index: 1; /* above the snow layer */
 }
 
-.clip-band__from,
-.clip-band__next {
+.clip-band__now {
   min-width: 0;
   display: flex;
-  flex-direction: column;
-  gap: 0.15em;
+  align-items: center;
+  gap: 1.1rem;
 }
 
-.clip-band__title,
-.clip-band__next-title {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: 1.05em;
-  line-height: 1.15;
-}
-
-.clip-band__meta {
-  display: flex;
-  gap: 0.8em;
-  color: var(--ink-soft, #b9b29c);
-  font-size: 0.85em;
-}
-
-.clip-band__year {
-  color: var(--brass, #c9a24a);
-  letter-spacing: 0.12em;
-}
-
-.clip-band__ticks {
-  display: flex;
+/* The concert's pieces as a small grid, this one lit. Solid colours, no
+   translucent half state: a dim cell is a darker green, not a faded one. */
+.clip-band__grid {
+  flex: 0 0 auto;
+  display: grid;
   gap: 3px;
-  margin: 0.2em 0 0;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.clip-band__tick {
-  flex: 0 1 10px;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--ink-soft, #b9b29c);
-  opacity: 0.35;
+.clip-band__cell {
+  width: var(--clip-cell);
+  height: var(--clip-cell);
+  border-radius: 1px;
+  background: #3d5a45;
 }
 
-.clip-band__tick--lit {
-  background: var(--brass, #c9a24a);
-  opacity: 1;
+.clip-band__cell--now {
+  background: var(--brass-lit, #ecd28a);
+  box-shadow: 0 0 0 1px var(--brass, #c9a24a);
+}
+
+.clip-band__heading {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.clip-band__title {
+  font-family: var(--surround-display, Georgia, serif);
+  font-size: 1.75rem;
+  font-weight: 600;
+  font-style: italic;
+  line-height: 1.12;
+  overflow-wrap: anywhere;
 }
 
 .clip-band__progress {
   display: flex;
   align-items: center;
   gap: 0.8em;
+  font-size: 0.9rem;
   font-variant-numeric: tabular-nums;
   color: var(--ink-soft, #b9b29c);
 }
@@ -74,7 +77,7 @@
   flex: 1;
   height: 3px;
   border-radius: 2px;
-  background: var(--programme-edge, rgba(201, 162, 74, 0.35));
+  background: #35513d;
   overflow: hidden;
   position: relative;
 }
@@ -84,19 +87,56 @@
   background: var(--brass, #c9a24a);
 }
 
+/* UP NEXT. From the same concert: a label and the name, right-aligned. */
 .clip-band__next {
+  min-width: 0;
+  max-width: 19rem;
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
   text-align: right;
-  align-items: flex-end;
+}
+
+.clip-band__next-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
 }
 
 .clip-band__next-label {
   color: var(--brass, #c9a24a);
-  font-size: 0.75em;
-  letter-spacing: 0.14em;
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
 }
 
-.clip-band__next-subtitle {
-  color: var(--ink-soft, #b9b29c);
-  font-size: 0.85em;
+.clip-band__next-title {
+  font-size: 1.05rem;
+  line-height: 1.2;
+}
+
+/* From ANOTHER concert: partitioned behind a gilt rule, with that concert's
+   poster, and its name above the piece. Reads as a change of programme, not
+   the next track of this one. */
+.clip-band__next--elsewhere {
+  text-align: left;
+  padding-left: 1rem;
+  border-left: 1px solid var(--brass, #c9a24a);
+}
+
+.clip-band__next-poster {
+  flex: 0 0 auto;
+  height: 4.4rem;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  border: 1px solid var(--brass, #c9a24a);
+  background: #0b2316;
+}
+
+.clip-band__next-work {
+  color: var(--brass-lit, #ecd28a);
+  font-style: italic;
+  font-size: 0.95rem;
+  line-height: 1.2;
 }

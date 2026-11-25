@@ -423,8 +423,8 @@ describe('SurroundHost', () => {
     it('puts the clip window, position and next clip on the payload', () => {
       const player = clipPlayer({ id: 'plex:1#1', surround: SURROUND, segment: { start: 10, end: 200 } }, 0);
       renderHost({ getPlayerHandle: player.get, logger });
-      expect(lastData().clip).toEqual({
-        segment: { start: 10, end: 200 }, index: 0, total: 2,
+      expect(lastData().clip).toMatchObject({
+        segment: { start: 10, end: 200 }, work: 'plex:1', index: 0, total: 2,
         next: { title: 'Second Carol', subtitle: 'Snow Concert (2002)' },
       });
       expect(lastData().piece).toEqual(SURROUND.piece);

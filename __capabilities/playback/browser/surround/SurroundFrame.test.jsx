@@ -539,7 +539,9 @@ describe('SurroundFrame — the shipped composition', () => {
     const css = withStyles().replace(/\s+/g, ' ');
     const rule = css.match(/\.surround-frame__header \{[^}]*\}/);
     expect(rule).not.toBeNull();
-    const cap = rule[0].match(/max-width: calc\(var\(--surround-media-w, 100%\) \* ([\d.]+)\)/);
+    // Capped against the picture's WINDOW (the media box, or the 16:9 window a
+    // pillared picture stands in), falling back to the measured media width.
+    const cap = rule[0].match(/max-width: calc\(var\(--surround-window-w, var\(--surround-media-w, 100%\)\) \* ([\d.]+)\)/);
     expect(cap, 'the plate is not capped against the measured media width').not.toBeNull();
     expect(parseFloat(cap[1])).toBeLessThan(1);       // narrower than the painting
     expect(rule[0]).toContain('width: max-content');  // ...and content-width within that
@@ -1158,5 +1160,24 @@ describe('regionsFor', () => {
   it('returns the normal regions for a definition with no clip set', () => {
     const plain = { regions: { right: { module: 'a' } } };
     expect(regionsFor(plain, { segment: { start: 0, end: 1 } })).toBe(plain.regions);
+  });
+});
+
+describe('SurroundFrame: the picture\'s own shape', () => {
+  it('takes the reported shape when the corpus declares none, and pillars a narrower one', () => {
+    const { getByTestId } = render(
+      <SurroundFrame data={DATA} contentId="plex:1" pictureAspect="4 / 3"><div /></SurroundFrame>,
+    );
+    expect(getByTestId('surround-media').style.aspectRatio).toBe('4 / 3');
+    expect(getByTestId('surround-frame').className).toContain('surround-frame--pillared');
+  });
+
+  it('keeps a declared ratio over the reported one, and never pillars it', () => {
+    const declared = { ...DATA, piece: { ...(DATA.piece ?? {}), aspectRatio: '16 / 9' } };
+    const { getByTestId } = render(
+      <SurroundFrame data={declared} contentId="plex:1" pictureAspect="4 / 3"><div /></SurroundFrame>,
+    );
+    expect(getByTestId('surround-media').style.aspectRatio).toBe('16 / 9');
+    expect(getByTestId('surround-frame').className).not.toContain('surround-frame--pillared');
   });
 });

@@ -450,3 +450,21 @@ describe('plateText', () => {
     expect(plateText({ piece: PIECE, segment: SEG, ordinal: 1, count: 0 }).set).toBeNull();
   });
 });
+
+describe('WorkPlacard: a dated concert', () => {
+  it('sets the year on the title line: "Ring Christmas Bells · 2008"', () => {
+    const { getByTestId } = render(
+      <WorkPlacard data={{ piece: { title: 'Ring Christmas Bells', year: 2008, performance: 'A Singer . A Narrator, narrator' } }} />,
+    );
+    const title = getByTestId('surround-placard-title');
+    expect(title.textContent).toBe('Ring Christmas Bells · 2008');
+    expect(title.querySelector('.surround-work-placard__year').textContent).toBe('2008');
+  });
+
+  it('leaves a work with a provenance line alone — its dates are already there', () => {
+    const { getByTestId } = render(
+      <WorkPlacard data={{ piece: { title: 'Spring', composed: 'by 1725', year: 1725 } }} />,
+    );
+    expect(getByTestId('surround-placard-title').textContent).toBe('Spring');
+  });
+});
