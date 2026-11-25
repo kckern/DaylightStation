@@ -39,7 +39,10 @@ A program enrollment in the learner's plan,
 `appendAssignedProgramEntries` projects it as a `cadence: 'daily'` agenda entry
 that prints with a panel code. There is no `target`: one debrief per day is the
 obligation, and the program is never terminal. A day outside `daysOfWeek`, inside
-an `except` range, or excused by the household calendar is not owed. A day the
+an `except` range, or excused by the household calendar is not owed. Owed days follow
+the day-off keep-lists (`programAskedOn`, `day-off-tiers.md`), so a tier that keeps
+`program: school-debrief` (or its subject) makes that day owed; the defaults excuse the
+debrief on every day off, and Sunday rest excuses it on Sundays. A day the
 school was open but the debrief does not apply to can be excused by a grown-up.
 
 ## Prompts

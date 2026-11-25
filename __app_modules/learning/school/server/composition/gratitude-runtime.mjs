@@ -8,11 +8,11 @@ import { captureProgramTake } from '../application/shared/captureProgramTake.mjs
 import { gratitudeConfigOf, GRATITUDE_TRANSCRIPTION_HINT } from '../domain/gratitude.mjs';
 import { createSchoolGratitudeRouter } from '../api/schoolGratitude.mjs';
 
-export function createGratitudeRuntime({configService,store,assignments,grants,teacherGate,aiGateway,decisionGateway,publish,notify=null,scheduler,timezone,householdSchedule,clock=()=>new Date(),logger={}}){
+export function createGratitudeRuntime({configService,store,assignments,grants,teacherGate,aiGateway,decisionGateway,publish,notify=null,scheduler,timezone,householdSchedule,dayOffPolicy=null,clock=()=>new Date(),logger={}}){
   const config=gratitudeConfigOf(configService.getHouseholdAppConfig(null,'school')??{});
   const audio=new FilesystemProgramAudio({rootDir:path.join(configService.getMediaDir(),'school/gratitude'),clock:()=>clock().getTime()});
   const bounded=(work,message)=>scheduler.withDeadline(work,{milliseconds:30_000,errorFactory:()=>new Error(message)});
-  const service=new GratitudeService({store,assignments,grants,timezone,householdSchedule,clock,logger,config,
+  const service=new GratitudeService({store,assignments,grants,timezone,householdSchedule,dayOffPolicy,clock,logger,config,
     judge:new GratitudeJudge({decisionGateway,scheduler,logger,config:config.judge}),extractor:new GratitudeTopicExtractor({aiGateway,scheduler,logger,config:config.extractor}),
     followUpWriter:new GratitudeFollowUpWriter({aiGateway,scheduler,logger,config:config.followUp}),
     captureTake:args=>{

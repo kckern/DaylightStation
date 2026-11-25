@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DEFAULT_DAY_OFF_POLICY, readDayOffPolicy, keepsEntry } from './dayOffPolicy.mjs';
+import { DEFAULT_DAY_OFF_POLICY, readDayOffPolicy, keepsEntry, programAskedOn } from './dayOffPolicy.mjs';
 
 const scripture = { subject: 'scripture' };
 const piano = { subject: 'arts', program: 'piano-course' };
@@ -58,5 +58,57 @@ describe('day-off keep-lists', () => {
     const { errors, policy } = readDayOffPolicy(raw);
     expect(errors.join()).toMatch(message);
     expect(policy).toBe(DEFAULT_DAY_OFF_POLICY);
+  });
+});
+
+describe('programAskedOn — the agenda\'s rule for one program on one day', () => {
+  // 2026-11-24 Tue school day, 2026-11-25 Wed stay-home, 2026-11-26 Thu major-holiday,
+  // 2026-11-27 Fri away, 2026-11-28 Sat inside the away span but listed in `also`.
+  const household = {
+    except: [
+      { from: '2026-11-25', to: '2026-11-25', label: 'Thanksgiving break', tier: 'stay-home' },
+      { from: '2026-11-26', to: '2026-11-26', label: 'Thanksgiving', tier: 'major-holiday' },
+      { from: '2026-11-27', to: '2026-11-28', label: 'Trip', tier: 'away' },
+    ],
+    also: ['2026-11-28'],
+  };
+  const gratitude = { programId: 'gratitude', subject: 'scripture', schedule: { daysOfWeek: [1, 2, 3, 4, 5, 6, 7] } };
+  const worksheet = { programId: 'printed-activity', subject: 'math', schedule: null };
+  const asked = (day, enrollment, opts = {}) => programAskedOn(day, { enrollment, householdSchedule: household, ...opts });
+
+  it('asks on an ordinary school day', () => {
+    expect(asked('2026-11-24', gratitude)).toBe(true);
+  });
+  it('asks a kept subject on a stay-home day (the 2026-11-25 incident)', () => {
+    expect(asked('2026-11-25', gratitude)).toBe(true);
+  });
+  it('does not ask an unkept program on a stay-home day', () => {
+    expect(asked('2026-11-25', worksheet)).toBe(false);
+  });
+  it('keeps scripture on a major holiday by default', () => {
+    expect(asked('2026-11-26', gratitude)).toBe(true);
+  });
+  it('asks nothing on an away day', () => {
+    expect(asked('2026-11-27', gratitude)).toBe(false);
+  });
+  it('an `also` day inside a break is a school day', () => {
+    expect(asked('2026-11-28', worksheet)).toBe(true);
+  });
+  it('follows a configured keep-list, not the defaults', () => {
+    const policy = { ...DEFAULT_DAY_OFF_POLICY, 'stay-home': { keep: [{ program: 'piano-course' }] } };
+    expect(asked('2026-11-25', gratitude, { dayOffPolicy: policy })).toBe(false);
+    expect(asked('2026-11-25', { programId: 'piano-course', subject: 'arts' }, { dayOffPolicy: policy })).toBe(true);
+  });
+  it('the program\'s own schedule still wins: a Mon-Fri program is not asked on Saturday', () => {
+    const weekdays = { ...gratitude, schedule: { daysOfWeek: [1, 2, 3, 4, 5] } };
+    expect(asked('2026-11-28', weekdays)).toBe(false);
+  });
+  it('with no household calendar, only the program schedule decides', () => {
+    expect(programAskedOn('2026-11-25', { enrollment: gratitude, householdSchedule: null })).toBe(true);
+  });
+  it('Sunday rest: only scripture is asked on a Sunday, whatever the program schedule says', () => {
+    const debrief = { programId: 'school-debrief', subject: 'writing', schedule: { daysOfWeek: [1, 2, 3, 4, 5, 6, 7] } };
+    expect(asked('2026-11-29', debrief)).toBe(false);
+    expect(asked('2026-11-29', gratitude)).toBe(true);
   });
 });

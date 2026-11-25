@@ -58,8 +58,9 @@ export default function PreschoolGratitude({ view, learnerId, learnerName = null
       // Takes never pile up: each one is the whole answer, confirmed or thrown away.
       if (result?.unheard || !result?.text) { setNotice(PRESCHOOL_LINES.unheard); setHeard(null); }
       else setHeard({ text: result.text, audioRef: result.audioRef ?? null });
-    } catch {
-      if (live.current) setNotice(PRESCHOOL_LINES.unheard);
+    } catch (err) {
+      // A refusal shows on the error screen (the `error` prop); only a lost recording is "didn't hear you".
+      if (live.current && !err?.rejected) setNotice(PRESCHOOL_LINES.unheard);
     } finally { if (live.current) setUploading(false); }
   }, [onTake]);
   const recorder = useTakeRecorder({ floor: DEBRIEF_FLOOR, onTake: receive });
@@ -187,6 +188,7 @@ export default function PreschoolGratitude({ view, learnerId, learnerName = null
   else if (screen === 'error') body = <>
     <Icon name="warning" className="preschool-gratitude__picture" />
     <h2>Something went wrong</h2>
+    {error && <p className="preschool-gratitude__notice" role="status">{error}</p>}
     <SchoolButton variant="plain" type="button" className="preschool-gratitude__choice" onClick={onDismissError}><Icon name="restart" /><span>Tap to try again</span></SchoolButton>
   </>;
   else {

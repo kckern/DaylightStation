@@ -8,7 +8,8 @@ import { SUBJECT_IDS } from "./curriculum/unitValidation.mjs";
 export const SCHOOL_DEBRIEF_PROGRAM_ID = 'school-debrief';
 export const SCHOOL_DEBRIEF_UNIT_ID = 'school-debrief:daily';
 export const SCHOOL_DEBRIEF_TITLE = 'After-school debrief';
-const DEFAULT_SUBJECT = 'writing';
+export const SCHOOL_DEBRIEF_DEFAULT_SUBJECT = 'writing';
+const DEFAULT_SUBJECT = SCHOOL_DEBRIEF_DEFAULT_SUBJECT;
 
 const P = (id, text, required, kind) => Object.freeze({ id, text, required, kind });
 export const PROMPTS = Object.freeze([

@@ -65,7 +65,7 @@ Add one entry to a learner's `programs` list through the normal assignment servi
 
 `daysOfWeek` is ISO (1 = Monday … 7 = Sunday). For a daily habit that runs on weekends too, list all seven: `[1, 2, 3, 4, 5, 6, 7]`.
 
-The shelf is Scripture & Gospel; the unit is `gratitude:daily`. One accepted submission completes each scheduled study day. Household calendar exceptions apply. The program never becomes terminal and adds no separate coin payout rule. The study day uses the household timezone and 4am boundary. New backdated submissions are refused; already submitted pending work recovers into its original day.
+The shelf is Scripture & Gospel; the unit is `gratitude:daily`. One accepted submission completes each scheduled study day. Household days off apply through the keep-lists (`day-off-tiers.md`): Gratitude is on the Scripture shelf, so it is still asked on any tier that keeps `subject: scripture` (stay-home, enrichment and major-holiday by default) and not on an `away` day. A take or submit the server refuses (409, for example "Gratitude is not assigned today.") shows the server's reason (an alert in the standard screen, the error screen in preschool mode), never "I didn't hear you"; a lost upload or a server fault stays a recording to retry. `school.gratitude.ui.apiRejected` logs the server's `error` text (fixed policy messages, never the child's words). The program never becomes terminal and adds no separate coin payout rule. The study day uses the household timezone and 4am boundary. New backdated submissions are refused; already submitted pending work recovers into its original day.
 
 ## Assessment and spacing
 
