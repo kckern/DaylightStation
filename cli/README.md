@@ -396,25 +396,14 @@ Commands live in `cli/lib/fitness/`, one module per operation, each exporting
 
 ### `cli/concert-index.cli.mjs`
 
-Evidence for a concert video's programme: audio sections bounded by silence and
-applause, the subtitle text inside each, and a ranked guess at which expected track
-each section is. It writes evidence for a person or agent to judge, never a sidecar.
-It reuses the silence and applause stages of `segment-timings.cli.mjs`.
+Evidence for where the music and the talk are inside a concert video. It writes evidence for a person or agent to judge, never a sidecar.
 
 ```
-concert-index: evidence for a concert video's programme
+concert-index: where the music and the talk are inside a concert video
 
-  track-listing --page "<Wikipedia title>" [--out tracks.json]
-      Fetch the article's wikitext and print every {{Track listing}} track.
-  measure <media> --out <dir> [--noise -40] [--min-silence 0.8]
-      Decode the audio once; write rms.txt, hf.txt, silence.txt, duration.json.
-  evidence --measured <dir> --srt <file> [--tracks tracks.json] [--min-gap 20] [--out evidence.json]
-      Build sections from measured audio, attach subtitles, rank tracks.
   clips <media> --at 120,305.5 [--pad 6] --out <dir>
       Cut a 360p review clip centred on each boundary.
 ```
-
-Run `measure` where the media lives; the other subcommands work from its output.
 
 ## Piano Bridge Bluetooth controls
 
