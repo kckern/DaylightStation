@@ -39,6 +39,19 @@ function article(id) {
   return { id, stateKey: id, title: id, published: '2026-07-01T12:00:00Z', state: { isSaved: true } };
 }
 
+// f979c2aae0 shows the subscriptions sidebar and its opener only in the All view, so
+// the subscriptions-drawer tests run there with a stream that holds one article.
+function allViewWithOneArticle() {
+  apiMock.mockImplementation(path => {
+    if (path === '/api/v1/feed/reader/feeds') return Promise.resolve([]);
+    if (path.startsWith('/api/v1/feed/reader/stream')) return Promise.resolve({
+      items: [{ id: 'old-saved', stateKey: 'old-saved', title: 'Saved from last month', summary: 'Durable history result', url: 'https://example.test/saved', publishedAt: '2026-07-01T12:00:00Z', sourceInfo: { label: 'World', type: 'freshrss' }, origins: ['reader'], state: { isRead: true, isSaved: true, isArchived: false } }],
+      nextCursor: null,
+    });
+    return Promise.resolve({ annotations: [] });
+  });
+}
+
 function observeSentinel() {
   let callback;
   vi.stubGlobal('IntersectionObserver', class {
@@ -85,7 +98,10 @@ describe('Reader history views', () => {
     });
 
     mountReader();
-    expect(await screen.findByRole('status')).toHaveTextContent('Subscriptions are unavailable. The inbox can still be used.');
+    // The Reader also owns an empty polite live region (role=status), so wait on the
+    // message itself rather than on whichever status node exists first.
+    const message = await screen.findByText(/Subscriptions are unavailable\. The inbox can still be used\./);
+    expect(message.closest('[role="status"]')).not.toBeNull();
     expect(screen.getByLabelText('Subscriptions')).toBeInTheDocument();
     expect(attempts).toBe(1);
 
@@ -324,7 +340,8 @@ describe('Reader history views', () => {
 
   test('keeps article shortcuts inactive while subscriptions has modal focus', async () => {
     vi.spyOn(window, 'matchMedia').mockReturnValue({ matches: true, addEventListener() {}, removeEventListener() {} });
-    mountReader('?view=saved');
+    allViewWithOneArticle();
+    mountReader();
     const title = await screen.findByText('Saved from last month');
     const header = title.closest('button');
     header.scrollIntoView = vi.fn();
@@ -348,7 +365,8 @@ describe('Reader history views', () => {
       addEventListener(_, listener) { onChange = listener; },
       removeEventListener() {},
     });
-    mountReader('?view=saved');
+    allViewWithOneArticle();
+    mountReader();
     await screen.findByText('Saved from last month');
 
     compact = true;
