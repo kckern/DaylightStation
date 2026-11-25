@@ -662,6 +662,14 @@
 /* The count in the prompt slot: the same pips, in the line, not a band over the music. */
 .piano-learn-lab__prompt .piano-learn-countin { position: static; transform: none; padding: 0; border: 0; background: none; gap: 0.6rem; }
 .piano-learn-lab__prompt .piano-learn-countin__pip { width: 1.75rem; height: 1.75rem; font-size: 0.95rem; }
+/* The count in bars (`data-slots`) is the bench-size variant everywhere else, and its selector out-ranks the
+   line above: in the slot it keeps the line's size, or a two-bar count overruns the slot (the note box half
+   drawn, the cue cut, 2026-11-25). */
+.piano-learn-lab__prompt .piano-learn-countin[data-slots] .piano-learn-countin__pip { width: 1.75rem; height: 1.75rem; font-size: 0.95rem; }
+.piano-learn-lab__prompt .piano-learn-countin[data-slots] .piano-learn-countin__pip.is-half { width: 1rem; }
+.piano-learn-lab__prompt .piano-learn-countin[data-slots] .piano-learn-countin__pip.is-note { font-size: 1rem; }
+.piano-learn-lab__prompt .piano-learn-countin__bar { gap: 0.3rem; padding: 0 0.4rem; }
+.piano-learn-lab__prompt .piano-learn-countin__bar + .piano-learn-countin__bar { border-left-width: 3px; }
 /* The cue (and a missed cue's sentence) may take two lines, so the band never runs under the buttons. */
 .piano-learn-lab__prompt .piano-learn-countin__cue { max-width: 10rem; white-space: normal; font-size: 0.95rem; line-height: 1.1; }
 .piano-learn-lab__prompt .piano-score-countin { position: static; inset: auto; flex-direction: row; gap: 0.6rem; }

@@ -442,13 +442,12 @@ function CoachSession({ score, title, plan, segment, coach, measures = EMPTY_LIS
     const again = result ?? moment;
     if (again && live.current) coach.record(again.played ?? again.task, again.raw);
   };
-  const exportEarlier = () => {
-    const link = document.createElement('a'); const url = URL.createObjectURL(new Blob([coach.recoveryData()], { type: 'application/json' }));
-    link.href = url; link.download = 'piano-earlier-practice.json'; link.click(); URL.revokeObjectURL(url);
-  };
-  const notice = coach.saveStatus === 'error' || coach.recoveryError ? <div className="piano-learn-coach__save" role="status">
-    {coach.saveStatus === 'error' && <><strong>Progress not saved</strong><button type="button" onClick={retrySave}>Retry saving</button></>}
-    {coach.recoveryError && <button type="button" aria-label={coach.recoveryError} onClick={exportEarlier}>Export earlier practice</button>}
+  // Takes the server refused for good stay on the device (`coach.recoveryData()`, logged
+  // `piano.learn.coach.quarantined` when refused). They are not the child's job: a download on the
+  // kiosk goes nowhere a person can use, and the button sat on every drill of the piece, crowding
+  // the count-in out of the prompt slot (2026-11-25). Only a save that can still be retried shows.
+  const notice = coach.saveStatus === 'error' ? <div className="piano-learn-coach__save" role="status">
+    <strong>Progress not saved</strong><button type="button" onClick={retrySave}>Retry saving</button>
   </div> : null;
 
   const gemOffered = usePieceGemOffer({ userId: coach.profileId, enabled: Boolean(board) });
