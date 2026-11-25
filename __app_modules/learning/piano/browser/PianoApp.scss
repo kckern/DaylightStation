@@ -2589,8 +2589,8 @@
   &__prompt { flex: 0 0 15rem; display: grid; justify-items: center; line-height: 1.15; text-align: center; }
   &__prompt strong { font-size: 1.25rem; font-weight: 800; color: var(--piano-accent-text, var(--piano-accent)); }
   &__prompt span { color: var(--piano-muted); font-size: 0.95rem; }
-  // The settings (speed, click volume): buttons that open sheets, removed during a take, slot kept.
-  &__settings { flex: 0 0 13rem; align-self: stretch; min-height: 3.5rem; display: flex; justify-content: flex-end; align-items: center; gap: 0.5rem; }
+  // The settings (speed, click volume): buttons that open sheets, removed during a take, slot kept. 14rem holds the widest content (speed + click volume) in a fallback font too; a slot narrower than its content grows, and then the slot moves between ready and a take.
+  &__settings { flex: 0 0 14rem; min-width: 14rem; align-self: stretch; min-height: 3.5rem; display: flex; justify-content: flex-end; align-items: center; gap: 0.5rem; }
   // A fixed width, right-aligned: the actions change with the take, and nothing to their left may move.
   &__run-controls { flex: 0 0 24rem; display: flex; justify-content: flex-end; align-items: center; gap: 0.5rem; min-width: 0; }
   // Every header action is the same button: icon and a short label, one size, a neutral surface.
