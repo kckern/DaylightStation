@@ -47,7 +47,7 @@ test('Feed Reading appearance owns Escape ahead of Scroll detail and closes on a
   });
 
   await page.goto('/feed/scroll');
-  await page.getByRole('button', { name: 'Play', exact: true }).first().click();
+  await page.getByRole('button', { name: /^Play / }).first().click();
   const decoder = await page.waitForFunction(() => [...document.querySelectorAll('audio,video')]
     .find(media => media.currentSrc.endsWith('/appearance-audio.wav') && !media.paused && media.currentTime > 0));
   const playbackTime = () => decoder.evaluate(media => media.isConnected && !media.paused ? media.currentTime : -1);
@@ -94,7 +94,7 @@ test('Feed Reading appearance owns Escape ahead of Scroll detail and closes on a
   await heldExport.fulfill({ json: { fixture: true } });
   expect((await download).suggestedFilename()).toMatch(/^daylight-feed-.*\.json$/);
   await summary.press('Enter');
-  await expect(page.getByText('Export downloaded.')).toBeVisible();
+  await expect(page.getByText('Export prepared for download.')).toBeVisible();
   const afterMode = await playbackTime();
   expect(afterMode).toBeGreaterThan(0);
   await expect.poll(playbackTime).toBeGreaterThan(afterMode);

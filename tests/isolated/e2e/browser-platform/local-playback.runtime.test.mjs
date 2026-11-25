@@ -48,7 +48,7 @@ test.describe('Feed mini player coarse-pointer controls', () => {
   test('mini-bar controls and seek target meet 44px and playback survives resize', async ({ page }) => {
     await page.routeWebSocket('**/ws', () => {});
     await page.goto('/feed/scroll');
-    await page.getByRole('button', { name: 'Play', exact: true }).first().click();
+    await page.getByRole('button', { name: /^Play / }).first().click();
     const clock = await originalClock(page);
     const audio = page.locator('audio[src$="fixture-audio.wav"]');
     const region = page.getByRole('region', { name: 'Now playing' });
@@ -180,7 +180,7 @@ for (const app of ['Media', 'Feed']) {
       });
     });
     await page.goto(app === 'Media' ? '/media?play=plex:42' : '/feed/scroll');
-    if (app === 'Feed') await page.getByRole('button', { name: 'Play', exact: true }).first().click();
+    if (app === 'Feed') await page.getByRole('button', { name: /^Play / }).first().click();
     const clock = await originalClock(page);
     const initial = await clock();
     await expect.poll(() => sockets.length).toBe(1);
@@ -228,7 +228,7 @@ test('Feed keeps its original audio through a prolonged socket outage and releas
   });
 
   await page.goto('/feed/scroll');
-  await page.getByRole('button', { name: 'Play', exact: true }).first().click();
+  await page.getByRole('button', { name: /^Play / }).first().click();
   const clock = await originalClock(page);
   const beforeOutage = await clock();
   await page.waitForFunction(() => typeof window.fixtureDisconnect === 'function');
@@ -270,7 +270,7 @@ test('Feed keeps its original audio through a prolonged socket outage and releas
 test('Feed article playback survives Escape dismissing the player sheet before the article', async ({ page }) => {
   await page.routeWebSocket('**/*', () => {});
   await page.goto('/feed/scroll');
-  await page.getByRole('button', { name: 'Play', exact: true }).first().click();
+  await page.getByRole('button', { name: /^Play / }).first().click();
   const clock = await originalClock(page);
   const initial = await clock();
   const opener = page.getByRole('button', { name: /^Open:/ }).first();
@@ -304,7 +304,7 @@ test('Feed article arrows respect editing and the expanded player before navigat
     json: { items: [item, next], sessionId: 'fixture', hasMore: false },
   }));
   await page.goto('/feed/scroll');
-  await page.getByRole('button', { name: 'Play', exact: true }).first().click();
+  await page.getByRole('button', { name: /^Play / }).first().click();
   const clock = await originalClock(page);
   await page.getByRole('button', { name: `Open: ${item.title}` }).press('Enter');
   const articleUrl = page.url();
@@ -526,7 +526,7 @@ test('Feed paints a keyboard seek while the same audio is paused', async ({ page
 test('Feed suspends its progress display while the same audio keeps playing in the background', async ({ page }) => {
   await page.routeWebSocket('**/*', () => {});
   await page.goto('/feed/scroll');
-  await page.getByRole('button', { name: 'Play', exact: true }).first().click();
+  await page.getByRole('button', { name: /^Play / }).first().click();
   const clock = await originalClock(page);
   const progress = page.locator('.feed-mini-bar-progress-fill');
   await expect(progress).toBeVisible();
@@ -748,7 +748,7 @@ test('Reader subscriptions own compact backdrop clicks while Feed audio keeps pl
   await page.route('**/api/**/reader/feeds', route => route.fulfill({ json: [{ id: 'fixture', title: 'Fixture Feed' }] }));
   await page.route('**/api/**/reader/stream?*', route => route.fulfill({ json: { items: [], continuation: null } }));
   await page.goto('/feed/scroll');
-  await page.getByRole('button', { name: 'Play', exact: true }).first().click();
+  await page.getByRole('button', { name: /^Play / }).first().click();
   const clock = await originalClock(page);
   const stop = page.getByRole('button', { name: 'Stop playback' });
   await page.getByRole('link', { name: 'Reader', exact: true }).click();

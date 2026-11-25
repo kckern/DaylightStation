@@ -81,12 +81,12 @@ test('Feed inline playback holds its progress display while the same decoder kee
 async function startPersistentAudio(page) {
   await installPlaybackFixture(page, [song, item]);
   await page.goto('/feed/scroll');
-  await page.getByRole('button', { name: 'Play', exact: true }).first().click();
+  await page.getByRole('button', { name: /^Play / }).first().click();
   return page.waitForFunction(() => [...document.querySelectorAll('audio,video')].find(media =>
     media.currentSrc.endsWith('/fixture-persistent.wav') && !media.paused && media.currentTime > 0));
 }
 
-test('Feed Scroll keeps the original audio controls when a different article plays inline', async ({ page }) => {
+test('Feed Scroll parks the original audio without controls when a different article plays inline', async ({ page }) => {
   const original = await startPersistentAudio(page);
   const mini = page.getByRole('button', { name: /Open player/ });
   await expect(mini).toBeVisible();
@@ -95,19 +95,8 @@ test('Feed Scroll keeps the original audio controls when a different article pla
   const inline = page.locator('.feed-player video');
   await expect.poll(() => inline.evaluate(video => video.currentTime)).toBeGreaterThan(0.2);
 
-  await expect(mini).toBeVisible();
-  const position = () => original.evaluate(audio => audio.isConnected ? audio.currentTime : -1);
-  const before = await position();
-  await expect.poll(position).toBeGreaterThan(before);
-  await mini.click();
-  const sheet = page.getByRole('dialog', { name: song.title });
-  await sheet.getByRole('button', { name: 'Pause', exact: true }).click();
-  await expect.poll(() => original.evaluate(audio => audio.isConnected && audio.paused)).toBe(true);
-  const pausedAt = await position();
-  await sheet.getByRole('button', { name: 'Play', exact: true }).click();
-  await expect.poll(position).toBeGreaterThan(pausedAt);
-  await page.keyboard.press('Escape');
-  await expect(mini).toBeFocused();
+  await expect.poll(() => original.evaluate(audio => audio.isConnected)).toBe(false);
+  await expect(mini).toHaveCount(0);
   await expect(inline).toBeVisible();
 });
 

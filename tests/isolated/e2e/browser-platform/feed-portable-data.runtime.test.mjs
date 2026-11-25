@@ -81,7 +81,7 @@ test('Feed retires an old account export and still downloads the current account
   const downloaded = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Export', exact: true }).click();
   const current = await downloaded;
-  await expect(page.getByRole('status').getByText('Export downloaded.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('status').getByText('Export prepared for download.', { exact: true })).toBeVisible();
   const stream = await current.createReadStream();
   const content = [];
   for await (const chunk of stream) content.push(chunk);
@@ -119,7 +119,7 @@ test('Feed discards a file parsed after account replacement without sending it a
   });
   await fixture.openSettings();
   await upload('current-feed.json', 'bob');
-  await expect(page.getByRole('status').getByText('Imported 1 items, 0 states, and 0 notes.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('status').getByText('Imported 1 item, 0 states, and 0 notes.', { exact: true })).toBeVisible();
   await expect.poll(() => fixture.workspaces).toEqual(['amy', 'bob', 'bob']);
   expect(fixture.imports).toEqual([{ owner: 'bob', file: { format, owner: 'bob' } }]);
 });

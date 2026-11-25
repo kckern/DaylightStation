@@ -345,7 +345,7 @@ test('two Feed Scroll tabs reconcile a queued archive without replacing their lo
   try {
     expect(await siblingOffset()).toBeGreaterThan(0);
     await page.bringToFront();
-    await card(page, 1).getByRole('button', { name: 'Archive', exact: true }).click();
+    await card(page, 1).getByRole('button', { name: /^Archive / }).click();
     await expect(pending(page)).toBeVisible();
     await page.evaluate(() => {
       delete navigator.onLine;
@@ -427,7 +427,7 @@ test('Feed Scroll retries a failed session refresh and retires it on a filter ch
   const retained = page.getByRole('button', { name: 'Open: Warm Library item 2', exact: true });
   await expect(retained).toBeVisible();
   await page.evaluate(() => Object.defineProperty(navigator, 'onLine', { configurable: true, value: false }));
-  await page.locator('[data-feed-item-id="goodreads:1"]').getByRole('button', { name: 'Archive', exact: true }).click();
+  await page.locator('[data-feed-item-id="goodreads:1"]').getByRole('button', { name: /^Archive / }).click();
   await expect(page.getByRole('button', { name: 'Retry 1 pending change' })).toBeVisible();
   await page.evaluate(() => {
     delete navigator.onLine;
@@ -565,7 +565,7 @@ test('Feed Scroll preserves a newer local archive when a held reconciliation com
   try {
     await settlePeerChange(page, context);
     await started.promise;
-    await card(2).getByRole('button', { name: 'Archive', exact: true }).click();
+    await card(2).getByRole('button', { name: /^Archive / }).click();
     await expect(card(2)).toHaveCount(0);
   } finally {
     release.resolve();
