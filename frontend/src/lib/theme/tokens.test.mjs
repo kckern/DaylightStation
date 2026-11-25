@@ -32,6 +32,20 @@ describe('DS token contract', () => {
     expect(vars['--ds-motion-base']).toBe('200ms');
   });
 
+  it('emits the skeleton colour roles and sweep duration', () => {
+    expect(dsCssVars()).toMatchObject({
+      '--ds-skeleton-base': 'rgb(255 255 255 / 6%)',
+      '--ds-skeleton-sheen': 'rgb(255 255 255 / 13%)',
+      '--ds-motion-sweep': '1600ms',
+    });
+    expect(dsCssVars(PACKS.admin)['--ds-skeleton-base']).toBe(DS_TOKENS.skeleton.base);
+  });
+
+  it('emits --ds-font-mono, letting a pack override it', () => {
+    expect(dsCssVars()['--ds-font-mono']).toBe(DS_TOKENS.fontMono);
+    expect(dsCssVars(PACKS.admin)['--ds-font-mono']).toBe(PACKS.admin.fontFamilyMonospace);
+  });
+
   it('shares compact control geometry across theme packs', () => {
     for (const pack of [PACKS.health, PACKS.home]) {
       expect(dsCssVars(pack)).toMatchObject({
@@ -111,6 +125,18 @@ it('exposes the Feed reading chrome colors through the shared semantic roles', (
   expect(dsCssVars(PACKS.feed)).toMatchObject({
     '--ds-background': '#0f1113', '--ds-surface': '#17191c', '--ds-text-high': '#f1f3f5',
   });
+});
+
+it('finance pack: light panels, charcoal header, spent/gained/over status hues', () => {
+  expect(PACKS.finance.defaultColorScheme).toBe('light');
+  expect(dsCssVars(PACKS.finance)).toMatchObject({
+    '--ds-surface': '#eeeeee', '--ds-background': '#444444', '--ds-text-high': '#000000',
+    '--ds-info': '#0077b6', '--ds-success': '#759c82', '--ds-danger': '#cc0000',
+    '--ds-font-family': '"Roboto Condensed", sans-serif',
+  });
+  const theme = createAppTheme(PACKS.finance);
+  expect(theme.primaryColor).toBe('blue');
+  expect(theme.components.Button).toBeUndefined();
 });
 
 it('compiles the shared Sass mixins at the JavaScript breakpoint boundaries', () => {

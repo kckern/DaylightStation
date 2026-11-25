@@ -118,13 +118,13 @@ describe('kiosk console for a device on the Android kiosk app', () => {
 
     const stringRow = screen.getByText('webview.userAgentSuffix').closest('tr');
     fireEvent.change(within(stringRow).getByRole('textbox'), { target: { value: 'https://station.test/home' } });
-    fireEvent.click(within(stringRow).getByRole('button', { name: 'Save' }));
+    fireEvent.click(within(stringRow).getByRole('button', { name: 'Save webview.userAgentSuffix' }));
     await waitFor(() => expect(api.updateSetting).toHaveBeenCalledWith('tablet', 'webview.userAgentSuffix', 'https://station.test/home'));
 
     const numberRow = screen.getByText('webview.loadTimeoutSec').closest('tr');
     fireEvent.change(within(numberRow).getByRole('textbox'), { target: { value: '100000' } });
     fireEvent.blur(within(numberRow).getByRole('textbox'));
-    fireEvent.click(within(numberRow).getByRole('button', { name: 'Save' }));
+    fireEvent.click(within(numberRow).getByRole('button', { name: 'Save webview.loadTimeoutSec' }));
     await waitFor(() => expect(api.updateSetting).toHaveBeenCalledWith('tablet', 'webview.loadTimeoutSec', 100000));
   });
 });

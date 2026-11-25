@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { WebSocketEventBus } from '#adapters/eventbus/WebSocketEventBus.mjs';
+import { HOMELINE_CALL_TOPIC } from '../../../../../shared/contracts/media/topics.mjs';
 
 const socket = () => ({ OPEN: 1, readyState: 1, send: vi.fn() });
 
@@ -23,6 +24,23 @@ describe('WebSocketEventBus Home Line isolation', () => {
     bus._testSetServerAttached();
     bus.broadcast('homeline-call:c', { type: 'candidate', payload: {} });
     expect(exact.send).toHaveBeenCalledTimes(1); expect(wildcard.send).not.toHaveBeenCalled();
+  });
+
+  it('HOMELINE_CALL_TOPIC traffic reaches exact subscribers and never a wildcard subscriber that also lists other topics', () => {
+    const bus = new WebSocketEventBus({ logger: { info() {}, warn() {}, debug() {}, error() {} } });
+    const topic = HOMELINE_CALL_TOPIC('abc');
+    expect(topic).toBe('homeline-call:abc');
+    const exact = socket(); const wildcard = socket(); const mixed = socket();
+    bus._testSetClientPool(new Map([
+      ['exact', { ws: exact, meta: { subscriptions: new Set([topic]) } }],
+      ['wildcard', { ws: wildcard, meta: { subscriptions: new Set(['*']) } }],
+      ['mixed', { ws: mixed, meta: { subscriptions: new Set(['*', 'homeline:dev']) } }],
+    ]));
+    bus._testSetServerAttached();
+    expect(bus.broadcast(topic, { type: 'offer', payload: {} })).toBe(1);
+    expect(exact.send).toHaveBeenCalledTimes(1);
+    expect(wildcard.send).not.toHaveBeenCalled();
+    expect(mixed.send).not.toHaveBeenCalled();
   });
 
   it('rechecks call authorization at delivery time after credential rotation', () => {

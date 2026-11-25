@@ -30,6 +30,7 @@
 /* The hall's literals (mahogany ramp, the bond's ground) + the capability's
    structural tokens, forwarded. */
 @use "./classical-tokens" as *;
+@use "../../theme/ink" as *;
 
 /* The classical theme's tokens and ground: the darkened auditorium. */
 .surround-frame:where(.surround-frame--theme-classical) {
@@ -53,13 +54,13 @@
   --curtain-bleed: 15px;
 
   --hall-ink: #{$hall-ink};
-  --programme: #efe6d2;
-  --programme-edge: #ddd0b4;
+  --programme: #{$cl-programme};
+  --programme-edge: #{$cl-programme-edge};
   --velvet: #{$velvet};
-  --brass: #c79a3e;
-  --brass-lit: #f6e3a0;
-  --ink: #2a1d07;
-  --ink-soft: #6b6152;
+  --brass: #{$cl-brass};
+  --brass-lit: #{$cl-brass-lit};
+  --ink: #{$cl-ink};
+  --ink-soft: #{$cl-ink-soft};
 
   /* THE MAT. Every picture in the frame is mounted on this, and it is dark on
      purpose (design wave 4): cream mats around a portrait and a city view read
@@ -71,7 +72,7 @@
      `--programme` survives untouched — it is the programme STOCK (the panels
      themselves), not the mats. */
   --mat: #{$mat};
-  --mat-edge: rgba(8, 5, 5, 0.9);
+  --mat-edge: #{tint($cl-mat-edge, 0.9)};
 
   --surround-display: "Cormorant Garamond", "Hoefler Text", "EB Garamond", Georgia, serif;
   --surround-body: "EB Garamond", "Cormorant Garamond", Garamond, Georgia, serif;
@@ -113,12 +114,12 @@
      which has no class and generates no box. */
   background-color: #{$drape-back};
   background-image:
-    linear-gradient(180deg, rgba(0, 0, 0, 0.38) 0%, rgba(0, 0, 0, 0.06) 50%, rgba(0, 0, 0, 0.5) 100%),
+    linear-gradient(180deg, scrim(0.38) 0%, scrim(0.06) 50%, scrim(0.5) 100%),
     repeating-linear-gradient(90deg,
-      rgba(0, 0, 0, 0.34) 0, rgba(0, 0, 0, 0.34) 0.45vw,
-      rgba(255, 255, 255, 0.035) 1.05vw, rgba(0, 0, 0, 0.34) 1.7vw),
+      scrim(0.34) 0, scrim(0.34) 0.45vw,
+      chalk(0.035) 1.05vw, scrim(0.34) 1.7vw),
     linear-gradient(90deg, #{$drape-edge}, var(--velvet, #{$velvet}) 42%, #{$drape-fold} 68%, #{$drape-edge});
-  box-shadow: inset 0 -0.5vh 1.4vh rgba(0, 0, 0, 0.5);
+  box-shadow: inset 0 -0.5vh 1.4vh scrim(0.5);
 }
 
 /* THE CURTAIN BLEEDS INTO THE PICTURE (design wave 7).
@@ -157,13 +158,13 @@
   right: 0;
   height: var(--curtain-bleed);
   background-image:
-    linear-gradient(180deg, rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0.3)),
+    linear-gradient(180deg, scrim(0.3), scrim(0.3)),
     repeating-linear-gradient(90deg,
-      rgba(0, 0, 0, 0.34) 0, rgba(0, 0, 0, 0.34) 0.45vw,
-      rgba(255, 255, 255, 0.035) 1.05vw, rgba(0, 0, 0, 0.34) 1.7vw),
+      scrim(0.34) 0, scrim(0.34) 0.45vw,
+      chalk(0.035) 1.05vw, scrim(0.34) 1.7vw),
     linear-gradient(90deg, #{$drape-edge}, var(--velvet, #{$velvet}) 42%, #{$drape-fold} 68%, #{$drape-edge});
-  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 12%, rgba(0, 0, 0, 0) 100%);
-  mask-image: linear-gradient(to bottom, #000 0%, #000 12%, rgba(0, 0, 0, 0) 100%);
+  -webkit-mask-image: linear-gradient(to bottom, $ink 0%, $ink 12%, scrim(0) 100%);
+  mask-image: linear-gradient(to bottom, $ink 0%, $ink 12%, scrim(0) 100%);
   pointer-events: none;
   z-index: 1;
 }
@@ -178,7 +179,7 @@
   right: 0;
   bottom: 100%;
   height: 22px;
-  background: linear-gradient(to top, rgba($hall-ink, 0.92), rgba($hall-ink, 0));
+  background: linear-gradient(to top, tint($hall-ink, 0.92), tint($hall-ink, 0));
   pointer-events: none;
 }
 
@@ -186,8 +187,8 @@
    plus a wide soft one. The one element in the frame allowed a drop shadow. */
 :where(.surround-frame--theme-classical) .surround-frame__header {
   box-shadow:
-    0 2px 6px rgba(0, 0, 0, 0.55),
-    0 14px 30px -10px rgba(0, 0, 0, 0.85);
+    0 2px 6px scrim(0.55),
+    0 14px 30px -10px scrim(0.85);
 }
 
 /* Classical theme: programme stock. */
@@ -202,7 +203,7 @@
 :where(.surround-frame--theme-classical) .surround-frame__region--top {
   background-color: transparent;
   background-image: none;
-  box-shadow: inset 0 0 0 1px rgba(233, 223, 200, 0.16);
+  box-shadow: inset 0 0 0 1px tint($cl-parchment, 0.16);
 }
 
 /* Classical theme: the band's stone and the bond's tokens. */
@@ -211,9 +212,9 @@
      near-black stone with the text in parchment. Re-mapping the frame tokens
      HERE restyles SegmentMap and CueTicker without touching either module —
      they keep reading var(--ink)/var(--ink-soft)/var(--programme-edge). */
-  --ink: #e9dfc8;
-  --ink-soft: #a89a80;
-  --programme-edge: rgba(233, 223, 200, 0.28);
+  --ink: #{$cl-parchment};
+  --ink-soft: #{$cl-parchment-soft};
+  --programme-edge: #{tint($cl-parchment, 0.28)};
   /* THE BOND'S GROUND (design wave 7; re-hued in wave 9). The sounding
      segment's panel on the rail, the waist that joins them and the NOW
      register's panel in the listening band are the SAME colour — that is the
@@ -233,7 +234,7 @@
   --bond-radius: #{$bond-radius};
   background-color: #{$hall-ground};
   background-image: linear-gradient(180deg, #{$band-lit} 0%, #{$hall-ink} 100%);
-  box-shadow: inset 0 1px 0 rgba(233, 223, 200, 0.08);
+  box-shadow: inset 0 1px 0 tint($cl-parchment, 0.08);
 }
 
 /* The rail is part of the darkened house too. A wall of video makes white paper
@@ -256,9 +257,9 @@
 /* Classical theme: the rail's oxblood stock (programme and lyric alike). */
 :where(.surround-frame--theme-classical) .surround-frame__region--right,
 :where(.surround-frame--theme-classical) .surround-frame__region--lyric {
-  --ink: #e9dfc8;
-  --ink-soft: #a89a80;
-  --programme-edge: rgba(233, 223, 200, 0.26);
+  --ink: #{$cl-parchment};
+  --ink-soft: #{$cl-parchment-soft};
+  --programme-edge: #{tint($cl-parchment, 0.26)};
   --map-halo: #{$rail-ground};
   background-color: #{$rail-ground};
   background-image:
@@ -266,7 +267,7 @@
     linear-gradient(180deg, #{$rail-lit} 0%, #{$rail-deep} 100%);
   background-size: 180px 180px, cover;
   background-blend-mode: multiply, normal;
-  box-shadow: inset 0 0 0 1px rgba(233, 223, 200, 0.1);
+  box-shadow: inset 0 0 0 1px tint($cl-parchment, 0.1);
 }
 
 :where(.surround-frame--theme-classical) .surround-frame__region--empty {

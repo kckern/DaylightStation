@@ -11,7 +11,11 @@ const auditor = {
 };
 const review = {
   title: 'Fixture film', certification: { level: 'machine' }, audit: { ok: true, fresh: true, failures: [] },
-  rows: [], reviewed: 0, total: 0,
+  rows: [{
+    id: 'cue:w1', peekId: 'w1', members: ['w1'], kind: 'words', group: 'profanity', label: 'Fixture cue', modality: 'said',
+    in: 10, out: 10.5, effect: 'bleep', unsure: [], reviewed: null, verdict: null,
+  }],
+  reviewed: 0, total: 1, job: null, signOff: { ready: false, missing: [], parent: null },
 };
 
 async function installChoices(page, baseURL) {
@@ -111,8 +115,12 @@ test('Health Saved meals names the inclusion choices for each component', async 
 test('Admin Content Review uses the same full-size segmented targets', async ({ page, baseURL }) => {
   await installChoices(page, baseURL);
   await page.goto('/admin/content/filter/77');
-  const group = page.getByRole('radiogroup', { name: 'Kind', exact: true });
+  // The word ruling sits behind the part's effect menu (the Kind switch left the page in fa33bcb541).
+  await page.getByRole('button', { name: /^Effect: .*Change it/ }).click();
+  await page.getByRole('menuitem', { name: /^More for this word/ }).click();
+  const group = page.getByRole('radiogroup', { name: 'This word in this film', exact: true });
   await expectFullSegments(group);
-  await group.locator('label', { hasText: 'Words' }).tap({ position: { x: 2, y: 36 } });
-  await expect(group.getByRole('radio', { name: 'Words', exact: true })).toBeChecked();
+  const ruling = page.waitForRequest(request => request.method() === 'PUT' && /\/77\/words\//.test(request.url()));
+  await group.locator('label', { hasText: 'Mute' }).tap({ position: { x: 2, y: 36 } });
+  expect((await ruling).postDataJSON()).toEqual({ value: 'mute' });
 });

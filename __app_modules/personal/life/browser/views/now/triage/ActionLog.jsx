@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Badge, Button, Loader, Text } from '@mantine/core';
-import { useRetryRegion } from '@/lib/ui';
+import { Badge, Button, Text } from '@mantine/core';
+import { LoadingState, useRetryRegion } from '@/lib/ui';
 import getLogger from "../../../../../../../frontend/src/lib/logging/Logger.js";
 import { useRefreshableRead } from "../../../../../../../frontend/src/lib/hooks/useRefreshableRead.js";
 
@@ -84,7 +84,7 @@ export function ActionLog({ loadLog, onUndo }) {
       <Button size="compact-sm" variant="light" onClick={retry}>Try again</Button>
     </div>
   );
-  else if (!entries) content = <Loader size="sm" aria-label="Loading what was done" />;
+  else if (!entries) content = <LoadingState label="what was done" rows={1} />;
   else if (entries.length === 0) content = <Text size="sm" c="dimmed">Nothing in the last week.</Text>;
   else content = <ActionRows entries={entries} state={state} undo={undo} />;
 

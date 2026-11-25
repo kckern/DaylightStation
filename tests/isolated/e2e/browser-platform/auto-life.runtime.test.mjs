@@ -159,7 +159,7 @@ test('Auto renders the selected vehicle’s records and cancels the previous veh
   };
   const registrationPdf = Buffer.from('%PDF-1.4 city registration');
   let pendingWagonDocuments;
-  await page.context().route(`**${api}/**`, route => {
+  const serveAutomotive = route => {
     const request = route.request();
     const { pathname, search } = new URL(request.url());
     const key = pathname + search;
@@ -173,7 +173,11 @@ test('Auto renders the selected vehicle’s records and cancels the previous veh
     }
     const json = responses[key];
     return json ? route.fulfill({ json }) : route.fulfill({ status: 404 });
-  });
+  };
+  // beforeEach registers a catch-all page route, and page routes outrank context routes, so the
+  // fixture must be a page route too (e2d4fb35f2 registered it on the context only and never ran).
+  await page.route(`**${api}/**`, serveAutomotive);
+  await page.context().route(`**${api}/**`, serveAutomotive);
 
   await page.goto('/auto');
   await page.getByRole('button', { name: 'Family wagon', exact: true }).click();
@@ -1088,6 +1092,8 @@ test('Life goal detail reads its selected goal and keeps a refused transition re
   const requests = [];
   const release = Promise.withResolvers();
   const entered = Promise.withResolvers();
+  // f3282ece6c / f9bc81c39d: the picker lists the goal's domain validTransitions and is labelled 'New state'.
+  const validTransitions = ['committed', 'achieved', 'considered'];
   let state = 'ready';
   let writes = 0;
   let failDetail = false;
@@ -1108,20 +1114,20 @@ test('Life goal detail reads its selected goal and keeps a refused transition re
       }
       state = request.postDataJSON().state;
       failDetail = true;
-      return route.fulfill({ json: { id: 'practice', name: 'Practice goal', state } });
+      return route.fulfill({ json: { id: 'practice', name: 'Practice goal', state, validTransitions } });
     }
     if (url.pathname.endsWith('/practice')) {
       if (failDetail) {
         failDetail = false;
         return route.fulfill({ status: 400, json: { error: 'Goal temporarily unavailable' } });
       }
-      return route.fulfill({ json: { id: 'practice', name: 'Practice goal', state } });
+      return route.fulfill({ json: { id: 'practice', name: 'Practice goal', state, validTransitions } });
     }
     return route.fulfill({ json: { goals: [] } });
   });
   await page.goto('/life/plan/goals/practice');
   await expect(page.getByRole('heading', { name: 'Practice goal' })).toBeVisible();
-  const select = page.getByPlaceholder('New state');
+  const select = page.getByRole('textbox', { name: 'New state' });
   const transition = page.getByRole('button', { name: 'Transition', exact: true });
   await select.click();
   await page.getByRole('option', { name: 'committed' }).click();
@@ -1135,7 +1141,7 @@ test('Life goal detail reads its selected goal and keeps a refused transition re
   await transition.click();
   await expect(page.getByRole('alert')).toContainText('Goal');
   await page.getByRole('button', { name: 'Retry' }).click();
-  await expect(page.getByText('committed', { exact: true })).toBeVisible();
+  await expect(page.locator('.mantine-Badge-label').getByText('committed', { exact: true })).toBeVisible();
   expect(writes).toBe(2);
   expect(requests.every(([, path, user]) => path.includes('/goals/practice') && user === 'amy')).toBe(true);
 });
@@ -1169,11 +1175,13 @@ for (const { owner, draft } of [
       }
       const goal = url.pathname.split('/').at(-1);
       reads.push([user, goal]);
-      return route.fulfill({ json: { id: goal, name: user + ' ' + goal, state: user === 'amy' && goal === 'second' && committed ? 'committed' : 'ready' } });
+      const goalState = user === 'amy' && goal === 'second' && committed ? 'committed' : 'ready';
+      return route.fulfill({ json: { id: goal, name: user + ' ' + goal, state: goalState,
+        validTransitions: ['committed', 'achieved', 'considered'].filter(next => next !== goalState) } });
     });
     await page.goto('/life/plan/goals/first');
     await expect(page.getByRole('heading', { name: 'amy first' })).toBeVisible();
-    const select = page.getByPlaceholder('New state');
+    const select = page.getByRole('textbox', { name: 'New state' });
     const choose = async state => {
       await select.click();
       await page.getByRole('option', { name: state, exact: true }).click();
@@ -1206,7 +1214,7 @@ for (const { owner, draft } of [
     const transition = page.getByRole('button', { name: 'Transition', exact: true });
     const expectedReads = [['amy', 'first'], ['amy', 'second'], ['bob', 'second']];
     if (owner === 'amy') {
-      await expect(page.getByText('committed', { exact: true })).toBeVisible();
+      await expect(page.locator('.mantine-Badge-label').getByText('committed', { exact: true })).toBeVisible();
       expectedReads.push(['amy', 'second'], ['amy', 'second']);
     }
     if (draft === 'committed') {

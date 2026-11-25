@@ -10,12 +10,12 @@
 .chat-overlay__scrim {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0);
-  transition: background 200ms ease-out;
+  background: rgba(0, 0, 0, 0); /* data-color: scrim/shadow */
+  transition: background var(--ds-motion-base) ease-out;
 }
 
 .chat-overlay--open .chat-overlay__scrim {
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(0, 0, 0, 0.6); /* data-color: scrim/shadow */
 }
 
 .chat-overlay__panel {
@@ -31,8 +31,8 @@
   display: flex;
   flex-direction: column;
   transform: translateY(100%);
-  transition: transform 200ms ease-out;
-  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.5);
+  transition: transform var(--ds-motion-base) ease-out;
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.5); /* data-color: scrim/shadow */
 }
 
 .chat-overlay--open .chat-overlay__panel { transform: translateY(0); }

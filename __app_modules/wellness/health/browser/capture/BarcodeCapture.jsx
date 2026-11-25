@@ -189,7 +189,8 @@ function BarcodeSession({ onClose, onDecode, onConfirm, onDone, onView, onUnknow
 
   const camera = phase === 'scanning' && cameraState !== 'denied' && (
     <div onPointerDown={unlockSound} style={{
-      position: 'relative', overflow: 'hidden', borderRadius: 14, background: '#12211b', aspectRatio: '4 / 3',
+      position: 'relative', overflow: 'hidden', borderRadius: 14, background: '#12211b', // data-color: camera stage
+      aspectRatio: '4 / 3',
     }}>
       {/* The WebView paints a stretched play glyph on a <video> until its first frame: the poster is
           blank and the element stays hidden until this start's stream is live (every rescan, too). */}
@@ -200,10 +201,11 @@ function BarcodeSession({ onClose, onDecode, onConfirm, onDone, onView, onUnknow
           opacity: cameraState === 'live' ? 1 : 0, transition: 'opacity 120ms' }} />
       <div aria-hidden="true" style={{ position: 'absolute', left: '8%', right: '8%', top: '50%',
         transform: 'translateY(-50%)', height: '30%',
-        border: '2px solid white', borderRadius: 10, boxShadow: '0 0 0 100vmax #0006',
+        border: '2px solid white', borderRadius: 10, boxShadow: '0 0 0 100vmax #0006', // data-color: scan guide
         pointerEvents: 'none' }} />
       <div aria-hidden="true" style={{ position: 'absolute', top: '50%', left: '8%',
-        right: '8%', height: 2, background: '#6deab0', pointerEvents: 'none' }} />
+        right: '8%', height: 2, background: '#6deab0', // data-color: scan line
+        pointerEvents: 'none' }} />
     </div>
   );
   const submitManual = event => {

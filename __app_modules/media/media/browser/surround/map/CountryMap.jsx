@@ -61,6 +61,11 @@ export const RENDER_W = 420;
 export const RENDER_H = 252;
 const ASPECT = RENDER_W / RENDER_H;
 
+// Classical theme paper ink and brass, each with the frame's own fallback.
+const INK = 'var(--ink, #2a1d07)'; // data-color: classical theme fallback
+const INK_SOFT = 'var(--ink-soft, #6b6152)'; // data-color: classical theme fallback
+const BRASS = 'var(--brass, #c79a3e)'; // data-color: classical theme fallback
+
 /**
  * The two zooms, and what each one is FOR. The carousel shows this map twice and
  * the two slides answer different questions; wave 5 made them look as different
@@ -612,9 +617,9 @@ export default function CountryMap({
           d={s.d}
           data-country={s.name}
           data-role="context"
-          fill="var(--ink, #2a1d07)"
+          fill={INK}
           fillOpacity={0.05}
-          stroke="var(--ink-soft, #6b6152)"
+          stroke={INK_SOFT}
           strokeWidth={0.9}
           strokeOpacity={0.55}
           vectorEffect="non-scaling-stroke"
@@ -626,9 +631,9 @@ export default function CountryMap({
           d={s.d}
           data-country={s.name}
           data-role="highlight"
-          fill="var(--ink, #2a1d07)"
+          fill={INK}
           fillOpacity={0.16}
-          stroke="var(--ink, #2a1d07)"
+          stroke={INK}
           strokeWidth={1.6}
           vectorEffect="non-scaling-stroke"
         />
@@ -645,7 +650,7 @@ export default function CountryMap({
             className={`surround-country-map__place surround-country-map__place--${l.role}`}
             textAnchor="middle"
             fontSize={l.size}
-            fill={l.role === 'subject' ? 'var(--ink, #2a1d07)' : 'var(--ink-soft, #6b6152)'}
+            fill={l.role === 'subject' ? INK : INK_SOFT}
           >
             {l.name}
           </text>
@@ -656,7 +661,7 @@ export default function CountryMap({
           data-testid="country-map-marker"
           transform={`translate(${round(point.x)} ${round(point.y)}) scale(${round(unitsPerPx)})`}
         >
-          <path data-testid="country-map-star" d={STAR} fill="var(--brass, #c79a3e)" />
+          <path data-testid="country-map-star" d={STAR} fill={BRASS} />
           {city && (
             <text
               className="surround-country-map__label"
@@ -665,7 +670,7 @@ export default function CountryMap({
               y={marker.dy}
               textAnchor={marker.anchor}
               fontSize={labelPx}
-              fill="var(--brass, #c79a3e)"
+              fill={BRASS}
             >
               {city}
             </text>

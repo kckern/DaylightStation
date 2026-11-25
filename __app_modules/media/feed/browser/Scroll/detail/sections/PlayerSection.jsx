@@ -20,10 +20,10 @@ export default function PlayerSection({ data, onPlay, activeMedia, item, playbac
         style={{
           width: '100%',
           padding: '1rem',
-          background: '#1a1b1e',
-          border: '1px solid #25262b',
+          background: 'var(--feed-surface-1)',
+          border: '1px solid var(--feed-surface-2)',
           borderRadius: '8px',
-          color: '#fff',
+          color: 'var(--feed-pure-white)',
           fontSize: '0.85rem',
           fontWeight: 600,
           cursor: 'pointer',
@@ -33,7 +33,7 @@ export default function PlayerSection({ data, onPlay, activeMedia, item, playbac
           gap: '0.5rem',
         }}
       >
-        <UiIcon name="play" size={20} style={{ color: '#fff' }} />
+        <UiIcon name="play" size={20} style={{ color: 'var(--feed-pure-white)' }} />
         Play
       </button>
     );
@@ -45,7 +45,7 @@ export default function PlayerSection({ data, onPlay, activeMedia, item, playbac
 
   return (
     <div style={{
-      background: '#1a1b1e',
+      background: 'var(--feed-surface-1)',
       borderRadius: '8px',
       padding: '1rem',
       display: 'flex',
@@ -58,7 +58,7 @@ export default function PlayerSection({ data, onPlay, activeMedia, item, playbac
           style={{
             background: 'none',
             border: 'none',
-            color: '#fff',
+            color: 'var(--feed-pure-white)',
             cursor: 'pointer',
             padding: '0.25rem',
             display: 'flex',
@@ -66,9 +66,9 @@ export default function PlayerSection({ data, onPlay, activeMedia, item, playbac
           }}
           aria-label={playing ? 'Pause' : 'Play'}
         >
-          <UiIcon name={playing ? 'pause' : 'play'} size={28} style={{ color: '#fff' }} />
+          <UiIcon name={playing ? 'pause' : 'play'} size={28} style={{ color: 'var(--feed-pure-white)' }} />
         </button>
-        <span style={{ fontSize: '0.75rem', color: '#868e96', fontVariantNumeric: 'tabular-nums' }}>
+        <span style={{ fontSize: '0.75rem', color: 'var(--feed-text-3)', fontVariantNumeric: 'tabular-nums' }}>
           {formatFeedPlaybackTime(currentTime)} / {formatFeedPlaybackTime(duration)}
         </span>
         <button
@@ -80,7 +80,7 @@ export default function PlayerSection({ data, onPlay, activeMedia, item, playbac
             marginLeft: 'auto',
             background: 'none',
             border: 'none',
-            color: '#868e96',
+            color: 'var(--feed-text-3)',
             cursor: 'pointer',
             padding: '0.25rem',
             fontSize: '0.7rem',
@@ -101,7 +101,7 @@ export default function PlayerSection({ data, onPlay, activeMedia, item, playbac
         onChange={event => seek?.(Number(event.target.value))}
         aria-label="Playback position"
         aria-valuetext={`${formatFeedPlaybackTime(currentTime)} of ${formatFeedPlaybackTime(duration)}`}
-        style={{ width: '100%', accentColor: '#228be6', cursor: seekMax > 0 ? 'pointer' : 'not-allowed' }}
+        style={{ width: '100%', accentColor: 'var(--ds-accent)', cursor: seekMax > 0 ? 'pointer' : 'not-allowed' }}
       />
     </div>
   );

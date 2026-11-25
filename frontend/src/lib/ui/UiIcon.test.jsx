@@ -11,12 +11,15 @@ it('provides the shared navigation and action icon names as decorative SVGs', ()
   const { container } = render(<div>{names.map(name => <UiIcon key={name} name={name} />)}</div>);
   const icons = container.querySelectorAll('svg');
   expect(icons).toHaveLength(names.length);
-  for (const icon of icons) {
+  // Tabler's filled glyphs (play, pause) are solid shapes and emit no stroke-width.
+  const filled = new Set(['pause', 'play']);
+  icons.forEach((icon, i) => {
     expect(icon).toHaveAttribute('aria-hidden', 'true');
     expect(icon).toHaveAttribute('focusable', 'false');
     expect(icon).toHaveAttribute('width', '16');
-    expect(icon).toHaveAttribute('stroke-width', '1.75');
-  }
+    if (filled.has(names[i])) expect(icon).not.toHaveAttribute('stroke-width');
+    else expect(icon).toHaveAttribute('stroke-width', '1.75');
+  });
 });
 
 it('preserves the caller size and stroke for app navigation', () => {

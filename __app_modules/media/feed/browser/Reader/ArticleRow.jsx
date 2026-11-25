@@ -227,7 +227,7 @@ function ReaderYouTubePlayer({ article, detailPath }) {
     return (
       <div style={isPortrait ? { maxWidth: '360px' } : undefined}>
         <div className="youtube-embed-wrapper" style={wrapperStyle}>
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000' }}>
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--feed-ink)' }}>
             <FeedLoadingIndicator label="Loading video…" />
           </div>
         </div>

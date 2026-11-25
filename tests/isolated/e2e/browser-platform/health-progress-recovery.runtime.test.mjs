@@ -107,8 +107,9 @@ test('Health Progress keeps accepted charts and the Goals draft through a Coach 
   await page.goto('/health/progress');
   const main = page.getByRole('main');
   const weight = main.getByText('171.6', { exact: true });
-  const intake = main.getByRole('img', { name: /^1 days with data/ });
-  const burn = main.getByRole('img', { name: /^1 days: average intake/ });
+  // includeHidden: the open Goals sheet hides the page behind it from assistive technology.
+  const intake = main.getByRole('img', { name: /^1 days with data/, includeHidden: true });
+  const burn = main.getByRole('img', { name: /^1 days: average intake/, includeHidden: true });
   for (const chart of [weight, intake, burn]) await expect(chart).toBeVisible();
   await page.getByRole('link', { name: 'Progress', exact: true }).focus();
   await page.keyboard.press('Control+k');
@@ -134,10 +135,11 @@ test('Health Progress keeps accepted charts and the Goals draft through a Coach 
       await route.fulfill({ json: progressResponse(resource, url) });
     }
   }
+  // The open Goals sheet hides the page behind it from assistive technology, so look past that.
   for (const { label } of cases) {
-    await expect(main.getByRole('region', { name: label, exact: true })).not.toHaveAttribute('aria-busy', 'true');
+    await expect(main.getByRole('region', { name: label, exact: true, includeHidden: true })).not.toHaveAttribute('aria-busy', 'true');
   }
-  await expect(main.getByRole('region', { name: 'Goals', exact: true })).not.toHaveAttribute('aria-busy', 'true');
+  await expect(main.getByRole('region', { name: 'Goals', exact: true, includeHidden: true })).not.toHaveAttribute('aria-busy', 'true');
   await expect(draft).toHaveValue(/163/);
   await expect(sheet.getByRole('button', { name: 'Retry', exact: true })).toHaveCount(0);
   for (const chart of [weight, intake, burn]) await expect(chart).toBeVisible();

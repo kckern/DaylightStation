@@ -10,7 +10,7 @@ export default function RedditBody({ item }) {
           gap: '0.75rem',
           marginTop: '0.5rem',
           fontSize: '0.7rem',
-          color: '#868e96',
+          color: 'var(--feed-text-3)',
         }}>
           {item.meta?.score != null && (
             <span>{item.meta.score.toLocaleString()} pts</span>

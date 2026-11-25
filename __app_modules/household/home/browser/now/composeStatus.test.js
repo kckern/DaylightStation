@@ -95,7 +95,7 @@ describe('composeNow', () => {
 
   it('writes the sentence from the summary, naming only the rooms with someone in them now', () => {
     expect(now.sentences.map(plain)).toEqual([
-      'The house is drawing 505 W, with 2 lights on and a door open in the office.',
+      'The house is drawing 505 W, with 2 lights on, 1 plug on and a door open in the office.',
       'Someone is in the office.',
     ]);
   });

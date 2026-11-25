@@ -1,0 +1,14 @@
+// The classical theme's paper, ink and brass literals, forwarded by `_classical-tokens.scss`.
+// Kept in a comment-light partial so a stylesheet that only needs the inks pulls no doc blocks into its CSS.
+// Published by `classical.scss` as custom properties; every module stylesheet
+// reads those and uses these literals only as the fallback in `var(..., ...)`.
+$cl-programme: #efe6d2;       // data-color: classical programme stock
+$cl-programme-edge: #ddd0b4;  // data-color: classical programme edge
+$cl-brass: #c79a3e;           // data-color: classical brass
+$cl-brass-lit: #f6e3a0;       // data-color: classical brass, lit
+$cl-ink: #2a1d07;             // data-color: ink on the programme stock
+$cl-ink-alt: #332b20;         // data-color: ink on the programme stock (map labels)
+$cl-ink-soft: #6b6152;        // data-color: soft ink on the programme stock
+$cl-parchment: #e9dfc8;       // data-color: parchment ink on the dark band
+$cl-parchment-soft: #a89a80;  // data-color: soft parchment ink on the dark band
+$cl-mat-edge: #080505;        // data-color: picture mount definition line

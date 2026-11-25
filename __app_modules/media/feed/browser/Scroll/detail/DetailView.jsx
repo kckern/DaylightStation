@@ -435,13 +435,13 @@ function YouTubeHero({ item, heroImage, sections, loading, onPlay }) {
           style={{
             position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
             width: '64px', height: '64px', borderRadius: '50%',
-            background: 'rgba(0,0,0,0.6)', border: 'none',
+            background: 'color-mix(in srgb, var(--feed-ink) 60%, transparent)', border: 'none',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             cursor: 'pointer', padding: 0,
           }}
           aria-label="Play video"
         >
-          <UiIcon name="play" size={28} style={{ color: '#fff' }} />
+          <UiIcon name="play" size={28} style={{ color: 'var(--feed-pure-white)' }} />
         </button>
       </div>
     );

@@ -37,17 +37,20 @@ html:has(.media-app) {
 }
 
 // The same tokens on the app root, as a separate rule: a WebView without :has()
-// drops the rule above whole, and the app itself must still resolve them.
+// drops the rule above whole, and the app itself must still resolve them. Here they derive
+// from the shared --ds roles, which the Media pack (MEDIA_NEUTRALS) sets to the same values
+// as the dark ramp steps above. The rule on <html> stays on the Mantine ramp because portaled
+// popovers sit outside .ds-root, where --ds-* would read the base contract and not the pack.
 .media-app {
-  --media-ink: var(--mantine-color-dark-7);
-  --media-surface: var(--mantine-color-dark-5);
-  --media-line: var(--mantine-color-dark-4);
+  --media-ink: var(--ds-background);
+  --media-surface: var(--ds-surface);
+  --media-line: var(--ds-border);
   // Control boundaries (RELY.13a/AC1): the existing dimmed step of the ramp, >= 3:1 on ink, panel and surface.
   // Hairlines between regions stay on --media-line; only the edge of something you press or type in uses this.
-  --media-control-line: var(--mantine-color-dark-2);
-  --media-text: var(--mantine-color-dark-0);
-  --media-muted: var(--mantine-color-dark-1);
-  --media-accent: var(--mantine-color-amber-5);
+  --media-control-line: var(--ds-text-low);
+  --media-text: var(--ds-text-high);
+  --media-muted: var(--ds-text-mid);
+  --media-accent: var(--ds-accent);
 }
 
 // Mantine's default-variant controls (inputs, default buttons, checkboxes) draw their edge from this one

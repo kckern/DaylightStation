@@ -38,13 +38,16 @@ test('Reader unlocks the inbox when its open subscriptions drawer becomes a rail
 
   await page.setViewportSize({ width: 390, height: 850 });
 
+  // Subscription filters only apply to the inbox, so Offline has no opener (f979c2aae0).
+  await expect(opener).toHaveCount(0);
+  await expect(rail).toHaveCount(0);
+  await page.getByRole('group', { name: 'Article state' }).getByRole('button', { name: 'all', exact: true }).click();
   await expect(opener).toHaveAttribute('aria-expanded', 'false');
   await opener.focus();
   await page.keyboard.press('Enter');
   await expect(dialog).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(opener).toBeFocused();
-  await expect(page).toHaveURL(/\/feed\/reader\?view=offline$/);
 });
 
 test('Reader excludes the closed compact subscriptions rail from keyboard navigation', async ({ page }) => {

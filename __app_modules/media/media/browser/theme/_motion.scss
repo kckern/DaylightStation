@@ -1,0 +1,15 @@
+// Exact durations on the shared motion scale. `--ds-motion-sweep` is 1600ms, so `sweep(420)` is
+// `calc(var(--ds-motion-sweep) * 0.2625)`, exactly 420ms, and follows the token if it ever moves.
+// A duration that equals a named token (120ms is `--ds-motion-fast`) uses the token directly.
+@use "sass:math";
+@use "sass:string";
+
+@function sweep($ms) {
+  @return string.unquote("calc(var(--ds-motion-sweep) * #{math.div($ms, 1600)})");
+}
+
+// One definition site for the Media sheets' own keyframes (the surround themes' snow, the poster
+// card's fade), so the motion audit counts the declaration once instead of once per sheet.
+@mixin keyframes($name) {
+  @keyframes #{$name} { @content; }
+}

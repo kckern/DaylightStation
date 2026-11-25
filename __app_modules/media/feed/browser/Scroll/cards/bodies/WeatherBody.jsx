@@ -5,7 +5,7 @@ export default function WeatherBody({ item }) {
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fab005" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" style={{ stroke: 'var(--ds-warning)' }} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="12" r="5" />
         <line x1="12" y1="1" x2="12" y2="3" />
         <line x1="12" y1="21" x2="12" y2="23" />
@@ -18,16 +18,16 @@ export default function WeatherBody({ item }) {
       </svg>
       <div style={{ flex: 1 }}>
         {temp != null ? (
-          <span style={{ fontSize: '1.5rem', fontWeight: 700, color: '#fff', lineHeight: 1 }}>
+          <span style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--feed-pure-white)', lineHeight: 1 }}>
             {temp}&deg;
           </span>
         ) : item.title ? (
-          <span style={{ fontSize: '1rem', fontWeight: 600, color: '#fff' }}>
+          <span style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--feed-pure-white)' }}>
             {item.title}
           </span>
         ) : null}
         {conditions && (
-          <span style={{ display: 'block', fontSize: '0.85rem', color: '#868e96', lineHeight: 1.3 }}>
+          <span style={{ display: 'block', fontSize: '0.85rem', color: 'var(--feed-text-3)', lineHeight: 1.3 }}>
             {conditions}
           </span>
         )}

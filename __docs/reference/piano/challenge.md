@@ -60,7 +60,7 @@ updating this checked-in reference; its test prevents schema/document drift.
 | source | `synthesized` (`count`, `register`) · `bank` (`family`, `root`, `mode`, `quality`, `direction`, `octaves`, `inversion`) · `score` (`sourceId`, `measureStart`, `measureEnd`) |
 | prompt | `follow` · `recall` · `read` |
 | secondary | `none` · `staff` · `keyboard-strip` |
-| notationStyle | `sequence` · `engraved` · `score` |
+| notationStyle | `sequence` · `engraved` · `score` · `flashcard` |
 | timing | `free` · `pulsed` · `cued` |
 | judging | `completion` · `clean` · `placed` |
 | hints | `none` · `after-stall` · `always` |

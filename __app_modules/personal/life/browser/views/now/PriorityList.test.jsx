@@ -60,7 +60,7 @@ describe('PriorityList', () => {
     expect(screen.queryByText('Name your purpose')).not.toBeInTheDocument();
   });
   it('retains valid dismissals alongside malformed entries', () => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localDateKey();
     localStorage.setItem('life.priorities.dismissed', JSON.stringify([null, `alice:${today}:plan_gap:Name your purpose`]));
     wrap(<PriorityList priorities={items} />);
     expect(screen.queryByText('Name your purpose')).not.toBeInTheDocument();

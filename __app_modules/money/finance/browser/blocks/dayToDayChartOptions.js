@@ -34,7 +34,7 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override
     return {
       y: day.endingBalance,
       actualBalance: day.endingBalance,
-      color: overspent ? PALETTE.over : (highlightToday || isFirstDay) ? PALETTE.spent : (isWeekend ? '#777' : undefined)
+      color: overspent ? PALETTE.over : (highlightToday || isFirstDay) ? PALETTE.spent : (isWeekend ? '#777' : undefined) // data-color: Highcharts weekend bar grey
     };
   }));
 
@@ -142,18 +142,18 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override
       plotLines: Array.from({ length: daysInMonth }, (_, i) => {
         const dayNum = i + 1;
         const date = moment(firstDayKey).date(dayNum);
-        return date.day() === 1 ? { color: override.plotLineColor || '#EEE', width: 1, value: dayNum } : null;
+        return date.day() === 1 ? { color: override.plotLineColor || '#EEE', width: 1, value: dayNum } : null; // data-color: Highcharts month gridline; chart canvas, not DOM
       }).filter(Boolean),
       plotBands: zeroCrossingIndex >= 0 ? [{
         from: zeroCrossingIndex,
         to: daysInMonth,
-        color: 'rgba(255, 0, 0, 0.05)'
+        color: 'rgba(255, 0, 0, 0.05)' // data-color: Highcharts overspend band (red, data meaning)
       }] : []
     },
     yAxis: {
       min: Math.min(0, ...dayKeys.map(k => dailyBalances[k].endingBalance ?? 0)),
       max: Math.max(initialBudget, ...actualData.map(d => d.y || 0)),
-      plotLines: [{ value: 0, color: '#666', width: 1, zIndex: 3 }],
+      plotLines: [{ value: 0, color: '#666', width: 1, zIndex: 3 }], // data-color: Highcharts zero line
       title: { text: '' },
       labels: {
         formatter: function () {
@@ -168,8 +168,8 @@ export function buildDayToDayBudgetOptions(monthData, setDrawerContent, override
         name: 'Baseline',
         data: baselineData,
         type: 'area',
-        color: 'rgba(255, 0, 0, 0.1)',
-        lineColor: 'rgba(255, 0, 0, 0.5)',
+        color: 'rgba(255, 0, 0, 0.1)', // data-color: Highcharts forecast band fill
+        lineColor: 'rgba(255, 0, 0, 0.5)', // data-color: Highcharts forecast band edge
         marker: { enabled: false },
         enableMouseTracking: false,
         states: { hover: { enabled: false } }

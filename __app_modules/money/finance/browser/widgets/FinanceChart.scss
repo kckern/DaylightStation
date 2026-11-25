@@ -7,12 +7,12 @@
 
 .finance table{
     margin-bottom: 1rem;
-    background-color: #FFFFFF22;
+    background-color: #FFFFFF22; // data-color: translucent white over the dark widget host
     text-align: center;
     flex-grow: 0;
 }
 .finance table th{
-    background-color: #FFFFFF44;
+    background-color: #FFFFFF44; // data-color: translucent white over the dark widget host
     padding: 0.5rem;
     text-align: center;
     white-space: nowrap!important;
@@ -36,5 +36,5 @@
 
 .finance .highcharts-xaxis .highcharts-axis-line{
     stroke-width: 3px;
-    stroke: #FFFFFFBB;
+    stroke: #FFFFFFBB; // data-color: chart axis over dark widget host
 }

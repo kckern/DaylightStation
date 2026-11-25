@@ -179,6 +179,17 @@ test('Feed gallery arrows have full touch targets and edge taps change the image
   await expect(page).toHaveURL(/\/feed\/scroll$/);
 });
 
+// A value move is one command against its expected neighbor (97f1f3ced9), not the whole list.
+function moveValue(values, { valueId, neighborId, direction }) {
+  const index = values.findIndex(value => value.id === valueId);
+  const neighbor = values.findIndex(value => value.id === neighborId);
+  if (neighbor !== index + (direction === 'up' ? -1 : 1)) return values;
+  const next = [...values];
+  [next[index], next[neighbor]] = [next[neighbor], next[index]];
+  return next.map((value, rank) => ({ ...value, rank: rank + 1 }));
+}
+const reorder = (valueId, neighborId, direction) => ({ valueId, neighborId, direction });
+
 test('Life value rank actions have accessible names and full touch targets', async ({ page }) => {
   const member = { username: 'amy', displayName: 'Amy' };
   let values = [
@@ -192,9 +203,10 @@ test('Life value rank actions have accessible names and full touch targets', asy
     if (url.pathname.endsWith('/users')) return route.fulfill({ json: { users: [member] } });
     if (url.pathname.endsWith('/user')) return route.fulfill({ json: member });
     if (url.pathname.endsWith('/plan/')) return route.fulfill({ json: { values } });
-    if (url.pathname.endsWith('/plan/values') && request.method() === 'PATCH') {
-      writes.push({ username: url.searchParams.get('username'), values: request.postDataJSON() });
-      values = writes.at(-1).values;
+    if (url.pathname.endsWith('/plan/values/reorder') && request.method() === 'POST') {
+      const command = request.postDataJSON();
+      writes.push({ username: url.searchParams.get('username'), command });
+      values = moveValue(values, command);
     }
     return route.fulfill({ json: {} });
   });
@@ -215,14 +227,8 @@ test('Life value rank actions have accessible names and full touch targets', asy
   await expect(up('Care')).toBeDisabled();
   await expect(down('Curiosity')).toBeDisabled();
   expect(writes).toEqual([
-    { username: 'amy', values: [
-      { id: 'curiosity', name: 'Curiosity', rank: 1 },
-      { id: 'care', name: 'Care', rank: 2 },
-    ] },
-    { username: 'amy', values: [
-      { id: 'care', name: 'Care', rank: 1 },
-      { id: 'curiosity', name: 'Curiosity', rank: 2 },
-    ] },
+    { username: 'amy', command: reorder('curiosity', 'care', 'up') },
+    { username: 'amy', command: reorder('curiosity', 'care', 'down') },
   ]);
 });
 
@@ -254,10 +260,10 @@ test('Life keeps a value reorder pending across routes and isolates it by member
       }
       return route.fulfill({ json: { values: valuesByMember[username] } });
     }
-    if (url.pathname.endsWith('/plan/values') && request.method() === 'PATCH') {
-      const nextValues = request.postDataJSON();
-      writes.push({ username, values: nextValues });
-      valuesByMember[username] = nextValues;
+    if (url.pathname.endsWith('/plan/values/reorder') && request.method() === 'POST') {
+      const command = request.postDataJSON();
+      writes.push({ username, command });
+      valuesByMember[username] = moveValue(valuesByMember[username], command);
       if (username === 'alice' && !alicePatchArrived) {
         alicePatchArrived = true;
         await new Promise(resolve => { releaseAlicePatch = resolve; });
@@ -317,16 +323,8 @@ test('Life keeps a value reorder pending across routes and isolates it by member
     await expect(page.getByRole('button', { name: 'Add value', exact: true })).toBeEnabled();
     await expect(page.getByRole('button', { name: 'Move Care up', exact: true })).toBeEnabled();
     expect(writes).toEqual([
-      { username: 'alice', values: [
-        { id: 'curiosity', name: 'Curiosity', rank: 1 },
-        { id: 'care', name: 'Care', rank: 2 },
-        { id: 'kindness', name: 'Kindness', rank: 3 },
-      ] },
-      { username: 'bob', values: [
-        { id: 'curiosity', name: 'Curiosity', rank: 1 },
-        { id: 'care', name: 'Care', rank: 2 },
-        { id: 'kindness', name: 'Kindness', rank: 3 },
-      ] },
+      { username: 'alice', command: reorder('curiosity', 'care', 'up') },
+      { username: 'bob', command: reorder('curiosity', 'care', 'up') },
     ]);
   } finally {
     releaseAlicePatch?.();
@@ -347,10 +345,10 @@ test('Life releases a refused value reorder so the member can retry', async ({ p
     if (url.pathname.endsWith('/users')) return route.fulfill({ json: { users: [{ username: 'alice', displayName: 'Alice' }] } });
     if (url.pathname.endsWith('/user')) return route.fulfill({ json: { username: 'alice', displayName: 'Alice' } });
     if (url.pathname.replace(/\/$/, '').endsWith('/plan') && request.method() === 'GET') return route.fulfill({ json: { values } });
-    if (url.pathname.endsWith('/plan/values') && request.method() === 'PATCH') {
+    if (url.pathname.endsWith('/plan/values/reorder') && request.method() === 'POST') {
       writes.push(request.postDataJSON());
       if (writes.length === 1) return route.fulfill({ status: 503, json: { error: 'Temporary refusal' } });
-      values = writes.at(-1);
+      values = moveValue(values, writes.at(-1));
       return route.fulfill({ json: { ok: true } });
     }
     return route.fulfill({ json: {} });

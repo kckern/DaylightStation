@@ -1,6 +1,6 @@
 # Webapp Design System
 
-Admin, Health, Media, Feed, Home, Life and Auto share browser layout and interaction contracts. Theme packs supply app-specific art direction. Playback engines and feature workflows stay with their apps.
+Admin, Health, Media, Feed, Home, Life, Auto and Finance share browser layout and interaction contracts. Theme packs supply app-specific art direction. Playback engines and feature workflows stay with their apps.
 
 ## Find a pattern by task
 
@@ -96,7 +96,7 @@ Admin, Health, Media, Feed, Home, Life and Auto share browser layout and interac
 | Keep a save with the sheet that submitted it | Mount the form once per sheet visit. `useSheetSubmission(onClose, onError)` guards duplicate submissions and exposes the current visit's pending and failure state. Use `submit` for forms and `run` for a button that starts a save directly. Reconcile shared resources in the submitted action so it can finish after dismissal. A replacement form keeps its own draft. | [Health saved meals](../../../__app_modules/wellness/health/browser/today/TemplatePicker.jsx) · [Health medical reading](../../../__app_modules/wellness/health/browser/medical/MedicalView.jsx) · [Life creation sheets](../../../__app_modules/personal/life/browser/views/plan/PlanCreateSheet.jsx) |
 | Close a one-shot action through its current owner | Give each mounted visit one automatic attempt and offer explicit Retry on failure. Use the existing submission and focus guards. A power action stays a command even when the endpoint uses GET. | [Home power actions](../../../__app_modules/household/home/browser/actions/PowerOffAction.jsx) |
 | Keep focus on a pending Save | Use `SubmitButton` with the submission's `pending` state. It stays focusable and suppresses activation while pending. An invalid form passes `disabled`. Use `as={Button}` with Mantine's `Button` in a Mantine form. Keep the shared submission guard on the form or command for programmatic submissions. | [Admin settings](../../../__capabilities/content-catalog/browser/admin/SettingsDialogForm.jsx) · [Health medical reading](../../../__app_modules/wellness/health/browser/medical/MedicalView.jsx) · [Auto forms](../../../__app_modules/household/auto/browser/AutoSheetActions.jsx) |
-| Keep independent commands available | Import `useKeyedSubmission` from `@/lib/ui/useKeyedSubmission.js`; it is not exported from the `@/lib/ui` barrel. The hook returns `{ pending, run }`; `pending.has(key)` identifies a busy command, and `run(key, command)` admits one command per key until its promise settles. Pass that state to `SubmitButton`. The caller decides when confirmation is complete and which visit receives feedback. | [Scheduler jobs](../../../frontend/src/modules/Admin/Scheduler/SchedulerIndex.jsx) · [Feed detail actions](../../../__app_modules/media/feed/browser/Scroll/detail/useDetailActions.js) |
+| Keep independent commands available | Import `useKeyedSubmission` from `@/lib/ui`. The hook returns `{ pending, run }`; `pending.has(key)` identifies a busy command, and `run(key, command)` admits one command per key until its promise settles. Pass that state to `SubmitButton`. The caller decides when confirmation is complete and which visit receives feedback. | [Scheduler jobs](../../../frontend/src/modules/Admin/Scheduler/SchedulerIndex.jsx) · [Feed detail actions](../../../__app_modules/media/feed/browser/Scroll/detail/useDetailActions.js) |
 | Confirm a destructive command or decision with extra choices | Use `ConfirmModal({ opened, onClose, onConfirm, title, message, impact, children, confirmLabel, cancelLabel, confirmDisabled, loading, closeOnEscape })`. The caller owns the command, outcome, and invalidation. The modal joins the shared dismiss stack when present and otherwise uses Mantine's Escape handling. `loading` blocks dismissal and repeat activation; `confirmDisabled` blocks only confirmation. If success removes the opener, provide a stable focus target in the destination. | [Scheduler job](../../../frontend/src/modules/Admin/Scheduler/JobDetail.jsx) · [Admin Members](../../../frontend/src/modules/Admin/Household/MembersIndex.jsx) · [Media screen administration](../../../__app_modules/media/media/browser/house/ScreenAdminView.jsx) · [Media Start Fresh](../../../__app_modules/media/media/browser/shell/StartFreshDialog.jsx) |
 | Reveal a replacement view inside a sheet | Keep a focus region mounted across the view change. For direct navigation, focus the region and reset the panel through `Sheet`'s `scrollRef`. When an async command completes, move focus and reset only if the outgoing view still owns focus. | [Health saved meals](../../../__app_modules/wellness/health/browser/today/TemplatePicker.jsx) |
 | Return focus while a roster refreshes | Keep the dialog opener mounted beside the async roster. On command acknowledgement, close the form and release its pending state. Invalidate the affected resource by key so a reopened form keeps its draft. Hand explicit Retry focus to the roster region. Show a loading placeholder if the pending read leaves the region with no rows. | [Admin roster helper](../../../frontend/src/modules/Admin/shared/useAdminRoster.js) · [Admin Devices](../../../frontend/src/modules/Admin/Household/DevicesIndex.jsx) · [Admin Members](../../../frontend/src/modules/Admin/Household/MembersIndex.jsx) |
@@ -197,7 +197,7 @@ it first:
   JetBrains Mono are there. A font only one module uses (ArtMode's
   Garamonds, the clock's Droid Sans Mono, School's Kongtext) stays with that
   module.
-- Admin's palette and typography live in its pack. `frontend/src/modules/Admin/Admin.variables.scss` defines scoped legacy aliases for editors. The provider encloses an Admin portal target so controls and dialogs inherit the same colors.
+- Admin's palette and typography live in its pack. `frontend/src/modules/Admin/Admin.variables.scss` defines scoped aliases for editors: the Admin-only names are `--admin-*`, and the legacy `--ds-*` aliases stay in `.admin-theme` for the piano admin, fitness config, content-catalog, party-games and chess consumers that still read them. The provider encloses an Admin portal target so controls and dialogs inherit the same colors.
 - Admin’s navigation uses the shared `md` breakpoint. At 768px the focused link stays in the visible rail. At 767px the rail collapses and its toggle takes focus if that link was focused. [Keyboard and resize tests](../../../tests/live/flow/admin/admin-navigation.runtime.test.mjs)
 
 Before route splitting, one 11 MB bundle loaded every app's CSS on every
@@ -209,6 +209,10 @@ A `--ds-*` name that isn't part of the contract is a bug, not a typo that
 silently degrades — an unknown custom property falls back to `inherit`, so it
 looks fine until the surrounding context changes. `npm run audit:ui` checks
 every `var(--ds-*)` reference against the manifest of legal names.
+
+Feed keeps its own `--feed-*` aliases (surfaces, text, accent, tints) on `.feed-app`, but every one derives from a `--ds-*` role, using `color-mix()` for tints and status backgrounds. A Feed stylesheet reads `var(--feed-*)` with no literal fallback. The literals left in Feed are data or media hues: source and tier palettes, annotation highlights, the reading themes, and the black and white used as shadow, scrim and glyph ink over photos and video.
+
+Media's `--media-*` aliases on `.media-app` derive from the `--ds` roles (the Media pack sets them to the values of the dark ramp steps). The alias rule on `<html>` stays on the Mantine ramp, because portaled popovers sit outside `.ds-root` and would read the base contract there. Media also styles surfaces that kiosk screens render outside the Media app (the menu, the launch cards, the classical surround, the content filter), so its shadow, scrim and glyph inks resolve at Sass time through `scrim()`, `chalk()` and `tint()` in `theme/_ink.scss`; they compile to the same plain `rgba()` values. Durations that match no token go through `sweep()` in `theme/_motion.scss`, which emits `calc(var(--ds-motion-sweep) * k)`; 120ms uses `--ds-motion-fast`. The literals left in Media are the pack source in `mediaTheme.js`, the Plex-style menu and classical surround palettes, the content-filter review hues and its inks over film frames, and per-title generated hues, each carrying a `data-color` note.
 
 Colors that come from data (a status derived from a value, a chart series, a
 sentiment ramp) are the one place a literal color is legitimate. Mark the line
@@ -244,6 +248,13 @@ The `school` pack (green accent, `#51cf66`) is the study-desk direction for
 kiosk screens like the card-ladder stage — one calm accent for progress and
 primary actions, no chrome to hunt through.
 
+The `finance` pack (`/budget`, `/finances`) is a light scheme: `surface` is the
+grey panel, `background` the charcoal header bar, and `status` carries the
+spent (`info`), gained (`success`) and overspend (`danger`) hues. It sets
+`themeExtras: { components: {} }` so Mantine keeps its own component sizes.
+The Finance Drawer mounts in a portal outside the themed root, so it carries
+`dsCssVars(PACKS.finance)` as its own `style`.
+
 ### `themeExtras` — the escape hatch
 
 `themeExtras` is an optional top-level key on a pack, applied by
@@ -274,7 +285,7 @@ it.
 
 For a content picker or search combo, use `ContentCombobox` from the catalog capability. Its `value` and `onChange` bind the selected content ID to the editor. Media’s full-screen search uses the catalog controller and result rows with `ActionMenu` for the standalone More menu. Closing a destination picker returns focus to the row’s More button, or to the search field if the row has gone. [Public picker export](../../../__capabilities/content-catalog/browser/picker.mjs) · [Admin form example](../../../__capabilities/content-catalog/browser/admin/ListsItemEditor.jsx) · [Media full-screen search](../../../__app_modules/media/media/browser/search/SearchMode.jsx)
 
-Use `frontend/src/lib/ui/index.js` for shared layout, cards and feedback. Import `FormDialog` from its component module. Use the app’s themed Mantine controls for labelled fields, radio groups, chips and menus. [FormDialog](../../../frontend/src/lib/ui/FormDialog.jsx)
+Use `frontend/src/lib/ui/index.js` for shared layout, cards and feedback. Import `FormDialog` from `@/lib/ui`. Use the app’s themed Mantine controls for labelled fields, radio groups, chips and menus. [FormDialog](../../../frontend/src/lib/ui/FormDialog.jsx)
 
 | Primitive | For | Don't use it when |
 |---|---|---|
@@ -556,12 +567,17 @@ The transcript fills the draft for review. Send submits the answer explicitly.
   shape, a state layout, an interaction) appears, it can live locally. The
   third occurrence is copy-paste calcifying into drift — extract it into
   `frontend/src/lib/ui` instead of copying it again.
-- `npm run audit:ui` is the enforcement gate. It scans the app roots and
-  `lib/ui` itself for five violation classes — raw colors, raw motion/keyframe
+- `npm run audit:ui` is the enforcement gate. It scans these roots: `frontend/src/Apps`,
+  `frontend/src/lib/ui`, `frontend/src/modules/Admin`, and the `browser`
+  folders of the Home, Health, Auto, Life, Feed, Media and Finance (`money/finance/browser`) app modules under
+  `__app_modules/` (School has its own scoped guard). It looks for five violation classes — raw colors, raw motion/keyframe
   values, hand-rolled `keydown` listeners, native `<button>`/`<select>`
   elements outside `lib/ui`, and `--ds-*` names outside the token manifest —
-  and compares each count against a checked-in baseline
-  (`scripts/audit-ui-tokens.baseline.json`). A count at or below its baseline
+  and compares each count against a checked-in baseline kept per root
+  (`scripts/audit-ui-tokens.baseline.json`, `{ root: { rule: n } }`;
+  `node scripts/audit-ui-tokens.mjs --write-baseline` rewrites it and refuses
+  to raise any existing root's count; a new root must be added deliberately with
+  `--add-root <root>`, and `--init-baseline` only works when no baseline file exists). A count at or below its baseline
   passes; a count above it fails the gate. **Baselines only shrink.** Fixing
   violations lowers a baseline number in the same change; a new violation
   raising a count above its baseline is a hard failure, never grounds for
@@ -589,10 +605,35 @@ The transcript fills the draft for review. Send submits the answer explicitly.
   class names only — a component that renders another module's component (and
   so its classes) is covered by that component importing its own sheet.
 
+## Audit roots and accepted residuals
+
+Final counts from `node scripts/audit-ui-tokens.mjs` (raw-color / raw-motion / raw-keydown / native-control / undefined-token). Every root is 0 on raw-color and undefined-token. Counts that are not zero are reviewed and accepted:
+
+| Root | motion | keydown | native | Notes |
+| --- | --- | --- | --- | --- |
+| `frontend/src/Apps`, `frontend/src/lib/ui`, Home, Health, Life | 0 | 0 | 0 | clean |
+| `frontend/src/modules/Admin` | 0 | 3 | 6 | Keydown: capture-phase review keys (`ContentFilter/useReviewKeys.js`) and dynamic-letter menus that `useHotkey` cannot express. Native: custom tabs and marks whose geometry is not a Button. |
+| `household/auto/browser` | 0 | 0 | 1 | one native control kept |
+| `media/feed/browser` | 3 | 5 | 111 | Motion: bespoke keyframes. Native: the feed-chip and feed-quiet treatment does not fit the `.ds-touch` Button geometry (see next work). Also 17 `notifications.show` sites and the scroll `matchMedia(min-width:900px)` stay; the audit does not count them. |
+| `media/media/browser` | 14 | 7 | 76 | Motion: provenance and menu keyframes, and the SegmentMap test pins 120ms. Keydown: window-level TV-remote listeners. Native: same chip geometry issue as Feed. `cast/DestinationLine` keeps a Modal because FormDialog does not forward a ref. Four raw fetches remain (LaunchCard chain, countryMapGeoCache). |
+| `money/finance/browser` | 0 | 0 | 8 | native controls kept |
+
+Other known gaps:
+
+- Health `today/DayInputBar` keeps a Mantine Modal. The shared `Sheet` has no focus-return opt-out and no layer prop (its z-index 300 sits below the toast layer at 350).
+- Legacy `--ds-*` aliases in `.admin-theme` (see Packs) are kept for non-Admin consumers.
+
+### Next shared-layer work
+
+- `Sheet`: a focus-return opt-out and a layer prop, to take `DayInputBar` off Mantine Modal.
+- `FormDialog`: forward a ref, to take `cast/DestinationLine` off Modal.
+- A compact `Button` density that fits Feed and Media chips, which would retire most of the 187 native controls there.
+
 ## Visual verification
 
-`/dev/ds-gallery` renders every primitive together — chrome, both card types,
-all three async states, the sheet, the date stepper, the ask affordance — so a
+`/dev/ds-gallery` renders every visual primitive exported by `lib/ui` together —
+chrome, cards, the async states, sheet, confirm and form dialogs, action menu,
+toasts, skeleton, buttons, the date stepper — so a
 token or primitive change can be eyeballed in one place instead of hunting
 across apps. `tests/live/flow/ds/ds-gallery.runtime.test.mjs` drives it at a
 phone and a desktop viewport, asserts no horizontal overflow, exercises the
@@ -601,7 +642,9 @@ viewport. Because layout regressions (a wrapper collapsing, a media query
 losing specificity) are invisible to jsdom-based unit tests, this Playwright
 pass — and a look at the resulting screenshots — is what actually confirms a
 design-system change renders correctly; re-run it after any change to tokens,
-packs, or `lib/ui`.
+packs, or `lib/ui`. `frontend/src/dev/DsGallery/DsGallery.test.jsx` fails when a
+component is added to the `lib/ui` barrel without a gallery entry
+(`<Demo primitives="...">`) or a stated exemption.
 
 ## Route-owned overlays
 

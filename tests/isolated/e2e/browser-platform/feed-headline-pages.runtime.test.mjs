@@ -282,7 +282,7 @@ for (const refresh of [
       const alert = page.getByRole('alert').filter({ hasText: 'Sources could not be refreshed' });
       await expect(alert).toBeVisible();
       expect(reads).toEqual(['local', 'world', 'local']);
-      await alert.getByRole('button', { name: 'Retry' }).press('Enter');
+      await alert.getByRole('button', { name: 'Reload stored edition' }).press('Enter');
       await expect.poll(() => reads).toEqual(['local', 'world', 'local', 'local']);
       const section = page.getByRole('region', { name: 'Headlines', exact: true });
       await expect(section).toBeFocused();

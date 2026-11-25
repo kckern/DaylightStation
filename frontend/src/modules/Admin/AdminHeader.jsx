@@ -22,7 +22,7 @@ function AdminHeader({ opened, toggle, opener }) {
             component="span"
             aria-hidden="true"
             size="12px"
-            c="var(--ds-text-muted)"
+            c="var(--ds-text-low)"
             ff="var(--ds-font-mono)"
             mx={6}
           >
@@ -36,7 +36,7 @@ function AdminHeader({ opened, toggle, opener }) {
             size="12px"
             fw={500}
             ff="var(--ds-font-mono)"
-            c="var(--ds-text-primary)"
+            c="var(--ds-text-high)"
           >
             {label}
           </Text>
@@ -46,7 +46,7 @@ function AdminHeader({ opened, toggle, opener }) {
             to={path}
             size="12px"
             ff="var(--ds-font-mono)"
-            c="var(--ds-text-secondary)"
+            c="var(--ds-text-mid)"
             underline="never"
           >
             {label}

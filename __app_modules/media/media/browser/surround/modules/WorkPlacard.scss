@@ -15,21 +15,23 @@
 // whole screen, so the title carries display weight and the plate grows to hold
 // it. Still content-width, still centred, still straddling: the frame's cap
 // (86% of the measured video) keeps it a plate rather than a band.
+@use "../../theme/ink" as *;
+
 .surround-work-placard {
   /* 0.75rem / 0.85rem until 2026-11-24, when the owner found the plate covered
      too much of the video; the stone keeps a margin, not a mat. */
   padding: 0.45rem 2rem 0.5rem;
   text-align: center;
-  background-color: #18181a;
+  background-color: #18181a; // data-color: stone placard
   background-image:
-    linear-gradient(rgba(20, 20, 23, 0.88), rgba(20, 20, 23, 0.88)),
+    linear-gradient(rgba(20, 20, 23, 0.88), rgba(20, 20, 23, 0.88)), // data-color: stone placard
     url('/api/v1/static/img/ui/plaque/brass.jpg'),
-    linear-gradient(180deg, #2c2c31 0%, #3a3a40 36%, #1d1d20 100%);
+    linear-gradient(180deg, #2c2c31 0%, #3a3a40 36%, #1d1d20 100%); // data-color: stone placard
   background-size: cover, cover, cover;
   background-position: center;
   box-shadow:
-    inset 0 1px 0 rgba(180, 184, 196, 0.28),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.7);
+    inset 0 1px 0 rgba(180, 184, 196, 0.28), // data-color: stone placard
+    inset 0 -1px 0 scrim(0.7);
   font-family: var(--surround-display, "Cormorant Garamond", Georgia, serif);
 }
 
@@ -58,8 +60,8 @@
   font-style: italic;
   font-weight: 600;
   line-height: calc(2.05rem * 1.12);
-  color: #b9bcc6;                          /* engraved silver */
-  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.65);
+  color: #b9bcc6;                          /* data-color: engraved silver */
+  text-shadow: 0 1px 1px scrim(0.65);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -99,8 +101,8 @@
   letter-spacing: 0.06em;
   font-variant-caps: small-caps;
   line-height: 1.2;
-  color: #a2a5ae;
-  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.65);
+  color: #a2a5ae; // data-color: engraved silver
+  text-shadow: 0 1px 1px scrim(0.65);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -117,8 +119,8 @@
   font-weight: 600;
   letter-spacing: 0.08em;
   font-variant-caps: small-caps;
-  color: #8e9097;
-  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.65);
+  color: #8e9097; // data-color: engraved silver
+  text-shadow: 0 1px 1px scrim(0.65);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -136,8 +138,8 @@
   font-weight: 600;
   letter-spacing: 0.08em;
   font-variant-caps: small-caps;
-  color: #9fa2ab;
-  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.65);
+  color: #9fa2ab; // data-color: engraved silver
+  text-shadow: 0 1px 1px scrim(0.65);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -155,8 +157,8 @@
     transform: translateX(-50%);
     width: 60%;
     height: 0;
-    border-top: 1px solid rgba(180, 170, 140, 0.30);
-    border-bottom: 1px solid rgba(0, 0, 0, 0.50);
+    border-top: 1px solid rgba(180, 170, 140, 0.30); // data-color: stone placard
+    border-bottom: 1px solid scrim(0.50);
   }
 }
 

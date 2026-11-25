@@ -12,6 +12,7 @@
  * as the FALLBACK in each `var(…, …)`.
  */
 @forward "../../../../../../__capabilities/playback/browser/surround/tokens";
+@forward "./classical-ink";
 
 
 /* ===========================================================================
@@ -79,31 +80,31 @@
    =========================================================================== */
 
 /** The deepest ground in the frame: the drape's folds. */
-$hall-shadow: #1e0306;
+$hall-shadow: #1e0306; // data-color: classical hall palette
 /** Where the drape meets the frame's edge. */
-$drape-edge: #1c0305;
+$drape-edge: #1c0305; // data-color: classical hall palette
 /** The stage's flat backdrop, behind the drape's weave. */
-$drape-back: #25050a;
+$drape-back: #25050a; // data-color: classical hall palette
 /** The drape's shadowed fold — the dark half of its 90deg gradient. */
-$drape-fold: #3b0e14;
+$drape-fold: #3b0e14; // data-color: classical hall palette
 /** The drape's lit fold. The most saturated thing in the frame. */
-$velvet: #4c0f19;
+$velvet: #4c0f19; // data-color: classical hall palette
 
 /** The band's own unlit ground — timber, not cloth, so low in chroma. */
-$hall-ground: #1b1312;
+$hall-ground: #1b1312; // data-color: classical hall palette
 /** The band's gradient: lit at the top, sinking to `$hall-ink` at the bottom. */
-$band-lit: #201615;
+$band-lit: #201615; // data-color: classical hall palette
 /** The darkest timber tone. The band's floor, and the map's halo fallback. */
-$hall-ink: #160e0e;
+$hall-ink: #160e0e; // data-color: classical hall palette
 
 /** The programme rail's ground — oxblood-stained timber. */
-$rail-ground: #331615;
+$rail-ground: #331615; // data-color: classical hall palette
 /** The rail's gradient, top and bottom. */
-$rail-lit: #381817;
-$rail-deep: #281210;
+$rail-lit: #381817; // data-color: classical hall palette
+$rail-deep: #281210; // data-color: classical hall palette
 
 /** Picture mounts. Dark and quiet: a mat's only job is to not be the subject. */
-$mat: #1d0f0f;
+$mat: #1d0f0f; // data-color: classical hall palette
 
 /**
  * THE BOND'S GROUND — the sounding segment's panel, the waist that joins them,
@@ -115,4 +116,4 @@ $mat: #1d0f0f;
  * at a contrast ratio of 1.067, so the eye reads a change of material rather
  * than a change of light. See the ramp's table above for the full derivation.
  */
-$bond-ground: #390917;
+$bond-ground: #390917; // data-color: classical hall palette

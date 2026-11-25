@@ -124,10 +124,13 @@ test('Review keys supports pointer and keyboard dismissal and returns focus to i
     reviewed: 0, total: 0, job: null, signOff: { ready: false, missing: [], parent: null },
   } }));
   await page.goto('/admin/content/filter/77');
-  const opener = page.getByRole('button', { name: 'All keys' });
+  // All keys is an item of the header's More menu; the menu button is the opener to return to.
+  const opener = page.getByRole('button', { name: 'More', exact: true });
+  const allKeys = page.getByRole('menuitem', { name: /^All keys/ });
   const dialog = page.getByRole('dialog', { name: 'Review keys' });
   const close = dialog.getByRole('button', { name: 'Close' });
   await opener.click();
+  await allKeys.click();
   await expect(close).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(close).toBeFocused();
@@ -141,6 +144,7 @@ test('Review keys supports pointer and keyboard dismissal and returns focus to i
   await expect(opener).toBeFocused();
 
   await opener.press('Enter');
+  await allKeys.press('Enter');
   await expect(close).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();

@@ -223,7 +223,7 @@ test('Admin allows a missing Shopping section to be configured', async ({ page }
   await page.goto('/admin/apps/shopping');
   await page.getByText('Enabled', { exact: true }).click();
   await page.getByTestId('config-save-button').click();
-  await expect.poll(() => writes).toEqual([{ parsed: { shopping: { enabled: true } } }]);
+  await expect.poll(() => writes).toEqual([{ expectedRevision: null, parsed: { shopping: { enabled: true } } }]);
 });
 
 test('config Back preserves a dirty YAML draft until discard is confirmed', async ({ page }) => {
@@ -380,6 +380,7 @@ test('Finance ClickUp IDs reject lossy input and preserve existing IDs on save',
   await expect(save).toBeEnabled();
   await save.click();
   await expect.poll(() => writes).toEqual([{
+    expectedRevision: null,
     parsed: { clickup: {
       assignees: [7, '9007199254740993', 42],
       todo_lists: [13, '9007199254740995', 84],

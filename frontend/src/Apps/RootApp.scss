@@ -4,8 +4,8 @@
   align-items: center;
   height: 100vh;
   width: 100vw;
-  background: #1a1a2e;
-  color: #fff;
+  background: var(--ds-background);
+  color: var(--ds-text-high);
 
   .root-menu-container {
     text-align: center;
@@ -13,11 +13,11 @@
     h1 {
       font-size: 2.5rem;
       margin-bottom: 1rem;
-      color: #eee;
+      color: var(--ds-text-high);
     }
 
     p {
-      color: #888;
+      color: var(--ds-text-low);
       font-size: 1.2rem;
     }
   }

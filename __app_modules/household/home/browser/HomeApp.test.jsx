@@ -101,7 +101,7 @@ function routeApi({ entities = entitiesPayload, cameras = { cameras: [] } } = {}
 }
 
 const openView = (name) => fireEvent.click(screen.getByRole('button', { name }));
-const STATUS = 'The house is drawing 505 W, with 2 lights on and a door open in the office.';
+const STATUS = 'The house is drawing 505 W, with 2 lights on, 1 plug on and a door open in the office.';
 const statusLines = () => [...document.querySelectorAll('.home-today__now')].map((el) => plain(el.textContent));
 const laneLabels = () => [...document.querySelectorAll('.home-lane__label')].map((el) => el.textContent);
 const tabLabels = () => [...document.querySelectorAll('.ds-chrome__tab-label')].map((el) => el.textContent);
@@ -220,15 +220,15 @@ describe('HomeApp — Rooms', () => {
     const rows = [...document.querySelectorAll('.home-room__row')].map((r) => r.querySelector('.home-room__name').textContent);
     expect(rows).toEqual(['Kitchen', 'Office', 'Elsewhere']);
     const officeRow = document.querySelector('[data-room-id="office"] .home-room__row');
-    expect(officeRow.textContent).toContain('71°');
+    expect(officeRow.textContent).toContain('71 °F');
     // A dark room says nothing in the lights column; only a lit one gets a figure.
     expect(officeRow.querySelector('.home-room__lights').textContent).toBe('');
-    expect(document.querySelector('[data-room-id="kitchen"] .home-room__lights').textContent).toContain('2 on');
+    expect(document.querySelector('[data-room-id="kitchen"] .home-room__lights').textContent).toContain('2 lights on');
     fireEvent.click(officeRow);
     expect(screen.getByLabelText('Desk lamp: turn on')).toBeTruthy();
     expect(screen.getByText('Den TV plug')).toBeTruthy();
     expect(screen.queryByText('Remote battery')).toBeNull();
-    fireEvent.click(screen.getByText('Show all 3 readings and switches'));
+    fireEvent.click(screen.getByText('Readings and switches (3)'));
     expect(screen.getByText('Remote battery')).toBeTruthy();
   });
 

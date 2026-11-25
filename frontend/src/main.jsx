@@ -190,11 +190,11 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <Route path="/life/*" element={<PhoneServiceAuth><LifeApp /></PhoneServiceAuth>} />
           <Route path="/feed/*" element={<FeedApp />} />
           <Route path="/media" element={<PhoneServiceAuth><MediaApp /></PhoneServiceAuth>} />
+          <Route path="/budget" element={<FinanceApp />} />
+          <Route path="/finances" element={<FinanceApp />} />
         </Route>
         <Route path="/office" element={<OfficeRedirect />} />
         <Route path="/office/*" element={<OfficeRedirect />} />
-        <Route path="/budget" element={<FinanceApp />} />
-        <Route path="/finances" element={<FinanceApp />} />
         {/* /school — first-class URL for the School app; AppDirectRoute serves it.
             The splat carries School's own deep-link segments (subject/…,
             library, material/…), which SchoolApp parses itself. */}

@@ -1,3 +1,7 @@
+@use "../theme/ink" as *;
+
+$arcade-blue: #3c78ff; // data-color: arcade selection glow
+
 .arcade-selector {
   position: relative;
   &__controllers {
@@ -7,12 +11,12 @@
     z-index: 5;
     font: inherit;
     padding: 0.65rem 1rem;
-    &:focus-visible { outline: 4px solid #7abaff; outline-offset: 3px; }
+    &:focus-visible { outline: 4px solid #7abaff; /* data-color: arcade focus ring */ outline-offset: 3px; }
   }
   display: flex;
   height: 100%;
   width: 100%;
-  background: #0a0a0a;
+  background: #0a0a0a; // data-color: arcade stage ground
   overflow: hidden;
 
   // --- RIGHT: Hero panel (40%) ---
@@ -35,8 +39,8 @@
     aspect-ratio: 3 / 4;
     border-radius: 12px;
     overflow: hidden;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 60px rgba(60, 120, 255, 0.08);
-    background: #111;
+    box-shadow: 0 8px 32px scrim(0.6), 0 0 60px tint($arcade-blue, 0.08);
+    background: #111; // data-color: arcade card ground
     display: flex;
     align-items: center;
     justify-content: center;
@@ -68,7 +72,7 @@
   &__title {
     font-size: 2rem;
     font-weight: 700;
-    color: #fff;
+    color: $chalk;
     margin: 0;
     line-height: 1.2;
     display: -webkit-box;
@@ -85,13 +89,13 @@
   &__subtitle {
     font-size: 0.85em;
     font-weight: 700;
-    color: rgba(255, 255, 255, 0.5);
+    color: chalk(0.5);
   }
 
   &__console {
     font-size: 0.85rem;
     font-weight: 600;
-    color: rgba(255, 255, 255, 0.45);
+    color: chalk(0.45);
     text-transform: uppercase;
     letter-spacing: 0.12em;
     margin: 0.4rem 0 0;
@@ -115,8 +119,8 @@
 
     &.active {
       opacity: 1;
-      border-color: rgba(60, 120, 255, 0.8);
-      box-shadow: 0 0 8px rgba(60, 120, 255, 0.3);
+      border-color: tint($arcade-blue, 0.8);
+      box-shadow: 0 0 8px tint($arcade-blue, 0.3);
     }
 
     img {
@@ -131,6 +135,6 @@
     display: block;
     width: 100%;
     aspect-ratio: 1;
-    background: #222;
+    background: #222; // data-color: arcade tile ground
   }
 }

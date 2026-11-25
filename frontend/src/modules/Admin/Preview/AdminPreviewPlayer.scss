@@ -11,7 +11,7 @@
   max-width: 100%;
   height: var(--preview-box-height, 540px);
   position: relative;
-  background: #000;
+  background: #000; // data-color: letterbox black behind the preview video
   overflow: hidden;
   border-radius: var(--mantine-radius-sm);
 }
@@ -65,7 +65,7 @@
   text-align: center;
   border-radius: 4px;
   padding: 3px;
-  transition: background 0.15s;
+  transition: background var(--ds-motion-fast);
 
   &:hover {
     background: var(--mantine-color-dark-5);

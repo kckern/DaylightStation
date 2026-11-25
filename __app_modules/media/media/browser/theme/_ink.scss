@@ -1,0 +1,20 @@
+// Media's translucent inks. Posters, video and the kiosk menus these sheets also style
+// sit outside any one pack, so the shadow, scrim and glyph inks resolve at Sass time and
+// compile to the same plain rgba() values the sheets always shipped (no runtime color-mix,
+// which older kiosk WebViews lack). Named once and annotated here.
+
+$ink: #000;   // data-color: shadow and scrim ink over posters and video
+$chalk: #fff; // data-color: glyph and hairline ink over posters, video and dark panels
+
+@function alpha-of($color, $alpha) {
+  @return rgba($color, $alpha); // data-color: Sass-time alpha, compiled to a plain rgba()
+}
+
+/// Black at `$alpha` opacity.
+@function scrim($alpha) { @return alpha-of($ink, $alpha); }
+/// White at `$alpha` opacity.
+@function chalk($alpha) { @return alpha-of($chalk, $alpha); }
+/// Any palette color at `$alpha` opacity (the Sass stand-in for rgba($color, $alpha)).
+@function tint($color, $alpha) { @return alpha-of($color, $alpha); }
+
+$on-accent: #1a1300; // data-color: ink for text on the amber accent fill (primary buttons, chips)

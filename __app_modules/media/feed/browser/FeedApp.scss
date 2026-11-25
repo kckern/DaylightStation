@@ -11,29 +11,36 @@
   --feed-canvas: var(--ds-background);
   --feed-surface-1: var(--ds-surface);
   --feed-surface-2: var(--ds-surface-alt);
-  --feed-surface-3: #262a2f;
+  --feed-surface-3: color-mix(in srgb, var(--ds-surface-alt) 96%, var(--ds-text-high));
 
   // Borders
-  --feed-border: rgba(255, 255, 255, 0.08);
-  --feed-border-strong: rgba(255, 255, 255, 0.16);
+  --feed-border: color-mix(in srgb, var(--ds-text-high) 8%, transparent);
+  --feed-border-strong: color-mix(in srgb, var(--ds-text-high) 16%, transparent);
 
   // Text (primary → muted)
   --feed-text-1: var(--ds-text-high);
   --feed-text-2: var(--ds-text-mid);
   --feed-text-3: var(--ds-text-low);
+  --feed-text-4: color-mix(in srgb, var(--ds-text-low) 80%, var(--ds-surface));
 
   // Accent — one blue family
   --feed-accent: var(--ds-accent);
-  --feed-accent-strong: #74c0fc;
-  --feed-accent-bg: rgba(77, 171, 247, 0.16);
+  --feed-accent-strong: color-mix(in srgb, var(--ds-accent) 75%, var(--ds-text-high));
+  --feed-accent-bg: color-mix(in srgb, var(--ds-accent) 16%, transparent);
 
   // Semantic
-  --feed-danger-bg: #3a2325;
-  --feed-danger-border: #7f3b3f;
-  --feed-danger-text: #ffc9c9;
-  --feed-warning-bg: #3a3220;
-  --feed-warning-border: #8a6d1a;
-  --feed-warning-text: #ffe8a1;
+  --feed-danger-bg: color-mix(in srgb, var(--ds-danger) 18%, var(--ds-surface));
+  --feed-danger-border: color-mix(in srgb, var(--ds-danger) 45%, var(--ds-surface));
+  --feed-danger-text: color-mix(in srgb, var(--ds-danger) 35%, var(--ds-text-high));
+  --feed-warning-bg: color-mix(in srgb, var(--ds-warning) 18%, var(--ds-surface));
+  --feed-warning-border: color-mix(in srgb, var(--ds-warning) 60%, var(--ds-surface));
+  --feed-warning-text: color-mix(in srgb, var(--ds-warning) 35%, var(--ds-text-high));
+
+  // Ink for shadows and scrims over photos and video; each site picks its own strength
+  --feed-ink: #000; /* data-color: shadow and scrim ink */
+  --feed-pure-white: #fff; /* data-color: glyphs over photos, video and accent fills */
+  --feed-neutral: #808080; /* data-color: mid-gray that reads on every reading theme */
+  --feed-tooltip-surface: #eceef0; /* data-color: light tooltip card */
 
   // Geometry
   --feed-radius-sm: 4px;
@@ -47,8 +54,8 @@
 
   // Reading surface (article body card) — overridden per reading theme below.
   --feed-reading-surface: var(--feed-surface-1);
-  --feed-reading-ink: #e9ecef;
-  --feed-reading-link: #74c0fc;
+  --feed-reading-ink: var(--ds-text-high);
+  --feed-reading-link: var(--feed-accent-strong);
 
   background: var(--feed-canvas);
   color: var(--feed-text-1);
@@ -76,7 +83,7 @@
     font-weight: 500;
     font-size: 0.9rem;
     border-bottom: 2px solid transparent;
-    transition: color 0.15s, border-color 0.15s;
+    transition: color var(--ds-motion-fast), border-color var(--ds-motion-fast);
 
     &:hover {
       color: var(--feed-text-2);
@@ -188,7 +195,7 @@
   border: 1px solid var(--feed-border-strong);
   border-radius: var(--feed-radius-lg);
   background: var(--feed-surface-2);
-  box-shadow: 0 0.8rem 2rem rgba(0, 0, 0, 0.4);
+  box-shadow: 0 0.8rem 2rem color-mix(in srgb, var(--feed-ink) 40%, transparent);
   color: var(--feed-text-1);
 
   label { display: grid; gap: 0.3rem; font-size: 0.82rem; }
@@ -242,7 +249,7 @@
     height: 8px;
     border-radius: 50%;
     background: var(--feed-text-3);
-    animation: feed-dot-bounce 1.2s ease-in-out infinite;
+    animation: feed-dot-bounce calc(var(--ds-motion-sweep) * 0.75) ease-in-out infinite;
 
     &:nth-child(2) { animation-delay: 0.15s; }
     &:nth-child(3) { animation-delay: 0.3s; }
@@ -267,7 +274,7 @@
 // reachable without dominating the immersive scroll view. (F-12)
 .feed-tabs--compact {
   --feed-tabs-gutter: 0.5rem;
-  background: rgba(23, 25, 28, 0.92);
+  background: color-mix(in srgb, var(--ds-surface) 92%, transparent);
 
   a {
     padding: 0.4rem 0.9rem;
@@ -288,15 +295,15 @@
 
 // Reading themes drive the article body card only — the shell stays dark.
 .feed-app[data-reading-theme="sepia"] {
-  --feed-reading-surface: #f3ead7;
-  --feed-reading-ink: #30291e;
-  --feed-reading-link: #0b5cad;
+  --feed-reading-surface: #f3ead7; /* data-color: sepia reading theme */
+  --feed-reading-ink: #30291e; /* data-color: sepia reading theme */
+  --feed-reading-link: #0b5cad; /* data-color: reading theme link */
 }
 
 .feed-app[data-reading-theme="light"] {
-  --feed-reading-surface: #ffffff;
-  --feed-reading-ink: #1f2328;
-  --feed-reading-link: #0b5cad;
+  --feed-reading-surface: #ffffff; /* data-color: light reading theme */
+  --feed-reading-ink: #1f2328; /* data-color: light reading theme */
+  --feed-reading-link: #0b5cad; /* data-color: reading theme link */
 }
 
 .feed-app :is(.article-expanded, .detail-article) {

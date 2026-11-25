@@ -15,8 +15,8 @@ export default function FitnessBody({ item }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.4rem' }}>
         <span style={{
           display: 'inline-block',
-          background: '#2c2e33',
-          color: '#51cf66',
+          background: 'var(--feed-surface-3)',
+          color: 'var(--ds-success)',
           fontSize: '0.6rem',
           fontWeight: 700,
           padding: '0.15rem 0.5rem',
@@ -31,7 +31,7 @@ export default function FitnessBody({ item }) {
         margin: '0 0 0.5rem',
         fontSize: '0.95rem',
         fontWeight: 500,
-        color: '#fff',
+        color: 'var(--feed-pure-white)',
         lineHeight: 1.35,
       }}>
         {item.title}
@@ -45,13 +45,13 @@ export default function FitnessBody({ item }) {
               alignItems: 'center',
               minWidth: '50px',
               padding: '0.4rem 0.5rem',
-              background: '#2c2e33',
+              background: 'var(--feed-surface-3)',
               borderRadius: '8px',
             }}>
-              <span style={{ fontSize: '1.1rem', fontWeight: 600, color: '#fff', lineHeight: 1.2 }}>
+              <span style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--feed-pure-white)', lineHeight: 1.2 }}>
                 {stat.value}
               </span>
-              <span style={{ fontSize: '0.6rem', color: '#868e96', textTransform: 'uppercase', letterSpacing: '0.03em', marginTop: '0.15rem' }}>
+              <span style={{ fontSize: '0.6rem', color: 'var(--feed-text-3)', textTransform: 'uppercase', letterSpacing: '0.03em', marginTop: '0.15rem' }}>
                 {stat.label}
               </span>
             </div>

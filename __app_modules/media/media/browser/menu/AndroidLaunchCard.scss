@@ -1,5 +1,7 @@
 // frontend/src/modules/Menu/AndroidLaunchCard.scss
 
+@use "../theme/ink" as *;
+
 .android-launch-card {
   display: flex;
   flex-direction: column;
@@ -7,8 +9,8 @@
   justify-content: center;
   height: 100%;
   width: 100%;
-  background: rgba(0, 0, 0, 0.9);
-  color: #e0e0e0;
+  background: scrim(0.9);
+  color: #e0e0e0; // data-color: launch card body text on the black scrim
   font-family: inherit;
   gap: 1.5rem;
   padding: 2rem;
@@ -48,7 +50,7 @@
   &--unavailable,
   &--failed {
     .android-launch-card__status {
-      color: #ff6b6b;
+      color: #ff6b6b; // data-color: launch failure text
       opacity: 1;
     }
   }

@@ -6,10 +6,10 @@ import { groupSmall } from "./lib/groupSmall.mjs";
 
 export function buildTreemapData(transactions) {
   const pastelColors = [
-    '#FFD1DC', '#E2F0CB', '#FFABAB', '#B5EAD7', '#81F5FF',
-    '#E3B5A4', '#FFF9C4', '#DAD5DB', '#C4B6EF', '#FFB6C1',
-    '#FF677D', '#F2F3F5', '#D1C4E9', '#80DEEA', '#FFCCBC',
-    '#F48FB1', '#B39DDB', '#B2DFDB', '#FFCDD2', '#E1BEE7'
+    '#FFD1DC', '#E2F0CB', '#FFABAB', '#B5EAD7', '#81F5FF', // data-color: pie slice palette (series hues)
+    '#E3B5A4', '#FFF9C4', '#DAD5DB', '#C4B6EF', '#FFB6C1', // data-color: pie slice palette (series hues)
+    '#FF677D', '#F2F3F5', '#D1C4E9', '#80DEEA', '#FFCCBC', // data-color: pie slice palette (series hues)
+    '#F48FB1', '#B39DDB', '#B2DFDB', '#FFCDD2', '#E1BEE7' // data-color: pie slice palette (series hues)
   ];
   const tagColorMap = {};
   let colorIndex = 0;

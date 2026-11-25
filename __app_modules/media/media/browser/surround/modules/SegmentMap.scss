@@ -34,6 +34,8 @@
    band's region, and these are the fallbacks that keep this module honest when
    it is rendered outside the frame. One literal, one file. */
 @use "../themes/classical-tokens" as *;
+@use "../../theme/ink" as *;
+@use "../../theme/motion" as *;
 
 .surround-segment-map {
   /* NOT `height: 100%`. The band region is content-sized now, so a percentage
@@ -72,7 +74,7 @@
   display: flex;
   align-items: flex-start;
   font-family: var(--surround-display, "Cormorant Garamond", Georgia, serif);
-  color: var(--ink, #2a1d07);
+  color: var(--ink, #{$cl-ink});
 }
 
 /* THE COMPACT RAIL (`band.railDensity: 'bars'`). The rule, its barlines and the
@@ -194,14 +196,14 @@
      piece its shape were the DIMMEST text on the rail and twenty-two integers
      were the brightest. The ladder is now the other way up: the part and set
      names are the loudest thing here, and the ordinals are the annotation. */
-  color: var(--ink, #2a1d07);
+  color: var(--ink, #{$cl-ink});
   opacity: 0.92;
   white-space: nowrap;
   overflow: hidden;
 }
 
 .surround-segment-map__group--outer {
-  color: var(--ink, #332b20);
+  color: var(--ink, #{$cl-ink-alt});
   font-weight: 600;
   opacity: 1;
 }
@@ -296,7 +298,7 @@
      animation frame by the one clock the rest of the rail already moves on.
      Only the FADE is still a CSS transition, because "nothing is sounding" is a
      state change rather than a move. */
-  transition: opacity var(--accordion-ms, 420ms) linear;
+  transition: opacity var(--accordion-ms, #{sweep(420)}) linear;
 }
 
 /* Nothing is sounding — the applause after the final chord. The bond has nothing
@@ -338,7 +340,7 @@
     var(--connector-tl, 0) var(--connector-tr, 0)
     var(--connector-br, 0) var(--connector-bl, 0);
   pointer-events: none;
-  transition: opacity var(--accordion-ms, 420ms) linear;
+  transition: opacity var(--accordion-ms, #{sweep(420)}) linear;
 }
 
 /* Nothing sounding — the applause after the final chord, or the tuning before
@@ -555,7 +557,7 @@
   font-variant-numeric: lining-nums;
   font-variant-caps: all-small-caps;
   letter-spacing: 0.02em;
-  color: var(--ink, #2a1d07);
+  color: var(--ink, #{$cl-ink});
   white-space: nowrap;
   /* The same three states the names carry, in the same order of loudness: the
      future is the brighter quiet state, the elapsed the dimmer one.
@@ -567,7 +569,7 @@
 }
 
 .surround-segment-map__segment--elapsed .surround-segment-map__chip {
-  color: var(--ink-soft, #6b6152);
+  color: var(--ink-soft, #{$cl-ink-soft});
   opacity: 0.9;
 }
 
@@ -620,11 +622,11 @@
      segment paints down to a colour ~18% darker — two elapsed regions at two
      brightnesses, side by side, with no difference in meaning behind it. What
      is recessive here is the hatch's own alpha, and nothing else. */
-  --fold-hatch: rgba(233, 223, 200, 0.2);
+  --fold-hatch: #{tint($cl-parchment, 0.2)};
 }
 
 .surround-segment-map__segment--future.surround-segment-map__segment--fold {
-  --fold-hatch: rgba(233, 223, 200, 0.11);
+  --fold-hatch: #{tint($cl-parchment, 0.11)};
 }
 
 /* The hatched lane. `1em` of the label floor IS the chip's own height (the chip
@@ -681,21 +683,21 @@
      of the badge's two signals and leaves it a bare figure again. The border is
      the ink the badge is set in, at the weight that reads as a drawn edge from
      across the room. */
-  border: 1px solid rgba(233, 223, 200, 0.42);
+  border: 1px solid tint($cl-parchment, 0.42);
   border-radius: 999px;
   /* The badge KNOCKS A HOLE IN THE HATCH rather than floating on it: diagonals
      running behind a two-digit figure at this size is the mark and its ground
      competing at the same weight. Not a token — the rail's ground is the band's
      near-black and this is that black at the alpha that stops the hatch without
      drawing a second edge inside the border. */
-  background: rgba(0, 0, 0, 0.62);
-  color: var(--ink, #2a1d07);
+  background: scrim(0.62);
+  color: var(--ink, #{$cl-ink});
   opacity: 0.82;
   white-space: nowrap;
 }
 
 .surround-segment-map__segment--elapsed .surround-segment-map__fold-count {
-  color: var(--ink-soft, #6b6152);
+  color: var(--ink-soft, #{$cl-ink-soft});
   opacity: 0.95;
 }
 
@@ -791,7 +793,7 @@
   font-style: normal;              /* it is NOT the term — see __term */
   line-height: 1.2;
   letter-spacing: 0.01em;
-  color: var(--ink, #2a1d07);
+  color: var(--ink, #{$cl-ink});
   opacity: 0.55;
   white-space: nowrap;
   overflow: hidden;
@@ -829,7 +831,7 @@
   right: 0;
   top: 0;
   height: 2px;
-  background: var(--ink-soft, #6b6152);
+  background: var(--ink-soft, #{$cl-ink-soft});
   opacity: 0.55;
 }
 
@@ -852,7 +854,7 @@
   height: 2px;
   transform: scaleX(var(--fill, 0));
   transform-origin: left center;
-  background: var(--ink, #2a1d07);
+  background: var(--ink, #{$cl-ink});
   transition: transform 120ms linear;
 }
 
@@ -863,7 +865,7 @@
    the brighter of the two quiet states, which is the correct order — a segment
    already played is the one you no longer need. */
 .surround-segment-map__segment--future .surround-segment-map__heading {
-  color: var(--ink, #2a1d07);
+  color: var(--ink, #{$cl-ink});
   opacity: 0.78;
   font-weight: 600;
 }
@@ -871,7 +873,7 @@
 /* Elapsed — the segment reads as done: its lane is filled end to end, at the
    quieter 2px, and the name drops back. */
 .surround-segment-map__segment--elapsed .surround-segment-map__heading {
-  color: var(--ink-soft, #6b6152);
+  color: var(--ink-soft, #{$cl-ink-soft});
   opacity: 0.6;
 }
 
@@ -882,7 +884,7 @@
    translation is a gloss in both, and brightening it under the sounding
    segment would put a sans line in competition with the brass rule. */
 .surround-segment-map__segment--elapsed .surround-segment-map__translation {
-  color: var(--ink-soft, #6b6152);
+  color: var(--ink-soft, #{$cl-ink-soft});
   opacity: 0.38;
 }
 
@@ -893,7 +895,7 @@
    it is not content, but on the sounding segment it is the one that says which
    of the four this is. */
 .surround-segment-map__segment--active .surround-segment-map__heading {
-  color: var(--ink, #2a1d07);
+  color: var(--ink, #{$cl-ink});
   font-weight: 600;
 }
 .surround-segment-map__segment--active .surround-segment-map__numeral {
@@ -901,7 +903,7 @@
 }
 .surround-segment-map__segment--active .surround-segment-map__bar-fill {
   height: 4px;
-  background: var(--brass, #c79a3e);
+  background: var(--brass, #{$cl-brass});
 }
 
 /* Barlines. One quiet separator marks a segment end; terminals close the rule
@@ -911,7 +913,7 @@
   top: 0;                          /* the rule row is at the TOP of the band now */
   width: 1px;
   height: 0.7em;
-  background: var(--ink-soft, #6b6152);
+  background: var(--ink-soft, #{$cl-ink-soft});
   pointer-events: none;
 }
 
@@ -922,7 +924,7 @@
 
 .surround-segment-map__barline--terminal {
   height: 0.6em;
-  background: var(--ink-soft, #6b6152);
+  background: var(--ink-soft, #{$cl-ink-soft});
   opacity: 0.55;                   /* the lane's own weight — one quiet family */
 }
 .surround-segment-map__barline--start { left: 0; }
@@ -980,7 +982,7 @@
   right: -1px;
   width: 2px;
   height: 100%;
-  background: var(--brass-lit, #f6e3a0);
+  background: var(--brass-lit, #{$cl-brass-lit});
 }
 
 /* Reduced motion: nothing glides. The fill and the playhead still show the
@@ -1018,8 +1020,8 @@
      listening band below. */
   background-image: repeating-linear-gradient(
     -45deg,
-    rgba(233, 223, 200, 0.16) 0,
-    rgba(233, 223, 200, 0.16) 1px,
+    tint($cl-parchment, 0.16) 0,
+    tint($cl-parchment, 0.16) 1px,
     transparent 1px,
     transparent 5px
   );
@@ -1055,9 +1057,9 @@
   gap: 0.34em;
   min-width: 0;
   padding: 0.08em 0.5em 0.14em;
-  border: 1px solid rgba(233, 223, 200, 0.42);
+  border: 1px solid tint($cl-parchment, 0.42);
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.62);
+  background: scrim(0.62);
   font-variant-numeric: tabular-nums lining-nums;
   font-style: normal;
   opacity: 0.72;
@@ -1108,9 +1110,9 @@
   flex: 1 1 0;
   min-width: 0;
   appearance: none;
-  border: 1px solid var(--programme-edge, #ddd0b4);
+  border: 1px solid var(--programme-edge, #{$cl-programme-edge});
   background: transparent;
-  color: var(--ink-soft, #6b6152);
+  color: var(--ink-soft, #{$cl-ink-soft});
   font-family: var(--surround-body);
   font-size: var(--label-floor, 11.52px);
   line-height: 1.25;
@@ -1119,8 +1121,8 @@
   text-align: center;
 
   &[data-state="sounding"] {
-    background: var(--bond-ground, rgba(233, 223, 200, 0.14));
-    color: var(--ink, #2a1d07);
+    background: var(--bond-ground, #{tint($cl-parchment, 0.14)});
+    color: var(--ink, #{$cl-ink});
     font-weight: 600;
   }
 }
@@ -1143,7 +1145,7 @@
     content: "";
     position: absolute;
     inset: 0;
-    background: var(--ink-soft, #6b6152);
+    background: var(--ink-soft, #{$cl-ink-soft});
     opacity: 0.35;
   }
 
@@ -1158,7 +1160,7 @@
     left: 0;
     right: 0;
     height: calc(var(--head, 0) * 100%);
-    background: var(--ink, #332b20);
+    background: var(--ink, #{$cl-ink-alt});
     opacity: 0.85;
     transition: height var(--head-ms, 120ms) linear;
   }
@@ -1199,7 +1201,7 @@
   font-family: var(--surround-body);
   font-size: var(--label-floor, 11.52px);
   line-height: 1.25;
-  color: var(--ink, #332b20);
+  color: var(--ink, #{$cl-ink-alt});
   cursor: pointer;
   border-radius: var(--bond-radius, 3px);
 }
@@ -1213,7 +1215,7 @@
   text-align: right;
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;
-  color: var(--ink-soft, #6b6152);
+  color: var(--ink-soft, #{$cl-ink-soft});
   white-space: nowrap;
 }
 
@@ -1232,7 +1234,7 @@
 
 .surround-segment-map__row[data-state="ahead"] {
   opacity: 0.78;
-  color: var(--ink-soft, #6b6152);
+  color: var(--ink-soft, #{$cl-ink-soft});
 }
 
 /* THE SOUNDING ROW IS THE BOND. There is no connector on this axis — rows sit
@@ -1241,23 +1243,23 @@
    the NOW register are lit the same way, which is the whole mechanism the
    connector existed to serve. */
 .surround-segment-map__row[data-state="sounding"] {
-  background: var(--bond-ground, rgba(233, 223, 200, 0.14));
+  background: var(--bond-ground, #{tint($cl-parchment, 0.14)});
   opacity: 1;
   font-weight: 600;
 
-  .surround-segment-map__row-mark { color: var(--ink, #332b20); }
+  .surround-segment-map__row-mark { color: var(--ink, #{$cl-ink-alt}); }
 }
 
 /* THE SELECTION OUTLINE — the one place on this rail an edge is allowed,
    because it has to read against both the lit (sounding) and unlit grounds a
    nav selection can land on. */
 .surround-segment-map__row[data-selected="true"] {
-  box-shadow: inset 0 0 0 2px var(--brass-lit, #f6e3a0);
+  box-shadow: inset 0 0 0 2px var(--brass-lit, #{$cl-brass-lit});
 }
 
 .surround-segment-map--column .surround-segment-map__chip[data-state="selected"] {
-  box-shadow: inset 0 0 0 2px var(--brass-lit, #f6e3a0);
-  color: var(--ink, #2a1d07);
+  box-shadow: inset 0 0 0 2px var(--brass-lit, #{$cl-brass-lit});
+  color: var(--ink, #{$cl-ink});
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1273,7 +1275,7 @@
   right: 0;
   bottom: 0;
   height: 2px;
-  background: var(--ink-soft, #6b6152);
+  background: var(--ink-soft, #{$cl-ink-soft});
   opacity: 0.35;
 
   &::after {
@@ -1286,7 +1288,7 @@
        rules in this sheet carry `#332b20`, which matches no token at all — a
        literal that drifted. Do not copy it forward for consistency's sake;
        consistency with a wrong neighbour is not a virtue. */
-    background: var(--ink, #2a1d07);
+    background: var(--ink, #{$cl-ink});
     transition: transform var(--head-ms, 120ms) linear;
   }
 }

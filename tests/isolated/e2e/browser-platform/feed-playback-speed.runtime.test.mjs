@@ -37,7 +37,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 function playTrack(page, id) {
-  return page.locator(`[data-feed-item-id="plex:${id}"]`).getByRole('button', { name: 'Play', exact: true }).click();
+  return page.locator(`[data-feed-item-id="plex:${id}"]`).getByRole('button', { name: /^Play / }).click();
 }
 
 function playingSettings(page, id) {
@@ -159,11 +159,11 @@ test('Feed resumes both interrupted tracks at their captured positions', async (
   await listen('41', 4);
   await playTrack(page, '42');
   await listen('42', 3);
-  await page.getByRole('button', { name: 'Resume previous' }).click();
+  await page.getByRole('button', { name: /^Resume: / }).click();
   await expect.poll(() => playingSettings(page, '41')).not.toBeNull();
   expect(await audio('41').evaluate(el => el.currentTime)).toBeGreaterThanOrEqual(4);
 
-  await page.getByRole('button', { name: 'Resume previous' }).click();
+  await page.getByRole('button', { name: /^Resume: / }).click();
   await expect.poll(() => playingSettings(page, '42')).not.toBeNull();
   expect(await audio('42').evaluate(el => el.currentTime)).toBeGreaterThanOrEqual(3);
 });

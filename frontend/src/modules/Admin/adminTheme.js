@@ -1,8 +1,8 @@
 import { PACKS } from '../../lib/theme/packs.mjs';
 
 const DS_BLUE = [
-  '#e8f0fe', '#c4d7fc', '#9ebcfa', '#789ff7', PACKS.admin.accent,
-  '#3d6be0', '#3360cc', '#2952b3', '#1f4499', '#163680'
+  '#e8f0fe', '#c4d7fc', '#9ebcfa', '#789ff7', PACKS.admin.accent, // data-color: Mantine ramp for the admin accent (5th stop is the pack accent)
+  '#3d6be0', '#3360cc', '#2952b3', '#1f4499', '#163680' // data-color: Mantine ramp for the admin accent
 ];
 
 const themeExtras = {
@@ -17,7 +17,7 @@ const themeExtras = {
       defaultProps: { radius: 'md' },
       styles: {
         root: {
-          backgroundColor: 'var(--ds-bg-elevated)',
+          backgroundColor: 'var(--ds-surface-alt)',
           border: '1px solid var(--ds-border)',
         },
       },
@@ -26,7 +26,7 @@ const themeExtras = {
       defaultProps: { radius: 'sm' },
       styles: {
         input: {
-          backgroundColor: 'var(--ds-bg-base)',
+          backgroundColor: 'var(--ds-background)',
           borderColor: 'var(--ds-border)',
         },
       },
@@ -35,7 +35,7 @@ const themeExtras = {
       defaultProps: { radius: 'sm' },
       styles: {
         input: {
-          backgroundColor: 'var(--ds-bg-base)',
+          backgroundColor: 'var(--ds-background)',
           borderColor: 'var(--ds-border)',
         },
       },
@@ -44,7 +44,7 @@ const themeExtras = {
       defaultProps: { radius: 'sm' },
       styles: {
         input: {
-          backgroundColor: 'var(--ds-bg-base)',
+          backgroundColor: 'var(--ds-background)',
           borderColor: 'var(--ds-border)',
         },
       },
@@ -55,11 +55,11 @@ const themeExtras = {
     Modal: {
       styles: {
         content: {
-          backgroundColor: 'var(--ds-bg-elevated)',
+          backgroundColor: 'var(--ds-surface-alt)',
           border: '1px solid var(--ds-border)',
         },
         header: {
-          backgroundColor: 'var(--ds-bg-elevated)',
+          backgroundColor: 'var(--ds-surface-alt)',
         },
       },
     },
@@ -70,7 +70,7 @@ const themeExtras = {
           fontSize: '11px',
           textTransform: 'uppercase',
           letterSpacing: '0.05em',
-          color: 'var(--ds-text-secondary)',
+          color: 'var(--ds-text-mid)',
         },
       },
     },

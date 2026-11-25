@@ -38,6 +38,7 @@
 
 /* The band's shared literals - see `../themes/_classical-tokens.scss` and `SegmentMap.scss`. */
 @use "../themes/classical-tokens" as *;
+@use "../../theme/motion" as *;
 
 .surround-cue-ticker {
   position: relative;
@@ -112,7 +113,7 @@
   /* The considered move: the whole band's text dissolves through the ground
      while the registers change sides beneath it. Duration comes from the
      component (the house dissolve), so this and the JS timer cannot drift. */
-  transition: opacity var(--cue-fade-ms, 320ms) ease;
+  transition: opacity var(--cue-fade-ms, #{sweep(320)}) ease;
 }
 
 /* The NOW register sits LEFT (`band.nowSide`). DOM order never changes — the
@@ -180,7 +181,7 @@
   pointer-events: none;
   /* The FADE only. `left` is interpolated in JS with the rail's own geometry —
      see the note above and `../band.js`, `useEasedVector`. */
-  transition: opacity var(--accordion-ms, 420ms) linear;
+  transition: opacity var(--accordion-ms, #{sweep(420)}) linear;
 }
 
 /* NOTHING IS SOUNDING (design wave 9) — the tuning and the walk-on before the
@@ -256,7 +257,7 @@
   font-variant-caps: all-small-caps;
   line-height: 1.2;
   letter-spacing: 0.09em;
-  color: var(--ink-soft, #6b6152);
+  color: var(--ink-soft, #{$cl-ink-soft});
 }
 
 /* ---------------------------------------------------------------------------
@@ -286,7 +287,7 @@
   font-weight: 600;
   line-height: 1.2;
   letter-spacing: 0.03em;
-  color: var(--ink, #2a1d07);
+  color: var(--ink, #{$cl-ink});
   /* 0.7, from 0.85 (task 6c). It is the loudest ink in either register and the
      panel had to stop shouting as a whole, not in one line of it — a header left
      at 0.85 over a note at 0.66 would simply move the glare up an inch. 0.7 is
@@ -316,7 +317,7 @@
   font-weight: 400;
   line-height: 1.2;
   letter-spacing: 0.01em;
-  color: var(--ink, #2a1d07);
+  color: var(--ink, #{$cl-ink});
   opacity: 0.55;
 }
 
@@ -361,7 +362,7 @@
      one word onto its own second line looks like a mistake at this size. */
   text-wrap: balance;
   font-weight: 500;
-  color: var(--ink, #2a1d07);
+  color: var(--ink, #{$cl-ink});
   /* IT SITS BACK INTO THE GROUND (task 6c). The band's `--ink` is #e9dfc8 —
      parchment, not white, but at full strength on near-black stone it reads as
      white and it SHOUTS: measured, 12.75:1 against the bond's ground. A

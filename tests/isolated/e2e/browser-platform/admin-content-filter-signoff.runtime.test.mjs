@@ -57,7 +57,15 @@ async function installReview(page, { approved = false, withRow = false, write, r
 
 const approveButton = page => page.getByRole('button', { name: 'Approve for family', exact: true });
 const withdrawButton = page => page.getByRole('button', { name: 'Withdraw approval', exact: true });
-const statusRegion = page => page.getByRole('region', { name: 'Film status', exact: true });
+// Approve lives on the rail's Approve tab, in place of the part card.
+const openApproveTab = page => page.getByRole('tab', { name: /^Approve/ }).click();
+const openReviewTab = page => page.getByRole('tab', { name: /^Review/ }).click();
+// The card text field sits behind the part's effect menu.
+async function openCardDraft(page) {
+  await page.getByRole('button', { name: /^Effect: .*Change it/ }).click();
+  await page.getByRole('menuitem', { name: /^Card shown in place of the skip/ }).click();
+  return page.getByRole('textbox', { name: /^Card( \(approved\)| shown in place of the skip)?$/ });
+}
 const approvalRegion = page => page.getByRole('region', { name: 'Family approval', exact: true });
 const signoff = method => [method, api + '/77/signoff', {}];
 const refused = message => ({ status: 409, json: { message } });
@@ -77,10 +85,11 @@ for (const width of [390, 1440]) {
       const read = Promise.withResolvers();
       const calls = await installReview(page, { approved, write: () => write.promise, read: n => n === 2 ? read.promise : undefined });
       const action = approved ? withdrawButton(page) : approveButton(page);
-      const region = approved ? approvalRegion(page) : statusRegion(page);
+      const region = approvalRegion(page);
       const command = signoff(approved ? 'DELETE' : 'POST');
       try {
         await page.goto(film);
+        await openApproveTab(page);
         await action.scrollIntoViewIfNeeded();
         await action.press('Enter');
         await expect.poll(() => calls).toEqual([review, command]);
@@ -117,24 +126,26 @@ test('Admin keeps an editor draft when a confirmed approval needs a GET-only ret
   } });
   try {
     await page.goto(film + '/' + row.id);
-    const draft = page.getByRole('textbox', { name: /^Card( \(approved\))?$/ });
-    await draft.fill('Unsent card draft');
+    await openApproveTab(page);
     await approveButton(page).press('Enter');
-    const region = statusRegion(page);
+    const region = approvalRegion(page);
     const retry = region.getByRole('button', { name: 'Retry', exact: true });
     await expect(retry).toBeEnabled();
     await expect(approveButton(page)).toBeDisabled();
-    await expect(draft).toHaveValue('Unsent card draft');
     await expect(region).toBeFocused();
     await retry.press('Enter');
     await expect.poll(() => calls).toEqual([review, signoff('POST'), review, review]);
     await expect(region).toBeFocused();
     await expect(region).toHaveAttribute('aria-busy', 'true');
+    await openReviewTab(page);
+    const draft = await openCardDraft(page);
+    await draft.fill('Unsent card draft');
     await draft.focus();
     retryRead.resolve();
-    await expect(withdrawButton(page)).toBeEnabled();
     await expect(draft).toBeFocused();
     await expect(draft).toHaveValue('Unsent card draft');
+    await openApproveTab(page);
+    await expect(withdrawButton(page)).toBeEnabled();
     expect(calls).toEqual([review, signoff('POST'), review, review]);
   } finally {
     retryRead.resolve();
@@ -144,8 +155,9 @@ test('Admin keeps an editor draft when a confirmed approval needs a GET-only ret
 test('Admin unlocks a refused approval without reading confirmation', async ({ page }) => {
   const calls = await installReview(page, { write: () => refused('Approval refused') });
   await page.goto(film);
+  await openApproveTab(page);
   await approveButton(page).press('Enter');
-  const region = statusRegion(page);
+  const region = approvalRegion(page);
   await expect(region.getByRole('status')).toContainText('Approval refused');
   await expect(approveButton(page)).toBeEnabled();
   await expect(region).toBeFocused();
@@ -159,18 +171,20 @@ test('Admin accepts a newer same-film review when a row save supersedes the held
   const edit = ['PUT', api + '/77/scenes/fixture', { card: { approve: true, text: 'Replacement card' } }];
   try {
     await page.goto(film + '/' + row.id);
+    await openApproveTab(page);
     await approveButton(page).press('Enter');
     await expect.poll(() => calls).toEqual([review, signoff('POST'), review]);
-    const draft = page.getByRole('textbox', { name: /^Card( \(approved\))?$/ });
+    await openReviewTab(page);
+    const draft = await openCardDraft(page);
     await draft.fill('Replacement card');
     await page.getByRole('button', { name: 'Approve card', exact: true }).press('Enter');
     await expect.poll(() => calls).toEqual([review, signoff('POST'), review, edit, review]);
-    await expect(approveButton(page)).toBeDisabled();
     await draft.focus();
     replacementRead.resolve();
-    await expect(withdrawButton(page)).toBeEnabled();
     await expect(draft).toBeFocused();
     await expect(draft).toHaveValue('Replacement card');
+    await openApproveTab(page);
+    await expect(withdrawButton(page)).toBeEnabled();
     expect(calls).toEqual([review, signoff('POST'), review, edit, review]);
   } finally {
     firstRead.resolve();
@@ -183,10 +197,12 @@ test('Admin leaves a replacement film alone when a departed approval is acknowle
   const calls = await installReview(page, { write: () => write.promise });
   try {
     await page.goto(film);
+    await openApproveTab(page);
     await approveButton(page).press('Enter');
     await expect.poll(() => calls).toEqual([review, signoff('POST')]);
     await openFilm(page, '/admin/content/filter/88');
-    await expect(page.getByRole('heading', { name: 'Second film fixture', exact: true })).toBeVisible();
+    await expect(page.getByText('Second film fixture', { exact: true })).toBeVisible();
+    await openApproveTab(page);
     await approveButton(page).focus();
     const response = page.waitForResponse(result => result.url().endsWith('/77/signoff'));
     write.resolve();
@@ -206,16 +222,19 @@ test('Admin keeps approval locked when the same film reopens before acknowledgem
   const secondReview = ['GET', api + '/88/review'];
   try {
     await page.goto(film);
+    await openApproveTab(page);
     await approveButton(page).press('Enter');
     await expect.poll(() => calls).toEqual([review, signoff('POST')]);
     await openFilm(page, '/admin/content/filter/88');
-    await expect(page.getByRole('heading', { name: 'Second film fixture', exact: true })).toBeVisible();
+    await expect(page.getByText('Second film fixture', { exact: true })).toBeVisible();
+    await openApproveTab(page);
     await expect(approveButton(page)).toBeEnabled();
     await openFilm(page, film);
-    await expect(page.getByRole('heading', { name: 'Signoff fixture', exact: true })).toBeVisible();
+    await expect(page.getByText('Signoff fixture', { exact: true })).toBeVisible();
+    await openApproveTab(page);
     await expect.poll(() => calls).toEqual([review, signoff('POST'), secondReview, review]);
     await expect(approveButton(page)).toBeDisabled();
-    const allFilms = page.getByRole('link', { name: 'All films', exact: true });
+    const allFilms = page.getByRole('link', { name: /Films$/ });
     await allFilms.focus();
     write.resolve();
     await expect.poll(() => calls).toEqual([review, signoff('POST'), secondReview, review, review]);
@@ -237,6 +256,7 @@ test('Admin retires an old session approval when a peer replaces the browser cre
   const peer = await page.context().newPage();
   try {
     await page.goto(film);
+    await openApproveTab(page);
     await approveButton(page).press('Enter');
     await expect.poll(() => calls).toEqual([review, signoff('POST')]);
     await peer.route('**/*', route => route.fulfill({ contentType: 'text/html', body: '<html></html>' }));

@@ -4,13 +4,17 @@ import fs from 'node:fs';
 import path from 'node:path';
 import url from 'node:url';
 
-const ROOTS = [
+export const ROOTS = [
   'frontend/src/Apps',
-  'frontend/src/modules/Health',
-  'frontend/src/modules/Life',
-  'frontend/src/modules/Auto',
-  'frontend/src/modules/Media',
   'frontend/src/lib/ui',
+  'frontend/src/modules/Admin',
+  '__app_modules/household/home/browser',
+  '__app_modules/wellness/health/browser',
+  '__app_modules/household/auto/browser',
+  '__app_modules/personal/life/browser',
+  '__app_modules/media/feed/browser',
+  '__app_modules/media/media/browser',
+  '__app_modules/money/finance/browser',
 ];
 const SCHOOL_ROOT = '__app_modules/learning/school/browser';
 const STRICT_SCHOOL = /^(portal|runtime|activities)\//;
@@ -46,7 +50,7 @@ const RULES = [
   {
     rule: 'undefined-token',
     // any var(--ds-*) not in the manifest — silent fallback to `inherit`
-    re: /var\(--ds-[a-z-]+/g,
+    re: /var\((--ds-[a-z0-9-]+)/g,
     files: /\.(scss|css|jsx|js)$/,
     custom: 'checkTokenManifest',
   },
@@ -80,7 +84,7 @@ export function scanSource(filePath, source, { strict = false } = {}) {
     lines.forEach((line, i) => {
       if (/^\s*\/\//.test(line)) return;
       if (rule.custom === 'checkTokenManifest') {
-        for (const m of line.matchAll(/var\((--ds-[a-z-]+)/g)) {
+        for (const m of line.matchAll(globalRe)) {
           if (!DS_TOKEN_NAMES.has(m[1])) {
             hits.push({ rule: rule.rule, file: filePath, line: i + 1, token: m[1] });
           }
@@ -113,11 +117,102 @@ function walk(dir, out = []) {
   return out;
 }
 
+const RULE_NAMES = RULES.map((r) => r.rule);
+
+function rootCount(counts, root, rule) {
+  return counts[root]?.[rule] ?? 0;
+}
+
+// Pure: compare per-root counts to the per-root baseline. Growth fails;
+// a count below baseline is reported as ratchetable.
+export function compareToBaseline(counts, baseline) {
+  const lines = [];
+  let failed = false;
+  const roots = new Set([...Object.keys(counts), ...Object.keys(baseline)]);
+  for (const root of roots) {
+    for (const rule of RULE_NAMES) {
+      const n = rootCount(counts, root, rule);
+      const base = rootCount(baseline, root, rule);
+      if (n > base) {
+        failed = true;
+        lines.push(`${root} ${rule} ${n} (baseline ${base}) FAIL`);
+      } else if (n < base) {
+        lines.push(`${root} ${rule} ${n} (baseline ${base}) can ratchet down`);
+      }
+    }
+  }
+  return { failed, lines };
+}
+
+const isNumber = (v) => typeof v === 'number';
+
+// A genuine old-shape file: non-empty, every top-level value a number, every
+// key one of the rule names. Anything else is never migrated.
+const isOldFlatShape = (b) => {
+  if (!b || typeof b !== 'object') return false;
+  const entries = Object.entries(b);
+  return entries.length > 0 && entries.every(([k, v]) => isNumber(v) && RULE_NAMES.includes(k));
+};
+
+// Pure: decide whether --write-baseline may proceed. `existing` is null when
+// the file is missing.
+export function planBaselineWrite(counts, existing, { addRoot = null, initBaseline = false } = {}) {
+  const refuse = (...errors) => ({ ok: false, migrated: false, errors });
+  if (existing === null || existing === undefined) {
+    return initBaseline
+      ? { ok: true, migrated: false, errors: [] }
+      : refuse('baseline file is missing; run with --init-baseline to create it');
+  }
+  if (initBaseline) return refuse('--init-baseline only works when no baseline file exists');
+  if (isOldFlatShape(existing)) return { ok: true, migrated: true, errors: [] };
+  if (typeof existing !== 'object' || Object.keys(existing).length === 0) {
+    return refuse('baseline is empty; refusing to treat it as a migration (use --init-baseline only when the file is missing)');
+  }
+  const stray = Object.entries(existing).filter(([, v]) => !v || typeof v !== 'object');
+  if (stray.length) {
+    return refuse(...stray.map(([k, v]) => `baseline has a non-root entry "${k}": ${JSON.stringify(v)}; refusing to write over a malformed file`));
+  }
+  const errors = [];
+  for (const root of Object.keys(counts)) {
+    if (!(root in existing)) {
+      if (addRoot !== root) errors.push(`${root} is not in the baseline; add it deliberately with --add-root ${root}`);
+      continue;
+    }
+    for (const rule of RULE_NAMES) {
+      const n = rootCount(counts, root, rule);
+      const base = rootCount(existing, root, rule);
+      if (n > base) errors.push(`${root} ${rule}: ${n} > baseline ${base}`);
+    }
+  }
+  if (addRoot && (!(addRoot in counts) || addRoot in existing)) {
+    errors.push(`--add-root ${addRoot}: not a new root in ROOTS`);
+  }
+  return { ok: errors.length === 0, migrated: false, errors };
+}
+
+function rootOf(file, roots = ROOTS) {
+  return roots.find((r) => file === r || file.startsWith(`${r}/`));
+}
+
+// Pure: bucket hits per root; hits under no root are ignored.
+export function bucketCounts(hits, roots) {
+  const counts = {};
+  for (const root of roots) counts[root] = Object.fromEntries(RULE_NAMES.map((r) => [r, 0]));
+  for (const h of hits) {
+    const root = rootOf(h.file, roots);
+    if (root) counts[root][h.rule] += 1;
+  }
+  return counts;
+}
+
 function main() {
   const baselinePath = 'scripts/audit-ui-tokens.baseline.json';
-  const baseline = fs.existsSync(baselinePath)
-    ? JSON.parse(fs.readFileSync(baselinePath, 'utf8'))
-    : {};
+  const baselineMissing = !fs.existsSync(baselinePath);
+  const baseline = baselineMissing ? {} : JSON.parse(fs.readFileSync(baselinePath, 'utf8'));
+  const argAfter = (flag) => {
+    const i = process.argv.indexOf(flag);
+    return i >= 0 ? process.argv[i + 1] ?? null : null;
+  };
 
   const allHits = [];
   for (const root of ROOTS) {
@@ -128,20 +223,42 @@ function main() {
     }
   }
 
-  const counts = {};
-  for (const h of allHits) counts[h.rule] = (counts[h.rule] || 0) + 1;
+  const counts = bucketCounts(allHits, ROOTS);
 
-  let failed = false;
-  for (const rule of RULES.map((r) => r.rule)) {
-    const n = counts[rule] || 0;
-    const base = baseline[rule] ?? 0;
-    const ok = n <= base;
-    if (!ok) failed = true;
-    console.log(`${rule.padEnd(20)} ${String(n).padStart(4)} (baseline ${base}) ${ok ? 'ok' : 'FAIL'}`);
-    if (!ok) {
-      for (const h of allHits.filter((x) => x.rule === rule).slice(0, 20)) {
-        console.log(`  ${h.file}:${h.line}`);
-      }
+  if (process.argv.includes('--write-baseline') || process.argv.includes('--init-baseline')) {
+    const plan = planBaselineWrite(counts, baselineMissing ? null : baseline, {
+      addRoot: argAfter('--add-root'),
+      initBaseline: process.argv.includes('--init-baseline'),
+    });
+    if (!plan.ok) {
+      console.log('Refusing to write baseline:');
+      plan.errors.forEach((e) => console.log(`  ${e}`));
+      process.exit(1);
+    }
+    if (plan.migrated) console.log('Old flat baseline shape detected: migrating to per-root shape (one-time exception).');
+    const dropped = Object.keys(baseline).filter((r) => !ROOTS.includes(r) && !plan.migrated);
+    if (dropped.length) console.log(`Note: dropping baseline roots no longer in ROOTS: ${dropped.join(', ')}`);
+    fs.writeFileSync(baselinePath, `${JSON.stringify(counts, null, 2)}\n`);
+    console.log(`Wrote ${baselinePath}`);
+    process.exit(0);
+  }
+
+  for (const root of ROOTS) {
+    if (!fs.existsSync(root)) console.log(`WARNING: root does not exist on disk: ${root}`);
+  }
+  const flat = isOldFlatShape(baseline);
+  const cmp = compareToBaseline(counts, flat ? {} : baseline);
+  let failed = cmp.failed;
+  if (flat) console.log('Baseline is in the old flat shape; run with --write-baseline once to migrate.');
+  for (const root of ROOTS) {
+    const summary = RULE_NAMES.map((r) => `${r}=${counts[root][r]}`).join(' ');
+    console.log(`${root.padEnd(48)} ${summary}`);
+  }
+  cmp.lines.forEach((l) => console.log(l));
+  if (cmp.failed) {
+    for (const h of allHits) {
+      const n = counts[rootOf(h.file)][h.rule];
+      if (n > rootCount(baseline, rootOf(h.file), h.rule)) console.log(`  ${h.rule} ${h.file}:${h.line}`);
     }
   }
   // School is scoped separately: the historical global allowance never grows

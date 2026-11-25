@@ -1,19 +1,26 @@
 import { useState, useEffect } from 'react';
 import { Switch, Group, Text } from '@mantine/core';
-import { notifications } from '@mantine/notifications';
+import { Toast, ToastRegion } from '@/lib/ui';
 import "./LightRow.scss";
 
 export default function LightRow({ lights, onToggle }) {
+  const [failedLabel, setFailedLabel] = useState(null);
   return (
     <div className="light-row">
       {lights.map((light) => (
-        <LightItem key={light.entityId} light={light} onToggle={onToggle} />
+        <LightItem key={light.entityId} light={light} onToggle={onToggle} onFail={setFailedLabel} />
       ))}
+      <ToastRegion>
+        {failedLabel != null && (
+          <Toast tone="error" autoCloseMs={4000} onAutoClose={() => setFailedLabel(null)}
+            message={`Couldn't reach ${failedLabel}`} />
+        )}
+      </ToastRegion>
     </div>
   );
 }
 
-function LightItem({ light, onToggle }) {
+function LightItem({ light, onToggle, onFail }) {
   const [checked, setChecked] = useState(light.on);
 
   useEffect(() => {
@@ -26,11 +33,7 @@ function LightItem({ light, onToggle }) {
     const ok = await onToggle(light.entityId, next ? 'on' : 'off');
     if (!ok) {
       setChecked(!next); // revert
-      notifications.show({
-        color: 'red',
-        title: 'Light',
-        message: `Couldn't reach ${light.label}`,
-      });
+      onFail(light.label);
     }
   };
 

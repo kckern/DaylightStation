@@ -70,7 +70,7 @@
     position: absolute;
     pointer-events: none;
     box-sizing: border-box;
-    transition: opacity 120ms ease;
+    transition: opacity var(--ds-motion-fast) ease;
 
     &.is-words {
       top: 14%;

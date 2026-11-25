@@ -9,7 +9,7 @@
 
 import { useState } from 'react';
 import { localDateKey } from '@/lib/calendarDay.js';
-import { LoadingState, ErrorState, EmptyState, Sheet, Select, useRetryRegion, useSheetSubmission } from '@/lib/ui';
+import { Button, LoadingState, ErrorState, EmptyState, Sheet, Select, useRetryRegion, useSheetSubmission } from '@/lib/ui';
 import { AutoSheetActions } from './AutoSheetActions.jsx';
 import { isValidOptionalNonnegativeNumberInput } from './numericInput.mjs';
 import VehicleReminderStatus from './VehicleReminderStatus.jsx';
@@ -45,9 +45,9 @@ export default function ServicePanel({
   const content = loading ? <LoadingState label="service history" />
     : error ? <ErrorState error={error} onRetry={retryHistory} label="Service history" />
     : <div className="auto-panel">
-      <button type="button" className="auto-btn auto-btn--primary auto-btn--block" onClick={() => setAdding(true)}>
+      <Button density="compact" className="auto-btn--block" onClick={() => setAdding(true)}>
         Log service
-      </button>
+      </Button>
       <VehicleReminderStatus overview={overview} reminders={reminders} />
 
       {due.length > 0 && (

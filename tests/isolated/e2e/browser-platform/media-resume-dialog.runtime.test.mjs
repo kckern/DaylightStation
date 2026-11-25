@@ -56,8 +56,8 @@ test('Media resume chooser owns Escape before Details Back while audio plays', a
   const playNow = page.getByRole('button', { name: 'Play Now', exact: true });
   await playNow.press('Enter');
   const chooser = page.getByRole('dialog', { name: 'Continue Resume fixture film from…' });
-  await expect(chooser.getByRole('button', { name: '12 m on Kitchen Tablet' })).toBeVisible();
-  await expect(chooser.getByRole('button', { name: '1 h 20 m on Lounge TV' })).toBeVisible();
+  await expect(chooser.getByRole('button', { name: '12:00 on Kitchen Tablet' })).toBeVisible();
+  await expect(chooser.getByRole('button', { name: '1:20:00 on Lounge TV' })).toBeVisible();
 
   const beforeEscape = await playbackTime();
   await page.keyboard.press('Escape');

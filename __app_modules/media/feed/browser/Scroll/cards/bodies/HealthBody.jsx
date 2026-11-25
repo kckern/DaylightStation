@@ -19,13 +19,13 @@ function StatGrid({ meta }) {
     }}>
       {stats.map(s => (
         <div key={s.label} style={{
-          background: '#111',
+          background: 'var(--ds-background)',
           borderRadius: '6px',
           padding: '0.35rem 0.5rem',
           textAlign: 'center',
         }}>
-          <div style={{ fontSize: '0.6rem', color: '#5c636a', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{s.label}</div>
-          <div style={{ fontSize: '0.85rem', color: '#fff', fontWeight: 600, marginTop: '0.1rem' }}>{s.value}</div>
+          <div style={{ fontSize: '0.6rem', color: 'var(--feed-text-4)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{s.label}</div>
+          <div style={{ fontSize: '0.85rem', color: 'var(--feed-pure-white)', fontWeight: 600, marginTop: '0.1rem' }}>{s.value}</div>
         </div>
       ))}
     </div>
@@ -41,7 +41,7 @@ export default function HealthBody({ item }) {
         margin: 0,
         fontSize: '0.95rem',
         fontWeight: 500,
-        color: '#fff',
+        color: 'var(--feed-pure-white)',
         lineHeight: 1.35,
         display: '-webkit-box',
         WebkitLineClamp: 2,
@@ -56,7 +56,7 @@ export default function HealthBody({ item }) {
         <p style={{
           margin: '0.25rem 0 0',
           fontSize: '0.8rem',
-          color: '#868e96',
+          color: 'var(--feed-text-3)',
           lineHeight: 1.3,
           display: '-webkit-box',
           WebkitLineClamp: 3,

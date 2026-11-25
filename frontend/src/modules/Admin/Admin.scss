@@ -16,7 +16,7 @@
     overflow-y: auto;
     overscroll-behavior: contain;
     padding: 0;
-    background: var(--ds-bg-base);
+    background: var(--ds-background);
     border: 0;
     border-right: 1px solid var(--ds-border);
     @include ds-scrollbar;
@@ -25,15 +25,15 @@
   > .ds-chrome__header {
     display: block;
     padding: 0;
-    background: var(--ds-bg-surface);
+    background: var(--ds-surface);
   }
 
   > .ds-chrome__main {
     min-width: 0;
     padding: 0;
     overflow-x: hidden;
-    background: var(--ds-bg-surface);
-    box-shadow: var(--ds-shadow-inset);
+    background: var(--ds-surface);
+    box-shadow: var(--admin-shadow-inset);
     @include ds-scrollbar;
   }
 
@@ -55,7 +55,7 @@
     > .ds-chrome__nav {
       display: none;
       grid-area: main;
-      z-index: var(--ds-z-sticky);
+      z-index: var(--admin-z-sticky);
     }
 
     &--menu-open > .ds-chrome__nav { display: block; }
@@ -75,16 +75,16 @@
 // ──────────────────────────────────────────────
 
 .admin-content {
-  padding: var(--ds-space-xxl) var(--ds-space-8);
+  padding: var(--ds-space-xxl) var(--admin-space-8);
 
   @media (max-width: 768px) {
-    padding: var(--ds-space-4);
+    padding: var(--ds-space-lg);
   }
 
   // Constrain all page-level children
   > * {
     width: 100%;
-    max-width: var(--ds-content-max);
+    max-width: var(--admin-content-max);
     margin-inline: auto;
   }
 
@@ -101,12 +101,12 @@
 .ds-action-bar {
   position: sticky;
   top: 0;
-  z-index: var(--ds-z-sticky);
-  background-color: var(--ds-bg-surface);
-  padding: var(--ds-space-4) 0;
-  margin-bottom: var(--ds-space-4);
+  z-index: var(--admin-z-sticky);
+  background-color: var(--ds-surface);
+  padding: var(--ds-space-lg) 0;
+  margin-bottom: var(--ds-space-lg);
   border-bottom: 1px solid transparent;
-  transition: border-color var(--ds-transition-base);
+  transition: border-color var(--admin-transition-base);
 
   &--dirty {
     border-bottom-color: var(--ds-border);
@@ -127,7 +127,7 @@
     font-weight: 600;
     font-size: 22px;
     letter-spacing: -0.01em;
-    color: var(--ds-text-primary);
+    color: var(--ds-text-high);
     line-height: 1.3;
   }
 }
@@ -137,7 +137,7 @@
 // ──────────────────────────────────────────────
 
 .ds-config-body {
-  max-width: var(--ds-form-max);
+  max-width: var(--admin-form-max);
 }
 
 // Field-width utilities for config forms
@@ -150,11 +150,11 @@
 
 .ds-nav-item {
   border-radius: 0;
-  padding: var(--ds-space-2) var(--ds-space-4);
+  padding: var(--ds-space-sm) var(--ds-space-lg);
   border-left: 3px solid transparent;
   transition:
-    background-color var(--ds-transition-fast),
-    border-color var(--ds-transition-fast);
+    background-color var(--admin-transition-fast),
+    border-color var(--admin-transition-fast);
 
   // Links fill the scroll rail, so keep the complete focus ring inside its clip.
   &:focus-visible {
@@ -163,18 +163,18 @@
   }
 
   &:hover {
-    background-color: var(--ds-bg-elevated) !important;
+    background-color: var(--ds-surface-alt) !important;
   }
 
   &.ds-nav-item-active,
   &[data-active="true"] {
-    background-color: var(--ds-bg-overlay) !important;
+    background-color: var(--admin-bg-overlay) !important;
     border-left-color: var(--ds-accent);
-    box-shadow: inset 0 0 20px var(--ds-accent-subtle);
+    box-shadow: inset 0 0 20px var(--admin-accent-subtle);
   }
 
   .mantine-NavLink-body {
-    color: var(--ds-text-primary);
+    color: var(--ds-text-high);
   }
 }
 
@@ -189,7 +189,7 @@
 
 // Paper sections inside the admin
 .admin-layout .mantine-Paper-root {
-  box-shadow: var(--ds-shadow-card);
+  box-shadow: var(--admin-shadow-card);
 }
 
 // Number inputs — constrain width (they don't need full row)
@@ -204,7 +204,7 @@
 
 // Switch alignment
 .ds-config-body .mantine-Switch-root {
-  padding-top: var(--ds-space-1);
+  padding-top: var(--admin-space-1);
 }
 
 // Dividers inside config forms — subtle

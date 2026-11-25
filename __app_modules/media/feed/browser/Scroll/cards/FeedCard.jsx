@@ -24,9 +24,9 @@ function formatDuration(seconds) {
 }
 
 const STATUS_COLORS = {
-  red: '#ff6b6b',
-  yellow: '#fab005',
-  green: '#51cf66',
+  red: 'var(--ds-danger)',
+  yellow: 'var(--ds-warning)',
+  green: 'var(--ds-success)',
 };
 
 function HeroImage({ src: rawSrc, thumbnail: rawThumbnail, feedItemId, title }) {
@@ -245,7 +245,7 @@ function GalleryHero({ images, feedItemId, title }) {
   const arrowStyle = {
     position: 'absolute', top: '50%', transform: 'translateY(-50%)',
     width: '32px', height: '32px', borderRadius: '50%',
-    background: 'rgba(0,0,0,0.5)', border: 'none', color: '#fff',
+    background: 'color-mix(in srgb, var(--feed-ink) 50%, transparent)', border: 'none', color: 'var(--feed-pure-white)',
     fontSize: '16px', fontWeight: 700, cursor: 'pointer', display: 'flex',
     alignItems: 'center', justifyContent: 'center', zIndex: 2,
     backdropFilter: 'blur(4px)',
@@ -290,7 +290,7 @@ function GalleryHero({ images, feedItemId, title }) {
               width: i === index ? '8px' : '6px',
               height: i === index ? '8px' : '6px',
               borderRadius: '50%',
-              background: i === index ? '#fff' : 'rgba(255,255,255,0.5)',
+              background: i === index ? 'var(--feed-pure-white)' : 'color-mix(in srgb, var(--feed-pure-white) 50%, transparent)',
               transition: 'all 0.2s',
             }} />
           ))}
@@ -300,7 +300,7 @@ function GalleryHero({ images, feedItemId, title }) {
       {/* Counter badge */}
       <span style={{
         position: 'absolute', top: '8px', left: '8px',
-        background: 'rgba(0,0,0,0.6)', color: '#fff',
+        background: 'color-mix(in srgb, var(--feed-ink) 60%, transparent)', color: 'var(--feed-pure-white)',
         fontSize: '0.6rem', fontWeight: 600,
         padding: '2px 6px', borderRadius: '4px', zIndex: 2,
       }}>
@@ -311,7 +311,7 @@ function GalleryHero({ images, feedItemId, title }) {
 }
 
 function StatusDot({ status }) {
-  const color = STATUS_COLORS[status] || '#5c636a';
+  const color = STATUS_COLORS[status] || 'var(--feed-text-4)';
   return (
     <span style={{
       display: 'inline-block',
@@ -381,7 +381,7 @@ export default function FeedCard({ item, onDismiss, onPlay }) {
       className={`feed-card feed-card-${tier}`}
       style={{
         display: 'block',
-        background: '#25262b',
+        background: 'var(--feed-surface-2)',
         borderRadius: '12px',
         overflow: 'hidden',
         position: 'relative',
@@ -393,7 +393,7 @@ export default function FeedCard({ item, onDismiss, onPlay }) {
             overflow: 'hidden',
             position: 'relative',
             aspectRatio: heroAspectRatio(item),
-            backgroundColor: '#1a1b1e',
+            backgroundColor: 'var(--feed-surface-1)',
           }}>
           {detailPath ? (
             <CardYouTubePlayer key={detailPath} item={item} detailPath={detailPath} />
@@ -408,8 +408,8 @@ export default function FeedCard({ item, onDismiss, onPlay }) {
                   position: 'absolute',
                   bottom: '32px',
                   right: '8px',
-                  background: 'rgba(0,0,0,0.75)',
-                  color: '#fff',
+                  background: 'color-mix(in srgb, var(--feed-ink) 75%, transparent)',
+                  color: 'var(--feed-pure-white)',
                   fontSize: '0.65rem',
                   fontWeight: 600,
                   padding: '2px 6px',
@@ -432,7 +432,7 @@ export default function FeedCard({ item, onDismiss, onPlay }) {
                     width: '48px',
                     height: '48px',
                     borderRadius: '50%',
-                    background: 'rgba(0,0,0,0.55)',
+                    background: 'color-mix(in srgb, var(--feed-ink) 55%, transparent)',
                     border: 'none',
                     display: 'flex',
                     alignItems: 'center',
@@ -442,7 +442,7 @@ export default function FeedCard({ item, onDismiss, onPlay }) {
                   }}
                   aria-label={playLabel}
                 >
-                  <UiIcon name="play" size={20} style={{ color: '#fff' }} />
+                  <UiIcon name="play" size={20} style={{ color: 'var(--feed-pure-white)' }} />
                 </button>
               )}
             </>
@@ -457,7 +457,7 @@ export default function FeedCard({ item, onDismiss, onPlay }) {
             alignItems: 'center',
             gap: '0.4rem',
             padding: '0.4rem 0.6rem',
-            background: 'rgba(0,0,0,0.5)',
+            background: 'color-mix(in srgb, var(--feed-ink) 50%, transparent)',
             zIndex: 2,
           }}>
             {item.meta?.status && <StatusDot status={item.meta.status} />}
@@ -477,7 +477,7 @@ export default function FeedCard({ item, onDismiss, onPlay }) {
             <span style={{
               fontSize: '0.65rem',
               fontWeight: 600,
-              color: 'rgba(255,255,255,0.85)',
+              color: 'color-mix(in srgb, var(--feed-pure-white) 85%, transparent)',
               textTransform: 'uppercase',
               letterSpacing: '0.03em',
               overflow: 'hidden',
@@ -488,7 +488,7 @@ export default function FeedCard({ item, onDismiss, onPlay }) {
             </span>
             <span style={{
               fontSize: '0.6rem',
-              color: 'rgba(255,255,255,0.55)',
+              color: 'color-mix(in srgb, var(--feed-pure-white) 55%, transparent)',
               marginLeft: 'auto',
               flexShrink: 0,
             }}>
@@ -507,9 +507,9 @@ export default function FeedCard({ item, onDismiss, onPlay }) {
                 width: '40px',
                 height: '40px',
                 borderRadius: '50%',
-                background: 'rgba(0,0,0,0.55)',
+                background: 'color-mix(in srgb, var(--feed-ink) 55%, transparent)',
                 border: 'none',
-                color: '#fff',
+                color: 'var(--feed-pure-white)',
                 fontSize: '14px',
                 fontWeight: 700,
                 cursor: 'pointer',
@@ -548,13 +548,13 @@ export default function FeedCard({ item, onDismiss, onPlay }) {
               />
             )}
             <span style={{
-              fontSize: '0.7rem', fontWeight: 600, color: '#868e96',
+              fontSize: '0.7rem', fontWeight: 600, color: 'var(--feed-text-3)',
               textTransform: 'uppercase', letterSpacing: '0.03em',
               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
             }}>
               {sourceName}
             </span>
-            <span style={{ fontSize: '0.65rem', color: '#5c636a', marginLeft: 'auto', flexShrink: 0 }}>
+            <span style={{ fontSize: '0.65rem', color: 'var(--feed-text-4)', marginLeft: 'auto', flexShrink: 0 }}>
               {age}
             </span>
           </div>
@@ -566,8 +566,8 @@ export default function FeedCard({ item, onDismiss, onPlay }) {
         {item.source === 'tasks' && item.meta?.isOverdue && (
           <span style={{
             display: 'inline-block',
-            background: '#ff6b6b',
-            color: '#fff',
+            background: 'var(--ds-live)',
+            color: 'var(--feed-pure-white)',
             fontSize: '0.6rem',
             fontWeight: 700,
             padding: '0.1rem 0.4rem',
@@ -587,7 +587,7 @@ export default function FeedCard({ item, onDismiss, onPlay }) {
             minHeight: '40px',
             marginTop: '0.4rem',
             paddingTop: '0.3rem',
-            borderTop: '1px solid rgba(255,255,255,0.05)',
+            borderTop: '1px solid color-mix(in srgb, var(--feed-pure-white) 5%, transparent)',
           }}>
             {item.meta?.playable && <button
               type="button"
@@ -596,7 +596,7 @@ export default function FeedCard({ item, onDismiss, onPlay }) {
               style={{
                 background: 'none',
                 border: 'none',
-                color: '#adb5bd',
+                color: 'var(--feed-text-2)',
                 fontSize: '0.78rem',
                 cursor: 'pointer',
                 display: 'flex',
@@ -616,7 +616,7 @@ export default function FeedCard({ item, onDismiss, onPlay }) {
               style={{
                 background: 'none',
                 border: 'none',
-                color: '#adb5bd',
+                color: 'var(--feed-text-2)',
                 fontSize: '0.78rem',
                 cursor: 'pointer',
                 display: 'flex',
@@ -679,7 +679,7 @@ function CardYouTubePlayer({ item, detailPath }) {
 
   if (loading) {
     return (
-      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000' }}>
+      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--feed-ink)' }}>
         <FeedLoadingIndicator label="Loading video…" />
       </div>
     );

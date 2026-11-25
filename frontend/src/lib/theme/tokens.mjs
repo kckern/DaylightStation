@@ -21,6 +21,12 @@ export const DS_TOKENS = Object.freeze({
     info:    '#58a6ff',
     live:    '#ff6b6b',
   }),
+  // Placeholder block and its travelling highlight (Skeleton). Translucent white,
+  // so the block reads on any of the app's dark panels.
+  skeleton: Object.freeze({
+    base:  'rgb(255 255 255 / 6%)',
+    sheen: 'rgb(255 255 255 / 13%)',
+  }),
   spacing: Object.freeze({ sm: '0.5rem', md: '0.75rem', lg: '1rem', xl: '1.25rem', xxl: '1.5rem' }),
   type: Object.freeze({ caption: '0.7rem', label: '0.8125rem', detail: '0.85rem', heading: '1rem' }),
   controls: Object.freeze({
@@ -33,8 +39,11 @@ export const DS_TOKENS = Object.freeze({
     fast:   '120ms',
     base:   '200ms',
     reveal: '300ms',
+    sweep:  '1600ms',
     easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
   }),
+  // Monospace stack for code, IDs and tabular figures. A pack's fontFamilyMonospace wins.
+  fontMono: '"JetBrains Mono", "Fira Code", monospace',
   // The accent a surface gets when no pack names one (kiosk screens, auth,
   // anything outside an AppThemeProvider). Packs override it.
   accent: '#4a7bf7',
@@ -65,8 +74,12 @@ export function dsCssVars(pack = null) {
   vars['--ds-motion-fast'] = DS_TOKENS.motion.fast;
   vars['--ds-motion-base'] = DS_TOKENS.motion.base;
   vars['--ds-motion-reveal'] = DS_TOKENS.motion.reveal;
+  vars['--ds-motion-sweep'] = DS_TOKENS.motion.sweep;
   vars['--ds-motion-easing'] = DS_TOKENS.motion.easing;
+  vars['--ds-skeleton-base'] = DS_TOKENS.skeleton.base;
+  vars['--ds-skeleton-sheen'] = DS_TOKENS.skeleton.sheen;
   vars['--ds-accent'] = pack?.accent || DS_TOKENS.accent;
+  vars['--ds-font-mono'] = pack?.fontFamilyMonospace || DS_TOKENS.fontMono;
   if (pack?.fontFamily) vars['--ds-font-family'] = pack.fontFamily;
   if (pack?.fontFamilyMonospace) vars['--ds-font-family-monospace'] = pack.fontFamilyMonospace;
   return vars;

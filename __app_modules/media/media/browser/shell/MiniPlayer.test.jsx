@@ -6,6 +6,10 @@ const transport = { play: vi.fn(), pause: vi.fn(), stop: vi.fn(), skipNext: vi.f
 const state = { snapshot: null, position: { seconds: 30, ts: 0 } };
 const push = vi.fn();
 const nav = { push, view: 'home' };
+// 9bf72f2680 added Mantine's VisuallyHidden (queue position for screen readers).
+// The app root supplies MantineProvider; a bare render does not, and the provider's
+// own style node would break the "renders nothing" container checks, so stand it in.
+vi.mock('@mantine/core', () => ({ VisuallyHidden: ({ children, ...p }) => <span {...p}>{children}</span> }));
 // The handle's house menu (Mantine) is covered in house/HouseQuietControls.test.jsx.
 vi.mock("../house/HouseQuietControls.jsx", () => ({ HandleHouseMenu: () => null }));
 vi.mock("./NavProvider.jsx", () => ({ useNav: () => nav }));

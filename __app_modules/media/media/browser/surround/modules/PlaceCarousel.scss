@@ -22,6 +22,7 @@
  */
 
 @use "../themes/classical-tokens" as *;
+@use "../../theme/ink" as *;
 
 .surround-place-carousel {
   height: 100%;
@@ -32,7 +33,7 @@
   justify-content: center;
   overflow: hidden;
   font-family: var(--surround-display, "Cormorant Garamond", Georgia, serif);
-  color: var(--ink, #2a1d07);
+  color: var(--ink, #{$cl-ink});
 }
 
 .surround-place-carousel__slide {
@@ -64,8 +65,8 @@
   aspect-ratio: 5 / 3;
   background: var(--mat, #{$mat});
   box-shadow:
-    inset 0 0 0 1px var(--mat-edge, rgba(8, 5, 5, 0.9)),
-    0 1px 3px rgba(0, 0, 0, 0.45);
+    inset 0 0 0 1px var(--mat-edge, #{tint($cl-mat-edge, 0.9)}),
+    0 1px 3px scrim(0.45);
   /* The guard, for a rail shorter than a 5:3 plate at its own width (a small
      kiosk, a definition that pins the region tight). The RATIO gives, not the
      picture: both slides letterbox themselves inside the mat — `object-fit:
@@ -145,7 +146,7 @@
   justify-content: center;
   text-align: center;
   line-height: 1.25;
-  color: var(--ink, #2a1d07);
+  color: var(--ink, #{$cl-ink});
 }
 
 /* An authored sentence: set as prose. Italic survives the size rise — at 1rem

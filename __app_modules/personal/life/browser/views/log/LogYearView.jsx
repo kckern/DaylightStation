@@ -42,7 +42,7 @@ export function LogYearView({ username, at, categories }) {
               <Group gap="xs">
                 <Badge size="sm" variant="light">{summary.activeDayCount}/{summary.dayCount} active days</Badge>
                 <Badge size="sm" variant="light" color="green">{summary.coveragePercent}%</Badge>
-                <Badge size="sm" variant="light" color="blue">{summary.distinctSourceCount} sources</Badge>
+                <Badge size="sm" variant="light" color="blue">{summary.distinctSourceCount} {summary.distinctSourceCount === 1 ? 'source' : 'sources'}</Badge>
               </Group>
             </Paper>
           );

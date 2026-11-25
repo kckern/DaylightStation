@@ -2,6 +2,7 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { useContentFilter } from "./useContentFilter.js";
 import { useFilterData } from "./useFilterData.js";
 import { FilterOverlay } from "./FilterOverlay.jsx";
+import { FILTER_BLACK } from "./filterInks.js";
 
 /**
  * Content-filter POC harness (dev/test only, route: /filter-poc).
@@ -23,7 +24,7 @@ const EDL = {
     { id: 'cen', effect: 'censor-bar', category: 'nudity', in: 15, out: 19, rect: { x: 0.3, y: 0.3, w: 0.4, h: 0.4 }, label: 'nudity' },
   ],
 };
-const PROFILE = { categories: {}, theme: { barColor: '#000', font: 'Roboto Condensed' } };
+const PROFILE = { categories: {}, theme: { barColor: FILTER_BLACK, font: 'Roboto Condensed' } };
 
 export default function FilterPoc() {
   const videoRef = useRef(null);
@@ -81,7 +82,7 @@ export default function FilterPoc() {
 
   if (cardDemo) {
     return (
-      <div data-testid="card-demo" style={{ margin: 0, width: '100vw', height: '100vh', background: '#000', position: 'relative' }}>
+      <div data-testid="card-demo" style={{ margin: 0, width: '100vw', height: '100vh', background: FILTER_BLACK, position: 'relative' }}>
         <div className="video-player" style={{ position: 'absolute', inset: 0 }}>
           <FilterOverlay activeCard={{ text: cardDemo }} art={art} theme={profile?.theme || PROFILE.theme} />
         </div>
@@ -90,9 +91,9 @@ export default function FilterPoc() {
   }
 
   return (
-    <div style={{ padding: 16, fontFamily: 'Roboto Condensed, sans-serif', color: '#eee', background: '#111', minHeight: '100vh' }}>
+    <div style={{ padding: 16, fontFamily: 'Roboto Condensed, sans-serif', color: '#eee', background: '#111', /* data-color: dev proof-of-concept page */ minHeight: '100vh' }}>
       <h2>Content Filter POC</h2>
-      <div style={{ position: 'relative', width: 384, height: 216, background: '#000' }}>
+      <div style={{ position: 'relative', width: 384, height: 216, background: FILTER_BLACK }}>
         <video
           ref={videoRef}
           data-testid="poc-video"
@@ -113,7 +114,7 @@ export default function FilterPoc() {
           Play
         </button>
       </div>
-      <pre data-testid="poc-status" style={{ marginTop: 12, background: '#000', padding: 8 }}>
+      <pre data-testid="poc-status" style={{ marginTop: 12, background: FILTER_BLACK, padding: 8 }}>
         {JSON.stringify(status)}
       </pre>
     </div>

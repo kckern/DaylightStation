@@ -6,10 +6,10 @@ import { ApprovalFeedback, useApprovalRegion } from './FilmApprovalControls.jsx'
  * itself is the film status card's button (FilmStatusCard.jsx), shown when nothing is missing.
  * No pipeline stage is offered here (2026-11-12: the "Stage again" dropdown is gone).
  */
-export function SignOffPanel({ signOff, approval, busyText = null }) {
-  const { regionProps, feedback, start, retry } = useApprovalRegion(approval, 'withdraw');
+export function SignOffPanel({ signOff, approval, busyText = null, outer = null }) {
+  const { regionProps, feedback, start, retry } = useApprovalRegion(approval, 'withdraw', outer);
   return (
-    <Stack component="section" {...regionProps} aria-label="Family approval" gap="xs" className="cf-signoff">
+    <Stack component="section" {...regionProps} {...(outer ? {} : { 'aria-label': 'Family approval' })} gap="xs" className="cf-signoff">
       {signOff?.parent ? (
         <Group gap="xs" wrap="wrap">
           <Text size="sm">Approved for family by {signOff.parent.by}.</Text>

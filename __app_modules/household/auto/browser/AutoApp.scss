@@ -200,22 +200,8 @@
 
 /* ---- buttons & forms ------------------------------------------------ */
 
-.auto-btn {
-  min-height: 2.75rem; // ~44px, the smallest comfortable touch target
-  padding: 0 1rem;
-  border-radius: 0.6rem;
-  border: 1px solid var(--ds-border);
-  background: var(--ds-surface-alt);
-  color: var(--ds-text-high);
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-
-  &--primary { background: var(--ds-accent); border-color: var(--ds-accent); color: var(--ds-background); }
-  &--ghost   { background: transparent; }
-  &--block   { width: 100%; }
-  &:disabled { opacity: 0.5; cursor: not-allowed; }
-}
+// Buttons are the shared <Button>; this class only widens one to the panel.
+.auto-btn--block { width: 100%; }
 
 .auto-shuffle-toggle { align-self: center; margin-top: 0.35rem; }
 
@@ -301,7 +287,7 @@
     font-weight: 600;
   }
 
-  .auto-btn { margin-top: 0.6rem; }
+  .ds-touch { margin-top: 0.6rem; }
 }
 
 // Year/make/model line under the vehicle name. Reference, not headline —

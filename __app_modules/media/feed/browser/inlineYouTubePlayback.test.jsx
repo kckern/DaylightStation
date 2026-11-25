@@ -99,11 +99,14 @@ describe('Feed inline YouTube playback', () => {
     );
     const disclosure = screen.getByRole('button', { name: /First video/ });
     fireEvent.click(disclosure);
-    fireEvent.click(screen.getByRole('button', { name: 'Play' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Play Scroll video' }));
 
     expect(detailRequests()).toHaveLength(1);
     await act(async () => first.resolve(playerResult(firstStream)));
-    expect(container.querySelectorAll('video')).toHaveLength(2);
+    // 6462102aa7: inline video has a single owner. The Reader player's play() claim
+    // clears the card's inline claim, so the one shared stream ends up in the Reader row.
+    expect(container.querySelectorAll('video')).toHaveLength(1);
+    expect(container.querySelector('.article-row video')).toHaveAttribute('src', firstStream);
 
     fireEvent.click(disclosure);
     fireEvent.click(disclosure);
@@ -119,7 +122,7 @@ describe('Feed inline YouTube playback', () => {
     DaylightAPI.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
     const view = item => <FeedPlayerProvider><FeedCard item={item} /><ActiveMedia /></FeedPlayerProvider>;
     const { container, rerender } = render(view(cardVideo));
-    fireEvent.click(screen.getByRole('button', { name: 'Play' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Play First video' }));
     rerender(view(secondVideo));
 
     await act(async () => second.resolve(playerResult(secondStream)));
@@ -139,7 +142,7 @@ describe('Feed inline YouTube playback', () => {
     DaylightAPI.mockResolvedValueOnce(playerResult(firstStream)).mockResolvedValueOnce(playerResult(secondStream));
     const view = item => <FeedPlayerProvider><FeedCard item={item} /></FeedPlayerProvider>;
     const { container, rerender } = render(view(cardVideo));
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Play' })));
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Play First video' })));
     fireEvent.error(container.querySelector('video'));
     expect(screen.getByTitle('First video')).toHaveAttribute('src', 'https://www.youtube.com/embed/first123456?autoplay=1&rel=0');
 
@@ -156,7 +159,7 @@ describe('Feed inline YouTube playback', () => {
     DaylightAPI.mockImplementation(realDaylightAPI);
     render(<FeedPlayerProvider><FeedCard item={cardVideo} /></FeedPlayerProvider>);
 
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Play' })));
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Play First video' })));
 
     expect(screen.getByTitle('First video')).toHaveAttribute('src', 'https://www.youtube.com/embed/first123456?autoplay=1&rel=0');
     await act(async () => vi.advanceTimersByTimeAsync(4000));

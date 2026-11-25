@@ -363,8 +363,9 @@ describe('TodayView — Task 3.2: permanent chrome, SWR day data, in-place captu
     // All four meals are permanent.
     for (const meal of ['Breakfast', 'Lunch', 'Dinner', 'Snacks']) expect(screen.getByText(meal)).toBeTruthy();
     expect(screen.getAllByRole('combobox', { name: /^Add to / }).length).toBe(4);
-    // The shimmer lives INSIDE a section body, not as a page-level spinner.
-    const shimmers = screen.getAllByLabelText(/^Loading /).filter(node => node.dataset.testid !== 'weight-chip-loading');
+    // The shimmer lives INSIDE a section body, not as a page-level spinner. The follow-up
+    // menu button (370361ee4e) is a header control whose label also starts with "Loading".
+    const shimmers = screen.getAllByLabelText(/^Loading /).filter(node => node.dataset.testid !== 'weight-chip-loading' && !node.matches('.health-followups__button'));
     expect(shimmers.length).toBeGreaterThan(0);
     for (const shimmer of shimmers) expect(shimmer.closest('section')).toBeTruthy();
   });
@@ -385,7 +386,7 @@ describe('TodayView — Task 3.2: permanent chrome, SWR day data, in-place captu
     r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
     // No waitFor: this must already be true on first paint of the remount.
     expect(screen.getByText('Bagel')).toBeTruthy();
-    const dayShimmers = screen.queryAllByLabelText(/^Loading /).filter(node => node.dataset.testid !== 'weight-chip-loading');
+    const dayShimmers = screen.queryAllByLabelText(/^Loading /).filter(node => node.dataset.testid !== 'weight-chip-loading' && !node.matches('.health-followups__button'));
     expect(dayShimmers).toHaveLength(0);
   });
 

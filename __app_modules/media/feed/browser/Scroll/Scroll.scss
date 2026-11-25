@@ -8,7 +8,7 @@
 .scroll-layout {
   display: flex;
   min-height: 100vh;
-  background: var(--feed-canvas, #0f1113);
+  background: var(--feed-canvas);
 }
 
 .scroll-view {
@@ -17,7 +17,7 @@
   margin: 0 auto;
   padding: 0.75rem 0;
   min-height: 100vh;
-  background: var(--feed-canvas, #0f1113);
+  background: var(--feed-canvas);
 }
 
 .scroll-items {
@@ -84,7 +84,7 @@
 
   // Hover state for cards
   .feed-card {
-    transition: filter 0.15s ease;
+    transition: filter var(--ds-motion-fast) ease;
 
     &:hover {
       filter: brightness(1.1);
@@ -107,9 +107,9 @@
 
 .scroll-skeleton-card {
   height: 120px;
-  background: var(--feed-surface-1, #17191c);
+  background: var(--feed-surface-1);
   border-radius: 0;
-  animation: skeleton-pulse 1.5s ease-in-out infinite;
+  animation: skeleton-pulse var(--ds-motion-sweep) ease-in-out infinite;
 }
 
 @media (min-width: 900px) {
@@ -151,7 +151,7 @@
   flex-wrap: wrap;
   gap: 0.4rem;
   padding: 0.55rem;
-  background: rgba(15, 17, 19, 0.94);
+  background: color-mix(in srgb, var(--ds-background) 94%, transparent);
   backdrop-filter: blur(8px);
 
   button {
@@ -229,7 +229,7 @@
     border: 1px solid var(--feed-border-strong);
     border-radius: var(--feed-radius-lg);
     background: var(--feed-surface-2);
-    box-shadow: 0 0.75rem 2rem rgba(0, 0, 0, 0.45);
+    box-shadow: 0 0.75rem 2rem color-mix(in srgb, var(--feed-ink) 45%, transparent);
   }
 }
 

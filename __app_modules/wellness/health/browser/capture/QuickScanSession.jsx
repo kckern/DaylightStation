@@ -147,7 +147,8 @@ export function QuickScanSession({ onClose, onDecode, onConfirm, onDone, onUnkno
 
   return (
     <Sheet open onClose={onClose} title="Scan barcode" placement="fullscreen">
-      <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', background: '#12211b' }}>
+      <div style={{ position: 'absolute', inset: 0, overflow: 'hidden',
+        background: '#12211b' /* data-color: camera stage */ }}>
         {/* The WebView paints a stretched play glyph on a <video> until its first frame: the poster
             is blank and the element stays hidden until the stream is live. */}
         <video ref={videoRef} muted playsInline autoPlay poster={BLANK_POSTER}
@@ -157,9 +158,11 @@ export function QuickScanSession({ onClose, onDecode, onConfirm, onDone, onUnkno
         {!denied && <>
           <div aria-hidden="true" style={{ position: 'absolute', left: '8%', right: '8%', top: '50%',
             transform: 'translateY(-50%)', height: 'min(22vw, 22dvh)', border: '2px solid white',
-            borderRadius: 10, boxShadow: '0 0 0 100vmax #0006', pointerEvents: 'none' }} />
+            borderRadius: 10, boxShadow: '0 0 0 100vmax #0006', // data-color: scan guide
+            pointerEvents: 'none' }} />
           <div aria-hidden="true" style={{ position: 'absolute', top: '50%', left: '8%', right: '8%',
-            height: 2, background: '#6deab0', pointerEvents: 'none' }} />
+            height: 2, background: '#6deab0', // data-color: scan line
+            pointerEvents: 'none' }} />
         </>}
       </div>
       {meals?.length > 0 && (
@@ -171,7 +174,8 @@ export function QuickScanSession({ onClose, onDecode, onConfirm, onDone, onUnkno
         display: 'grid', gap: '0.5rem', justifyItems: 'center', padding: '0 1rem', color: 'white' }}>
         {toasts.map(toast => (
           <div key={toast.id} role="status" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem',
-            background: toast.state === 'logged' ? '#1d6b4bee' : '#000c', borderRadius: 999,
+            background: toast.state === 'logged' ? '#1d6b4bee' : '#000c', // data-color: scrim card
+            borderRadius: 999,
             padding: '0.5rem 0.5rem 0.5rem 1rem', maxWidth: '100%', minHeight: 44 }}>
             <Text size="sm" fw={600} style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{line(toast)}</Text>
             {toast.state === 'logged' && toast.undoToken && (

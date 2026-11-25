@@ -2,41 +2,41 @@
 .cf-library__search { min-width: 220px; }
 
 // Library poster cards: fixed height so run text never reflows the grid.
-.cf-card { display: flex; flex-direction: column; gap: var(--ds-space-1); height: 316px; padding: var(--ds-space-2); background: var(--ds-bg-surface); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-md); min-width: 0; }
+.cf-card { display: flex; flex-direction: column; gap: var(--admin-space-1); height: 316px; padding: var(--ds-space-sm); background: var(--ds-surface); border: 1px solid var(--ds-border); border-radius: var(--admin-radius-md); min-width: 0; }
 .cf-card.is-unlinked { opacity: 0.5; }
-.cf-card__link { display: flex; flex-direction: column; gap: 2px; color: var(--ds-text-primary); text-decoration: none; min-width: 0; }
-.cf-card__poster { position: relative; aspect-ratio: 2 / 3; width: 100%; background: var(--ds-bg-base); border-radius: var(--ds-radius-md); overflow: hidden; display: flex; align-items: center; justify-content: center; }
+.cf-card__link { display: flex; flex-direction: column; gap: 2px; color: var(--ds-text-high); text-decoration: none; min-width: 0; }
+.cf-card__poster { position: relative; aspect-ratio: 2 / 3; width: 100%; background: var(--ds-background); border-radius: var(--admin-radius-md); overflow: hidden; display: flex; align-items: center; justify-content: center; }
 .cf-card__poster img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.cf-card__fallback { padding: var(--ds-space-2); text-align: center; font-size: 12px; color: var(--ds-text-secondary); }
-.cf-card__gone { position: absolute; top: 2px; right: 4px; font-size: 18px; color: var(--ds-text-primary); }
+.cf-card__fallback { padding: var(--ds-space-sm); text-align: center; font-size: 12px; color: var(--ds-text-mid); }
+.cf-card__gone { position: absolute; top: 2px; right: 4px; font-size: 18px; color: var(--ds-text-high); }
 .cf-card__title { font-size: 13px; font-weight: 600; line-height: 1.2; height: 1.2em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cf-card__year { font-size: 11px; color: var(--ds-text-secondary); height: 1.2em; }
-.cf-card__meta { display: flex; flex-direction: column; gap: 1px; font-size: 11px; line-height: 15px; color: var(--ds-text-secondary); height: 32px; min-width: 0; }
+.cf-card__year { font-size: 11px; color: var(--ds-text-mid); height: 1.2em; }
+.cf-card__meta { display: flex; flex-direction: column; gap: 1px; font-size: 11px; line-height: 15px; color: var(--ds-text-mid); height: 32px; min-width: 0; }
 // The film's next step in the rail's words, then its reviewed count: two whole lines, never a chip
 // that truncates ("AUTO-…", "NOT C…": review 2026-11-22).
 .cf-card__step, .cf-card__count { display: block; height: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.cf-card__step { font-size: 12px; font-weight: 700; color: var(--ds-text-primary); }
+.cf-card__step { font-size: 12px; font-weight: 700; color: var(--ds-text-high); }
 .cf-card__step.is-done, .cf-card__step.is-ready { color: var(--ds-success); }
 .cf-card__step.is-check { color: var(--ds-warning); }
 .cf-card__step.is-busy { color: var(--ds-info); }
-.cf-card__step.is-quiet { color: var(--ds-text-secondary); font-weight: 600; }
-.cf-card__run { font-size: 11px; line-height: 1.2; height: 1.2em; overflow: hidden; color: var(--ds-text-secondary); }
+.cf-card__step.is-quiet { color: var(--ds-text-mid); font-weight: 600; }
+.cf-card__run { font-size: 11px; line-height: 1.2; height: 1.2em; overflow: hidden; color: var(--ds-text-mid); }
 .cf-card__run.is-failed { color: var(--ds-danger); }
 .cf-card__run-action[data-read-unavailable='true'] { opacity: 0.45; cursor: not-allowed; }
-.cf-card__note { flex: none; font-size: 11px; line-height: 1.25; max-height: 2.5em; overflow: hidden; color: var(--ds-warning, var(--ds-text-secondary)); }
+.cf-card__note { flex: none; font-size: 11px; line-height: 1.25; max-height: 2.5em; overflow: hidden; color: var(--ds-warning, var(--ds-text-mid)); }
 
 // Films not matched to Plex: one plain list below the stage groups, set apart and muted.
-.mantine-Accordion-item.cf-unmatched { margin-top: var(--ds-space-xxl); background: transparent; border: 1px dashed var(--ds-text-secondary); }
-.cf-unmatched__list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 0 var(--ds-space-4); }
-.cf-unmatched__row { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "title year" "reason reason"; column-gap: var(--ds-space-2); padding: var(--ds-space-2) 0; border-bottom: 1px solid var(--ds-border); min-width: 0; }
-.cf-unmatched__title { grid-area: title; font-size: 13px; font-weight: 600; color: var(--ds-text-primary); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mantine-Accordion-item.cf-unmatched { margin-top: var(--ds-space-xxl); background: transparent; border: 1px dashed var(--ds-text-mid); }
+.cf-unmatched__list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 0 var(--ds-space-lg); }
+.cf-unmatched__row { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "title year" "reason reason"; column-gap: var(--ds-space-sm); padding: var(--ds-space-sm) 0; border-bottom: 1px solid var(--ds-border); min-width: 0; }
+.cf-unmatched__title { grid-area: title; font-size: 13px; font-weight: 600; color: var(--ds-text-high); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cf-unmatched__title:hover { text-decoration: underline; }
-.cf-unmatched__year { grid-area: year; font-size: 12px; color: var(--ds-text-secondary); }
-.cf-unmatched__reason { grid-area: reason; font-size: 12px; color: var(--ds-text-secondary); }
+.cf-unmatched__year { grid-area: year; font-size: 12px; color: var(--ds-text-mid); }
+.cf-unmatched__reason { grid-area: reason; font-size: 12px; color: var(--ds-text-mid); }
 
 // Review page (design "cf-journey", 2026-11-21): one header line; the film, the timeline and the
 // part card in a column that never scrolls; the list beside it scrolls on its own.
-.cf-review-page { --cf-shell-top: 48px; display: flex; flex-direction: column; gap: var(--ds-space-2); min-width: 0;
+.cf-review-page { --cf-shell-top: 48px; display: flex; flex-direction: column; gap: var(--ds-space-sm); min-width: 0;
   // The whole page fits the window: nothing scrolls but the list's rows (owner, 2026-11-22: "no vertical
   // scroll at all"). The Admin content padding is trimmed to 12px on this page.
   height: calc(100dvh - var(--cf-shell-top) - 24px); overflow: hidden; }
@@ -45,12 +45,12 @@
 // and a ring shows only for the keyboard.
 .admin-content:has(> .cf-review-page):focus { outline: none; }
 .cf-review-page :focus:not(:focus-visible) { outline: none; }
-.cf-review-page :focus-visible { outline: 2px solid var(--ds-accent-hover, var(--ds-accent)); outline-offset: 2px; }
+.cf-review-page :focus-visible { outline: 2px solid var(--admin-accent-hover, var(--ds-accent)); outline-offset: 2px; }
 .cf-review-page .cf-review:focus, .cf-review-page .cf-review__side:focus, .cf-review-page .cf-review__player:focus-within { outline: none; }
 // The film page uses the whole window: the Admin's 1200px page cap left a third of a 1920 screen
 // empty while the list truncated its labels (review 2026-11-22).
 .admin-content > .cf-review-page { max-width: none; }
-.cf-head { display: flex; align-items: center; gap: var(--ds-space-2); flex-wrap: wrap; min-height: 40px; padding: 4px 0; border-bottom: 1px solid var(--ds-border); }
+.cf-head { display: flex; align-items: center; gap: var(--ds-space-sm); flex-wrap: wrap; min-height: 40px; padding: 4px 0; border-bottom: 1px solid var(--ds-border); }
 .cf-head__title { max-width: 32ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cf-head__spacer { flex: 1; }
 
@@ -60,79 +60,79 @@
 .cf-rail { --cf-rail-h: 36px; --cf-rail-tip: 14px; display: flex; align-items: stretch; height: var(--cf-rail-h); min-width: 0; }
 .cf-rail__stage, .cf-rail__plays { appearance: none; border: 0; font: inherit; background: none; cursor: pointer; text-align: left; }
 .cf-rail__stage { position: relative; flex: 1 1 0; min-width: 0; margin-left: calc(3px - var(--cf-rail-tip)); padding: 0 calc(var(--cf-rail-tip) + 6px) 0 calc(var(--cf-rail-tip) + 10px);
-  background: var(--ds-bg-overlay); color: var(--ds-text-secondary);
+  background: var(--admin-bg-overlay); color: var(--ds-text-mid);
   clip-path: polygon(0 0, calc(100% - var(--cf-rail-tip)) 0, 100% 50%, calc(100% - var(--cf-rail-tip)) 100%, 0 100%, var(--cf-rail-tip) 50%); }
-.cf-rail__stage:first-child { margin-left: 0; padding-left: 12px; border-radius: var(--ds-radius-sm) 0 0 var(--ds-radius-sm);
+.cf-rail__stage:first-child { margin-left: 0; padding-left: 12px; border-radius: var(--admin-radius-sm) 0 0 var(--admin-radius-sm);
   clip-path: polygon(0 0, calc(100% - var(--cf-rail-tip)) 0, 100% 50%, calc(100% - var(--cf-rail-tip)) 100%, 0 100%); }
 .cf-rail__in { display: flex; align-items: center; gap: 8px; height: 100%; min-width: 0; font-size: 13px; line-height: 1; white-space: nowrap; }
 .cf-rail__mark { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums;
-  background: var(--ds-bg-base); color: var(--ds-text-secondary); }
-.cf-rail__name { flex: none; font-weight: 700; color: var(--ds-text-primary); }
+  background: var(--ds-background); color: var(--ds-text-mid); }
+.cf-rail__name { flex: none; font-weight: 700; color: var(--ds-text-high); }
 .cf-rail__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
-.cf-rail__stage.is-complete .cf-rail__mark { background: var(--ds-success); color: var(--ds-bg-base); }
+.cf-rail__stage.is-complete .cf-rail__mark { background: var(--ds-success); color: var(--ds-background); }
 // A stage that has run but left parts to check: amber, never the plain green check.
-.cf-rail__stage.has-check .cf-rail__mark { background: var(--ds-warning); color: var(--ds-bg-base); }
+.cf-rail__stage.has-check .cf-rail__mark { background: var(--ds-warning); color: var(--ds-background); }
 .cf-rail__stage.has-check .cf-rail__text { color: var(--ds-warning); font-weight: 600; }
-.cf-rail__stage.has-check[aria-selected="true"] .cf-rail__text { color: #fff; }
-.cf-rail__stage.is-waiting .cf-rail__name { color: var(--ds-text-secondary); }
-.cf-rail__stage.is-waiting .cf-rail__mark { color: var(--ds-text-muted); }
+.cf-rail__stage.has-check[aria-selected="true"] .cf-rail__text { color: #fff; /* data-color: white text on the accent fill */ }
+.cf-rail__stage.is-waiting .cf-rail__name { color: var(--ds-text-mid); }
+.cf-rail__stage.is-waiting .cf-rail__mark { color: var(--ds-text-low); }
 /* The tab you are on is the filled chevron; the film's current stage, when you are elsewhere, keeps an
    accent number and name (live review 2026-11-22: a filled Refine beside an open Approve tab misled). */
 .cf-rail__stage.is-current .cf-rail__name { color: var(--ds-accent); }
 .cf-rail__stage.is-current .cf-rail__mark { box-shadow: inset 0 0 0 2px var(--ds-accent); color: var(--ds-accent); }
 .cf-rail__stage[aria-selected="true"]:not(.is-stuck) { background: var(--ds-accent); color: #fff; }
-.cf-rail__stage[aria-selected="true"]:not(.is-stuck) .cf-rail__name { color: #fff; }
+.cf-rail__stage[aria-selected="true"]:not(.is-stuck) .cf-rail__name { color: #fff; /* data-color: white text on the accent fill */ }
 .cf-rail__stage[aria-selected="true"]:not(.is-stuck) .cf-rail__mark { background: #fff; color: var(--ds-accent); box-shadow: none; }
 .cf-rail__stage[aria-selected="true"].is-complete:not(.is-stuck) .cf-rail__mark { background: #fff; color: var(--ds-success); }
-.cf-rail__stage[aria-selected="true"].has-check:not(.is-stuck) .cf-rail__mark { background: var(--ds-warning); color: var(--ds-bg-base); }
-.cf-rail__stage.is-stuck { background: var(--ds-warning); color: var(--ds-bg-base); }
-.cf-rail__stage.is-stuck .cf-rail__name { color: var(--ds-bg-base); }
-.cf-rail__stage.is-stuck .cf-rail__mark { background: var(--ds-bg-base); color: var(--ds-warning); }
+.cf-rail__stage[aria-selected="true"].has-check:not(.is-stuck) .cf-rail__mark { background: var(--ds-warning); color: var(--ds-background); }
+.cf-rail__stage.is-stuck { background: var(--ds-warning); color: var(--ds-background); }
+.cf-rail__stage.is-stuck .cf-rail__name { color: var(--ds-background); }
+.cf-rail__stage.is-stuck .cf-rail__mark { background: var(--ds-background); color: var(--ds-warning); }
 // The open tab: a bar along the bottom edge, cut to the chevron by the same clip.
-.cf-rail__stage.is-stuck[aria-selected="true"]::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: var(--ds-bg-base); }
-.cf-rail__stage:not([aria-selected="true"]):not(.is-stuck):hover .cf-rail__name { color: var(--ds-text-primary); text-decoration: underline; }
-.cf-rail__plays { flex: none; margin-left: var(--ds-space-2); padding: 0 var(--ds-space-2); color: var(--ds-text-secondary); border-bottom: 3px solid transparent; border-top: 3px solid transparent; }
-.cf-rail__plays:hover { color: var(--ds-text-primary); }
-.cf-rail__plays[aria-selected="true"] { color: var(--ds-text-primary); border-bottom-color: var(--ds-text-primary); }
+.cf-rail__stage.is-stuck[aria-selected="true"]::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: var(--ds-background); }
+.cf-rail__stage:not([aria-selected="true"]):not(.is-stuck):hover .cf-rail__name { color: var(--ds-text-high); text-decoration: underline; }
+.cf-rail__plays { flex: none; margin-left: var(--ds-space-sm); padding: 0 var(--ds-space-sm); color: var(--ds-text-mid); border-bottom: 3px solid transparent; border-top: 3px solid transparent; }
+.cf-rail__plays:hover { color: var(--ds-text-high); }
+.cf-rail__plays[aria-selected="true"] { color: var(--ds-text-high); border-bottom-color: var(--ds-text-high); }
 .cf-rail__plays[aria-selected="true"] .cf-rail__in { font-weight: 700; }
-.cf-rail__count { font-variant-numeric: tabular-nums; color: var(--ds-text-muted); }
+.cf-rail__count { font-variant-numeric: tabular-nums; color: var(--ds-text-low); }
 // Keyboard focus: a ring inside the shape (an outline on the button itself would be clipped away).
 .cf-rail button:focus { outline: none; }
 .cf-rail__stage .cf-rail__in { margin: 0 -8px; padding: 0 8px; }
-.cf-rail button:focus-visible .cf-rail__in { outline: 2px solid var(--ds-text-primary); outline-offset: -5px; border-radius: var(--ds-radius-sm); }
+.cf-rail button:focus-visible .cf-rail__in { outline: 2px solid var(--ds-text-high); outline-offset: -5px; border-radius: var(--admin-radius-sm); }
 .cf-rail button.cf-rail__plays:focus-visible .cf-rail__in { outline-offset: 3px; }
-.cf-approve { display: flex; flex-direction: column; align-items: flex-start; gap: var(--ds-space-2); }
+.cf-approve { display: flex; flex-direction: column; align-items: flex-start; gap: var(--ds-space-sm); }
 .cf-approve[data-state='approved'], .cf-approve[data-state='ready'] { border-color: var(--ds-success); }
-.cf-review { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) clamp(380px, 30vw, 520px); gap: var(--ds-space-4); align-items: stretch; }
+.cf-review { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) clamp(380px, 30vw, 520px); gap: var(--ds-space-lg); align-items: stretch; }
 @media (max-width: 1000px) { .cf-review { grid-template-columns: minmax(0, 1fr); } }
-.cf-review__side { display: grid; grid-template-rows: minmax(0, 1fr) auto auto; gap: var(--ds-space-2); min-width: 0; min-height: 0; overflow: hidden; }
+.cf-review__side { display: grid; grid-template-rows: minmax(0, 1fr) auto auto; gap: var(--ds-space-sm); min-width: 0; min-height: 0; overflow: hidden; }
 // The film keeps a height that leaves room for the card below it at 900 px.
-.cf-review__player { aspect-ratio: 16 / 9; height: 100%; max-width: 100%; min-height: 0; justify-self: center; background: var(--ds-bg-base); border-radius: var(--ds-radius-md); overflow: hidden; position: relative; }
-.cf-review__unfiltered { position: absolute; top: 10px; left: 10px; z-index: 5; padding: 3px 10px; border-radius: var(--ds-radius-sm); background: var(--ds-warning); color: #111; font-size: 12px; font-weight: 700; letter-spacing: 0.02em; pointer-events: none; }
+.cf-review__player { aspect-ratio: 16 / 9; height: 100%; max-width: 100%; min-height: 0; justify-self: center; background: var(--ds-background); border-radius: var(--admin-radius-md); overflow: hidden; position: relative; }
+.cf-review__unfiltered { position: absolute; top: 10px; left: 10px; z-index: 5; padding: 3px 10px; border-radius: var(--admin-radius-sm); background: var(--ds-warning); color: #111; font-size: 12px; font-weight: 700; letter-spacing: 0.02em; pointer-events: none; }
 .cf-review__player[data-unfiltered] { box-shadow: inset 0 0 0 2px var(--ds-warning); }
 // The review player only: a paused film is the frame under review, so nothing dims it. The Player's
 // pause overlay becomes a small "paused" badge in the corner (other players keep their scrim).
 .cf-review__player .loading-overlay.paused { inset: auto auto 10px 10px; top: auto; left: 10px; width: auto; height: auto; padding: 0; background: none; }
 .cf-review__player .loading-overlay.paused .loading-overlay__inner, .cf-review__player .loading-overlay.paused .loading-timing { width: auto; height: auto; flex: none; }
-.cf-review__player .loading-overlay.paused .loading-spinner { width: 28px; height: 28px; padding: 5px; box-sizing: border-box; border-radius: 6px; background: #111; cursor: default; pointer-events: none; }
+.cf-review__player .loading-overlay.paused .loading-spinner { width: 28px; height: 28px; padding: 5px; box-sizing: border-box; border-radius: 6px; background: #111; /* data-color: media-chrome scrim over video */ cursor: default; pointer-events: none; }
 .cf-review__list { min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
 .cf-review__list > * { flex-shrink: 0; }
 .cf-review__list > .cf-review__rows { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 .cf-review__rows { display: flex; flex-direction: column; border-bottom: 1px solid var(--ds-border); }
 .cf-review__row { border-top: 1px solid var(--ds-border); border-left: 3px solid transparent; }
-.cf-review__row:hover { background: var(--ds-bg-surface); }
-.cf-review__row.is-selected { background: var(--ds-bg-overlay); border-left-color: var(--ds-accent); }
-.cf-review__row.is-plays .cf-review__label { color: var(--ds-text-secondary); }
+.cf-review__row:hover { background: var(--ds-surface); }
+.cf-review__row.is-selected { background: var(--admin-bg-overlay); border-left-color: var(--ds-accent); }
+.cf-review__row.is-plays .cf-review__label { color: var(--ds-text-mid); }
 // One line per part: [status] [time] [effect, channel] [label] [verdict word, timing]. The part in
 // hand also opens to its whole label and the same facts in words.
 .cf-review__row { display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; }
 .cf-review__pick { grid-column: 1; grid-row: 1; display: grid; width: 100%; grid-template-columns: 16px 66px 52px minmax(0, 1fr) auto; grid-template-areas: "glyph time gap label marks";
-  align-items: center; column-gap: 6px; height: 32px; padding: 0 var(--ds-space-2) 0 5px; text-align: left; min-width: 0; }
+  align-items: center; column-gap: 6px; height: 32px; padding: 0 var(--ds-space-sm) 0 5px; text-align: left; min-width: 0; }
 .cf-review__glyph { grid-area: glyph; display: inline-flex; }
-.cf-review__time { grid-area: time; font-family: var(--ds-font-mono); font-size: 12px; font-variant-numeric: tabular-nums; color: var(--ds-text-secondary); text-align: right; }
+.cf-review__time { grid-area: time; font-family: var(--ds-font-mono); font-size: 12px; font-variant-numeric: tabular-nums; color: var(--ds-text-mid); text-align: right; }
 .cf-review__fx { grid-column: 1; grid-row: 1; justify-self: start; margin-left: 99px; display: inline-flex; align-items: center; gap: 2px; position: relative; z-index: 1; }
-.cf-review__fx-btn { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: var(--ds-radius-sm); }
-.cf-review__fx-btn:hover { background: var(--ds-bg-elevated); box-shadow: inset 0 0 0 1px var(--ds-border); }
+.cf-review__fx-btn { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: var(--admin-radius-sm); }
+.cf-review__fx-btn:hover { background: var(--ds-surface-alt); box-shadow: inset 0 0 0 1px var(--ds-border); }
 .cf-review__label { grid-area: label; min-width: 0; font-size: 13px; font-weight: 500; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cf-review__row.is-selected .cf-review__label { font-weight: 600; }
 .cf-review__marks { grid-area: marks; display: inline-flex; align-items: center; gap: 6px; }
@@ -140,72 +140,71 @@
 .cf-review__tick { color: var(--ds-success); }
 // A verdict's word: finished work in green, a redo in orange.
 .cf-review__status { font-size: 11px; line-height: 16px; white-space: nowrap; }
-.cf-review__status.is-open { color: var(--ds-text-primary); font-weight: 600; }
+.cf-review__status.is-open { color: var(--ds-text-high); font-weight: 600; }
 .cf-review__status.is-done { color: var(--ds-success); }
 .cf-review__status.is-redo { color: var(--ds-warning); font-weight: 600; }
-.cf-review__status.is-quiet { color: var(--ds-text-secondary); }
+.cf-review__status.is-quiet { color: var(--ds-text-mid); }
 .cf-review__status.is-check { color: var(--ds-warning); font-weight: 600; }
-.cf-review__status.is-open { font-weight: 500; color: var(--ds-text-secondary); }
-.cf-review__row.is-selected .cf-review__status.is-open { color: var(--ds-text-primary); font-weight: 600; }
-.cf-review__timing { font-size: 11px; color: var(--ds-text-secondary); }
+.cf-review__status.is-open { font-weight: 500; color: var(--ds-text-mid); }
+.cf-review__row.is-selected .cf-review__status.is-open { color: var(--ds-text-high); font-weight: 600; }
+.cf-review__timing { font-size: 11px; color: var(--ds-text-mid); }
 .cf-review__timing.is-rough, .cf-review__timing.is-rough-left, .cf-review__timing.is-unsure { color: var(--ds-warning); }
 
 // The part icons (partVisuals.jsx). One colour per effect family; green = done, orange = needs a
 // look, grey = plays or nothing to say.
-.cf-review-page, .cf-review__list { --cf-fx-audio: #2dd4bf; --cf-fx-picture: #a78bfa; --cf-fx-skip: #f472b6; }
-.cf-ico { display: inline-flex; align-items: center; justify-content: center; flex: none; line-height: 0; color: var(--ds-text-muted); }
+.cf-review-page, .cf-review__list { --cf-fx-audio: #2dd4bf; --cf-fx-picture: #a78bfa; --cf-fx-skip: #f472b6; } /* data-color: effect-family category hues, the only data-viz palette here */
+.cf-ico { display: inline-flex; align-items: center; justify-content: center; flex: none; line-height: 0; color: var(--ds-text-low); }
 .cf-ico--fx.is-audio { color: var(--cf-fx-audio); }
 .cf-ico--fx.is-picture { color: var(--cf-fx-picture); }
 .cf-ico--fx.is-skip { color: var(--cf-fx-skip); }
-.cf-ico--status.is-open { color: var(--ds-text-primary); }
+.cf-ico--status.is-open { color: var(--ds-text-high); }
 .cf-ico--status.is-done { color: var(--ds-success); }
 .cf-ico--status.is-redo { color: var(--ds-warning); }
-.cf-ico--status.is-quiet { color: var(--ds-text-muted); }
+.cf-ico--status.is-quiet { color: var(--ds-text-low); }
 .cf-ico--status.is-check { color: var(--ds-warning); }
-.cf-ico--timing.is-safe-window { color: var(--ds-text-secondary); }
+.cf-ico--timing.is-safe-window { color: var(--ds-text-mid); }
 .cf-ico--timing.is-refined { color: var(--ds-success); }
 // Unsure timing (refine gave up, or left coarse edges) is amber: grey made a give-up look refined.
 .cf-ico--timing.is-rough, .cf-ico--timing.is-rough-left, .cf-ico--timing.is-unsure { color: var(--ds-warning); }
 .cf-ico--refining { color: var(--ds-info); }
-.cf-ico.is-spinning svg { animation: cf-spin 1.2s linear infinite; }
-@keyframes cf-spin { to { transform: rotate(360deg); } }
+.cf-ico.is-spinning svg { animation: ds-spin calc(var(--ds-motion-sweep) * 0.75) linear infinite; }
 @media (prefers-reduced-motion: reduce) { .cf-ico.is-spinning svg { animation: none; } }
-.cf-fx-tag { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border: 1px solid currentColor; border-radius: 999px; font-size: 11px; font-weight: 700; line-height: 16px; white-space: nowrap; color: var(--ds-text-secondary); }
+.cf-fx-tag { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border: 1px solid currentColor; border-radius: 999px; font-size: 11px; font-weight: 700; line-height: 16px; white-space: nowrap; color: var(--ds-text-mid); }
 .cf-fx-tag.is-audio { color: var(--cf-fx-audio); }
 .cf-fx-tag.is-picture { color: var(--cf-fx-picture); }
 .cf-fx-tag.is-skip { color: var(--cf-fx-skip); }
-.cf-legend { display: flex; flex-direction: column; gap: var(--ds-space-2); background: var(--ds-bg-overlay); border-color: var(--ds-border); }
+.cf-legend { display: flex; flex-direction: column; gap: var(--ds-space-sm); background: var(--admin-bg-overlay); border-color: var(--ds-border); }
 .cf-legend__group { display: flex; flex-direction: column; gap: 3px; }
-.cf-legend__item { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ds-text-primary); }
+.cf-legend__item { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ds-text-high); }
 
 // The part in hand (Fable design 2026-11-22): one 280px panel of five fixed lines. Nothing in it
 // changes its height, so the page never scrolls and nothing below it moves.
 .cf-card-part { height: 280px; box-sizing: border-box; padding: 12px; display: grid; grid-template-rows: 44px 24px 72px 44px 40px; gap: 8px; min-width: 0; container-type: inline-size;
-  background: var(--ds-bg-surface); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-md); border-left: 3px solid var(--ds-border); }
+  background: var(--ds-surface); border: 1px solid var(--ds-border); border-radius: var(--admin-radius-md); border-left: 3px solid var(--ds-border); }
 .cf-card-part[data-family="audio"] { border-left-color: var(--cf-fx-audio); }
 .cf-card-part[data-family="picture"] { border-left-color: var(--cf-fx-picture); }
 .cf-card-part[data-family="skip"] { border-left-color: var(--cf-fx-skip); }
 .cf-card-part__identity { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.cf-card-part__fx { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border-radius: var(--ds-radius-sm);
-  border: 1px solid currentColor; font-size: 13px; font-weight: 700; color: var(--ds-text-secondary); background: var(--ds-bg-base); }
+.cf-card-part__fx { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border-radius: var(--admin-radius-sm);
+  border: 1px solid currentColor; font-size: 13px; font-weight: 700; color: var(--ds-text-mid); background: var(--ds-background); }
 .cf-card-part__fx.is-audio { color: var(--cf-fx-audio); }
 .cf-card-part__fx.is-picture { color: var(--cf-fx-picture); }
 .cf-card-part__fx.is-skip { color: var(--cf-fx-skip); }
-.cf-card-part__fx:hover:not(:disabled) { background: var(--ds-bg-elevated); }
-.cf-card-part__fx .cf-keybar__key { color: var(--ds-text-secondary); }
+.cf-card-part__fx:hover:not(:disabled) { background: var(--ds-surface-alt); }
+.cf-card-part__fx .cf-keybar__key { color: var(--ds-text-mid); }
 .cf-card-part__title { flex: 1 1 auto; min-width: 0; font-size: 15px; font-weight: 600; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 .cf-card-part__facts { flex: none; display: inline-flex; align-items: center; gap: 8px; }
 .cf-card-part__chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; line-height: 18px; white-space: nowrap;
-  color: var(--ds-text-secondary); background: var(--ds-bg-elevated); }
+  color: var(--ds-text-mid); background: var(--ds-surface-alt); }
 // Neutral text; only the icon carries the timing colour (.cf-ico--timing).
-.cf-card-part__where { flex: none; width: 56px; text-align: right; font-size: 12px; color: var(--ds-text-secondary); font-variant-numeric: tabular-nums; }
-.cf-card-part__step { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: var(--ds-radius-sm); border: 1px solid var(--ds-border); color: var(--ds-text-primary); }
-.cf-card-part__step:hover:not(:disabled) { background: var(--ds-bg-elevated); }
+.cf-card-part__where { flex: none; width: 56px; text-align: right; font-size: 12px; color: var(--ds-text-mid); font-variant-numeric: tabular-nums; }
+.cf-card-part__step { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: var(--admin-radius-sm); border: 1px solid var(--ds-border); color: var(--ds-text-high); }
+.cf-card-part__step:hover:not(:disabled) { background: var(--ds-surface-alt); }
 .cf-card-part__step:disabled { opacity: 0.35; cursor: default; }
 .cf-card-part__why { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .cf-card-part__why > button { flex: none; } // Refine keeps its whole label and key; the sentence ellipsizes
 .cf-part-menu { max-height: calc(100vh - 16px); overflow-y: auto; }
-.cf-card-part__whytext { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ds-text-secondary); }
+.cf-card-part__whytext { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ds-text-mid); }
 .cf-card-part__timing { display: grid; grid-template-columns: minmax(0, 1fr) 132px; gap: 10px; align-items: stretch; min-width: 0; }
 .cf-card-part__nostrip { align-self: center; }
 .cf-card-part__save { display: flex; flex-direction: column; justify-content: center; align-items: stretch; gap: 6px; min-width: 0; }
@@ -241,54 +240,53 @@
 // in hand solid with white handles. A handle's hit is 20px and the full track height, biased outward
 // (Start reaches left, End right) so two close handles never cover each other.
 .cf-strip { min-width: 0; height: 100%; }
-.cf-strip__track { position: relative; height: 100%; box-sizing: border-box; background: var(--ds-bg-base); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-sm); cursor: pointer; touch-action: none; user-select: none; }
-.cf-strip__tick { position: absolute; top: 0; width: 1px; height: 5px; background: var(--ds-text-muted); pointer-events: none; }
-.cf-strip__tick.is-major { height: 10px; background: var(--ds-text-secondary); }
-.cf-strip__label { position: absolute; top: 11px; left: 3px; font-family: var(--ds-font-mono); font-size: 10px; line-height: 1; color: var(--ds-text-secondary); white-space: nowrap; }
+.cf-strip__track { position: relative; height: 100%; box-sizing: border-box; background: var(--ds-background); border: 1px solid var(--ds-border); border-radius: var(--admin-radius-sm); cursor: pointer; touch-action: none; user-select: none; }
+.cf-strip__tick { position: absolute; top: 0; width: 1px; height: 5px; background: var(--ds-text-low); pointer-events: none; }
+.cf-strip__tick.is-major { height: 10px; background: var(--ds-text-mid); }
+.cf-strip__label { position: absolute; top: 11px; left: 3px; font-family: var(--ds-font-mono); font-size: 10px; line-height: 1; color: var(--ds-text-mid); white-space: nowrap; }
 .cf-strip__band { position: absolute; top: 30px; bottom: 8px; background: var(--ds-accent); border-radius: 3px; overflow: hidden; display: flex; align-items: center; box-sizing: border-box; padding: 0 6px; }
-.cf-strip__bandlabel { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; font-size: 11px; font-weight: 600; line-height: 1; color: #fff; text-shadow: 0 0 2px rgba(0, 0, 0, 0.6); pointer-events: none; }
+.cf-strip__bandlabel { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; font-size: 11px; font-weight: 600; line-height: 1; color: #fff; text-shadow: 0 0 2px rgba(0, 0, 0, 0.6); pointer-events: none; /* data-color: white label with dark halo on the band fill */ }
 .cf-card-part__autosave { text-align: center; }
-.cf-strip__band.is-neighbour { opacity: 0.6; background: var(--ds-text-muted); }
+.cf-strip__band.is-neighbour { opacity: 0.6; background: var(--ds-text-low); }
 .cf-strip__band.is-neighbour.is-audio { background: var(--cf-fx-audio); }
 .cf-strip__band.is-neighbour.is-picture { background: var(--cf-fx-picture); }
 .cf-strip__band.is-neighbour.is-skip { background: var(--cf-fx-skip); }
-.cf-strip__band.is-locked { background-image: repeating-linear-gradient(45deg, transparent 0 4px, rgba(0, 0, 0, 0.35) 4px 8px); }
-.cf-strip__saved { position: absolute; bottom: 2px; height: 3px; background: var(--ds-text-secondary); pointer-events: none; }
-.cf-strip__saved.is-pending { background: var(--ds-warning); animation: cf-strip-pending 0.9s ease-in-out infinite alternate; }
-@keyframes cf-strip-pending { from { opacity: 0.35; } to { opacity: 1; } }
+.cf-strip__band.is-locked { background-image: repeating-linear-gradient(45deg, transparent 0 4px, rgba(0, 0, 0, 0.35) 4px 8px); /* data-color: neutral hatch for a locked band */ }
+.cf-strip__saved { position: absolute; bottom: 2px; height: 3px; background: var(--ds-text-mid); pointer-events: none; }
+.cf-strip__saved.is-pending { background: var(--ds-warning); animation: ds-pending-pulse calc(var(--ds-motion-sweep) / 2) ease-in-out infinite alternate; }
 @media (prefers-reduced-motion: reduce) { .cf-strip__saved.is-pending { animation: none; } }
 .cf-strip__playhead { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--ds-warning); pointer-events: none; z-index: 1; }
 .cf-strip__handle { position: absolute; top: 0; bottom: 0; width: 20px; cursor: ew-resize; touch-action: none; z-index: 2; }
 .cf-strip__handle.is-start { margin-left: -16px; }
 .cf-strip__handle.is-end { margin-left: -4px; }
-.cf-strip__handle::before { content: ''; position: absolute; top: 24px; bottom: 4px; width: 4px; border-radius: 2px; background: #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5); }
+.cf-strip__handle::before { content: ''; position: absolute; top: 24px; bottom: 4px; width: 4px; border-radius: 2px; background: #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5); /* data-color: white drag handle with dark edge, readable on any band */ }
 .cf-strip__handle.is-start::before { left: 14px; }
 .cf-strip__handle.is-end::before { left: 2px; }
-.cf-strip__handle.is-neighbour::before { width: 2px; background: var(--ds-text-primary); opacity: 0.8; }
-.cf-strip__handle:hover::before, .cf-strip__handle.is-dragging::before { background: var(--ds-accent-hover, #fff); }
+.cf-strip__handle.is-neighbour::before { width: 2px; background: var(--ds-text-high); opacity: 0.8; }
+.cf-strip__handle:hover::before, .cf-strip__handle.is-dragging::before { background: var(--admin-accent-hover); }
 .cf-strip__handle:focus { outline: none; }
-.cf-strip__handle:focus-visible::before { outline: 2px solid var(--ds-accent-hover); outline-offset: 1px; }
-.cf-strip__bubble { position: absolute; top: 2px; left: 50%; transform: translateX(-50%); padding: 1px 5px; border-radius: 3px; background: var(--ds-bg-overlay); border: 1px solid var(--ds-border);
-  font-family: var(--ds-font-mono); font-size: 10px; line-height: 14px; color: var(--ds-text-primary); white-space: nowrap; pointer-events: none; }
+.cf-strip__handle:focus-visible::before { outline: 2px solid var(--admin-accent-hover); outline-offset: 1px; }
+.cf-strip__bubble { position: absolute; top: 2px; left: 50%; transform: translateX(-50%); padding: 1px 5px; border-radius: 3px; background: var(--admin-bg-overlay); border: 1px solid var(--ds-border);
+  font-family: var(--ds-font-mono); font-size: 10px; line-height: 14px; color: var(--ds-text-high); white-space: nowrap; pointer-events: none; }
 .cf-strip.is-disabled .cf-strip__track { cursor: default; }
-.cf-strip.is-disabled .cf-strip__band { background: var(--ds-text-muted); }
+.cf-strip.is-disabled .cf-strip__band { background: var(--ds-text-low); }
 .cf-strip.is-disabled .cf-strip__handle { cursor: default; }
-.cf-strip.is-disabled .cf-strip__handle::before { background: var(--ds-text-muted); }
-.cf-keybar__pick { appearance: none; border: 0; padding: 2px 4px; background: none; font: inherit; cursor: pointer; border-radius: var(--ds-radius-sm); }
-.cf-keybar__pick:hover { background: var(--ds-bg-elevated); }
-.cf-keybar__pick:hover .cf-keybar__item { color: var(--ds-text-primary); }
+.cf-strip.is-disabled .cf-strip__handle::before { background: var(--ds-text-low); }
+.cf-keybar__pick { appearance: none; border: 0; padding: 2px 4px; background: none; font: inherit; cursor: pointer; border-radius: var(--admin-radius-sm); }
+.cf-keybar__pick:hover { background: var(--ds-surface-alt); }
+.cf-keybar__pick:hover .cf-keybar__item { color: var(--ds-text-high); }
 .cf-keybar__key.is-blank { visibility: hidden; }
 .cf-card__btn { display: inline-flex; align-items: center; gap: 6px; }
 .cf-card__btn .cf-keybar__key { opacity: 0.8; }
 .cf-focus__where { font-variant-numeric: tabular-nums; }
 
 // Review station: timeline lanes and the key bar.
-.cf-timeline { display: flex; flex-direction: column; gap: var(--ds-space-1); }
-.cf-timeline__lane { display: flex; align-items: center; gap: var(--ds-space-2); }
-.cf-timeline__label { flex: 0 0 40px; white-space: nowrap; font-size: 11px; color: var(--ds-text-secondary); }
-.cf-timeline__track { position: relative; flex: 1; height: 24px; box-sizing: border-box; background: var(--ds-bg-surface); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-sm); overflow: hidden; cursor: pointer; }
+.cf-timeline { display: flex; flex-direction: column; gap: var(--admin-space-1); }
+.cf-timeline__lane { display: flex; align-items: center; gap: var(--ds-space-sm); }
+.cf-timeline__label { flex: 0 0 40px; white-space: nowrap; font-size: 11px; color: var(--ds-text-mid); }
+.cf-timeline__track { position: relative; flex: 1; height: 24px; box-sizing: border-box; background: var(--ds-surface); border: 1px solid var(--ds-border); border-radius: var(--admin-radius-sm); overflow: hidden; cursor: pointer; }
 .cf-timeline__playhead { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--ds-warning); pointer-events: none; z-index: 2; }
-.cf-timeline__mark { position: absolute; top: 3px; bottom: 3px; padding: 0; border: 0; border-radius: 2px; cursor: pointer; background: var(--ds-text-muted); opacity: 0.75; }
+.cf-timeline__mark { position: absolute; top: 3px; bottom: 3px; padding: 0; border: 0; border-radius: 2px; cursor: pointer; background: var(--ds-text-low); opacity: 0.75; }
 // A transparent pad makes every mark at least 12px wide to the pointer, whatever it draws.
 .cf-timeline__mark::after { content: ''; position: absolute; top: -3px; bottom: -3px; left: 50%; width: max(100%, 12px); transform: translateX(-50%); }
 // Marks take their effect family's colour, like the list's icons.
@@ -297,14 +295,14 @@
 .cf-timeline__mark.is-skip { background: var(--cf-fx-skip); }
 .cf-timeline__mark.has-verdict { opacity: 0.35; }
 .cf-timeline__mark.is-redo { opacity: 1; outline: 1px solid var(--ds-warning); }
-.cf-timeline__mark.is-plays { background: var(--ds-text-muted); opacity: 0.3; }
-.cf-timeline__mark.is-cursor { opacity: 1; top: 0; bottom: 0; outline: 2px solid var(--ds-text-primary); z-index: 1; }
-.cf-keybar { display: flex; flex-direction: column; gap: var(--ds-space-1); position: relative; }
+.cf-timeline__mark.is-plays { background: var(--ds-text-low); opacity: 0.3; }
+.cf-timeline__mark.is-cursor { opacity: 1; top: 0; bottom: 0; outline: 2px solid var(--ds-text-high); z-index: 1; }
+.cf-keybar { display: flex; flex-direction: column; gap: var(--admin-space-1); position: relative; }
 .cf-keybar:empty { display: none; }
 .cf-keybar__tally { font-variant-numeric: tabular-nums; }
-.cf-keybar__item { font-size: 12px; color: var(--ds-text-secondary); }
-.cf-keybar__key { display: inline-block; min-width: 20px; padding: 0 var(--ds-space-1); text-align: center; font-family: var(--ds-font-mono); font-size: 11px; color: var(--ds-text-primary); background: var(--ds-bg-elevated); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-sm); }
-.cf-keybar__help-row { display: flex; gap: var(--ds-space-2); align-items: baseline; font-size: 12px; }
+.cf-keybar__item { font-size: 12px; color: var(--ds-text-mid); }
+.cf-keybar__key { display: inline-block; min-width: 20px; padding: 0 var(--admin-space-1); text-align: center; font-family: var(--ds-font-mono); font-size: 11px; color: var(--ds-text-high); background: var(--ds-surface-alt); border: 1px solid var(--ds-border); border-radius: var(--admin-radius-sm); }
+.cf-keybar__help-row { display: flex; gap: var(--ds-space-sm); align-items: baseline; font-size: 12px; }
 .cf-keybar__help-row .cf-keybar__key { flex: 0 0 auto; min-width: 88px; }
 
 // Film status card (FilmStatusCard.jsx): the two answers, one button, a run's phases.

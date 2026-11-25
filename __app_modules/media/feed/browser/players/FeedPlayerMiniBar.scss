@@ -9,8 +9,8 @@
   gap: 0.5rem;
   padding: 0.6rem calc(1rem + var(--browser-safe-area-right))
     calc(0.6rem + var(--browser-safe-area-bottom)) calc(1rem + var(--browser-safe-area-left));
-  background: var(--feed-surface-1, #17191c);
-  border-top: 1px solid var(--feed-border, rgba(255, 255, 255, 0.08));
+  background: var(--feed-surface-1);
+  border-top: 1px solid var(--feed-border);
   flex-wrap: wrap;
   user-select: none;
   -webkit-user-select: none;

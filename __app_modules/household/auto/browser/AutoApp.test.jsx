@@ -467,3 +467,26 @@ it.each([
   expect(dialog().getByLabelText(field)).toBeEnabled();
   expect(dialog().getByLabelText(field)).toHaveDisplayValue(value);
 });
+
+it('renders every action as the shared Button, primary or secondary', async () => {
+  mockGarage();
+  render(<AutoApp />);
+  await selectButton('Wagon');
+
+  await selectButton('Fuel');
+  const fuel = await screen.findByRole('button', { name: 'Log a fill-up' });
+  expect(fuel).toHaveClass('ds-touch', 'ds-touch--primary', 'auto-btn--block');
+
+  await selectButton('Service');
+  expect(await screen.findByRole('button', { name: 'Log service' }))
+    .toHaveClass('ds-touch', 'ds-touch--primary', 'auto-btn--block');
+
+  await selectButton('Drives');
+  await screen.findByText('Morning drive');
+  expect(screen.getByRole('button', { name: 'Log the fill-up' }))
+    .toHaveClass('ds-touch', 'ds-touch--primary', 'auto-journey__name');
+  expect(screen.getByRole('button', { name: 'Name this place' }))
+    .toHaveClass('ds-touch', 'ds-touch--secondary', 'auto-journey__name');
+  expect(screen.getByRole('button', { name: /very short recording/ }))
+    .toHaveClass('ds-touch', 'ds-touch--secondary', 'auto-shuffle-toggle');
+});

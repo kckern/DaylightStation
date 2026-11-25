@@ -23,7 +23,7 @@ describe('ArticleRow', () => {
 
     fireEvent.click(disclosure);
     expect(disclosure).toHaveAttribute('aria-expanded', 'true');
-    expect(onMarkRead).toHaveBeenCalledWith('freshrss:1');
+    expect(onMarkRead).toHaveBeenCalledWith(article);
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(onStateAction).toHaveBeenCalledWith(article, 'save');
   });

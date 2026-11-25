@@ -3,7 +3,7 @@
 // The vehicle's home screen. Everything here is a number the app is willing to
 // stand behind, or an explicit statement that it doesn't have one.
 
-import { LoadingState, ErrorState } from '@/lib/ui';
+import { Button, LoadingState, ErrorState } from '@/lib/ui';
 import VehicleReminderStatus from './VehicleReminderStatus.jsx';
 import {
   formatDistance, formatDay, formatTime, formatMoney, describeOdometerSource,
@@ -36,9 +36,9 @@ export default function OverviewPanel({
           <>
             <p className="auto-bignum auto-bignum--muted">Not set</p>
             <p className="auto-card__note">{describeOdometerSource(odometer.source, odometer.confidence)}</p>
-            <button type="button" className="auto-btn auto-btn--primary" onClick={() => onGoTo?.('fuel')}>
+            <Button density="compact" onClick={() => onGoTo?.('fuel')}>
               Log a fill-up
-            </button>
+            </Button>
           </>
         ) : (
           <>

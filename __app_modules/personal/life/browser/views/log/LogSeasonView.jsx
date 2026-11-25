@@ -41,7 +41,7 @@ export function LogSeasonView({ username, at, categories }) {
               <Title order={6} mb="xs">{formatDate(monthKey + '-01', { month: 'long', year: 'numeric' })}</Title>
               <Group gap="xs">
                 <Badge size="sm" variant="light">{m.days} days</Badge>
-                <Badge size="sm" variant="light" color="green">{m.sources.size} sources</Badge>
+                <Badge size="sm" variant="light" color="green">{m.sources.size} {m.sources.size === 1 ? 'source' : 'sources'}</Badge>
                 <Badge size="sm" variant="light" color="blue">{m.summaryCount} {m.summaryCount === 1 ? 'summary' : 'summaries'}</Badge>
               </Group>
             </Paper>

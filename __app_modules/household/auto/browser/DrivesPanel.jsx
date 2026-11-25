@@ -10,7 +10,7 @@
 
 import { useState } from 'react';
 import { addCalendarDays, localDateKey } from '@/lib/calendarDay.js';
-import { LoadingState, ErrorState, EmptyState, Sheet, Select, useRetryRegion, useSheetSubmission } from '@/lib/ui';
+import { Button, LoadingState, ErrorState, EmptyState, Sheet, Select, useRetryRegion, useSheetSubmission } from '@/lib/ui';
 import { AutoSheetActions } from './AutoSheetActions.jsx';
 import { formatDistance, formatDuration, formatDay, formatTime, formatSpeed } from "./format.js";
 import { autoApi } from "./useAutoApi.js";
@@ -68,13 +68,13 @@ export default function DrivesPanel({
     <>
       <section {...regionProps} className="auto-panel auto-panel--drives" aria-label="Drives">
         {showShortFilter && (
-          <button type="button" className="auto-btn auto-btn--ghost auto-shuffle-toggle" onClick={toggleShortFilter}>
+          <Button density="compact" variant="secondary" className="auto-shuffle-toggle" onClick={toggleShortFilter}>
             {includeShuffles
               ? 'Hide very short recordings'
               : hidden > 0
                 ? `Show ${hidden} very short recording${hidden === 1 ? '' : 's'}`
                 : 'Show very short recordings'}
-          </button>
+          </Button>
         )}
         {content}
       </section>
@@ -188,22 +188,23 @@ function JourneyRow({ journey, onName, onLogFuel, fuelPrompt }) {
 
       <div className="auto-journey__actions">
         {fuelPrompt && (
-          <button
-            type="button"
-            className="auto-btn auto-btn--primary auto-journey__name"
+          <Button
+            density="compact"
+            className="auto-journey__name"
             onClick={() => onLogFuel(fuelPrompt)}
           >
             Log the fill-up
-          </button>
+          </Button>
         )}
         {unnamed.length > 0 && (
-          <button
-            type="button"
-            className="auto-btn auto-btn--ghost auto-journey__name"
+          <Button
+            density="compact"
+            variant="secondary"
+            className="auto-journey__name"
             onClick={() => onName(unnamed[0])}
           >
             Name this place
-          </button>
+          </Button>
         )}
       </div>
     </li>

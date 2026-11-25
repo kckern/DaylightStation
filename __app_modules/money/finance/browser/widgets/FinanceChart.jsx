@@ -25,7 +25,7 @@ function buildBaselineOptions(monthData) {
     xAxis: {
       categories,
       labels: {
-        style: { color: '#FFFFFFBB', fontWeight: 'bold', fontFamily: 'Roboto Condensed', fontSize: '1rem' },
+        style: { color: '#FFFFFFBB', fontWeight: 'bold', fontFamily: 'Roboto Condensed', fontSize: '1rem' }, // data-color: Highcharts axis label ink over dark widget host
         rotation: -35,
         formatter: function () {
           if (!this.value || this.value === '') return '';
@@ -37,14 +37,14 @@ function buildBaselineOptions(monthData) {
           return (isMonday || isLastDay) ? date.format('MMM D') : '';
         }
       },
-      tickColor: '#000',
+      tickColor: '#000', // data-color: Highcharts tick
     },
     yAxis: {
       min: 0,
       max: budget,
       title: { text: '' },
       labels: {
-        style: { color: '#FFFFFFBB', fontWeight: 'bold', fontFamily: 'Roboto Condensed', fontSize: '1rem' },
+        style: { color: '#FFFFFFBB', fontWeight: 'bold', fontFamily: 'Roboto Condensed', fontSize: '1rem' }, // data-color: Highcharts axis label ink over dark widget host
         formatter: function () {
           const formatted = this.axis.defaultLabelFormatter.call(this);
           return '$' + formatted.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
@@ -56,8 +56,8 @@ function buildBaselineOptions(monthData) {
       name: 'Baseline',
       data: baselineData,
       type: 'area',
-      color: 'rgba(255, 0, 0, 0.1)',
-      lineColor: 'rgba(255, 0, 0, 0.5)',
+      color: 'rgba(255, 0, 0, 0.1)', // data-color: Highcharts forecast band fill
+      lineColor: 'rgba(255, 0, 0, 0.5)', // data-color: Highcharts forecast band edge
       marker: { enabled: false },
       enableMouseTracking: false,
     }],
@@ -114,15 +114,15 @@ export function FinanceChart()
       )
   }
 
-  let options = buildDayToDayBudgetOptions(monthData, null, {plotLineColor: '#444'});
+  let options = buildDayToDayBudgetOptions(monthData, null, {plotLineColor: '#444'}); // data-color: Highcharts month gridline on dark host
   if (options && options.chart) {
     options.chart.backgroundColor = 'transparent';
     options.title = {text: ''};
     options.subtitle = {text: ''};
-    options.yAxis.labels.style = {color: '#FFFFFFBB', fontWeight: 'bold', fontFamily: 'Roboto Condensed', fontSize: '1rem'};
-    options.xAxis.labels.style = {color: '#FFFFFFBB', fontWeight: 'bold', fontFamily: 'Roboto Condensed', fontSize: '1rem'};
+    options.yAxis.labels.style = {color: '#FFFFFFBB', fontWeight: 'bold', fontFamily: 'Roboto Condensed', fontSize: '1rem'}; // data-color: Highcharts axis label ink over dark widget host
+    options.xAxis.labels.style = {color: '#FFFFFFBB', fontWeight: 'bold', fontFamily: 'Roboto Condensed', fontSize: '1rem'}; // data-color: Highcharts axis label ink over dark widget host
     options.xAxis.labels.rotation = -35;
-    options.xAxis.tickColor = '#000';
+    options.xAxis.tickColor = '#000'; // data-color: Highcharts tick
     options.chart.marginTop = 10;
   } else {
     options = buildBaselineOptions(monthData);

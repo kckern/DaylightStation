@@ -107,7 +107,7 @@ function AdminNav({ opened, onDismiss }) {
           ff="var(--ds-font-mono)"
           fw={600}
           size="sm"
-          c="var(--ds-text-primary)"
+          c="var(--ds-text-high)"
           style={{ letterSpacing: '0.12em' }}
         >
           <span style={{ color: 'var(--ds-warning)' }}>&#9679;</span>{' '}DAYLIGHT
@@ -121,7 +121,7 @@ function AdminNav({ opened, onDismiss }) {
             size="10px"
             fw={500}
             ff="var(--ds-font-mono)"
-            c="var(--ds-text-muted)"
+            c="var(--ds-text-low)"
             tt="uppercase"
             px="md"
             mb={4}
@@ -137,7 +137,7 @@ function AdminNav({ opened, onDismiss }) {
                 component={RouterNavLink}
                 to={item.to}
                 label={
-                  <Text size="13px" fw={isActive ? 500 : 400} ff="var(--ds-font-body)">
+                  <Text size="13px" fw={isActive ? 500 : 400} ff="var(--admin-font-body)">
                     {item.label}
                   </Text>
                 }
@@ -145,7 +145,7 @@ function AdminNav({ opened, onDismiss }) {
                   <item.icon
                     size={18}
                     stroke={1.5}
-                    color={isActive ? 'var(--ds-accent)' : 'var(--ds-text-secondary)'}
+                    color={isActive ? 'var(--ds-accent)' : 'var(--ds-text-mid)'}
                   />
                 }
                 active={isActive}

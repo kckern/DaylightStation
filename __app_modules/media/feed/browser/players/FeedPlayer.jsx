@@ -147,7 +147,7 @@ export default function FeedPlayer({ playerData, onError, aspectRatio = '16 / 9'
   return (
     <div
       className="feed-player"
-      style={{ position: 'relative', aspectRatio, background: '#000', overflow: 'hidden' }}
+      style={{ position: 'relative', aspectRatio, background: 'var(--feed-ink)', overflow: 'hidden' }}
       onMouseMove={showControls}
       onClick={event => {
         event.stopPropagation();
@@ -241,7 +241,7 @@ export default function FeedPlayer({ playerData, onError, aspectRatio = '16 / 9'
         data-visible={controlsVisible}
         style={{
           position: 'absolute', bottom: 0, left: 0, right: 0,
-          background: 'linear-gradient(transparent, rgba(0,0,0,0.7))',
+          background: 'linear-gradient(transparent, color-mix(in srgb, var(--feed-ink) 70%, transparent))',
           padding: '24px 8px 6px',
           display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px',
         }}
@@ -249,8 +249,8 @@ export default function FeedPlayer({ playerData, onError, aspectRatio = '16 / 9'
       >
         {/* Progress bar */}
         <div className="feed-player-progress" style={{ position: 'relative', width: '100%', height: '20px', cursor: 'pointer', marginBottom: '2px' }}>
-          <div style={{ position: 'absolute', left: 0, right: 0, top: '8px', height: '4px', background: 'rgba(255,255,255,0.3)', borderRadius: '2px' }}>
-            <div ref={progressRef} style={{ height: '100%', background: '#fff', borderRadius: '2px', width: '0%' }} />
+          <div style={{ position: 'absolute', left: 0, right: 0, top: '8px', height: '4px', background: 'color-mix(in srgb, var(--feed-pure-white) 30%, transparent)', borderRadius: '2px' }}>
+            <div ref={progressRef} style={{ height: '100%', background: 'var(--feed-pure-white)', borderRadius: '2px', width: '0%' }} />
           </div>
           <input
             className="feed-player-progress-input"
@@ -271,13 +271,13 @@ export default function FeedPlayer({ playerData, onError, aspectRatio = '16 / 9'
         <button
           onClick={toggle}
           aria-label={playing ? 'Pause' : 'Play'}
-          style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: '2px', display: 'flex' }}
+          style={{ background: 'none', border: 'none', color: 'var(--feed-pure-white)', cursor: 'pointer', padding: '2px', display: 'flex' }}
         >
           <UiIcon name={playing ? 'pause' : 'play'} size={20} />
         </button>
 
         {/* Time */}
-        <span style={{ color: '#fff', fontSize: '12px', fontVariantNumeric: 'tabular-nums' }}>
+        <span style={{ color: 'var(--feed-pure-white)', fontSize: '12px', fontVariantNumeric: 'tabular-nums' }}>
           {formatFeedPlaybackTime(currentTime)} / {formatFeedPlaybackTime(duration)}
         </span>
 
@@ -287,7 +287,7 @@ export default function FeedPlayer({ playerData, onError, aspectRatio = '16 / 9'
         <button
           onClick={toggleMute}
           aria-label={muted ? 'Unmute' : 'Mute'}
-          style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: '2px', display: 'flex' }}
+          style={{ background: 'none', border: 'none', color: 'var(--feed-pure-white)', cursor: 'pointer', padding: '2px', display: 'flex' }}
         >
           <SpeakerIcon volume={volume} muted={muted} />
         </button>
@@ -309,7 +309,7 @@ export default function FeedPlayer({ playerData, onError, aspectRatio = '16 / 9'
         <button
           onClick={cycleSpeed}
           aria-label={`Playback speed ${speed}x`}
-          style={{ background: 'none', border: '1px solid rgba(255,255,255,0.4)', color: '#fff', cursor: 'pointer', padding: '1px 6px', borderRadius: '3px', fontSize: '11px' }}
+          style={{ background: 'none', border: '1px solid color-mix(in srgb, var(--feed-pure-white) 40%, transparent)', color: 'var(--feed-pure-white)', cursor: 'pointer', padding: '1px 6px', borderRadius: '3px', fontSize: '11px' }}
         >
           {speed}x
         </button>

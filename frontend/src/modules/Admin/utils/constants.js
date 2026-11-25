@@ -85,7 +85,7 @@ export function getFrequencyBand(schedule) {
     if (interval <= 15) return 'Frequent';
     return 'Hourly';
   }
-  if (min === '0' && hour === '*') return 'Hourly';
+  if (/^\d+$/.test(min) && hour === '*') return 'Hourly';
   if (hour !== '*') return 'Daily';
   return 'Other';
 }

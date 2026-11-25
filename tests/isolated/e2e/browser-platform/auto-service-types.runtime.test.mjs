@@ -81,7 +81,8 @@ test('Auto retries only missing service types and uses no repeat interval for a 
   const { pending, posts, reads, historyReads, dialog } = await openService(page, baseURL, { failFirst: true });
   const what = dialog.getByRole('combobox', { name: 'What was done', exact: true });
   const region = dialog.getByRole('region', { name: 'Service types', exact: true });
-  const history = page.getByRole('region', { name: 'Service history', exact: true });
+  // The open service sheet is modal (6ccece81c4), so the history behind it is aria-hidden.
+  const history = page.getByRole('region', { name: 'Service history', exact: true, includeHidden: true });
   const save = dialog.getByRole('button', { name: 'Save', exact: true });
   try {
     const alert = dialog.getByRole('alert');

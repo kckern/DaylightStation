@@ -50,7 +50,7 @@ export default function BodySection({ data }) {
   if (!data?.text) return null;
   const paragraphs = textToParagraphs(data.text);
   return (
-    <div style={{ fontSize: '0.9rem', color: '#c1c2c5', lineHeight: 1 }}>
+    <div style={{ fontSize: '0.9rem', color: 'var(--feed-text-2)', lineHeight: 1 }}>
       {paragraphs.map((p, i) => renderParagraph(p, i))}
     </div>
   );

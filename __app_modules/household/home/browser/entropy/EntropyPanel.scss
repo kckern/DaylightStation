@@ -18,7 +18,7 @@
     justify-content: center;
     border-radius: 8px;
     border: 2px solid transparent;
-    transition: all 0.2s ease;
+    transition: all var(--ds-motion-base) ease;
     cursor: default;
     min-height: 0; /* Allow shrinking */
     padding: 0.25rem;
@@ -28,18 +28,18 @@
     box-sizing: border-box;
 
     &.status-green {
-      border-color: #40916c;
-      background: rgba(64, 145, 108, 0.15);
+      border-color: #40916c; /* data-color */
+      background: rgba(64, 145, 108, 0.15); /* data-color */
     }
 
     &.status-yellow {
-      border-color: #f4d35e;
-      background: rgba(244, 211, 94, 0.15);
+      border-color: #f4d35e; /* data-color */
+      background: rgba(244, 211, 94, 0.15); /* data-color */
     }
 
     &.status-red {
-      border-color: #d90429;
-      background: rgba(217, 4, 41, 0.15);
+      border-color: #d90429; /* data-color */
+      background: rgba(217, 4, 41, 0.15); /* data-color */
     }
 
     .item-icon {
@@ -49,13 +49,13 @@
     }
 
     &.skeleton {
-      background: rgba(255, 255, 255, 0.05);
+      background: rgba(255, 255, 255, 0.05); /* data-color */
       border-color: transparent;
-      animation: entropy-pulse 1.5s infinite ease-in-out;
+      animation: ds-dim-pulse calc(var(--ds-motion-sweep) * 0.9375) infinite ease-in-out; // 1.5s
       pointer-events: none;
 
       .item-icon {
-        background: rgba(255, 255, 255, 0.1);
+        background: rgba(255, 255, 255, 0.1); /* data-color */
         border-radius: 4px;
         width: 2rem;
         height: 2rem;
@@ -63,7 +63,7 @@
       }
       
       .item-value {
-        background: rgba(255, 255, 255, 0.1);
+        background: rgba(255, 255, 255, 0.1); /* data-color */
         border-radius: 4px;
         width: 3rem;
         height: 1rem;
@@ -90,8 +90,3 @@
   }
 }
 
-@keyframes entropy-pulse {
-  0% { opacity: 0.6; }
-  50% { opacity: 0.3; }
-  100% { opacity: 0.6; }
-}

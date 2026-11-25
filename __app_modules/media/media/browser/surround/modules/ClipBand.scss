@@ -11,7 +11,7 @@
   height: 100%;
   padding: 0.7rem 1.4rem 0.5rem;
   box-sizing: border-box;
-  color: var(--ink, #f3ead6);
+  color: var(--ink, #f3ead6); // data-color: christmas palette fallback (the theme publishes the custom property)
   font-family: var(--surround-body, Georgia, serif);
   position: relative;
   z-index: 1; /* above the snow layer */
@@ -39,12 +39,12 @@
   width: var(--clip-cell);
   height: var(--clip-cell);
   border-radius: 1px;
-  background: #3d5a45;
+  background: #3d5a45; // data-color: christmas palette fallback (the theme publishes the custom property)
 }
 
 .clip-band__cell--now {
-  background: var(--brass-lit, #ecd28a);
-  box-shadow: 0 0 0 1px var(--brass, #c9a24a);
+  background: var(--brass-lit, #ecd28a); // data-color: christmas palette fallback (the theme publishes the custom property)
+  box-shadow: 0 0 0 1px var(--brass, #c9a24a); // data-color: christmas palette fallback (the theme publishes the custom property)
 }
 
 .clip-band__heading {
@@ -72,21 +72,21 @@
   gap: 0.8em;
   font-size: 0.9rem;
   font-variant-numeric: tabular-nums;
-  color: var(--ink-soft, #b9b29c);
+  color: var(--ink-soft, #b9b29c); // data-color: christmas palette fallback (the theme publishes the custom property)
 }
 
 .clip-band__bar {
   flex: 1;
   height: 3px;
   border-radius: 2px;
-  background: #35513d;
+  background: #35513d; // data-color: christmas palette fallback (the theme publishes the custom property)
   overflow: hidden;
   position: relative;
 }
 
 .clip-band__fill {
   height: 100%;
-  background: var(--brass, #c9a24a);
+  background: var(--brass, #c9a24a); // data-color: christmas palette fallback (the theme publishes the custom property)
 }
 
 /* UP NEXT. From the same concert: a label and the name, right-aligned. */
@@ -107,7 +107,7 @@
 }
 
 .clip-band__next-label {
-  color: var(--brass, #c9a24a);
+  color: var(--brass, #c9a24a); // data-color: christmas palette fallback (the theme publishes the custom property)
   font-size: 0.72rem;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -125,7 +125,7 @@
 .clip-band__next--elsewhere {
   text-align: left;
   padding-left: 1rem;
-  border-left: 1px solid var(--brass, #c9a24a);
+  border-left: 1px solid var(--brass, #c9a24a); // data-color: christmas palette fallback (the theme publishes the custom property)
 }
 
 .clip-band__next-poster {
@@ -133,12 +133,12 @@
   height: 4.4rem;
   aspect-ratio: 2 / 3;
   object-fit: cover;
-  border: 1px solid var(--brass, #c9a24a);
-  background: #0b2316;
+  border: 1px solid var(--brass, #c9a24a); // data-color: christmas palette fallback (the theme publishes the custom property)
+  background: #0b2316; // data-color: christmas palette fallback (the theme publishes the custom property)
 }
 
 .clip-band__next-work {
-  color: var(--brass-lit, #ecd28a);
+  color: var(--brass-lit, #ecd28a); // data-color: christmas palette fallback (the theme publishes the custom property)
   font-style: italic;
   font-size: 0.95rem;
   line-height: 1.2;

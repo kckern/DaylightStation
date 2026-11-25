@@ -141,9 +141,9 @@ export function isImageUrl(url) {
  */
 export function colorFromLabel(label) {
   const palette = [
-    '#228be6', '#be4bdb', '#f06595', '#ff6b6b',
-    '#fab005', '#82c91e', '#20c997', '#15aabf',
-    '#7950f2', '#e64980', '#fd7e14', '#51cf66',
+    '#228be6', '#be4bdb', '#f06595', '#ff6b6b', // data-color: source label palette
+    '#fab005', '#82c91e', '#20c997', '#15aabf', // data-color: source label palette
+    '#7950f2', '#e64980', '#fd7e14', '#51cf66', // data-color: source label palette
   ];
   if (!label) return palette[0];
   let hash = 0;

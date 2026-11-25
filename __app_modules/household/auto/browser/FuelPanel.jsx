@@ -9,7 +9,7 @@
 
 import { useState } from 'react';
 import { localDateKey } from '@/lib/calendarDay.js';
-import { LoadingState, ErrorState, EmptyState, useRetryRegion } from '@/lib/ui';
+import { Button, LoadingState, ErrorState, EmptyState, useRetryRegion } from '@/lib/ui';
 import { formatVolume, formatMoney, formatDistance, formatDay, litresToGallons } from "./format.js";
 import FuelSheet from "./FuelSheet.jsx";
 
@@ -27,9 +27,9 @@ export default function FuelPanel({ vehicleId, fuel, loading, busy, error, onRel
   const content = loading ? <LoadingState label="fill-ups" />
     : error ? <ErrorState error={error} onRetry={retry} label="Fill-ups" />
     : <div className="auto-panel">
-      <button type="button" className="auto-btn auto-btn--primary auto-btn--block" onClick={() => setSheet({})}>
+      <Button density="compact" className="auto-btn--block" onClick={() => setSheet({})}>
         Log a fill-up
-      </button>
+      </Button>
 
       {detected.length > 0 && (
         <section className="auto-card auto-card--attention">
@@ -50,9 +50,8 @@ export default function FuelPanel({ vehicleId, fuel, loading, busy, error, onRel
                     : 'Set tank_capacity_l in vehicles.yml for a volume estimate.'}
                   {!fill.filled_to_full && ' Gauge didn’t reach full, so this looks like a partial.'}
                 </p>
-                <button
-                  type="button"
-                  className="auto-btn auto-btn--primary"
+                <Button
+                  density="compact"
                   onClick={() => setSheet({
                     date: fill.date,
                     placeId: fill.place_id,
@@ -63,7 +62,7 @@ export default function FuelPanel({ vehicleId, fuel, loading, busy, error, onRel
                   })}
                 >
                   Log it
-                </button>
+                </Button>
               </li>
             ))}
           </ul>

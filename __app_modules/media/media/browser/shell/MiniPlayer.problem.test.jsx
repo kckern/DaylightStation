@@ -2,6 +2,7 @@
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
+import { MantineProvider } from '@mantine/core';
 
 // The handle's house menu (Mantine) is covered in house/HouseQuietControls.test.jsx.
 vi.mock("../house/HouseQuietControls.jsx", () => ({ HandleHouseMenu: () => null }));
@@ -28,7 +29,7 @@ describe('MiniPlayer problem sign', () => {
       const dispose = originalSubscribe(listener);
       return () => { dispose(); unsubscribe(); };
     });
-    const view = render(<LocalSessionContext.Provider value={{ controller }}><MiniPlayer /></LocalSessionContext.Provider>);
+    const view = render(<MantineProvider><LocalSessionContext.Provider value={{ controller }}><MiniPlayer /></LocalSessionContext.Provider></MantineProvider>);
     const name = 'Playback problem: waiting for the file of Arrival';
     expect(screen.queryByRole('img', { name })).toBeNull();
 
@@ -57,7 +58,7 @@ describe('MiniPlayer problem sign', () => {
       },
     });
     controller.setPlayerHandle({ play: vi.fn(), pause: vi.fn(), seek: vi.fn() });
-    render(<LocalSessionContext.Provider value={{ controller }}><MiniPlayer /></LocalSessionContext.Provider>);
+    render(<MantineProvider><LocalSessionContext.Provider value={{ controller }}><MiniPlayer /></LocalSessionContext.Provider></MantineProvider>);
     expect(screen.queryByTestId('mini-problem')).toBeNull();
     act(() => { controller.transport.play(); controller.onPlayerStalled({ stalledMs: 10000 }); });
     const sign = screen.getByTestId('mini-problem');

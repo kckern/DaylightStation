@@ -393,7 +393,7 @@ export function ArcadeSelector({
                 top: `${tile.y}px`,
                 width: `${tile.w}px`,
                 height: `${tile.h}px`,
-                backgroundColor: `hsl(${hue}, 40%, 20%)`,
+                backgroundColor: `hsl(${hue}, 40%, 20%)`, // data-color: per-title generated hue
               }}
             >
               <RetryImg
