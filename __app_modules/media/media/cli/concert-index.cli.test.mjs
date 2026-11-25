@@ -10,7 +10,7 @@ import { mkdtempSync, mkdirSync, existsSync, readFileSync, writeFileSync, rmSync
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseSrt, srtTime, parseChapters, chapterList, MUSIC_CLASSES, labelSeconds, runsFrom, refineChapter, classifyArgs, chapterEvidence, words, lyricOverlap, clipArgs, numberFlag, parseAt, runCliEntry } from './concert-index.cli.mjs';
+import { parseSrt, srtTime, parseChapters, chapterList, MUSIC_CLASSES, labelSeconds, runsFrom, refineChapter, EDGE_TRIM_S, classifyArgs, chapterEvidence, words, lyricOverlap, clipArgs, numberFlag, parseAt, runCliEntry } from './concert-index.cli.mjs';
 
 describe('parseSrt', () => {
   const SRT = '1\r\n00:01:03,160 --> 00:01:11,560\r\nTo buy the table\r\n\r\n'
@@ -152,6 +152,23 @@ describe('refineChapter', () => {
       gaps: [{ start: 300, end: 330 }],
       music: [100.5, 300],
     });
+  });
+  it('drops the tail of the previous piece that the chapter start cuts short', () => {
+    expect(EDGE_TRIM_S).toBe(10);
+    const runs = [run('music', 0, 100), run('gap', 100, 110), run('music', 110, 300)];
+    const r = refineChapter({ start: 97, end: 300 }, runs);
+    expect(r.music).toEqual([110, 300]);
+    expect(r.performances).toEqual([{ start: 110, end: 300, narrationShare: 0 }]);
+  });
+  it('drops the head of the next piece that the chapter end cuts short', () => {
+    const runs = [run('music', 0, 290), run('gap', 290, 298), run('narration', 298, 400)];
+    expect(refineChapter({ start: 0, end: 305 }, runs).music).toEqual([0, 290]);
+  });
+  it('keeps a run cut by the edge when at least EDGE_TRIM_S of it is inside, and never trims uncut runs', () => {
+    expect(refineChapter({ start: 98, end: 300 }, [run('music', 0, 110), run('gap', 110, 120), run('music', 120, 300)]).music)
+      .toEqual([98, 300]);
+    expect(refineChapter({ start: 0, end: 300 }, [run('gap', 0, 5), run('music', 5, 9), run('gap', 9, 40), run('music', 40, 300)]).music)
+      .toEqual([5, 300]);
   });
   it('gives a chapter with no music a null music span', () => {
     const r = refineChapter({ start: 0, end: 60 }, [run('speech', 0, 60)]);

@@ -159,6 +159,12 @@ export function runsFrom(labels, { minRunS = 4 } = {}) {
 }
 
 const isMusic = (r) => r.label === 'music' || r.label === 'narration';
+
+/**
+ * A music run cut by a chapter edge with less than this left inside is the
+ * neighbouring piece's tail or head, not this chapter's music.
+ */
+export const EDGE_TRIM_S = 10;
 const span = (r) => r.end - r.start;
 
 /**
@@ -166,7 +172,9 @@ const span = (r) => r.end - r.start;
  *
  * Runs are cut to [chapter.start, chapter.end); a piece of a run shorter than
  * `minClipS` left by the cut is dropped (chapter marks fall a fraction of a
- * second off the per-second grid). Returns:
+ * second off the per-second grid). A music or narration run that the cut
+ * leaves with less than `edgeTrimS` inside is dropped too: it belongs to the
+ * piece in the neighbouring chapter. Returns:
  *
  * - `performances`: maximal stretches of music/narration whose internal gaps
  *   are each shorter than `gapMergeS`. Speech ends a performance. Two or more
@@ -178,10 +186,16 @@ const span = (r) => r.end - r.start;
  * - `gaps`: gap runs of at least `gapMergeS`, usually applause.
  * - `music`: [first performance start, last performance end], or null.
  */
-export function refineChapter(chapter, runs, { gapMergeS = 15, minClipS = 2 } = {}) {
+export function refineChapter(chapter, runs, { gapMergeS = 15, minClipS = 2, edgeTrimS = EDGE_TRIM_S } = {}) {
   const clipped = runs
-    .map((r) => ({ label: r.label, start: Math.max(r.start, chapter.start), end: Math.min(r.end, chapter.end) }))
-    .filter((r) => span(r) >= minClipS);
+    .map((r) => ({
+      label: r.label,
+      start: Math.max(r.start, chapter.start),
+      end: Math.min(r.end, chapter.end),
+      cut: r.start < chapter.start || r.end > chapter.end,
+    }))
+    .filter((r) => span(r) >= minClipS && !(r.cut && isMusic(r) && span(r) < edgeTrimS))
+    .map(({ cut, ...r }) => r);
 
   const performances = [];
   let cur = null;
