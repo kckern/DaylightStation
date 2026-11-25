@@ -22,14 +22,19 @@ const defaultScheduleBlip = (offsetS, at = null) => {
   // metronome's epochToContextMap), so the blip is HEARD at that instant — not
   // the device's output latency later (~0.3 s on the piano tablet's speaker,
   // which put every Polish count a third of a second behind the grade, 2026-11-24).
-  const origin = globalThis.performance?.timeOrigin;
-  if (at && Number.isFinite(at.perfMs) && Number.isFinite(origin)) {
-    const t = epochToContextMap(ac).toContext(origin + at.perfMs - (Number(at.leadMs) || 0));
+  if (at && Number.isFinite(at.perfMs)) {
+    const t = epochToContextMap(ac).toContext(epochOfPerf(at.perfMs) - (Number(at.leadMs) || 0));
     scheduleBlipAt(ac, Math.max(ac.currentTime, t));
     return;
   }
   scheduleBlipAt(ac, ac.currentTime + Math.max(0, offsetS));
 };
+/**
+ * A performance.now() instant on the Date.now() clock the click mapping reads
+ * (epochToContextMap pairs against Date.now()), so the two clocks never mix.
+ */
+export const epochOfPerf = (perfMs) => Date.now() + (perfMs - performance.now());
+
 /**
  * How long after the press the count's first blip sounds: long enough that a
  * blip mapped onto the output clock is not already in the past (the output
@@ -86,6 +91,7 @@ export function useCountIn({ onGo, scheduleBlip = defaultScheduleBlip } = {}) {
     }, period); };
     if (delay > 0) delayRef.current = setTimeout(() => { delayRef.current = null; run(); }, delay);
     else run();
+    return { goPerf };
   }, [clear]);
 
   useEffect(() => () => clear(), [clear]);

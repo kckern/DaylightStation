@@ -71,7 +71,9 @@ export function createClickScheduler({
         const map = epochToContextMap(ac, { now, timeOrigin });
         const beat0 = map.toContext(options.anchorEpochMs - leadMs);
         // First beat not already in the past; n keeps counting from beat 0.
-        const skipped = Math.max(0, Math.ceil((ac.currentTime - beat0) / periodS - 1e-9));
+        // `notBeforeEpochMs`: no beat before that instant (a count-in sounds its own clicks up to it).
+        const floorCtx = Number.isFinite(options.notBeforeEpochMs) ? Math.max(ac.currentTime, map.toContext(options.notBeforeEpochMs - leadMs) - 1e-4) : ac.currentTime;
+        const skipped = Math.max(0, Math.ceil((floorCtx - beat0) / periodS - 1e-9));
         nextBeat = beat0 + skipped * periodS;
         if (beatsPerBar > 0) beatIndex = (beatIndex + skipped) % beatsPerBar;
         info = { anchored: true, mapping: map.mapping, skipped, leadMs, firstBeatContextTime: nextBeat };

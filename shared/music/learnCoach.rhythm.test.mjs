@@ -91,13 +91,30 @@ describe('a missed rhythm step slows down over the same bars, and a slower pass 
     const state = go(go(undefined, rhythm, tapMissing), rhythm, tapMissing);
     expect(resume(state)).toMatchObject({ rhythm: true, reason: 'slower-beat', tempoPercent: 85, range: rhythm.range, parts: rhythm.parts, depth: 1 });
   });
-  it('down the ladder to its slowest speed, then the bars shrink', () => {
+  it('down the ladder to its slowest speed, each one level below the step, then the bars shrink', () => {
     let state = go(go(undefined, rhythm, tapMissing), rhythm, tapMissing);
     for (const tempo of [70, 50]) {
       const drill = resume(state);
       state = go(go(state, drill, tapMissing), drill, tapMissing);
-      expect(resume(state)).toMatchObject({ rhythm: true, tempoPercent: tempo, range: rhythm.range });
+      expect(resume(state)).toMatchObject({ rhythm: true, tempoPercent: tempo, range: rhythm.range, depth: 1 });
     }
+    const slowest = resume(state);
+    state = go(go(state, slowest, tapMissing), slowest, tapMissing);
+    const bars = resume(state);
+    expect(bars).toMatchObject({ rhythm: true, tempoPercent: 50, depth: 2 });
+    expect(bars.range.end - bars.range.start).toBeLessThan(rhythm.range.end - rhythm.range.start);
+  });
+  it('a pass at 70% after misses at 100 and 85 clears the step and moves on, never back to the 85% drill', () => {
+    let state = go(go(undefined, rhythm, tapMissing), rhythm, tapMissing);
+    const at85 = resume(state);
+    state = go(go(state, at85, tapMissing), at85, tapMissing);
+    const at70 = resume(state);
+    expect(at70).toMatchObject({ tempoPercent: 70 });
+    state = go(go(state, at70, good), at70, good);
+    const after = projectCoach({ plan: plain, state, dayKey });
+    expect(after.segments.find((s) => s.id === 'a').skills.find((s) => s.skill === 'rhythm').ready).toBe(true);
+    expect(after.goldResume?.rhythm).not.toBe(true);
+    expect(after.gold.a).toMatchObject({ skill: 'timed-50-rh' });
   });
   it('two passes at the slower speed clear the rhythm step, and the lap moves on', () => {
     let state = go(go(undefined, rhythm, tapMissing), rhythm, tapMissing);

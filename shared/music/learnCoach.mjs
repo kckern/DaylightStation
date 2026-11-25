@@ -658,10 +658,15 @@ function recovery(plan, task, result) {
   // every miss is a rhythm miss, and a pass at the slower speed clears the rhythm step itself (`canProve`). Was:
   // a tap gone missing shrank it to one bar at score tempo, three levels down with nowhere left to go, and a
   // child sat 40 takes there (2026-11-24). Only at the slowest speed does it shrink to bars.
+  // Each slower speed REPLACES the one before under the same parent (85, then 70, then 50, all one level below the
+  // step), so a pass returns straight to the step it cleared, never up to a drill already failed, and the drill
+  // depth is left for the bars at the slowest speed.
   if (task.rhythm && tempoPercent > slower[0]) {
     const down = slower.filter((value) => value < tempoPercent).at(-1) ?? slower[0];
+    const sideways = task.reason === 'slower-beat' && task.parent && sameRange(task.range, task.parent.range) && sameParts(task.parts, task.parent.parts);
+    const parent = sideways ? task.parent : task;
     return makeCoachTask(plan, { ...task, tempoPercent: down, stepTempoPercent: null, required: null, assist: null, stallSeconds: null, legacyRequired: null, stepDown: null,
-      label: 'Try a little slower', parent: task, depth: (task.depth ?? 0) + 1, reason: 'slower-beat', mastery: false, completes: false });
+      label: 'Try a little slower', parent, depth: (parent.depth ?? 0) + 1, reason: 'slower-beat', mastery: false, completes: false });
   }
   if (timingOnly && !task.rhythm && tempoPercent <= slower[0] && !joinDrill) {
     return makeCoachTask(plan, { ...task, rhythm: true, required: null, assist: null, stallSeconds: null, legacyRequired: null,

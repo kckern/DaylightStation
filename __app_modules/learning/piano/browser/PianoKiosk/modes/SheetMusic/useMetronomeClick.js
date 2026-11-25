@@ -22,6 +22,7 @@ export function useMetronomeClick({
   firstBeatIndex,
   anchorMs,
   leadMs,
+  notBeforeMs,
   gain,
   createScheduler = createClickScheduler,
 }) {
@@ -36,6 +37,7 @@ export function useMetronomeClick({
     ? {
         anchorEpochMs: anchorMs,
         leadMs: lead,
+        ...(Number.isFinite(notBeforeMs) ? { notBeforeEpochMs: notBeforeMs } : {}),
         ...(Number.isFinite(beatsPerBar) ? { beatsPerBar } : {}),
         ...(Number.isFinite(firstBeatIndex) ? { firstBeatIndex } : {}),
       }
@@ -56,9 +58,11 @@ export function useMetronomeClick({
     if (startOptionsRef.current) s.start(bpmRef.current, startOptionsRef.current);
     else s.start(bpmRef.current);
     return () => { s.stop(); schedRef.current = null; };
-  }, [enabled, createScheduler, anchor, lead]);
+  // An anchored grid restarts on a tempo change: its beats are anchor + n·period, so
+  // the new period re-derives them from the anchor (setBpm would keep the old phase).
+  }, [enabled, createScheduler, anchor, lead, anchored ? bpm : null]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { if (bpm > 0) schedRef.current?.setBpm(bpm); }, [bpm]);
+  useEffect(() => { if (bpm > 0 && !anchored) schedRef.current?.setBpm(bpm); }, [bpm, anchored]);
   useEffect(() => { schedRef.current?.setGain?.(gain); }, [gain]);
 }
 

@@ -182,6 +182,17 @@ describe('createClickScheduler', () => {
       s.stop();
     });
 
+    it('notBeforeEpochMs: no beat before that instant, phase still from the anchor (Polish count-in)', () => {
+      const ac = { ...fakeCtx(), currentTime: 5 };
+      const beats = [];
+      const s = createClickScheduler({ getCtx: () => ac, scheduleBlip: (_a, t) => beats.push(+t.toFixed(3)), lookaheadS: 3, now: () => EPOCH });
+      // Anchor now, 120 bpm; the count-in owns the first 2 s, so the click starts at +2 s (beat 4).
+      const info = s.start(120, { anchorEpochMs: EPOCH, leadMs: 0, notBeforeEpochMs: EPOCH + 2000 });
+      expect(info.skipped).toBe(4);
+      expect(beats).toEqual([7, 7.5]);
+      s.stop();
+    });
+
     it('setBpm still retunes an anchored grid from the next beat', () => {
       const ac = { ...fakeCtx(), currentTime: 0 };
       const beats = [];

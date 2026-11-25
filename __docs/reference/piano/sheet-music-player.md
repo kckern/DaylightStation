@@ -237,7 +237,10 @@ than the piece would always slice a staff at its edge, so the score is shown as
   device's output latency later; the transport starts ON the count's planned last
   beat (`play({ atPerfMs })`), not when the count's timer fires; the metronome is
   anchored to the transport's position 0 with the same lead (`piano.click.anchored`
-  with `mode: polish`); and the run stays open `timingToleranceMs × 5` past its last
+  with `mode: polish`), planned when the count-in is, with no click before the run's
+  first beat (`notBeforeEpochMs`), so that beat is clicked too; a seek or a
+  rebuild-resume re-derives the grid from the transport, and a tempo change restarts
+  it from the anchor; and the run stays open `timingToleranceMs × 5` past its last
   note (`tailMs`) so the last bar can still be played a little late. Before
   2026-11-25 the Polish click free-ran from whenever React started it and was never
   latency-compensated: about 0.3 s behind the grade on the piano tablet's speaker.
@@ -1151,7 +1154,8 @@ carries `reason: 'missed-cue'` on `piano.exercise-countdown-started`. The `maxCu
 the rhythm alone (`skill: rhythm`, `rhythm: true`, cued, at score tempo, `RHYTHM_TEMPO` 100): tapping is easier
 than playing and the rhythm reads truest at score tempo. Two misses of ANY kind (pitch-free, a tap gone missing is a
 rhythm miss too) step it down through the slower-beat recovery (85, 70, 50… the plan's speeds) over the SAME bars and
-hands; only at the lowest speed do the bars shrink. Two passes at a slower speed clear the rhythm step itself (it is
+hands, each speed one level below the step itself (side by side, never nested), so a pass returns to the step it
+cleared and the drill depth is left for the bars, which shrink only at the lowest speed. Two passes at a slower speed clear the rhythm step itself (it is
 a warm-up: `canProve` accepts a rhythm pass at any tempo), so the lap moves on to the timed steps. Until 2026-11-25 a
 missed tap shrank it to one bar at score tempo and a slower pass climbed back up, which kept a child 40 takes on one
 passage. Rhythm takes are judged with Learn's wider full-credit share (0.6, `learnPracticeRequirement(…, { rhythm })`)
