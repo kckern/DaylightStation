@@ -38,8 +38,8 @@ test('Health focuses the custom food name and returns to the barcode launcher', 
   await page.route('**/api/v1/health/day?**', route => route.fulfill({
     json: { items: [], budget: { budget: 2000, remaining: 2000 } },
   }));
-  await page.route('**/api/v1/health/nutrition/input', route => route.fulfill({
-    json: { unknownUpc: true, upc: '012345678905' },
+  await page.route('**/api/v1/health/nutrition/barcode-lookup?**', route => route.fulfill({
+    json: { upc: '012345678905', product: null },
   }));
 
   await page.goto('/health');
@@ -48,6 +48,8 @@ test('Health focuses the custom food name and returns to the barcode launcher', 
   const scanner = page.getByRole('dialog', { name: 'Scan barcode' });
   await scanner.getByRole('textbox', { name: 'Manual UPC entry' }).fill('012345678905');
   await scanner.getByRole('button', { name: 'Look up' }).press('Enter');
+  // An unknown barcode now waits for the owner (5f5cdf5f24; lookup is GET nutrition/barcode-lookup).
+  await scanner.getByRole('button', { name: 'Enter food details' }).click();
 
   const form = page.getByRole('dialog', { name: 'New food' });
   const name = form.getByRole('textbox', { name: 'Name', exact: true });
@@ -68,8 +70,8 @@ test('Health keeps an unknown-food form and its admitted save while Today is hid
   await page.route('**/api/v1/health/day?**', route => route.fulfill({
     json: { items: [], budget: { budget: 2000, remaining: 2000 } },
   }));
-  await page.route('**/api/v1/health/nutrition/input', route => route.fulfill({
-    json: { unknownUpc: true, upc: '012345678905' },
+  await page.route('**/api/v1/health/nutrition/barcode-lookup?**', route => route.fulfill({
+    json: { upc: '012345678905', product: null },
   }));
   await page.route('**/api/v1/health/nutrition/catalog', async route => {
     catalogPosts.push(route.request().postDataJSON());
@@ -91,6 +93,8 @@ test('Health keeps an unknown-food form and its admitted save while Today is hid
   const scanner = page.getByRole('dialog', { name: 'Scan barcode' });
   await scanner.getByRole('textbox', { name: 'Manual UPC entry' }).fill('012345678905');
   await scanner.getByRole('button', { name: 'Look up' }).press('Enter');
+  // An unknown barcode now waits for the owner (5f5cdf5f24; lookup is GET nutrition/barcode-lookup).
+  await scanner.getByRole('button', { name: 'Enter food details' }).click();
 
   const form = page.getByRole('dialog', { name: 'New food' });
   const name = form.getByRole('textbox', { name: 'Name', exact: true });
@@ -122,8 +126,8 @@ test('Health does not continue an unknown-food create after its Health session e
   await page.route('**/api/v1/health/day?**', route => route.fulfill({
     json: { items: [], budget: { budget: 2000, remaining: 2000 } },
   }));
-  await page.route('**/api/v1/health/nutrition/input', route => route.fulfill({
-    json: { unknownUpc: true, upc: '012345678905' },
+  await page.route('**/api/v1/health/nutrition/barcode-lookup?**', route => route.fulfill({
+    json: { upc: '012345678905', product: null },
   }));
   await page.route('**/api/v1/health/nutrition/catalog', async route => {
     started.resolve();
@@ -139,6 +143,8 @@ test('Health does not continue an unknown-food create after its Health session e
   const scanner = page.getByRole('dialog', { name: 'Scan barcode' });
   await scanner.getByRole('textbox', { name: 'Manual UPC entry' }).fill('012345678905');
   await scanner.getByRole('button', { name: 'Look up' }).press('Enter');
+  // An unknown barcode now waits for the owner (5f5cdf5f24; lookup is GET nutrition/barcode-lookup).
+  await scanner.getByRole('button', { name: 'Enter food details' }).click();
   const form = page.getByRole('dialog', { name: 'New food' });
   await form.getByRole('textbox', { name: 'Name', exact: true }).fill('Trail mix');
   await form.getByLabel('Weight in grams', { exact: true }).fill('100');
@@ -294,7 +300,7 @@ for (const width of [390, 1440]) {
 
       await page.goto('/home');
       await page.getByRole('button', { name: view, exact: true }).click();
-      const kitchen = page.getByRole('button', { name: /^Kitchen(?: 1 on)?$/ });
+      const kitchen = page.getByRole('button', { name: /^Kitchen(?: 1 light on)?$/ });
       if (view === 'Rooms') await kitchen.press('Enter');
       const device = state => page.getByRole('button', {
         name: `Kitchen light${view === 'Rooms' ? ',' : ':'} ${state}`, exact: true,
@@ -364,7 +370,7 @@ test.describe('Home room detail on a coarse pointer', () => {
     });
     await page.goto('/home');
     await page.getByRole('button', { name: 'Rooms', exact: true }).tap();
-    await page.getByRole('button', { name: 'Kitchen 1 on', exact: true }).tap();
+    await page.getByRole('button', { name: 'Kitchen 1 light on', exact: true }).tap();
     const row = page.getByRole('main').locator('[data-entity-id="light.kitchen"]');
     const opener = row.getByRole('button', { name: 'Kitchen light, On', exact: true });
     const dialog = page.getByRole('dialog', { name: 'Kitchen light', exact: true });
@@ -404,7 +410,7 @@ for (const fromDetail of [false, true]) {
     });
     await page.goto('/home');
     await page.getByRole('button', { name: 'Rooms', exact: true }).click();
-    await page.getByRole('button', { name: 'Kitchen 1 on', exact: true }).click();
+    await page.getByRole('button', { name: 'Kitchen 1 light on', exact: true }).click();
     const opener = page.getByRole('button', { name: 'Kitchen light, On', exact: true });
     const dialog = page.getByRole('dialog', { name: 'Kitchen light', exact: true });
     if (fromDetail) await opener.press('Enter');
@@ -1053,7 +1059,7 @@ test.describe('Home phone history choices', () => {
     });
     await page.goto('/home');
     await page.getByRole('button', { name: 'Rooms', exact: true }).tap();
-    await page.getByRole('button', { name: 'Kitchen 1 on', exact: true }).tap();
+    await page.getByRole('button', { name: 'Kitchen 1 light on', exact: true }).tap();
     const opener = page.getByRole('button', { name: 'Kitchen light, On', exact: true });
     await opener.press('Enter');
     const detail = page.getByRole('dialog', { name: 'Kitchen light' });
@@ -1108,7 +1114,7 @@ test('Home keeps the rendered history chart during a failed refresh and retries 
   });
   await page.goto('/home');
   await page.getByRole('button', { name: 'Rooms', exact: true }).click();
-  await page.getByRole('button', { name: 'Kitchen 1 on', exact: true }).click();
+  await page.getByRole('button', { name: 'Kitchen 1 light on', exact: true }).click();
   await page.getByRole('button', { name: 'Kitchen light, On', exact: true }).click();
   const history = page.getByRole('dialog', { name: 'Kitchen light' }).getByRole('region', { name: 'History' });
   const rangeLabel = history.getByRole('radiogroup', { name: 'History range' }).locator('label').first();

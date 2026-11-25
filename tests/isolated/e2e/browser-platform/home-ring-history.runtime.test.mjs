@@ -49,7 +49,7 @@ test('Home retires old doorbell clip reads and keeps the accessible recordings i
   await page.goto('/home');
   await page.getByRole('button', { name: 'Rooms', exact: true }).click();
   await page.getByRole('button', { name: 'Porch', exact: true }).click();
-  await page.getByRole('button', { name: 'Show all 1 readings and switches' }).click();
+  await page.getByRole('button', { name: 'Readings and switches (1)' }).click();
   await page.getByRole('button', { name: 'Porch doorbell, Off' }).click();
   const sheet = page.getByRole('dialog', { name: 'Porch doorbell' });
   const rings = sheet.getByRole('region', { name: 'Rings' });

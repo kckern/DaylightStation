@@ -2,10 +2,12 @@ import { expect, test } from '@playwright/test';
 
 test.use({ serviceWorkers: 'block', timezoneId: 'UTC', viewport: { width: 390, height: 850 } });
 
+// 82e8618433: a period view's title is 'Week', 'Month', ... and gains ' · <date range>' only when
+// the read carries dates; these fixtures carry none.
 const logDate = '2026-11-22';
 const logRetryCases = [
   ...['Week', 'Month', 'Season', 'Year', 'Decade'].map(scope => ({
-    label: scope, scope, title: scope === 'Decade' ? scope : `This ${scope}`, route: '/life/log',
+    label: scope, scope, title: scope, route: '/life/log',
     request: `scope/${scope.toLowerCase()}`,
   })),
   { label: 'direct day', title: 'Nov 22, 2026', route: `/life/log/${logDate}`, request: logDate },
@@ -113,8 +115,8 @@ test('Life Log applies selected categories across day and period views without r
 
   for (const scope of ['Month', 'Season', 'Year', 'Decade']) {
     await chip(scope).click();
-    await expect(main.getByRole('heading', { name: scope === 'Decade' ? scope : `This ${scope}`, exact: true })).toBeVisible();
-    await expect(main.getByText('1 sources', { exact: true })).toBeVisible();
+    await expect(main.getByRole('heading', { name: scope, exact: true })).toBeVisible();
+    await expect(main.getByText('1 source', { exact: true })).toBeVisible();
   }
   expect(reads).toEqual(['week', 'month', 'season', 'year', 'decade'].map(scope => `${base}/scope/${scope}`));
 
@@ -187,7 +189,7 @@ test('Life Log restores a history visit after its period loads and isolates the 
   const month = main.getByRole('radio', { name: 'Month' });
   const week = main.getByRole('radio', { name: 'Week' });
   const health = main.getByRole('checkbox', { name: 'Health' });
-  const monthHeading = main.getByRole('heading', { name: 'This Month', exact: true });
+  const monthHeading = main.getByRole('heading', { name: 'Month', exact: true });
   const lastWeek = main.getByText(/^Week of /).last();
   await main.locator('label').filter({ hasText: /^Month$/ }).click();
   await main.locator('label').filter({ hasText: /^Health$/ }).click();

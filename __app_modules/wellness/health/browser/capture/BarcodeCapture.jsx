@@ -221,17 +221,22 @@ function BarcodeSession({ onClose, onDecode, onConfirm, onDone, onView, onUnknow
     if (live.current) setLast(current => current && (success ? { ...current, busy: false, undone: true } : { ...current, busy: false }));
   };
 
+  // The in-app scanner is a full-screen stage while it waits for a barcode (reference/health/README.md,
+  // 8af94c15de): the camera fills the screen and the controls ride along the bottom, inside the safe
+  // area. da70dff5e3 rebuilt this sheet and dropped the stage, leaving the camera in a 4:3 box.
+  const stage = ['scanning', 'paused', 'lookup-error'].includes(phase);
+  const edgeToEdge = quickScan || stage;
   const camera = phase === 'scanning' && cameraState !== 'denied' && (
     <div onPointerDown={unlockSound} style={{
-      position: quickScan ? 'absolute' : 'relative', inset: quickScan ? 0 : undefined,
-      overflow: 'hidden', borderRadius: quickScan ? 0 : 14, background: '#12211b',
-      aspectRatio: quickScan ? undefined : '4 / 3',
+      position: edgeToEdge ? 'absolute' : 'relative', inset: edgeToEdge ? 0 : undefined,
+      overflow: 'hidden', borderRadius: edgeToEdge ? 0 : 14, background: '#12211b',
+      aspectRatio: edgeToEdge ? undefined : '4 / 3',
     }}>
       <video ref={videoRef} muted playsInline autoPlay
         style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', maxHeight: 'none',
           display: 'block', objectFit: 'cover', objectPosition: 'center' }} />
       <div aria-hidden="true" style={{ position: 'absolute', left: '8%', right: '8%', top: '50%',
-        transform: 'translateY(-50%)', height: quickScan ? 'min(22vw, 22dvh)' : '30%',
+        transform: 'translateY(-50%)', height: edgeToEdge ? 'min(22vw, 22dvh)' : '30%',
         border: '2px solid white', borderRadius: 10, boxShadow: '0 0 0 100vmax #0006',
         pointerEvents: 'none' }} />
       <div aria-hidden="true" style={{ position: 'absolute', top: '50%', left: '8%',
@@ -312,10 +317,9 @@ function BarcodeSession({ onClose, onDecode, onConfirm, onDone, onView, onUnknow
     );
   }
 
-  return (
-    <Sheet open onClose={close} title="Scan barcode">
+  const body = (
+    <>
       {error && <Text role="alert" c="red" size="sm">{error}</Text>}
-      {camera}
       {phase === 'scanning' && cameraState === 'denied' && (
         <Text size="sm" c="dimmed">Camera unavailable — enter the barcode number instead.</Text>
       )}
@@ -353,6 +357,16 @@ function BarcodeSession({ onClose, onDecode, onConfirm, onDone, onView, onUnknow
           <Button onClick={onDone}>Done</Button>
         </>}
       </Group>
+    </>
+  );
+  return (
+    <Sheet open onClose={close} title="Scan barcode" placement={stage ? 'fullscreen' : undefined}>
+      {stage ? (
+        <div className="health-barcode">
+          {camera}
+          <div className="health-barcode__bottom">{body}</div>
+        </div>
+      ) : <>{camera}{body}</>}
     </Sheet>
   );
 }

@@ -104,5 +104,10 @@ test('Home keeps the timeline available during independent foreground rereads', 
   await expect(timelineRegion).not.toHaveAttribute('aria-busy', 'true');
   await expect(accepted).toBeVisible();
   await expect(week).toBeFocused();
-  await expect(page.getByRole('button', { name: 'Retry', exact: true })).toHaveCount(0);
+  // d9ae9c212f and f816ff9c91 (after this spec was written) say so when a refresh fails
+  // over retained data: each read names its failure and offers its own Retry, and the
+  // accepted lanes and the focused control stay in place.
+  await expect(page.getByText('Home Assistant could not refresh', { exact: true })).toBeVisible();
+  await expect(timelineRegion.getByText('Timeline could not refresh', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Retry', exact: true })).toHaveCount(2);
 });
