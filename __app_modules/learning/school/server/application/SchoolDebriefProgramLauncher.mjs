@@ -6,9 +6,9 @@
  */
 import { resolveLive } from "./LiveHouseholdCalendar.mjs";
 import { studyDayForInstant } from "../domain/studyDay.mjs";
-import { scheduleVerdict } from "../domain/schoolCalendar.mjs";
+import { programAskedOn } from "../domain/dayOffPolicy.mjs";
 import {
-  SCHOOL_DEBRIEF_PROGRAM_ID, SCHOOL_DEBRIEF_UNIT_ID, SCHOOL_DEBRIEF_TITLE, deriveDebriefState, previousStudyDay,
+  SCHOOL_DEBRIEF_PROGRAM_ID, SCHOOL_DEBRIEF_DEFAULT_SUBJECT, SCHOOL_DEBRIEF_UNIT_ID, SCHOOL_DEBRIEF_TITLE, deriveDebriefState, previousStudyDay,
 } from "../domain/schoolDebrief.mjs";
 
 const nextDay = (day) => { const d = new Date(`${day}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + 1); return d.toISOString().slice(0, 10); };
@@ -17,12 +17,12 @@ const HISTORY_OWED_DAYS = 14;
 const HISTORY_LOOKBACK_LIMIT = 70; // calendar days searched for the default 14 owed days
 
 export class SchoolDebriefProgramLauncher {
-  #debriefs; #assignments; #grants; #householdSchedule; #timezone; #clock; #logger; #donow;
-  constructor({ debriefs, assignments, grants = null, householdSchedule = null, timezone = null, clock = () => new Date(), logger = console, donow = null } = {}) {
+  #debriefs; #assignments; #grants; #householdSchedule; #dayOffPolicy; #timezone; #clock; #logger; #donow;
+  constructor({ debriefs, assignments, grants = null, householdSchedule = null, dayOffPolicy = null, timezone = null, clock = () => new Date(), logger = console, donow = null } = {}) {
     if (!debriefs) throw new Error('SchoolDebriefProgramLauncher requires a debriefs store');
     if (!assignments) throw new Error('SchoolDebriefProgramLauncher requires an assignments store');
     this.#debriefs = debriefs; this.#assignments = assignments; this.#grants = grants;
-    this.#householdSchedule = resolveLive(householdSchedule); this.#timezone = timezone; this.#clock = clock; this.#logger = logger; this.#donow = donow;
+    this.#householdSchedule = resolveLive(householdSchedule); this.#dayOffPolicy = resolveLive(dayOffPolicy); this.#timezone = timezone; this.#clock = clock; this.#logger = logger; this.#donow = donow;
   }
   get id() { return SCHOOL_DEBRIEF_PROGRAM_ID; }
   get locationHint() { return 'on the school screen'; }
@@ -86,11 +86,15 @@ export class SchoolDebriefProgramLauncher {
     if (!assignment) return null;
     return (assignment.programs ?? []).find((p) => p?.programId === SCHOOL_DEBRIEF_PROGRAM_ID) ?? false;
   }
+  // The agenda's own rule (programAskedOn): the enrollment's schedule, Sunday
+  // rest, then the day-off keep-list on a keeping tier. The default keep-lists
+  // do not keep the debrief, so every day off still excuses it.
   #owed(day, enrollment) {
-    if (!scheduleVerdict(day, enrollment.schedule ?? null).schoolDay) return false;
-    const household = this.#householdSchedule();
-    if (household && !scheduleVerdict(day, household).schoolDay) return false;
-    return true;
+    return programAskedOn(day, {
+      enrollment: { ...enrollment, programId: SCHOOL_DEBRIEF_PROGRAM_ID, subject: enrollment.subject ?? SCHOOL_DEBRIEF_DEFAULT_SUBJECT },
+      householdSchedule: this.#householdSchedule(),
+      dayOffPolicy: this.#dayOffPolicy() ?? undefined,
+    });
   }
   async #state(userId, day) {
     const { status, events } = await this.#debriefs.read(userId, day);

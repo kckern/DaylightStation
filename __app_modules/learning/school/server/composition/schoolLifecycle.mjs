@@ -805,7 +805,7 @@ export async function createSchoolLifecycle({
 
   const debriefLauncher = new SchoolDebriefProgramLauncher({
     debriefs: stores.debriefs, assignments: stores.assignments, grants: debriefGrants,
-    householdSchedule: liveCalendar.schedule, timezone, clock, logger, donow,
+    householdSchedule: liveCalendar.schedule, dayOffPolicy: liveCalendar.policy, timezone, clock, logger, donow,
   });
   launchers.set(SCHOOL_DEBRIEF_PROGRAM_ID, debriefLauncher);
   const gratitudeLauncher = new GratitudeProgramLauncher({store:stores.gratitudes,assignments:stores.assignments,grants:gratitudeGrants,timezone,clock,logger,donow});
