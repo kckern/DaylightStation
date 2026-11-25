@@ -1,85 +1,102 @@
-// Legacy aliases used by Admin editors and their portaled controls.
+// Admin-only aliases. Everything Admin shares with the other apps is read
+// straight from the shared --ds-* roles (frontend/src/lib/theme/tokens.mjs):
+//   text-high/mid/low, background, surface, surface-alt, border, space-sm/lg,
+//   accent, success/warning/danger/info. What is left here has no shared role
+//   and is derived from one, so a pack change still reaches it.
 .admin-theme {
-  // Background layers (darkest → lightest)
+  --admin-bg-overlay:       color-mix(in srgb, var(--ds-surface-alt) 96%, white);
+
+  // Accent tints and hover
+  --admin-accent-glow:      color-mix(in srgb, var(--ds-accent) 15%, transparent);
+  --admin-accent-hover:     color-mix(in srgb, var(--ds-accent) 88%, white);
+  --admin-accent-subtle:    color-mix(in srgb, var(--ds-accent) 8%, transparent);
+
+  // Typography
+  --admin-font-body:  var(--mantine-font-family);
+
+  // Spacing (4px grid; sm/lg come from the shared roles)
+  --admin-space-1:  4px;
+  --admin-space-8:  32px;
+
+  // Transitions
+  --admin-transition-fast: var(--ds-motion-fast) ease;
+  --admin-transition-base: var(--ds-motion-base) ease;
+
+  // Radii
+  --admin-radius-sm: 4px;
+  --admin-radius-md: 6px;
+  --admin-radius-lg: 8px;
+
+  // Shadows
+  --admin-shadow-card:     0 1px 3px color-mix(in srgb, black 30%, transparent), 0 1px 2px color-mix(in srgb, black 20%, transparent);
+  --admin-shadow-elevated: 0 4px 16px color-mix(in srgb, black 40%, transparent), 0 2px 4px color-mix(in srgb, black 30%, transparent);
+  --admin-shadow-glow:     0 0 20px var(--admin-accent-glow);
+  --admin-shadow-inset:    inset 2px 0 12px color-mix(in srgb, black 25%, transparent), inset 0 2px 8px color-mix(in srgb, black 15%, transparent);
+
+  // Scrollbar
+  --admin-scrollbar-thumb:       var(--ds-border);
+  --admin-scrollbar-thumb-hover: color-mix(in srgb, var(--ds-border) 92%, white);
+  --admin-scrollbar-track:       transparent;
+  --admin-scrollbar-width:       6px;
+
+  // Content widths
+  --admin-content-max:  1200px;
+  --admin-form-max:     720px;
+
+  // Z-index layers
+  --admin-z-sticky:   10;
+}
+
+// Legacy names for consumers OUTSIDE modules/Admin that render inside the
+// admin theme (piano and fitness admin pages, content-catalog combobox and
+// lists, party-games schedule editor). Do not use these in modules/Admin;
+// the audit flags them as undefined tokens. Delete a line when its last
+// outside consumer moves to the shared roles.
+.admin-theme {
   --ds-bg-base:       var(--ds-background);
   --ds-bg-surface:    var(--ds-surface);
   --ds-bg-elevated:   var(--ds-surface-alt);
-  --ds-bg-overlay:    #222636;
-
-  // Text
+  --ds-bg-overlay:    var(--admin-bg-overlay);
   --ds-text-primary:   var(--ds-text-high);
   --ds-text-secondary: var(--ds-text-mid);
   --ds-text-muted:     var(--ds-text-low);
-
-  // Accent
-  --ds-accent-glow:    rgba(74, 123, 247, 0.15);
-  --ds-accent-hover:   #5D8AFF;
-  --ds-accent-subtle:  rgba(74, 123, 247, 0.08);
-
-  // Semantic
-
-  // Typography
-  --ds-font-body:  var(--ds-font-family);
-
-  // Spacing (4px grid)
-  --ds-space-1:  4px;
+  --ds-accent-glow:    var(--admin-accent-glow);
+  --ds-accent-hover:   var(--admin-accent-hover);
+  --ds-space-1:  var(--admin-space-1);
   --ds-space-2:  var(--ds-space-sm);
   --ds-space-4:  var(--ds-space-lg);
-  --ds-space-8:  32px;
-
-  // Transitions
-  --ds-transition-fast: 100ms ease;
-  --ds-transition-base: 150ms ease;
-
-  // Radii
-  --ds-radius-sm: 4px;
-  --ds-radius-md: 6px;
-  --ds-radius-lg: 8px;
-
-  // Shadows
-  --ds-shadow-card:     0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
-  --ds-shadow-elevated: 0 4px 16px rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.3);
-  --ds-shadow-glow:     0 0 20px var(--ds-accent-glow);
-  --ds-shadow-inset:    inset 2px 0 12px rgba(0, 0, 0, 0.25), inset 0 2px 8px rgba(0, 0, 0, 0.15);
-
-  // Scrollbar
-  --ds-scrollbar-thumb:       #2A2E3D;
-  --ds-scrollbar-thumb-hover: #3A3F52;
-  --ds-scrollbar-track:       transparent;
-  --ds-scrollbar-width:       6px;
-
-  // Content widths
-  --ds-content-max:  1200px;
-  --ds-form-max:     720px;
-
-  // Z-index layers
-  --ds-z-sticky:   10;
+  --ds-transition-fast: var(--admin-transition-fast);
+  --ds-transition-base: var(--admin-transition-base);
+  --ds-radius-sm: var(--admin-radius-sm);
+  --ds-radius-lg: var(--admin-radius-lg);
+  --ds-shadow-elevated: var(--admin-shadow-elevated);
+  --ds-shadow-glow:     var(--admin-shadow-glow);
 }
 
 // Reduced motion support
 @media (prefers-reduced-motion: reduce) {
   .admin-theme {
-    --ds-transition-fast: 0ms;
-    --ds-transition-base: 0ms;
+    --admin-transition-fast: 0ms;
+    --admin-transition-base: 0ms;
   }
 }
 
 // ── Scrollbar mixin ──
 @mixin ds-scrollbar {
   scrollbar-width: thin;
-  scrollbar-color: var(--ds-scrollbar-thumb) var(--ds-scrollbar-track);
+  scrollbar-color: var(--admin-scrollbar-thumb) var(--admin-scrollbar-track);
 
   &::-webkit-scrollbar {
-    width: var(--ds-scrollbar-width);
+    width: var(--admin-scrollbar-width);
   }
   &::-webkit-scrollbar-track {
-    background: var(--ds-scrollbar-track);
+    background: var(--admin-scrollbar-track);
   }
   &::-webkit-scrollbar-thumb {
-    background-color: var(--ds-scrollbar-thumb);
+    background-color: var(--admin-scrollbar-thumb);
     border-radius: 3px;
     &:hover {
-      background-color: var(--ds-scrollbar-thumb-hover);
+      background-color: var(--admin-scrollbar-thumb-hover);
     }
   }
 }

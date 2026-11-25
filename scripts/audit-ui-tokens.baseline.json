@@ -4,7 +4,7 @@
     "raw-motion": 0,
     "raw-keydown": 0,
     "native-control": 0,
-    "undefined-token": 3
+    "undefined-token": 0
   },
   "frontend/src/lib/ui": {
     "raw-color": 0,
@@ -18,7 +18,7 @@
     "raw-motion": 5,
     "raw-keydown": 3,
     "native-control": 6,
-    "undefined-token": 175
+    "undefined-token": 0
   },
   "__app_modules/household/home/browser": {
     "raw-color": 0,
