@@ -16,6 +16,7 @@ import { KomgaAdapter } from "../adapters/providers/readable/komga/KomgaAdapter.
 import { QueryAdapter } from "../adapters/providers/query/QueryAdapter.mjs";
 import { SavedQueryService } from "../application/SavedQueryService.mjs";
 import { YamlSavedQueryDatastore } from "../adapters/persistence/YamlSavedQueryDatastore.mjs";
+import { YamlSurroundSegmentReader } from "../adapters/persistence/YamlSurroundSegmentReader.mjs";
 import mediaManifest from "#adapters/content/media/files/manifest.mjs";
 import plexManifest from "../adapters/providers/plex/manifest.mjs";
 import libbyManifest from "#adapters/content/media/libby/manifest.mjs";
@@ -134,8 +135,16 @@ export function createCatalogSources(config, deps = {}, { curriculumEnrichment }
       deleteQuery: savedQueryDatastore.deleteQuery.bind(savedQueryDatastore),
     });
     const fileAdapter = registry.get('files');
+    // surround-segments queries read the same two trees playback's surround
+    // store does, through their own reader: content-catalog may not import
+    // the playback capability.
+    const surroundSegments = new YamlSurroundSegmentReader({
+      rootDir: path.join(listDataPath, 'content', 'surround'),
+      libraryDir: path.join(listDataPath, 'content', 'library'),
+      logger: deps.logger?.child?.({ app: 'surround', module: 'surround-segments' }) || deps.logger || null,
+    });
     registry.register(
-      new QueryAdapter({ savedQueryService, fileAdapter, mediaProgressMemory, registry }),
+      new QueryAdapter({ savedQueryService, fileAdapter, mediaProgressMemory, registry, surroundSegments }),
       { category: queryManifest.capability, provider: queryManifest.provider }
     );
   }

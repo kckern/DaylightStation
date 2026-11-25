@@ -4,6 +4,7 @@ import path from 'path';
 import { fileExists } from '#system/utils/FileIO.mjs';
 import { ItemSelectionService } from "../../../domain/services/ItemSelectionService.mjs";
 import { PlayableItem } from "../../../items.mjs";
+import { segmentItems } from "../../../domain/services/surroundSegments.mjs";
 
 /** Percentage threshold above which a video is considered "watched". */
 const WATCHED_THRESHOLD = 90;
@@ -22,6 +23,8 @@ export class QueryAdapter {
   #fileAdapter;
   #mediaProgressMemory;
   #registry;
+  #surroundSegments;
+  #random;
 
   /**
    * @param {Object} deps
@@ -29,12 +32,17 @@ export class QueryAdapter {
    * @param {Object} [deps.fileAdapter] - FileAdapter for freshvideo queries
    * @param {Object} [deps.mediaProgressMemory] - Progress memory for watch state
    * @param {Object} [deps.registry] - ContentSourceRegistry for adapter lookup
+   * @param {{ read: (works: string) => Array }} [deps.surroundSegments] - Timed
+   *   segment reader for surround-segments queries (YamlSurroundSegmentReader)
+   * @param {() => number} [deps.random] - Uniform [0, 1) for query-owned shuffles
    */
-  constructor({ savedQueryService, fileAdapter, mediaProgressMemory, registry } = {}) {
+  constructor({ savedQueryService, fileAdapter, mediaProgressMemory, registry, surroundSegments, random } = {}) {
     this.#savedQueryService = savedQueryService;
     this.#fileAdapter = fileAdapter || null;
     this.#mediaProgressMemory = mediaProgressMemory || null;
     this.#registry = registry || null;
+    this.#surroundSegments = surroundSegments || null;
+    this.#random = typeof random === 'function' ? random : Math.random;
   }
 
   get source() { return 'query'; }
@@ -213,7 +221,7 @@ export class QueryAdapter {
 
   /**
    * Resolve a single content entry from the items array.
-   * Dispatches by source type (freshvideo, immich).
+   * Dispatches by source type (freshvideo, immich, surround-segments).
    * @param {Object} entry - Content entry with source, params, etc.
    * @returns {Promise<Array>}
    */
@@ -227,6 +235,10 @@ export class QueryAdapter {
 
     if (src === 'immich') {
       return this.#resolveImmichQuery(entry);
+    }
+
+    if (src === 'surround-segments') {
+      return this.#resolveSurroundSegments(entry);
     }
 
     console.warn(`[QueryAdapter] Unknown content source: ${src}`);
@@ -321,6 +333,54 @@ export class QueryAdapter {
     }
 
     return selected;
+  }
+
+  /**
+   * Resolve a surround-segments query: one clip per timed segment of the
+   * sidecars in `params.works`, filtered and shuffled by segmentItems, each
+   * played from the recording it was cut from with only its own window.
+   *
+   * The recording's own item supplies the transport (mediaUrl, mediaType,
+   * thumbnail); the clip supplies identity (`<contentId>#<n>`), title and
+   * window. `contentId` names the recording, so playback can find its
+   * surround. A clip never resumes: the recording's saved position belongs to
+   * the whole concert, not to any one piece of it.
+   *
+   * @param {Object} entry - Normalized query entry with params
+   * @returns {Promise<Array>}
+   */
+  async #resolveSurroundSegments(entry) {
+    if (!this.#surroundSegments) {
+      console.warn('[QueryAdapter] Surround segment reader not available for surround-segments query');
+      return [];
+    }
+    const params = entry.params || {};
+    const sidecars = this.#surroundSegments.read(params.works);
+    const clips = segmentItems({ sidecars, params, rng: this.#random });
+    if (!clips.length) return [];
+
+    const recordings = new Map();
+    await Promise.all([...new Set(clips.map((clip) => clip.contentId))].map(async (contentId) => {
+      try {
+        const resolved = this.#registry?.resolve?.(contentId);
+        const item = resolved?.adapter?.getItem ? await resolved.adapter.getItem(resolved.localId) : null;
+        if (item) recordings.set(contentId, item);
+        else console.warn(`[QueryAdapter] surround-segments recording not found: ${contentId}`);
+      } catch (err) {
+        console.warn(`[QueryAdapter] surround-segments recording failed: ${contentId}`, err.message);
+      }
+    }));
+
+    return clips.flatMap((clip) => {
+      const recording = recordings.get(clip.contentId);
+      if (!recording) return [];
+      return [{
+        ...recording,
+        ...clip,
+        resumable: false,
+        resumePosition: null,
+      }];
+    });
   }
 
   /**
