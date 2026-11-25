@@ -555,8 +555,8 @@ test('Media detail waits for the authoritative resume spots and closes their cho
   await expect(playNow).toBeEnabled();
   await playNow.click();
   const chooser = page.getByRole('dialog', { name: 'Continue First Fixture Film from…' });
-  await expect(chooser.getByRole('button', { name: '12 m on Kitchen Tablet' })).toBeVisible();
-  await expect(chooser.getByRole('button', { name: '1 h 20 m on Lounge TV' })).toBeVisible();
+  await expect(chooser.getByRole('button', { name: '12:00 on Kitchen Tablet' })).toBeVisible();
+  await expect(chooser.getByRole('button', { name: '1:20:00 on Lounge TV' })).toBeVisible();
 
   await page.evaluate(url => {
     history.pushState(null, '', url);
