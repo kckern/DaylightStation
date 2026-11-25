@@ -50,6 +50,7 @@ import {
 import { labelFloorPx, LABEL_FLOOR_ANCHOR_PX } from "./fit.js";
 import { lyricStateAt, railHasText } from "./lyrics.js";
 import { useChangeCurtain } from "./curtain.js";
+import { resolveSet } from "./set.js";
 import "./SurroundFrame.scss";
 
 const DEFAULT_RAIL_WIDTH = '20%';
@@ -212,6 +213,8 @@ export default function SurroundFrame({
   const theme = surroundTheme(definition);
   const clip = data?.clip ?? null;
   const regions = useMemo(() => regionsFor(definition, clip), [definition, clip]);
+  // A SET (set.js): the picture plays on a screen inside a backdrop.
+  const set = useMemo(() => resolveSet(definition), [definition]);
   // `right` is authored as either a single object or a list of modules (e.g.
   // composer-card + country-map). Width and side both belong to the rail as a
   // whole, so when it's a list the first entry carries them.
@@ -617,6 +620,7 @@ export default function SurroundFrame({
     !entered && 'surround-frame--entering',
     arriving && 'surround-frame--arriving',
     pillared && 'surround-frame--pillared',
+    set && 'surround-frame--set',
     className,
   ].filter(Boolean).join(' ');
 
@@ -668,6 +672,12 @@ export default function SurroundFrame({
       // exactly this and parks each rail exactly this far off its own edge, so
       // the three pieces travel as one and the geometry is stated once.
       '--rail-w': railWidth,
+      ...(set ? {
+        '--set-x': `${set.screen.x * 100}%`,
+        '--set-y': `${set.screen.y * 100}%`,
+        '--set-w': `${set.screen.w * 100}%`,
+        '--set-h': `${set.screen.h * 100}%`,
+      } : null),
       ...(shrink ? {
         '--enter-media-scale': String(shrink.scale),
         '--enter-media-dx': `${shrink.dx}px`,
@@ -688,6 +698,10 @@ export default function SurroundFrame({
       style={rootStyle}
     >
       <div className={enabled ? 'surround-frame__main' : undefined} ref={mainRef} style={enabled ? undefined : NO_BOX}>
+        {/* The set's backdrop, behind the picture. A slot in both states (an
+            expression, never a missing child), so the stage below keeps its
+            place and the player never remounts. */}
+        {enabled && set ? <img className="surround-frame__set-backdrop" src={set.backdrop} alt="" aria-hidden="true" /> : null}
         {/* The placard is FLOATING: still the first child of the main column, but
             out of flow and centred on the video's top edge (see the SCSS). It
             carries no inline width any more — a museum plate is content-width,
@@ -721,6 +735,8 @@ export default function SurroundFrame({
             {visibleFooterRegions.map(renderRegion)}
           </div>
         )}
+        {/* The set's bezel, over the picture: the screen is its transparent hole. */}
+        {enabled && set?.bezel ? <img className="surround-frame__set-bezel" src={set.bezel} alt="" aria-hidden="true" /> : null}
       </div>
 
       {/* THE SLIDING PAIR. Both rails are mounted and both are always in the

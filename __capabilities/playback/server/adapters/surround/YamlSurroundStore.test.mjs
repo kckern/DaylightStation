@@ -2721,3 +2721,37 @@ describe('YamlSurroundStore — characters (drama)', () => {
     expect(store.lookup('plex:663134', '').characters).toEqual([]);
   });
 });
+
+describe('YamlSurroundStore — a sidecar that frames every item of a container', () => {
+  const sidecar = (children) => 'work: beethoven/symphony-3-eroica\nsurround: concert-hall\n'
+    + `match: { contentId: plex:9000, title: Commercials${children ? ', children: true' : ''} }\n`;
+
+  it('frames an episode by its show or season when the sidecar opts in, stamped with the episode id', () => {
+    write('classical/beethoven/ads.yml', sidecar(true));
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const byShow = store.lookup('plex:9123', 'Episode 4', { metadata: { grandparentId: '9000', parentId: '9001' } });
+    expect(byShow?.id).toBe('concert-hall');
+    expect(byShow.segments[0].contentId).toBe('plex:9123');
+    const bySeason = store.lookup('plex:9124', 'Episode 5', { parentId: '9000' });
+    expect(bySeason?.id).toBe('concert-hall');
+  });
+
+  it('never frames a child without the opt-in, and an item\'s own sidecar still wins', () => {
+    write('classical/beethoven/ads.yml', sidecar(false));
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    expect(store.lookup('plex:9123', 'Episode 4', { metadata: { grandparentId: '9000' } })).toBeNull();
+    write('classical/beethoven/ads.yml', sidecar(true));
+    const fresh = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    expect(fresh.lookup('plex:663134', 'x', { metadata: { grandparentId: '9000' } }).piece.title).toBe('Symphony No. 3');
+  });
+});
+
+describe('YamlSurroundStore — a definition\'s set', () => {
+  it('passes an authored set (backdrop, screen rect, bezel) through to the frame', () => {
+    write('_surrounds/concert-hall.yml', 'id: concert-hall\nset:\n  backdrop: _sets/tv/room.jpg\n  screen: { x: 0.3, y: 0.2, w: 0.4, h: 0.45 }\n');
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    expect(store.lookup('plex:663134', '').definition.set).toEqual({
+      backdrop: '_sets/tv/room.jpg', screen: { x: 0.3, y: 0.2, w: 0.4, h: 0.45 },
+    });
+  });
+});

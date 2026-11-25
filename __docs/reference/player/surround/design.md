@@ -641,6 +641,38 @@ only, no filter; reduced motion cuts instead. A theme paints
 `.surround-frame__curtain-panel` (christmas: pine velvet with a gilt seam).
 Logs `surround.curtain.close` / `surround.curtain.open`.
 
+## Sets: a picture inside a picture
+
+A definition may carry a `set:` instead of regions. The picture then plays on
+a screen inside a backdrop. The first set is `vintage-tv`: a 1950s television
+in a living room, worn by vintage commercials.
+
+```yaml
+id: vintage-tv
+set:
+  backdrop: sets/vintage-tv/room.jpg   # behind everything, 16:9
+  bezel: sets/vintage-tv/set.svg       # over the picture; the screen is a transparent hole
+  screen: { x: 0.2073, y: 0.2269, w: 0.3125, h: 0.4167 }   # fractions of the 16:9 picture
+```
+
+- Asset refs are relative to `media/img/surround/`. A set belongs to a
+  definition, not to a corpus.
+- The frame's main column becomes a 16:9 canvas, contained in the screen. The
+  backdrop and bezel fill the canvas, and the media box sits on `screen` between
+  them. Nothing else changes in the tree, so the Player never remounts.
+- The Player is untouched inside the screen. A sub-SD source still gets the CRT
+  pass by its own resolution (`useUpscaleEffects`), so an old commercial
+  reads as broadcast and an HD one does not.
+- `resolveSet` (`set.js`) drops a set whose screen does not lie inside the
+  picture. The definition then renders as a set-less frame.
+
+**One frame for every item of a show.** A sidecar whose
+`match: { contentId: <show or season>, children: true }` frames every item
+whose season or show is that container. The item's own sidecar still wins.
+That is how one sidecar dresses all of a commercial show's episodes:
+`YamlSurroundStore.lookup` tries the item's `parentId`/`grandparentId` after
+an id miss, and only answers from sidecars that opted in.
+
 ## Band configuration
 
 Three keys on the surround definition (`_surrounds/<id>.yml`), beside `regions`

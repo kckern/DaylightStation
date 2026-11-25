@@ -99,6 +99,18 @@ const namesCreator = (identity, creators) => (
 // the playing item's id. Unrestamped, a correct rebind draws a rail with no
 // sounding segment and no playhead. Only the piece's own id is rewritten; a
 // container's parts keep theirs.
+// The containers an item sits in (its season, its show), as compound ids in
+// the item's own source: the only lane a `match.children` sidecar answers on.
+const ancestorIds = (contentId, context) => {
+  const id = String(contentId ?? '');
+  const colon = id.indexOf(':');
+  if (colon < 1 || !context || typeof context !== 'object') return [];
+  const source = id.slice(0, colon);
+  const meta = isPlainObject(context.metadata) ? context.metadata : {};
+  const raw = [context.parentId, meta.parentId, context.grandparentId, meta.grandparentId];
+  return [...new Set(raw.filter((v) => v !== undefined && v !== null && String(v) !== '')
+    .map((v) => (String(v).includes(':') ? String(v) : `${source}:${v}`)))];
+};
 const restamp = (payload, staleId, liveId) => {
   if (!payload || liveId == null || String(liveId) === '' || String(staleId) === String(liveId)) return payload;
   const swap = (o) => (o && String(o.contentId) === String(staleId) ? { ...o, contentId: String(liveId) } : o);
@@ -292,6 +304,9 @@ const pick = (obj, keys) => {
  */
 export class YamlSurroundStore extends ISurroundStore {
   #byContentId = new Map();
+  // Sidecars that frame every item of their container (`match.children: true`,
+  // e.g. one frame for a whole show of commercials), by the container's id.
+  #byAncestor = new Map();
   // Parallel to #byContentId: the rebind lane, walked only after an id miss.
   #byTitle = [];
   // Every media item that appears on some payload's rail, mapped to the payload
@@ -354,6 +369,12 @@ export class YamlSurroundStore extends ISurroundStore {
 
       const payload = this.#byContentId.get(String(contentId));
       if (payload) return structuredClone(payload);
+
+      // An item's own sidecar always wins; a container-wide one is asked next.
+      for (const ancestorId of ancestorIds(contentId, context)) {
+        const inherited = this.#byAncestor.get(ancestorId);
+        if (inherited) return restamp(structuredClone(inherited), ancestorId, contentId);
+      }
 
       const matched = this.#rebind(title);
       const identity = liveIdentity(title, context);
@@ -569,6 +590,7 @@ export class YamlSurroundStore extends ISurroundStore {
   #build() {
     const startedAt = Date.now();
     const index = new Map();
+    const ancestors = new Map();
     const titles = [];
     // Every sidecar that resolved, in walk order — the input to composition and
     // then to indexing, both of which need the whole set before they can run.
@@ -650,6 +672,7 @@ export class YamlSurroundStore extends ISurroundStore {
       }
       claimedBy.set(resolved.contentId, resolved.file);
       index.set(resolved.contentId, resolved.payload);
+      if (resolved.children) ancestors.set(resolved.contentId, resolved.payload);
       // Only pieces that authored a title are rebindable; the rest are
       // reachable by contentId alone.
       if (resolved.normalized) {
@@ -668,6 +691,7 @@ export class YamlSurroundStore extends ISurroundStore {
     // straight through to #byTitle, so a half-swapped set would rebind against
     // payloads the rebuilt index no longer holds.
     this.#byContentId = index;
+    this.#byAncestor = ancestors;
     this.#byTitle = titles;
     this.#byPart = this.#indexParts(pieces);
     // Stamped after the walk, so a sidecar edited while the build was reading it
@@ -1486,6 +1510,8 @@ export class YamlSurroundStore extends ISurroundStore {
       // times against.
       file,
       work: doc.work,
+      // Frames every item whose show or season is this container.
+      children: doc.match.children === true,
       segmentKey,
       parts,
       ownSegments: pieceSegments,
@@ -1509,7 +1535,11 @@ export class YamlSurroundStore extends ISurroundStore {
           // only a window of its media (a surround-segments clip). Slots it
           // does not name fall back to `regions` in the frame, so it is passed
           // through as authored and only when authored.
-          ...(isPlainObject(definition.clip) ? { clip: definition.clip } : {})
+          ...(isPlainObject(definition.clip) ? { clip: definition.clip } : {}),
+          // THE SET: the picture played inside a picture (a vintage TV in a
+          // room) — a backdrop, the screen's rect on it, an optional bezel drawn
+          // over the picture. Passed through as authored; the frame reads it.
+          ...(isPlainObject(definition.set) ? { set: definition.set } : {})
         },
         piece,
         pieceSegments: resolvedPieceSegments,

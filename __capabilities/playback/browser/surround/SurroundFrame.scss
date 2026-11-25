@@ -540,3 +540,46 @@
     transition: none;
   }
 }
+
+/* THE SET (set.js): the picture plays on a screen inside a backdrop — a
+   vintage TV in a room. The main column becomes a 16:9 canvas (contained in
+   the frame), the backdrop and bezel fill it, and the stage sits on the
+   authored screen rect between them. No regions are drawn around a set. */
+.surround-frame--set {
+  container-type: size;
+  background: #0b0705;
+  overflow: hidden;
+}
+.surround-frame--set .surround-frame__main {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  width: min(100cqw, calc(100cqh * 16 / 9));
+  aspect-ratio: 16 / 9;
+  height: auto;
+  max-width: none;
+}
+.surround-frame__set-backdrop,
+.surround-frame__set-bezel {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+  user-select: none;
+}
+.surround-frame__set-backdrop { z-index: 0; }
+.surround-frame__set-bezel { z-index: 2; }
+.surround-frame--set .surround-frame__stage {
+  position: absolute;
+  z-index: 1;
+  left: var(--set-x);
+  top: var(--set-y);
+  width: var(--set-w);
+  height: var(--set-h);
+  padding: 0;
+  align-items: center;
+  background: #050505;
+}
