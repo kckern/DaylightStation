@@ -438,7 +438,7 @@ function DrawerWaterFallChart({ periodData, setTransactionFilter }) {
         plotBands: [{
             from: minValue,
             to: 0,
-            color: 'rgba(255, 100, 0, 0.1)'
+            color: 'rgba(255, 100, 0, 0.1)' // data-color: Highcharts plot band (orange, data meaning)
         }]
     },
     legend: { enabled: false },
@@ -459,8 +459,8 @@ function DrawerWaterFallChart({ periodData, setTransactionFilter }) {
       style: {
           fontFamily: 'Roboto Condensed',
           fontSize: '0.8em',
-          textOutline: '2px #00000077',
-          color: '#FFFFFF'
+          textOutline: '2px #00000077', // data-color: Highcharts label outline
+          color: '#FFFFFF' // data-color: Highcharts label ink on slices
       },
       formatter: function() {
         return formatAsCurrency(Math.abs(this.y));
@@ -618,8 +618,8 @@ export function SpendingPieDrilldownChart({ transactions, setTransactionFilter }
     yAxis: { title: null, labels: { enabled: false }, gridLineWidth: 0 },
     tooltip: {
       useHTML: true,
-      backgroundColor: "#fff",
-      borderColor: "#333",
+      backgroundColor: "#fff", // data-color: Highcharts tooltip fill
+      borderColor: "#333", // data-color: Highcharts tooltip rule
       borderWidth: 1,
       style: { textAlign: "center" },
       followPointer: true,

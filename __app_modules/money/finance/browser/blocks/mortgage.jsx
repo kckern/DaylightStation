@@ -166,7 +166,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
               return `<b>${formatAsCurrency(this.y, 'K')}</b>`;
             },
             style: {
-              color: '#1f2937',
+              color: '#1f2937', // data-color: Highcharts tooltip ink
               fontSize: '13px',
               fontWeight: 'bold',
               textOutline: 'none'
@@ -195,7 +195,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
       panKey: zoomable ? 'shift' : undefined,
       },
       credits: { enabled: false },
-      ...(zoomable && { resetZoomButton: { theme: { fill: '#333', stroke: '#555', style: { color: '#ccc' } } } }),
+      ...(zoomable && { resetZoomButton: { theme: { fill: '#333', stroke: '#555', style: { color: '#ccc' } } } }), // data-color: Highcharts reset-zoom button
       title: { text: null },
       legend: { enabled: false },
       tooltip: { xDateFormat: '%b %Y' },
@@ -208,7 +208,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
       // fall exactly on a month gridline (no drift).
       tickPositions: monthTicks,
       gridLineWidth: 0.5,
-      gridLineColor: "#dcdcdc",
+      gridLineColor: "#dcdcdc", // data-color: Highcharts gridline
       minorTicks: false,
       labels: {
         formatter() {
@@ -217,11 +217,11 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
             : '';
         },
         rotation: -45,
-        style: { color: '#666', fontSize: '10px' }
+        style: { color: '#666', fontSize: '10px' } // data-color: Highcharts axis label
       },
       plotLines: [
         ...yearLines.map(t => ({
-          color: '#888',
+          color: '#888', // data-color: Highcharts axis label
           width: 1.25,
           value: t,
           zIndex: 3
@@ -255,10 +255,10 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
           formatter() {
             return formatCompactCurrency(this.value);
           },
-          style: { color: '#999' }
+          style: { color: '#999' } // data-color: Highcharts axis label
         },
-        gridLineColor: "#888",
-        minorGridLineColor: "#dcdcdc",
+        gridLineColor: "#888", // data-color: Highcharts gridline
+        minorGridLineColor: "#dcdcdc", // data-color: Highcharts gridline
       },
       plotOptions: {
       series: {
@@ -289,7 +289,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
       },
       ...futureSeries.map((planSeries, idx) => ({
         ...planSeries,
-        color: Highcharts.getOptions().colors[idx + 2] || "#2b2b2b",
+        color: Highcharts.getOptions().colors[idx + 2] || "#2b2b2b", // data-color: Highcharts series fallback
         zIndex: 2 + idx
       }))
       ]
@@ -464,7 +464,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
                   <Badge color={record.isFuture ? 'blue' : 'gray'}>{monthLabel}</Badge>
                 </td>
                 <td>{formatAsCurrency(record.openingBalance)}</td>
-                <td style={{ color: record.isFuture ? '#ff6b6b' : '#c00' }}>{formatAsCurrency(record.interestAccrued)}</td>
+                <td style={{ color: record.isFuture ? 'var(--ds-live)' : 'var(--ds-danger)' }}>{formatAsCurrency(record.interestAccrued)}</td>
                 <td>{record.payments?.length > 0 ? formatAsCurrency(record.payments[0]) : ''}</td>
                 <td>{formatAsCurrency(record.closingBalance)}</td>
                 <td>{record.cumulativeInterest != null ? formatAsCurrency(record.cumulativeInterest) : ''}</td>
@@ -521,7 +521,7 @@ export function BudgetMortgage({ setDrawerContent, mortgage }) {
                 <td>{info.payoffDate}</td>
                 <td>{formatAsCurrency(info.totalPaid, "K")}</td>
                 <td>{formatAsCurrency(info.totalInterest, "K")}</td>
-                <td style={{ color: saved > 0 ? '#4caf50' : 'inherit' }}>
+                <td style={{ color: saved > 0 ? '#4caf50' /* data-color: positive-saving green, brighter than the success role */ : 'inherit' }}>
                   {saved > 0 ? formatAsCurrency(saved, "K") : '—'}
                 </td>
                 <td>{formatAsCurrency(info.annualBudget / 12)}/mo</td>

@@ -73,7 +73,7 @@ export function BudgetShortTerm({ setDrawerContent, budget }) {
     const options = {
         chart: {
             type: 'bar',
-            backgroundColor: 'rgba(0,0,0,0)',
+            backgroundColor: 'rgba(0,0,0,0)', // data-color: Highcharts transparent canvas
             animation: false,
         },
         title: { text: '' },
@@ -101,7 +101,7 @@ export function BudgetShortTerm({ setDrawerContent, budget }) {
             gridLineWidth: 0,
             tickWidth: 0,
             plotLines: [{
-                color: '#EEEEEE',
+                color: '#EEEEEE', // data-color: Highcharts label ink on bars
                 value: (1 - progress) * 100,
                 width: 1.5,
                 dashStyle: 'dash',
@@ -146,8 +146,8 @@ export function BudgetShortTerm({ setDrawerContent, budget }) {
                     style: {
                         fontFamily: 'Roboto Condensed',
                         fontSize: '0.8em',
-                        textOutline: '2px #00000077',
-                        color: '#FFFFFF'
+                        textOutline: '2px #00000077', // data-color: Highcharts label outline
+                        color: '#FFFFFF' // data-color: Highcharts label ink on bars
                     },
                     formatter: function () {
                         const item = processedData[this.point.index];

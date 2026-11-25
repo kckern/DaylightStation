@@ -1,6 +1,6 @@
 # Webapp Design System
 
-Admin, Health, Media, Feed, Home, Life and Auto share browser layout and interaction contracts. Theme packs supply app-specific art direction. Playback engines and feature workflows stay with their apps.
+Admin, Health, Media, Feed, Home, Life, Auto and Finance share browser layout and interaction contracts. Theme packs supply app-specific art direction. Playback engines and feature workflows stay with their apps.
 
 ## Find a pattern by task
 
@@ -247,6 +247,13 @@ else needs to change; `AppThemeProvider` picks up any registered pack by name.
 The `school` pack (green accent, `#51cf66`) is the study-desk direction for
 kiosk screens like the card-ladder stage — one calm accent for progress and
 primary actions, no chrome to hunt through.
+
+The `finance` pack (`/budget`, `/finances`) is a light scheme: `surface` is the
+grey panel, `background` the charcoal header bar, and `status` carries the
+spent (`info`), gained (`success`) and overspend (`danger`) hues. It sets
+`themeExtras: { components: {} }` so Mantine keeps its own component sizes.
+The Finance Drawer mounts in a portal outside the themed root, so it carries
+`dsCssVars(PACKS.finance)` as its own `style`.
 
 ### `themeExtras` — the escape hatch
 
@@ -562,7 +569,7 @@ The transcript fills the draft for review. Send submits the answer explicitly.
   `frontend/src/lib/ui` instead of copying it again.
 - `npm run audit:ui` is the enforcement gate. It scans these roots: `frontend/src/Apps`,
   `frontend/src/lib/ui`, `frontend/src/modules/Admin`, and the `browser`
-  folders of the Home, Health, Auto, Life, Feed and Media app modules under
+  folders of the Home, Health, Auto, Life, Feed, Media and Finance (`money/finance/browser`) app modules under
   `__app_modules/` (School has its own scoped guard). It looks for five violation classes — raw colors, raw motion/keyframe
   values, hand-rolled `keydown` listeners, native `<button>`/`<select>`
   elements outside `lib/ui`, and `--ds-*` names outside the token manifest —

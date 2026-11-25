@@ -1,4 +1,9 @@
 
+.budget-viewer,
+.txn-drawer {
+    --fin-on-fill: #fff; // data-color: white ink on charcoal/blue fills; no shared role for on-fill
+}
+
 .budget-viewer{
     height: 100vh;
     display: flex;
@@ -9,8 +14,8 @@
 
 .budget-viewer header h1{
     margin: 0;
-    background-color: #444;
-    color: #FFF;
+    background-color: var(--ds-background);
+    color: var(--fin-on-fill);
     text-align: center;
     height: 3rem;
     overflow: hidden;
@@ -30,9 +35,9 @@
 .grid-container > .budget-block {
     height: calc(50% - 1ex); /* Half of the viewport height */
     width: calc(33.33vw - 1rem); /* One third of the viewport width */
-    background-color: #EEEEEE;
+    background-color: var(--ds-surface);
     border-radius: 1rem;
-    border: 1px solid #CCC;
+    border: 1px solid var(--ds-border);
     overflow: hidden;
 }
 
@@ -54,8 +59,8 @@
   
 
 .grid-container .budget-block h2{
-    color: #FFF;
-    background-color: #00000099;
+    color: var(--fin-on-fill);
+    background-color: color-mix(in srgb, var(--ds-text-high) 60%, transparent);
     text-align: center;
     margin: 0;
     border-top-left-radius: 1rem;
@@ -107,20 +112,20 @@ pre{
 }
 
 b.category-label {
-    color: #000;
+    color: var(--ds-text-high);
     font-size: 1em;
     font-family: 'Roboto', sans-serif;
 }
 
 small.category-label {
-    color: #AAA!important;
+    color: #AAA!important; // data-color: memo grey lighter than any text role (data annotation)
     font-size: 0.7em;
     font-family: 'Roboto', sans-serif;
 }
 
 
 .category-label .green{
-    color: #759c82;
+    color: var(--ds-success);
 }
 
 
@@ -139,19 +144,19 @@ small.category-label {
 
 .month-header div.month{
     white-space: nowrap;
-    border: 1px solid #CCC;
+    border: 1px solid var(--ds-border);
     margin: 1ex 0;
     padding: 0 1ex;
     border-radius: 0.8ex;
     cursor: pointer;
 }
 .month-header div.month:hover{
-    outline: 2px solid #000;
+    outline: 2px solid var(--ds-text-high);
 }
 
 .month-header div.month.active{
-    background-color: #000;
-    color: #FFF;
+    background-color: var(--ds-text-high);
+    color: var(--fin-on-fill);
 }
 
 .budget-drawer{
@@ -170,7 +175,7 @@ padding: 0.3ex;
 }
 .budget-drawer-content .transactions-table td .memo{
     margin-left: 1ex;
-    color: #AAA;
+    color: #AAA; // data-color: memo grey lighter than any text role
     font-size: 0.7rem;
 }
 
@@ -190,20 +195,20 @@ tr{
 
 
 tr.income{
-    background-color: #d8f0e4;
+    background-color: #d8f0e4; // data-color: income row tint, finance row state
 }
 
 tr.even:not(.income){
-    background-color: #F5F5F5;
+    background-color: var(--ds-surface-alt);
 }
 
 tr .amount-col{
-    color:#000;
+    color:var(--ds-text-high);
     font-weight: 800;
     text-decoration: none;
 }
 tr.income .amount-col{
-    color: rgb(19, 95, 56)
+    color: rgb(19, 95, 56); // data-color: income amount ink, finance row state
 }
 .status-badge span{
     border-radius: 5px;
@@ -220,18 +225,18 @@ tr.income .amount-col{
     cursor: pointer;
 }
 .status-badge .amount{
-    background-color: #888;
+    background-color: var(--ds-text-low);
     color: white;
 }.status-badge .gained{
-    background-color: #759c82;
+    background-color: var(--ds-success);
     color: white;
 }
 .status-badge .spent{
-    background-color: #0077b6;
+    background-color: var(--ds-info);
     color: white;
 }
 .status-badge .remaining{
-    background-color: #DDD;
+    background-color: #DDD; // data-color: future row grey, row-state hue
     color: black;
 }
 
@@ -250,7 +255,7 @@ tr.income .amount-col{
 .overviewTable td
 {
     padding: 0 1ex;
-    border: 1px solid #BBB;
+    border: 1px solid #BBB; // data-color: grid rule between table cells
     text-align: right;
     white-space: nowrap;
     overflow: hidden;
@@ -258,55 +263,55 @@ tr.income .amount-col{
 .overviewTable tr:not(.sum) td:not(.surplus):hover
 {
     filter: brightness(1.5);
-    background-color: #112d3c;
-    color: #FFF;
+    background-color: #112d3c; // data-color: hover wash on a data cell
+    color: var(--fin-on-fill);
 }
 .overviewTable tr:not(.sum) td.surplus:hover{
-    background-color: #333!important;
+    background-color: #333!important; // data-color: surplus hover, row-state hue
     cursor: pointer;
-    color: #FFF!important;
+    color: var(--fin-on-fill)!important;
 }
 
 
 .overviewTable tr.sum td{
-    border-top: 4px solid #AAA;
-    background-color: #333;
-    color: #EEE;
+    border-top: 4px solid #AAA; // data-color: sum row rule
+    background-color: #333; // data-color: sum row fill
+    color: var(--ds-surface);
     font-weight: 800;
 }
 .overviewTable  td.surplus{
-    border-left: 4px solid #666!important;
+    border-left: 4px solid var(--ds-text-mid)!important;
 }
 .overviewTable  tr:not(.sum) td.surplus.negative{
-    background-color: #9c2c34;
-    border-color: #666;
-    color: #FFF;
+    background-color: #9c2c34; // data-color: deficit cell red (negative surplus)
+    border-color: var(--ds-text-mid);
+    color: var(--fin-on-fill);
     font-weight: 800;
 }
 .overviewTable  tr:not(.sum) td.surplus.positive{
-    background-color: #b1b1b1;
-    border-color: #666;
-    color: #444;
+    background-color: #b1b1b1; // data-color: surplus cell grey
+    border-color: var(--ds-text-mid);
+    color: var(--ds-background);
 }
 
 .overviewTable  tr.past{
-    background-color: #0077b6;
-    color: #FFFFFFEE;
+    background-color: var(--ds-info);
+    color: color-mix(in srgb, var(--fin-on-fill) 93%, transparent);
 }
 .overviewTable tr.past td{
-    border-color: #0b3954;
+    border-color: #0b3954; // data-color: past/present row rule
 }
 .overviewTable tr.present{
-    background-color: #cbf3f0;
-    outline: 2px solid #0b3954;
+    background-color: #cbf3f0; // data-color: present row tint
+    outline: 2px solid #0b3954; // data-color: present row outline
 }
 .overviewTable tr.present td{
-    border-color: #0b3954;
+    border-color: #0b3954; // data-color: past/present row rule
     font-weight: 800;
 }
 .overviewTable tr.future{
-    background-color: #DDD;
-    color: #888;
+    background-color: #DDD; // data-color: future row grey
+    color: var(--ds-text-low);
 }
 
 .txn-drawer section header h2{
@@ -326,31 +331,11 @@ tr.income .amount-col{
     align-items: center;
     padding: 1ex;
     font-weight: 800;
-    outline: 1px solid #EEE;
+    outline: 1px solid var(--ds-surface);
     margin-top: 1ex;
     margin-bottom: 1ex;
     border-radius: 1ex;
-    background-color: #EEE;
-}
-
-@-webkit-keyframes spin {
-    from {
-        -webkit-transform: rotate(0deg);
-        transform: rotate(0deg);
-    }
-    to {
-        -webkit-transform: rotate(360deg);
-        transform: rotate(360deg);
-    }
-}
-
-@keyframes spin {
-    from {
-        transform: rotate(0deg);
-    }
-    to {
-        transform: rotate(360deg);
-    }
+    background-color: var(--ds-surface);
 }
 
 button.reload img {
@@ -366,14 +351,14 @@ button.reload{
 }
 
 .mortgage-table-body tr:nth-child(odd) td{
-    background-color: #EEE;
+    background-color: var(--ds-surface);
 }
 .mortgage-table-body {
     border-collapse: collapse;
 }
 
 .mortgage-table-body tr.new-year td {
-    border-top: 3px solid #666;
+    border-top: 3px solid var(--ds-text-mid);
 }
 .mortgage-table-body tr td {
     padding:0 1ex;
@@ -395,7 +380,7 @@ button.reload{
 .mortgage-summary td:last-child{
 }
 .mortgage-summary .summary-cell{
-    border-left: 2px solid #666;
+    border-left: 2px solid var(--ds-text-mid);
     border-right: 3rem;
     padding-right: 3rem;
 }
@@ -406,10 +391,10 @@ button.reload{
 }
 
 .first-row td:not(:first-child){
-    border-top: 2px solid #666;
+    border-top: 2px solid var(--ds-text-mid);
 }
 .last-row td:not(:first-child){
-    border-bottom: 2px solid #666;
+    border-bottom: 2px solid var(--ds-text-mid);
 }
 
 .transactions-table tr.paired {
@@ -424,15 +409,15 @@ button.reload{
   cursor: help;
 }
 .txn-menu-item:hover {
-  background: #2a2a4e !important;
+  background: #2a2a4e !important; // data-color: dark txn menu hover
 }
 
 .mortgage-table-body tr.future-month td {
-  background-color: #1a2a3a;
-  color: #8ab4f8;
+  background-color: #1a2a3a; // data-color: future-month mortgage row tint
+  color: #8ab4f8; // data-color: future-month mortgage ink
 }
 .mortgage-table-body tr.future-month:nth-child(odd) td {
-  background-color: #1a2a3a;
+  background-color: #1a2a3a; // data-color: future-month mortgage row tint
 }
 
 .budget-block-empty {
@@ -440,7 +425,7 @@ button.reload{
   align-items: center;
   justify-content: center;
   min-height: 8rem;
-  color: #888;
+  color: var(--ds-text-low);
   font-style: italic;
 }
 
@@ -456,7 +441,7 @@ button.reload{
     align-items: center;
     span {
       font-size: 0.7rem;
-      color: #888;
+      color: var(--ds-text-low);
       text-transform: uppercase;
       letter-spacing: 0.5px;
     }
@@ -473,7 +458,7 @@ button.reload{
 .txn-drawer [role='button']:focus-visible,
 .txn-drawer .transactions-table tr:focus-visible,
 .txn-drawer .transactions-table th:focus-visible {
-  outline: 2px solid #4c8ffc;
+  outline: 2px solid #4c8ffc; // data-color: keyboard focus ring blue
   outline-offset: -1px;
 }
 
@@ -483,10 +468,10 @@ button.reload{
 .finance-error-banner {
   margin: 1rem;
   padding: 1rem;
-  border: 1px solid #c00;
+  border: 1px solid var(--ds-danger);
   border-radius: 8px;
-  background: #fee;
-  color: #600;
+  background: #fee; // data-color: error banner pink
+  color: #600; // data-color: error banner ink
 }
 .finance-error-detail {
   margin: 0.5rem 0;
@@ -496,12 +481,12 @@ button.reload{
   padding: 1rem;
 }
 .finance-loading-card {
-  border: 1px solid #e0e0e0;
+  border: 1px solid #e0e0e0; // data-color: loading card rule
   border-radius: 8px;
-  background-color: #f8f9fa;
+  background-color: #f8f9fa; // data-color: loading card fill
   padding: 1rem;
   text-align: center;
-  color: #495057;
+  color: #495057; // data-color: loading card ink
 }
 .finance-header-bar {
   display: flex;
@@ -539,27 +524,27 @@ button.reload{
 }
 .payroll-sync-hint {
   margin-bottom: 1rem;
-  color: #666;
+  color: var(--ds-text-mid);
 }
 .payroll-sync-error {
   margin-top: 1rem;
   padding: 0.75rem;
-  background-color: #fee;
+  background-color: #fee; // data-color: payroll error fill
   border-radius: 4px;
-  color: #c00;
+  color: var(--ds-danger);
 }
 .payroll-sync-success {
   margin-top: 1rem;
   padding: 0.75rem;
-  background-color: #efe;
+  background-color: #efe; // data-color: payroll success fill
   border-radius: 4px;
-  color: #060;
+  color: #060; // data-color: payroll success ink
 }
 
 // drawer.jsx
 .pair-banner {
   padding: 8px 12px;
-  background: #1a3a5c;
+  background: #1a3a5c; // data-color: pair banner navy
   border-radius: 4px;
   margin-bottom: 8px;
   display: flex;
@@ -568,15 +553,15 @@ button.reload{
 }
 .pair-banner-cancel {
   background: none;
-  border: 1px solid #666;
-  color: #ccc;
+  border: 1px solid var(--ds-text-mid);
+  color: var(--ds-border);
   cursor: pointer;
   border-radius: 3px;
   padding: 2px 8px;
 }
 .pair-notice {
   padding: 8px 12px;
-  background: #2d2d3a;
+  background: #2d2d3a; // data-color: pair notice slate
   border-radius: 4px;
   margin-bottom: 8px;
   display: flex;
@@ -586,7 +571,7 @@ button.reload{
 .pair-notice-dismiss {
   background: none;
   border: none;
-  color: #ccc;
+  color: var(--ds-border);
   cursor: pointer;
 }
 .th-left {
@@ -611,18 +596,18 @@ button.reload{
   cursor: pointer;
   padding: 2px 6px;
   font-size: 0.9rem;
-  color: #888;
+  color: var(--ds-text-low);
 }
 .txn-menu-dropdown {
   position: absolute;
   right: 0;
   top: 100%;
   z-index: 10;
-  background: #1a1a2e;
-  border: 1px solid #333;
+  background: #1a1a2e; // data-color: txn menu dropdown fill (dark)
+  border: 1px solid #333; // data-color: txn menu dropdown rule
   border-radius: 4px;
   min-width: 120px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3); // data-color: menu shadow
 }
 .txn-menu-item {
   display: block;
@@ -630,7 +615,7 @@ button.reload{
   padding: 8px 12px;
   background: none;
   border: none;
-  color: #ccc;
+  color: var(--ds-border);
   cursor: pointer;
   text-align: left;
   font-size: 0.85rem;
@@ -658,7 +643,7 @@ button.reload{
   color: black;
   text-decoration: none;
   cursor: pointer;
-  background-color: #00000022;
+  background-color: color-mix(in srgb, var(--ds-text-high) 13%, transparent);
   border-radius: 4px;
   padding: 0 1ex;
   font-weight: normal;
@@ -687,12 +672,12 @@ button.reload{
 }
 .plan-subtitle {
   font-size: 0.8em;
-  color: #888;
+  color: var(--ds-text-low);
 }
 .coc-card {
   margin-bottom: 1rem;
   padding: 1rem;
-  border: 1px solid #333;
+  border: 1px solid #333; // data-color: card rule on dark drawer
   border-radius: 8px;
 }
 .coc-headline {
@@ -700,7 +685,7 @@ button.reload{
   margin-bottom: 0.5rem;
 }
 .coc-plan-label {
-  color: #888;
+  color: var(--ds-text-low);
   margin-left: 0.5rem;
 }
 .coc-table {
@@ -725,10 +710,10 @@ button.reload{
   overflow-y: auto;
 }
 .text-muted {
-  color: #888;
+  color: var(--ds-text-low);
 }
 .text-debit {
-  color: #c00;
+  color: var(--ds-danger);
 }
 
 // blocks.jsx

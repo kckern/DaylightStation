@@ -14,6 +14,7 @@ export const ROOTS = [
   '__app_modules/personal/life/browser',
   '__app_modules/media/feed/browser',
   '__app_modules/media/media/browser',
+  '__app_modules/money/finance/browser',
 ];
 const SCHOOL_ROOT = '__app_modules/learning/school/browser';
 const STRICT_SCHOOL = /^(portal|runtime|activities)\//;
