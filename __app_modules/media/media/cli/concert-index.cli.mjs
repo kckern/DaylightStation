@@ -91,6 +91,140 @@ export function parseSrt(text) {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Music and talk, second by second                                           */
+/* -------------------------------------------------------------------------- */
+
+/** AudioSet classes that count as music. Bells alone count: handbell pieces have no "Music" score to speak of. */
+export const MUSIC_CLASSES = ['Music', 'Singing', 'Choir', 'Bell', 'Church bell', 'Jingle bell', 'Orchestra'];
+
+/** Centred running median over `windowS` samples, the window shrinking at the edges. */
+function medianSmooth(xs, windowS) {
+  const half = Math.floor(windowS / 2);
+  return xs.map((_, i) => {
+    const w = xs.slice(Math.max(0, i - half), i + half + 1).sort((a, b) => a - b);
+    const m = Math.floor(w.length / 2);
+    return w.length % 2 ? w[m] : (w[m - 1] + w[m]) / 2;
+  });
+}
+
+/**
+ * One label per second from per-second class scores (`audio-events.py`):
+ * 'music', 'narration' (speech over music), 'speech' or 'gap'. Music is the
+ * best of the MUSIC_CLASSES present. Both signals are median-smoothed first,
+ * so a cough or a one-second dropout does not split a piece.
+ *
+ * Applause scores as 'gap'. These broadcasts mix it low, under every
+ * threshold here, and that is what lets a gap stand in for it.
+ */
+export function labelSeconds(classes, { music = 0.3, speech = 0.3, narration = 0.12, smoothS = 5 } = {}) {
+  const present = MUSIC_CLASSES.filter((c) => Array.isArray(classes[c]));
+  const n = Math.max(0, ...Object.values(classes).map((a) => (Array.isArray(a) ? a.length : 0)));
+  const musicish = Array.from({ length: n }, (_, i) => Math.max(0, ...present.map((c) => classes[c][i] ?? 0)));
+  const talk = Array.from({ length: n }, (_, i) => classes.Speech?.[i] ?? 0);
+  const m = medianSmooth(musicish, smoothS);
+  const t = medianSmooth(talk, smoothS);
+  return m.map((mv, i) => {
+    if (mv >= music) return t[i] >= narration ? 'narration' : 'music';
+    return t[i] >= speech ? 'speech' : 'gap';
+  });
+}
+
+function mergeEqual(runs) {
+  const out = [];
+  for (const r of runs) {
+    const last = out[out.length - 1];
+    if (last && last.label === r.label) last.end = r.end;
+    else out.push({ ...r });
+  }
+  return out;
+}
+
+/**
+ * Per-second labels to runs `[{label, start, end}]` (seconds). A run shorter
+ * than `minRunS` is absorbed into the run before it (an opening one into the
+ * run after), then equal neighbours merge again.
+ */
+export function runsFrom(labels, { minRunS = 4 } = {}) {
+  const absorbed = [];
+  for (const r of mergeEqual(labels.map((label, i) => ({ label, start: i, end: i + 1 })))) {
+    const last = absorbed[absorbed.length - 1];
+    if (last && r.end - r.start < minRunS) last.end = r.end;
+    else absorbed.push({ ...r });
+  }
+  if (absorbed.length > 1 && absorbed[0].end - absorbed[0].start < minRunS) {
+    absorbed[1].start = absorbed[0].start;
+    absorbed.shift();
+  }
+  return mergeEqual(absorbed);
+}
+
+const isMusic = (r) => r.label === 'music' || r.label === 'narration';
+const span = (r) => r.end - r.start;
+
+/**
+ * Where the music and the talk are inside one native chapter.
+ *
+ * Runs are cut to [chapter.start, chapter.end); a piece of a run shorter than
+ * `minClipS` left by the cut is dropped (chapter marks fall a fraction of a
+ * second off the per-second grid). Returns:
+ *
+ * - `performances`: maximal stretches of music/narration whose internal gaps
+ *   are each shorter than `gapMergeS`. Speech ends a performance. Two or more
+ *   mean a medley, a story with songs in it, or interwoven songs; they are
+ *   NOT merged, because that is for whoever reads the evidence to decide.
+ * - `speech`: speech runs, `position` 'before' the first performance,
+ *   'between' two, or 'after' the last (usually the introduction to the NEXT
+ *   chapter's piece). In a chapter with no performance, all are 'before'.
+ * - `gaps`: gap runs of at least `gapMergeS`, usually applause.
+ * - `music`: [first performance start, last performance end], or null.
+ */
+export function refineChapter(chapter, runs, { gapMergeS = 15, minClipS = 2 } = {}) {
+  const clipped = runs
+    .map((r) => ({ label: r.label, start: Math.max(r.start, chapter.start), end: Math.min(r.end, chapter.end) }))
+    .filter((r) => span(r) >= minClipS);
+
+  const performances = [];
+  let cur = null;
+  let gapBefore = null;
+  const close = () => {
+    if (!cur) return;
+    const sound = cur.runs.filter(isMusic);
+    const total = sound.reduce((a, r) => a + span(r), 0);
+    const narr = sound.filter((r) => r.label === 'narration').reduce((a, r) => a + span(r), 0);
+    performances.push({ start: cur.start, end: cur.end, narrationShare: total ? Number((narr / total).toFixed(3)) : 0 });
+    cur = null;
+  };
+  for (const r of clipped) {
+    if (isMusic(r)) {
+      if (cur && gapBefore && span(gapBefore) >= gapMergeS) close();
+      if (!cur) cur = { start: r.start, end: r.end, runs: [] };
+      cur.runs.push(r);
+      cur.end = r.end;
+      gapBefore = null;
+    } else if (r.label === 'gap') {
+      gapBefore = r;
+    } else {
+      close();
+      gapBefore = null;
+    }
+  }
+  close();
+
+  const first = performances[0];
+  const last = performances[performances.length - 1];
+  const position = (r) => {
+    if (!first || r.end <= first.start) return 'before';
+    return r.start >= last.end ? 'after' : 'between';
+  };
+  return {
+    performances,
+    speech: clipped.filter((r) => r.label === 'speech').map((r) => ({ start: r.start, end: r.end, position: position(r) })),
+    gaps: clipped.filter((r) => r.label === 'gap' && span(r) >= gapMergeS).map((r) => ({ start: r.start, end: r.end })),
+    music: first ? [first.start, last.end] : null,
+  };
+}
+
+/* -------------------------------------------------------------------------- */
 /* Matching                                                                   */
 /* -------------------------------------------------------------------------- */
 

@@ -10,7 +10,7 @@ import { mkdtempSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseSrt, srtTime, parseChapters, chapterList, words, lyricOverlap, clipArgs, numberFlag, parseAt, runCliEntry } from './concert-index.cli.mjs';
+import { parseSrt, srtTime, parseChapters, chapterList, MUSIC_CLASSES, labelSeconds, runsFrom, refineChapter, words, lyricOverlap, clipArgs, numberFlag, parseAt, runCliEntry } from './concert-index.cli.mjs';
 
 describe('parseSrt', () => {
   const SRT = '1\r\n00:01:03,160 --> 00:01:11,560\r\nTo buy the table\r\n\r\n'
@@ -69,6 +69,95 @@ describe('chapterList', () => {
   it('rejects a chapter without a usable start and end', () => {
     expect(() => chapterList([{ title: 'Broken', start: 10 }])).toThrow(/chapter 1 \("Broken"\) needs numeric start < end/);
     expect(() => chapterList([{ title: 'Backwards', start: 10, end: 5 }])).toThrow(/chapter 1/);
+  });
+});
+
+describe('labelSeconds', () => {
+  it('labels music, narration over music, speech and gaps', () => {
+    const classes = {
+      Music: [0.9, 0.9, 0.9, 0.1, 0.1],
+      Speech: [0.0, 0.2, 0.0, 0.5, 0.0],
+    };
+    expect(labelSeconds(classes, { smoothS: 1 })).toEqual(['music', 'narration', 'music', 'speech', 'gap']);
+  });
+  it('counts any present music class, so bells alone are music', () => {
+    expect(MUSIC_CLASSES).toEqual(['Music', 'Singing', 'Choir', 'Bell', 'Church bell', 'Jingle bell', 'Orchestra']);
+    expect(labelSeconds({ Music: [0.05, 0.05], 'Church bell': [0.8, 0.02] }, { smoothS: 1 })).toEqual(['music', 'gap']);
+  });
+  it('reads applause as a gap', () => {
+    expect(labelSeconds({ Music: [0.1, 0.1], Speech: [0.05, 0.05], Applause: [0.9, 0.9] }, { smoothS: 1 })).toEqual(['gap', 'gap']);
+  });
+  it('smooths both signals with a centred median, so a one-second blip does not count', () => {
+    const Music = [0.9, 0.9, 0.9, 0.0, 0.9, 0.9, 0.9];
+    const Speech = [0, 0, 0, 0.9, 0, 0, 0];
+    expect(labelSeconds({ Music, Speech })).toEqual(Array(7).fill('music'));
+  });
+  it('honours its thresholds', () => {
+    expect(labelSeconds({ Music: [0.5], Speech: [0.2] }, { smoothS: 1, music: 0.6, speech: 0.15 })).toEqual(['speech']);
+  });
+});
+
+describe('runsFrom', () => {
+  it('merges equal neighbours into runs in seconds', () => {
+    expect(runsFrom(['gap', 'gap', 'gap', 'gap', 'music', 'music', 'music', 'music', 'music'])).toEqual([
+      { label: 'gap', start: 0, end: 4 },
+      { label: 'music', start: 4, end: 9 },
+    ]);
+  });
+  it('absorbs a short run into the one before it, then merges again', () => {
+    const labels = [...Array(10).fill('music'), 'speech', 'speech', ...Array(10).fill('music')];
+    expect(runsFrom(labels)).toEqual([{ label: 'music', start: 0, end: 22 }]);
+  });
+  it('folds a short opening run into the next one', () => {
+    expect(runsFrom(['gap', ...Array(6).fill('music')])).toEqual([{ label: 'music', start: 0, end: 7 }]);
+  });
+  it('is empty for no labels', () => {
+    expect(runsFrom([])).toEqual([]);
+  });
+});
+
+describe('refineChapter', () => {
+  const run = (label, start, end) => ({ label, start, end });
+
+  it('finds the music, the applause after it and the introduction to the next piece', () => {
+    // A chapter shaped like the pilot's fourth: music, ~28 s of applause, then talk.
+    const runs = [run('gap', 0, 2), run('music', 2, 400), run('gap', 400, 428), run('speech', 428, 484), run('gap', 484, 492)];
+    expect(refineChapter({ start: 0, end: 492 }, runs)).toEqual({
+      performances: [{ start: 2, end: 400, narrationShare: 0 }],
+      speech: [{ start: 428, end: 484, position: 'after' }],
+      gaps: [{ start: 400, end: 428 }],
+      music: [2, 400],
+    });
+  });
+  it('bridges gaps shorter than gapMergeS and keeps longer ones as separate performances', () => {
+    const runs = [run('music', 0, 100), run('gap', 100, 110), run('music', 110, 200), run('gap', 200, 230), run('music', 230, 300)];
+    const r = refineChapter({ start: 0, end: 300 }, runs);
+    expect(r.performances.map((p) => [p.start, p.end])).toEqual([[0, 200], [230, 300]]);
+    expect(r.gaps).toEqual([{ start: 200, end: 230 }]);
+    expect(r.music).toEqual([0, 300]);
+  });
+  it('keeps music and narration in one performance and measures narration against sound, not gaps', () => {
+    const runs = [run('music', 0, 30), run('narration', 30, 90), run('gap', 90, 100), run('music', 100, 120)];
+    expect(refineChapter({ start: 0, end: 120 }, runs).performances).toEqual([{ start: 0, end: 120, narrationShare: 0.545 }]);
+  });
+  it('places speech before, between and after the performances', () => {
+    const runs = [run('speech', 0, 20), run('music', 20, 100), run('speech', 100, 110), run('music', 110, 200), run('speech', 200, 230)];
+    expect(refineChapter({ start: 0, end: 230 }, runs).speech.map((s) => s.position)).toEqual(['before', 'between', 'after']);
+  });
+  it('clips runs to the chapter and drops slivers under two seconds left by the cut', () => {
+    const runs = [run('speech', 0, 100.5), run('music', 100.5, 300), run('gap', 300, 330), run('speech', 330, 400)];
+    expect(refineChapter({ start: 99.7, end: 331.2 }, runs)).toEqual({
+      performances: [{ start: 100.5, end: 300, narrationShare: 0 }],
+      speech: [],
+      gaps: [{ start: 300, end: 330 }],
+      music: [100.5, 300],
+    });
+  });
+  it('gives a chapter with no music a null music span', () => {
+    const r = refineChapter({ start: 0, end: 60 }, [run('speech', 0, 60)]);
+    expect(r.music).toBeNull();
+    expect(r.performances).toEqual([]);
+    expect(r.speech).toEqual([{ start: 0, end: 60, position: 'before' }]);
   });
 });
 
