@@ -113,7 +113,7 @@ test('Admin list commands use confirmed positions through search, split, reorder
     ['DELETE', `${path}/sections/0`, {}], ['GET', path, null],
   ]);
   expect(stored.sections.map(section => section.items.map(item => item.label))).toEqual([
-    ['After match', 'Needle match revised'], ['Before match', 'Needle match revised'],
+    ['After match', 'Needle match revised (copy)'], ['Before match', 'Needle match revised'],
   ]);
 });
 

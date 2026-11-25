@@ -1,7 +1,9 @@
 import { useRef } from 'react';
+import { useFocusRegion } from '../../../lib/ui/index.js';
 import { Button, Text, VisuallyHidden } from '@mantine/core';
 import { ApproveButton } from './ReviewHeader.jsx';
 import { SignOffPanel } from './SignOffPanel.jsx';
+import { ApprovalFeedback } from './FilmApprovalControls.jsx';
 
 /**
  * The film's stages as one row of interlocking chevrons that are also the page's tabs (owner,
@@ -61,18 +63,22 @@ export function ApprovePanel({ data, approval, tally, running = false, onReview 
   const signOff = data.signOff || null;
   const ready = !signOff?.parent && data.status?.next === 'approve';
   const open = Math.max(0, (tally?.total || 0) - (tally?.done || 0));
+  // One named region for the whole panel: Approve becomes Withdraw in place, and focus stays here.
+  const outer = useFocusRegion(approval.busy);
   return (
-    <div className="cf-card-part cf-approve" data-state={signOff?.parent ? 'approved' : ready ? 'ready' : 'not-ready'}>
+    <div {...outer.regionProps} role="region" aria-label="Family approval" className="cf-card-part cf-approve" data-state={signOff?.parent ? 'approved' : ready ? 'ready' : 'not-ready'}>
       <Text fw={700}>{signOff?.parent ? 'Approved for family' : ready ? 'Ready to approve for family' : 'Not ready to approve yet'}</Text>
       {ready ? (
         <>
           <Text size="sm">{`${tally.done} of ${tally.total} filtered parts have a verdict, and nothing else is missing.`}</Text>
-          <ApproveButton approval={approval} />
+          <ApproveButton approval={approval} outer={outer} />
+          {/* A withdrawal turns this panel back to Approve; its result is still said here. */}
+          {approval.action === 'withdraw' ? <ApprovalFeedback feedback={approval} onRetry={() => { outer.focus(); approval.retry(); }} /> : null}
         </>
       ) : (
         <>
           {!signOff?.parent ? <Text size="sm" c="dimmed">{signOff?.missing?.length ? 'Still missing:' : 'The film cannot be approved in its current state.'}</Text> : null}
-          <SignOffPanel signOff={signOff} approval={approval} busyText={running ? 'A run is open' : null} />
+          <SignOffPanel signOff={signOff} approval={approval} outer={outer} busyText={running ? 'A run is open' : null} />
           {/* Not a dead end: the way back to the parts that still need a verdict. */}
           {!signOff?.parent && open && onReview ? (
             <Button size="compact-sm" onMouseDown={(e) => e.preventDefault()} onClick={onReview}>{`Review the ${open} part${open === 1 ? '' : 's'} without a verdict`}</Button>

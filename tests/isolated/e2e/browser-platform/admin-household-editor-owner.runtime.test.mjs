@@ -39,7 +39,7 @@ for (const resource of ['members', 'devices']) {
 
     if (resource === 'members') {
       await page.goto('/admin/household/members');
-      const remove = page.getByRole('button', { name: 'Remove', exact: true });
+      const remove = page.getByRole('button', { name: 'Remove alice from household', exact: true });
       await remove.press('Enter');
       await expect(page).toHaveURL('/admin/household/members');
       await expect(page.getByRole('dialog', { name: /remove/i })).toBeVisible();

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Anchor, Badge, Button, Group, Menu, Popover, Text, Tooltip } from '@mantine/core';
 import { DaylightAPI } from '../../../lib/api.mjs';
@@ -66,8 +66,8 @@ export function runState(job, worker = null, now = Date.now()) {
 /** The run's state as one line (kept for callers that only show text). */
 export function runLine(job, worker = null, now = Date.now()) { return runState(job, worker, now)?.text ?? null; }
 
-export function ApproveButton({ approval }) {
-  const { regionProps, feedback, start, retry } = useApprovalRegion(approval, 'approve');
+export function ApproveButton({ approval, outer = null }) {
+  const { regionProps, feedback, start, retry } = useApprovalRegion(approval, 'approve', outer);
   return (
     <span {...regionProps}>
       <Button size="compact-sm" color="green" loading={feedback?.busy} disabled={approval.blocked} onClick={start}>Approve for family</Button>
@@ -77,6 +77,7 @@ export function ApproveButton({ approval }) {
 }
 
 export function ReviewHeader({ ratingKey, data, stage = 'review', roughFiltered, refineAllCount = 0, handlers, onChanged = () => {}, flagged = 0, blocked = false, bleep = null }) {
+  const moreRef = useRef(null);
   const [confirmStop, setConfirmStop] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(null);
@@ -141,7 +142,7 @@ export function ReviewHeader({ ratingKey, data, stage = 'review', roughFiltered,
       </Popover>
       {/* No focus back on ⋯ when it closes: Enter must play the part, not reopen the menu. */}
       <Menu position="bottom-end" withinPortal returnFocus={false} onClose={() => setConfirmWhole(false)}>
-        <Menu.Target><Button size="compact-sm" variant="subtle" aria-label="More">⋯</Button></Menu.Target>
+        <Menu.Target><Button ref={moreRef} size="compact-sm" variant="subtle" aria-label="More">⋯</Button></Menu.Target>
         <Menu.Dropdown>
           <Menu.Item disabled={!refineAllCount || blocked} onClick={() => handlers.refineAll?.({ again: true })}>{`Refine all ${refineAllCount} filtered part${refineAllCount === 1 ? '' : 's'} again`}</Menu.Item>
           <Menu.Item disabled={running || pending || blocked} closeMenuOnClick={confirmWhole}
@@ -150,7 +151,8 @@ export function ReviewHeader({ ratingKey, data, stage = 'review', roughFiltered,
           </Menu.Item>
           {flagged ? <Menu.Item disabled={running || blocked} onClick={() => handlers.rework?.()}>{`Re-refine ${flagged} part${flagged === 1 ? '' : 's'} marked Redo`}</Menu.Item> : null}
           <Menu.Divider />
-          <Menu.Item onClick={() => handlers.help?.()}>All keys  ?</Menu.Item>
+          {/* The menu item unmounts on close, so the dialog's return target is ⋯, set before it opens. */}
+          <Menu.Item onClick={() => { moreRef.current?.focus(); handlers.help?.(); }}>All keys  ?</Menu.Item>
         </Menu.Dropdown>
       </Menu>
     </div>
