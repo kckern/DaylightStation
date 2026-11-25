@@ -1,5 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import KeyboardOnlyContext from './office/KeyboardOnlyContext.js';
+import { PianoFullscreenProvider, usePianoFullscreen } from '../../PianoFullscreenContext.jsx';
 import LearnCoach, { coachTempoTrack, passageDrill, passFills, recoveryWording } from './LearnCoach.jsx';
 import { applyCoachEvent, coachTaskKey, createCoachPlan, projectCoach } from '../../../../../../../shared/music/learnCoach.mjs';
 const h = vi.hoisted(() => ({ profile: 'guest', lab: null, labs: 0,
@@ -11,7 +13,8 @@ vi.mock('../../PianoConfig.jsx', () => ({ usePianoKioskConfigOptional: () => nul
 vi.mock('../Exercises/ScorePassage.jsx', () => ({ default: (props) => { h.preview = props; return <div>Passage music</div>; } }));
 // The drill surface is the real one elsewhere; here it only shows what the coach hands it.
 vi.mock('./LearnLab.jsx', () => ({ default: (props) => { h.lab = props; h.labs += 1;
-  return <div>Drill surface{props.notice}{props.extraControls}{props.resultLabel && <strong>{props.resultLabel}</strong>}{props.resultActions}</div>; } }));
+  return <div>Drill surface{props.notice}{props.extraControls}{props.resultLabel && <strong>{props.resultLabel}</strong>}{props.resultActions}
+    <footer>{props.railStart}{props.railEnd}</footer></div>; } }));
 const plan = createCoachPlan({ scoreId: 'score', fingerprint: 'fp', certification: { testOutFirst: false }, segments: [{ id: 'a', label: 'Segment 1', barLabel: 'Bars 1–4', inMeasure: 0, outMeasure: 3, playableParts: ['rh', 'lh'] }] });
 const props = { score: { id: 'score', musicXml: '<score />' }, plan, segment: plan.segments[0], onBack: vi.fn(), onListen: vi.fn() };
 const passed = { assessmentId: 'take', status: 'completed', score: 1, diagnostics: { expected_notes: 8, matched_notes: 8 }, criteria: { completeness: 1, cleanliness: 1, placement: 1 }, verdict: { passed: true } };
@@ -29,24 +32,24 @@ describe('LearnCoach', () => {
   expect(screen.queryByText(/Segment 1/)).toBeNull();
   expect(screen.queryByText(/Practicing as/)).toBeNull();
  });
- it('hands the passage to the drill as sets and reps: only the steps of its lap, headed by its token', () => {
+ it('hands the passage to the drill as sets and reps: only the steps of its lap, with no head of their own', () => {
   render(<LearnCoach {...props} />);
   const { projection, stepId } = h.lab.drill;
   // The Bronze lap: the hands, together, the check. The Gold steps are not drawn (no row of locks).
   expect(projection.steps.map((step) => step.display.key)).toEqual(['Right hand', 'Left hand', 'Together', 'On your own']);
   expect(projection.steps.some((step) => step.locked)).toBe(false);
   expect(projection.steps[0]).toMatchObject({ id: stepId, state: 'current', requirement: { required_passes: 1 }, pass_count: 0, passed: false });
-  expect(projection.head).toMatchObject({ text: 'A · steps to Bronze', lap: 'silver', level: 'bronze' });
+  // Two rails (2026-11-24): the coin beside the steps is the unit's, the level word the ladder's.
+  expect(projection.head).toBeUndefined();
  });
  it('draws the Gold lap\'s steps for a Gold task: rhythm, one hand at the first speed, the plan speeds', () => {
   const segment = projectCoach({ plan }).segments[0];
   const rhythm = segment.skills.find((skill) => skill.skill === 'rhythm');
-  const drill = passageDrill(segment, rhythm, { unit: { letter: 'A', state: 'silver' } });
+  const drill = passageDrill(segment, rhythm);
   expect(drill.projection.steps.map((step) => step.display.key)).toEqual(['Rhythm', 'Right 50%', 'Left 50%', '50%', '70%', '85%', '100%']);
   // Every timed step is the metronome with its speed; the hands-alone steps the hand; score tempo the gold coin.
   expect(drill.projection.steps.map((step) => step.display.icon != null)).toEqual([false, true, true, true, true, true, true]);
   expect(drill.projection.steps[0].requirement.required_passes).toBe(2);
-  expect(drill.projection.head).toMatchObject({ text: 'A · steps to Gold', level: 'gold' });
   expect(drill.stepId).toBe(rhythm.key);
  });
  it('counts banked takes as reps, and a drill belongs to the step it came from', () => {
@@ -178,12 +181,12 @@ describe('LearnCoach', () => {
   expect(recoveryWording({ reason: 'smaller-join', stepDown: 'join:c:d', range: { start: 8, end: 15 } }, { 'join:c:d': 'C–D' })).toEqual({ button: 'Play C–D', sentence: 'play C–D' });
   expect(recoveryWording({ reason: 'smaller-join', stepDown: 'x', range: { start: 8, end: 15 } })).toEqual({ button: 'Play bars 9–16', sentence: 'play bars 9–16' });
  });
- it('heads the strip of a step down with the half first, then the join', () => {
+ it('a step down belongs to the step it came from', () => {
   const segment = projectCoach({ plan }).segments[0];
   const check = segment.skills.find((skill) => skill.assist === 'none');
   const down = { ...check, assist: undefined, key: 'down', depth: 1, parent: check, reason: 'smaller-join', stepDown: 'c' };
-  const drill = passageDrill(segment, down, { unit: { letter: 'All', state: 'joined', stepDownName: 'C–D' } });
-  expect(drill.projection.head).toMatchObject({ text: 'C–D first · then All', label: 'C–D first, then All' });
+  const drill = passageDrill(segment, down);
+  expect(drill.projection.head).toBeUndefined();
   expect(drill.stepId).toBe(check.key);
  });
  it('names a timing recovery by its slower tempo', async () => {
@@ -191,7 +194,7 @@ describe('LearnCoach', () => {
   act(() => h.lab.onPickStep({ id: keyOf('mastery') }));
   expect(h.lab.coachingTask).toMatchObject({ mode: 'cued', tempoPercent: 100 });
   // A Gold step draws the Gold lap's steps.
-  expect(h.lab.drill.projection.head.text).toBe('A · steps to Gold');
+  expect(h.lab.drill.projection.steps.map((step) => step.display.key)).toContain('100%');
   const failed = { ...passed, criteria: { completeness: 1, cleanliness: 1, placement: .2 }, verdict: { passed: false } };
   await outcome(failed); await outcome({ ...failed, assessmentId: 'timing2' });
   // One rung of the plan down: 100 to 85.
@@ -239,19 +242,54 @@ describe('LearnCoach', () => {
   await outcome({ ...passed, assessmentId: 'strict', verdict: { passed: false }, criteria: { completeness: 1, cleanliness: 1, placement: 0.5 } });
   expect(h.log.info).toHaveBeenLastCalledWith('piano.learn.coach.take', expect.objectContaining({ placementShare: null }));
  });
- it('puts the passage path under the drill, and a token changes passage', () => {
+ it('hands the drill its coach rail: the passages as coins (a coin changes passage) and the ladder (it opens the board)', () => {
   const two = createCoachPlan({ scoreId: 'score', fingerprint: 'fp', segments: [
     { id: 'a', label: 'Segment 1', barLabel: 'Bars 1–4', inMeasure: 0, outMeasure: 3, playableParts: ['rh', 'lh'] },
     { id: 'b', label: 'Segment 2', barLabel: 'Bars 5–8', inMeasure: 4, outMeasure: 7, playableParts: ['rh', 'lh'] }] });
   const onPassageChange = vi.fn();
   render(<LearnCoach {...props} plan={two} segment={two.segments[0]} onPassageChange={onPassageChange} />);
   const rail = screen.getByRole('navigation', { name: 'Passages in this piece' });
+  expect(rail).toHaveClass('piano-passage-path--rail');
   expect(rail.querySelectorAll('.piano-passage-path__token')).toHaveLength(2);
+  // The coins only: no caption, no bars under a coin, no ladder or All button of the path's own.
+  expect(rail.querySelector('.piano-passage-path__caption, .piano-passage-path__bars, .piano-passage-path__all, .piano-passage-path__ladder')).toBeNull();
   expect(screen.getByRole('button', { name: 'Learn A, bars 1–4' })).toHaveAttribute('aria-current', 'step');
   fireEvent.click(screen.getByRole('button', { name: 'B, bars 5–8, Not started' }));
   expect(onPassageChange).toHaveBeenCalledWith('b');
   fireEvent.click(screen.getByRole('button', { name: /^All passages/ }));
   expect(screen.getByRole('dialog', { name: 'Passage board' })).toBeInTheDocument();
+ });
+
+ it('holds the kiosk full screen for the whole passage (the app bar steps aside), across a take\'s remount, and gives it back', async () => {
+  const memory = new Map();
+  const store = { getItem: (key) => memory.get(key) ?? null, setItem: (key, value) => memory.set(key, value), removeItem: (key) => memory.delete(key) };
+  const seen = {};
+  const Probe = () => { Object.assign(seen, usePianoFullscreen()); return null; };
+  const { rerender } = render(<PianoFullscreenProvider storage={store}><Probe /><LearnCoach {...props} /></PianoFullscreenProvider>);
+  expect(seen).toMatchObject({ fullscreen: true, hosted: true, surface: 'sheet-music-learn' });
+  const labs = h.labs;
+  await outcome(passed); // the next take is a new lab
+  expect(h.labs).toBeGreaterThan(labs);
+  expect(seen).toMatchObject({ fullscreen: true, hosted: true });
+  rerender(<PianoFullscreenProvider storage={store}><Probe /></PianoFullscreenProvider>);
+  expect(seen).toMatchObject({ fullscreen: false, hosted: false });
+ });
+
+ it('on the office: Previous and Next name the passage they open, and the menu draws the passage map', () => {
+  const three = createCoachPlan({ scoreId: 'score', fingerprint: 'fp', segments: ['a', 'b', 'c'].map((id, index) => (
+    { id, label: `Segment ${index + 1}`, barLabel: `Bars ${index * 4 + 1}–${index * 4 + 4}`, inMeasure: index * 4, outMeasure: index * 4 + 3, playableParts: ['rh', 'lh'] })) });
+  const published = {};
+  const target = document.createElement('div'); document.body.appendChild(target);
+  const office = { input: 'keyboard-only', canListen: false, menuOpen: true, menuMapTarget: target,
+    publishStrip: (source, entry) => { if (entry) published[source] = entry; } };
+  render(<KeyboardOnlyContext.Provider value={office}><LearnCoach {...props} plan={three} segment={three.segments[1]} /></KeyboardOnlyContext.Provider>);
+  const labels = Object.fromEntries(JSON.parse(published.coach.signature)[1].map(([id, label]) => [id, label]));
+  expect(labels).toMatchObject({ previous: 'Previous · A', next: 'Next · C' });
+  // The map in the menu: every passage, this one ringed.
+  const map = target.querySelector('.piano-passage-path--rail');
+  expect(map.querySelectorAll('.piano-passage-path__token')).toHaveLength(3);
+  expect(map.querySelector('[aria-pressed="true"]')).toHaveTextContent('B');
+  target.remove();
  });
 
  describe('skipping steps', () => {

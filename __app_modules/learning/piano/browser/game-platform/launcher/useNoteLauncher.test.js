@@ -172,6 +172,45 @@ describe('useNoteLauncher', () => {
     expect(result.current.isOpen).toBe(false);
   });
 
+  // A game that owns the edge-key hold (Sheet Music: it opens its own menu there)
+  // gets the combo to itself; every other game keeps the launcher's gesture.
+  const owning = () => renderHook(
+    ({ activeNotes }) => useNoteLauncher({ activeNotes, slots, options: { gameOwnsCombo: (id) => id === 'tetris' } }),
+    { initialProps: { activeNotes: new Map() } },
+  );
+  const launch = (rerender, note) => {
+    rerender({ activeNotes: notes(21, 108) });
+    rerender({ activeNotes: new Map() });
+    rerender({ activeNotes: notes(note) });
+    rerender({ activeNotes: new Map() });
+  };
+
+  it('holding the edge keys in Sheet Music does not leave it', () => {
+    const { result, rerender } = owning();
+    launch(rerender, 62); // tetris, standing in for the owning entry
+    expect(result.current.activeGameId).toBe('tetris');
+    rerender({ activeNotes: notes(21, 108) });
+    expect(result.current.isOpen).toBe(false); // the tap does not open the launcher over it
+    expect(result.current.isHolding).toBe(false); // and no quit ring counts
+    act(() => { vi.advanceTimersByTime(3000); });
+    expect(result.current.activeGameId).toBe('tetris');
+    rerender({ activeNotes: new Map() });
+    rerender({ activeNotes: notes(21, 108) });
+    act(() => { vi.advanceTimersByTime(3000); });
+    expect(result.current.activeGameId).toBe('tetris');
+    expect(result.current.isOpen).toBe(false);
+  });
+
+  it('holding them in any other game still leaves, as before', () => {
+    const { result, rerender } = owning();
+    launch(rerender, 60); // invaders does not own the hold
+    expect(result.current.activeGameId).toBe('invaders');
+    rerender({ activeNotes: notes(21, 108) });
+    expect(result.current.isHolding).toBe(true);
+    act(() => { vi.advanceTimersByTime(2000); });
+    expect(result.current.activeGameId).toBeNull();
+  });
+
   it('cancels the quit when the combo is released raggedly, one key at a time', () => {
     // Two hands come off a piano unevenly. Letting the top key go at 1.2s
     // while a finger still rests on A0 has BROKEN the combo — the spec says

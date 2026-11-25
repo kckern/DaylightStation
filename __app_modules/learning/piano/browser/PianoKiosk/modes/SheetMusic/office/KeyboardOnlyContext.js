@@ -2,26 +2,30 @@
 //
 // One context, absent on the tablet: ScorePlayer, LearnCoach and LearnLab read
 // it and, when it is there, open on the coach's next step, draw no touch-only
-// controls, and hand what those controls did to the host's key strip instead.
+// controls, and hand what those controls did to the host's menu instead.
 // PianoApp never provides it, so the tablet is unchanged.
 import { createContext, useContext, useEffect, useRef } from 'react';
 
 const KeyboardOnlyContext = createContext(null);
 
 /**
- * `{ input: 'keyboard-only', canListen, onExit(reason), publishStrip(source, entry|null) }`
- * on the office screen; null everywhere else.
+ * `{ input: 'keyboard-only', canListen, onExit(reason), publishStrip(source, entry|null), menuOpen, menuHolding, menuMapTarget }`
+ * on the office screen; null everywhere else. `menuOpen`: the host's menu is up;
+ * `menuHolding`: the hold that opens it is counting. Either pauses a take under
+ * way (LearnLab) until both are false. `menuMapTarget`: while the menu is open in
+ * a piece, the element its passage map row draws into (LearnCoach portals the
+ * coach rail's coins there); null otherwise.
  */
 export function useKeyboardOnly() {
   return useContext(KeyboardOnlyContext);
 }
 
 /**
- * Put actions on the host's key strip for as long as the caller is mounted.
+ * Offer actions in the host's menu for as long as the caller is mounted.
  *
- * `actions` maps a strip key id (officeKeys STRIP_KEYS) to `{ onSelect, label? }`;
- * an id left out, or without `onSelect`, draws its key dim. `active: false`
- * takes the whole strip off the keys — during a take every key is music. The
+ * `actions` maps a menu choice id (officeMenu MENU_KEYS) to `{ onSelect, label? }`;
+ * an id left out, or without `onSelect`, is not offered. `active: false` says a
+ * take is under way (the menu then reads Resume). The
  * handlers are read at press time from a ref, so a caller can pass fresh
  * closures every render without re-publishing at MIDI rates; only what is DRAWN
  * (ids, labels, enabled, active) is published.

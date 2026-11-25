@@ -32,6 +32,7 @@ import LearnLab from './LearnLab.jsx';
 import LearnCoach from './LearnCoach.jsx';
 import { useKeyboardOnly } from './office/KeyboardOnlyContext.js';
 import useLearnCoach from './useLearnCoach.js';
+import { usePianoUser } from '../../PianoUserContext.jsx';
 import { createCoachPlan } from '../../../../../../../shared/music/learnCoach.mjs';
 import LearnPassageLayer from './LearnPassageLayer.jsx';
 import { segmentNavigationState } from './LearnSegmentRail.jsx';
@@ -2237,6 +2238,9 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const coach = useLearnCoach({ plan: coachPlan, legacy: practice ?? {} });
   // Per-learner drill help (`sheetmusic.learners.<id>`): lit keys, wrong-note ghosts. See learnerAssist.js.
   const learnerAssist = useMemo(() => resolveLearnerAssist(config?.sheetmusic?.learners, coach.profileId), [config?.sheetmusic?.learners, coach.profileId]);
+  // Who is playing, for the drill's status line (its avatar).
+  const { currentProfile: learnProfile } = usePianoUser();
+  const learnPlayer = useMemo(() => ({ id: coach.profileId, name: learnProfile?.id === coach.profileId ? learnProfile?.name ?? null : null }), [coach.profileId, learnProfile]);
   // Passages carry the path's letter (A, B, C…) as their number, so the badge on the score names the same thing the path does.
   const coachedPassages = useMemo(() => {
     let order = 0;
@@ -2368,6 +2372,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const learnSession = learnSessionOpen ? (
       <LearnLab
         key={`${selectedPassage.id}:${activeLearnRung.id}:${learnLaunchNonce}`}
+        player={learnPlayer}
         score={learnScore}
         revision={learnPlan.revision}
         segment={selectedPassage}
@@ -2507,6 +2512,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
 
   if (roadmapLearn && selectedPassage) return <div className="piano-score-player piano-score-player--learn-launchpad">
     <LearnCoach score={learnScore} title={meta.title} plan={coachPlan} segment={selectedPassage} coach={coach} measures={layout.measures} skipping={learnPlan.skipping} assist={learnerAssist} polish={polishAwards}
+      player={learnPlayer}
       tempo={{ ...learnPlan.settings.tempo, tempoSource: learnPlan.tempoSource, measureOnsets: layout.measures.map((measure) => layout.steps[measure.firstStep]?.onsetQuarter) }} feedback={learnPlan.settings.feedback}
       onBack={closeLearnPassage} onPassageChange={openLearnPassage}
       onListen={(task) => logger.info('piano.learn.listen', { scoreId: scoreMeta.id, passageId: task.passageId, parts: task.parts })} />

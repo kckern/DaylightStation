@@ -52,6 +52,16 @@ export function pathLayout(tokenCount, width) {
   return size >= TOKEN_MIN_PX ? { size: Math.min(TOKEN_MAX_PX, size), compact: false } : { size: TOKEN_MIN_PX, compact: true };
 }
 
+/** The coach rail's coins (PassagePath `variant="rail"`): a tighter link, no larger next token, about 44px. */
+export const RAIL_LINK_PX = 6;
+export const RAIL_TOKEN_MAX_PX = 44;
+export const RAIL_TOKEN_MIN_PX = 38;
+export function railLayout(tokenCount, width) {
+  if (!(tokenCount > 0) || !(width > 0)) return { size: RAIL_TOKEN_MAX_PX, compact: false };
+  const size = Math.floor((width - (tokenCount - 1) * RAIL_LINK_PX) / tokenCount);
+  return size >= RAIL_TOKEN_MIN_PX ? { size: Math.min(RAIL_TOKEN_MAX_PX, size), compact: false } : { size: RAIL_TOKEN_MIN_PX, compact: true };
+}
+
 /** Whether every token keeps a usable touch target in a path this wide. */
 export function railFits(tokenCount, width) { return !pathLayout(tokenCount, width).compact; }
 
@@ -226,7 +236,7 @@ export function levelLadder({ lap = 'bronze', progress = null, piece = {}, joinT
   const { done, total } = current === 'diamond' ? { done: diamond ? 1 : 0, total: 1 } : progress ?? fallback;
   const word = levels[at].word;
   const text = current === 'diamond' ? (diamond ? 'Diamond · earned' : 'Diamond · in Polish') : `${word} · ${done} of ${total}`;
-  return { current, done, total, text,
+  return { current, done, total, text, word,
     // A gem is paid for the piece played through, the piece all Gold, and the diamond; never for a Bronze lap.
     gemLevel: current !== 'bronze' && !diamond,
     levels: levels.map((item, index) => ({ ...item, state: index < at || (diamond && index === at) ? 'earned' : index === at ? 'current' : 'later' })) };

@@ -27,3 +27,8 @@
     span { font-size: 0.85rem; font-weight: 700; color: var(--piano-muted); }
   }
 }
+// The coach rail's ladder (variant="word", 2026-11-24): the rungs a size down and the level's word under them.
+.piano-level-ladder[data-variant='word'] {
+  --rung: 1.6rem; gap: 0.15rem;
+  .piano-level-ladder__count { font-size: 1.05rem; }
+}

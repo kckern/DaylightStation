@@ -1,11 +1,11 @@
 // officeKeys.js — which key does what in Sheet Music on the office screen.
 //
 // The office screen has no touch input: every choice is a key, drawn as a key
-// face that wears its note. Three fixed rows, chosen so they never collide:
+// face that wears its note. In the picker (no music playing) two fixed rows:
 //   - the PIECES, on the white keys from middle C up (the launcher's own row);
-//   - the PAGES of a long list, on the octave below (SECONDARY_NOTES);
-//   - the drill's KEY STRIP, on the octave below that (C2–A2), far under where a
-//     passage starts, because before a take "any key" arms it.
+//   - the PAGES of a long list, on the octave below (SECONDARY_NOTES).
+// In a piece no key is ever a command: navigation is the menu (officeMenu.js),
+// opened by holding the board's lowest and highest keys.
 // Spec: ops:docs/superpowers/specs/2026-11-23-piano-office-sheet-music-design.md
 
 import { SELECTION_NOTES, SECONDARY_NOTES, bindNoteSlots } from '../../../../game-platform/input/useNoteSelection.js';
@@ -39,9 +39,20 @@ export function listPage(items, page = 0, notes = PIECE_NOTES) {
 }
 
 /**
+ * How a page of `count` keys sits on the canvas: up to three stacked in one
+ * column, more split into two columns, filled down the left column first, so
+ * the lower keys are on the left of the screen as they are under the hands.
+ */
+export function pickerGrid(count) {
+  const n = Math.max(1, Number(count) || 0);
+  const columns = n <= 3 ? 1 : 2;
+  return { columns, rows: Math.ceil(n / columns) };
+}
+
+/**
  * The browse keys under the list, one fixed key each so a face never moves:
  * C3 switches between your pieces and the shelves, D3 and E3 turn the page.
- * A key that does nothing right now is drawn dim on its key.
+ * A page key that does nothing right now keeps its place but is not drawn.
  */
 export const BROWSE_KEYS = Object.freeze([
   { id: 'switch', note: SECONDARY_NOTES[0] },
@@ -49,40 +60,16 @@ export const BROWSE_KEYS = Object.freeze([
   { id: 'next', note: SECONDARY_NOTES[2], label: 'Next' },
 ]);
 
-/** The browse row as drawn for a level ('mine' | 'shelves' | 'shelf') and its page. */
-export function browseSlots(level, page = {}) {
+/**
+ * The browse row as drawn for a level ('mine' | 'shelves' | 'shelf') and its page.
+ * `hasOwn: false` (the player has no pieces yet, so Sheet Music opened on the
+ * shelves) leaves the shelves' "Your pieces" key undrawn: it would lead nowhere.
+ */
+export function browseSlots(level, page = {}, { hasOwn = true } = {}) {
   const switchLabel = level === 'shelves' ? 'Your pieces' : 'All music';
-  const enabled = { switch: true, previous: Boolean(page.hasPrevious), next: Boolean(page.hasNext) };
+  const enabled = { switch: level !== 'shelves' || hasOwn, previous: Boolean(page.hasPrevious), next: Boolean(page.hasNext) };
   return BROWSE_KEYS.map((key) => ({
     id: key.id, note: key.note, noteName: noteName(key.note), label: key.id === 'switch' ? switchLabel : key.label,
     enabled: enabled[key.id], item: { browse: key.id },
   }));
-}
-
-/**
- * The drill's key strip. Each action owns one key for good, so a face never
- * moves under a hand: an action that does not apply right now is drawn dim on
- * its key rather than another action sliding into its place. Listen is the
- * exception — without a way to sound notes on this piano it is not drawn.
- */
-export const STRIP_KEYS = Object.freeze([
-  { id: 'pieces', note: 36, label: 'Pieces' },
-  { id: 'previous', note: 38, label: 'Previous' },
-  { id: 'next', note: 40, label: 'Next' },
-  { id: 'retry', note: 41, label: 'Try again' },
-  { id: 'later', note: 43, label: 'Come back later' },
-  { id: 'listen', note: 45, label: 'Listen' },
-]);
-export const STRIP_NOTES = Object.freeze(STRIP_KEYS.map((key) => key.note));
-
-/**
- * The strip as drawn: one face per key, with what each does now. `actions` maps
- * an id to `{ onSelect, label? }` (absent or without onSelect = not now).
- */
-export function stripSlots(actions = {}, { canListen = false } = {}) {
-  return STRIP_KEYS.filter((key) => key.id !== 'listen' || canListen).map((key) => {
-    const action = actions[key.id] ?? null;
-    return { id: key.id, note: key.note, noteName: noteName(key.note), label: action?.label ?? key.label,
-      enabled: typeof action?.onSelect === 'function', item: key };
-  });
 }

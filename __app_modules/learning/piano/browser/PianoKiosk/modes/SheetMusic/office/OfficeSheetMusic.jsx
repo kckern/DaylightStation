@@ -14,17 +14,23 @@ import { NotationScore } from '../SheetMusic.jsx';
 import KeyboardOnlyContext from './KeyboardOnlyContext.js';
 import OfficeMidiProvider from './OfficeMidiProvider.jsx';
 import OfficePiecePicker from './OfficePiecePicker.jsx';
-import KeyStrip from './KeyStrip.jsx';
-import { listPage, browseSlots, PIECE_NOTES, SHELF_NOTES, STRIP_KEYS, STRIP_NOTES } from './officeKeys.js';
+import OfficeMenu from './OfficeMenu.jsx';
+import { menuChoices } from './officeMenu.js';
+import useEdgeHold from './useEdgeHold.js';
+import { musicClaim } from './OfficeMidiProvider.jsx';
+import HoldRing from '../../../../game-platform/launcher/HoldRing.jsx';
+import { comboNotesForKeyboard } from '../../../../game-platform/launcher/comboForKeyboard.js';
+import { listPage, browseSlots, PIECE_NOTES, SHELF_NOTES } from './officeKeys.js';
 import { resolveScoreGroups } from '../scoreGroups.js';
 import { collectionListPath, isNotationId } from '../sheetMusicModel.js';
 import './learnSurface.scss';
 import './OfficeSheetMusic.scss';
 
 const NO_PIECES = Object.freeze([]);
-/** Strip sources in the order their actions win when two name one key. */
-const STRIP_SOURCES = ['host', 'coach', 'lab'];
-const STRIP_CLAIM = new Set(STRIP_NOTES);
+/** Where the way out (and every other navigation) is, said once at the end of the picker's footer. */
+const MENU_HINT = 'Hold the lowest and highest keys for the menu';
+/** Where the drill's actions come from, in the order they win when two name one choice. */
+const ACTION_SOURCES = ['coach', 'lab'];
 
 /**
  * Sheet Music on the office piano screen, run entirely from the keyboard.
@@ -38,14 +44,21 @@ const STRIP_CLAIM = new Set(STRIP_NOTES);
  * Three screens, each answered on keys:
  *   1. who is playing, when the launcher's pick is from another day (practice saves per player);
  *   2. the player's pieces, newest first, one per key (pages on the octave below);
- *   3. the piece, opened on the coach's next step, with the key strip under it.
- * Holding the lowest and highest keys leaves to the launcher (the launcher's own gesture).
+ *   3. the piece, opened on the coach's next step; every key is music there.
+ * Holding the board's lowest and highest keys opens the menu, from anywhere: it
+ * pauses a take, makes every key navigation, and holds every choice — Resume or
+ * Close, Pieces, Previous, Next, Try again, Come back later, and Leave (back to
+ * the launcher's free play). Sheet Music owns that gesture (gameRegistry
+ * `ownsEdgeHold`), so the launcher neither opens over it nor quits it.
  */
 export default function OfficeSheetMusic({
   activeNotes, subscribe = null, subscribeRaw = null, appConfig = null, timezone = null, keyboard = null,
-  currentUser = null, playerName = null, users = NO_PIECES, identityStale = false, onPickUser = null,
+  currentUser = null, playerName = null, users = NO_PIECES, identityStale = false, onPickUser = null, onDeactivate = null,
 }) {
   const logger = useMemo(() => getLogger().child({ component: 'office-sheet-music' }), []);
+  // ── The menu: the board's lowest + highest keys, held ─────────────────────
+  const [menuOpen, setMenuOpen] = useState(false);
+  const edges = useMemo(() => [...comboNotesForKeyboard(keyboard)], [keyboard]);
   // ── Who is playing ────────────────────────────────────────────────────────
   // A pick from another day is not good enough to file practice under: ask first.
   const [confirmedUser, setConfirmedUser] = useState(null);
@@ -53,7 +66,7 @@ export default function OfficeSheetMusic({
   const userSlots = useMemo(() => bindNoteSlots(users, SELECTION_NOTES).slots.map((slot) => ({
     ...slot, userId: slot.item.id, label: slot.item.group_label || slot.item.name, sharpAfter: false,
   })), [users]);
-  useNoteSelection({ activeNotes, slots: userSlots, enabled: askPlayer, onSelect: (item) => {
+  useNoteSelection({ activeNotes, slots: userSlots, enabled: askPlayer && !menuOpen, onSelect: (item) => {
     logger.info('office-sheet-music.player-picked', { userId: item.id, stale: identityStale });
     setConfirmedUser(item.id);
     onPickUser?.(item.id);
@@ -137,19 +150,24 @@ export default function OfficeSheetMusic({
   const page = useMemo(() => (browse.level === 'shelves'
     ? listPage(shelfFaces, browse.shelvesPage, SHELF_NOTES)
     : listPage(Array.isArray(listed) ? listed : NO_PIECES, browse.page, PIECE_NOTES)), [browse, shelfFaces, listed]);
-  const browseRow = useMemo(() => browseSlots(browse.level, page), [browse.level, page]);
+  // No pieces of their own yet: Sheet Music opens on the shelves, and says why, rather than on an empty page.
+  const hasOwn = !(Array.isArray(pieces) && pieces.length === 0);
+  useEffect(() => {
+    if (!hasOwn) setBrowse((current) => (current.level === 'mine' ? { ...current, level: 'shelves' } : current));
+  }, [hasOwn]);
+  const browseRow = useMemo(() => browseSlots(browse.level, page, { hasOwn }), [browse.level, page, hasOwn]);
   const pickerSlots = useMemo(() => [
     ...page.slots.map((slot) => ({ ...slot, kind: browse.level === 'shelves' ? 'shelf' : 'piece' })),
     ...browseRow.filter((slot) => slot.enabled).map((slot) => ({ ...slot, kind: 'browse' })),
   ], [page, browseRow, browse.level]);
   // Browsing works even when the player's own list could not be read.
-  const pickerOn = !askPlayer && !scoreId && pieces !== null;
+  const pickerOn = !askPlayer && !scoreId && pieces !== null && !menuOpen;
   const pickerTitle = browse.level === 'shelves' ? 'All music'
     : browse.level === 'shelf' ? openShelf?.label ?? 'All music'
       : playerName ? `${playerName}’s pieces` : 'Your pieces';
   const pickerStatus = browse.level === 'mine'
     ? (pieces === false ? 'Your pieces could not be loaded. Play C3 for all music.'
-      : Array.isArray(pieces) && pieces.length === 0 ? 'No pieces yet. Play C3 to choose one from all music.' : null)
+      : null)
     : browse.level === 'shelves'
       ? (shelves.length === 0 ? 'No music shelves are set up.' : null)
       : shelfList === undefined ? 'Opening the shelf…'
@@ -182,37 +200,53 @@ export default function OfficeSheetMusic({
     setOpenCount((count) => count + 1);
   }, [logger, scoreId]);
 
-  // ── The key strip ─────────────────────────────────────────────────────────
-  // Learn publishes what its touch controls did; the host draws one strip of
-  // keys for all of it and claims those keys away from the music while it shows.
-  const [strip, setStrip] = useState({});
+  // ── The drill's actions, for the menu ───────────────────────────────────
+  // Learn publishes what its touch controls did (useKeyStrip): the coach's
+  // previous / next / try again / come back later, and whether a take is under
+  // way. Nothing of it is on a key while the music has the keyboard.
+  const [published, setPublished] = useState({});
   const publishStrip = useCallback((source, entry) => {
-    setStrip((current) => {
+    setPublished((current) => {
       if (!entry) { if (!(source in current)) return current; const { [source]: _gone, ...rest } = current; return rest; }
       if (current[source]?.signature === entry.signature) return current;
       return { ...current, [source]: entry };
     });
   }, []);
-  const hostActions = useMemo(() => ({ pieces: { onSelect: () => backToPieces('strip') } }), [backToPieces]);
-  const stripActions = useMemo(() => {
-    const merged = {};
-    for (const key of STRIP_KEYS) {
-      for (const source of STRIP_SOURCES) {
-        const action = source === 'host' ? hostActions[key.id] : strip[source]?.actionsRef.current?.[key.id];
-        if (typeof action?.onSelect === 'function') { merged[key.id] = { label: action.label, source, onSelect: action.onSelect }; break; }
-      }
+  const drillAction = useCallback((id) => {
+    for (const source of ACTION_SOURCES) {
+      // Read at press time: a published entry keeps its ref current.
+      const action = published[source]?.actionsRef.current?.[id];
+      if (typeof action?.onSelect === 'function') return { ...action, source };
     }
-    return merged;
-  }, [strip, hostActions]);
-  const stripActive = Boolean(scoreId) && Object.values(strip).every((entry) => entry.active !== false);
-  const onStripKey = useCallback((id) => {
-    const action = stripActions[id];
-    if (!action) return;
-    // Read the handler at press time: a published entry keeps its ref current.
-    const live = action.source === 'host' ? hostActions[id] : strip[action.source]?.actionsRef.current?.[id];
-    logger.info('office-sheet-music.strip-key', { key: id, source: action.source, scoreId });
-    live?.onSelect?.();
-  }, [stripActions, hostActions, strip, logger, scoreId]);
+    return null;
+  }, [published]);
+  const inDrill = Boolean(scoreId);
+  // A take under way (or paused) is what the lab's `active: false` says: the menu then reads Resume.
+  const takeHeld = inDrill && Object.values(published).some((entry) => entry.active === false);
+  const choices = useMemo(() => {
+    const actions = {};
+    for (const id of ['previous', 'next', 'retry', 'later']) actions[id] = drillAction(id);
+    return menuChoices({ inDrill, paused: takeHeld, actions });
+  }, [inDrill, takeHeld, drillAction]);
+
+  const toggleMenu = useCallback(() => {
+    setMenuOpen((open) => {
+      logger.info(open ? 'office-sheet-music.menu-closed' : 'office-sheet-music.menu-opened', { scoreId, by: 'hold' });
+      return !open;
+    });
+  }, [logger, scoreId]);
+  const { holding } = useEdgeHold({ activeNotes, low: edges[0], high: edges[1], onHold: toggleMenu });
+  const onMenuChoice = useCallback((id) => {
+    logger.info('office-sheet-music.menu-choice', { choice: id, scoreId });
+    setMenuOpen(false);
+    if (id === 'resume') return;
+    if (id === 'pieces') { backToPieces('menu'); return; }
+    if (id === 'leave') { onDeactivate?.('menu-leave'); return; }
+    drillAction(id)?.onSelect?.();
+  }, [logger, scoreId, backToPieces, onDeactivate, drillAction]);
+  const claim = useMemo(() => musicClaim({ menuOpen, edges }), [menuOpen, edges]);
+  // The menu's passage map row: Learn draws the piece's passages into it while the menu is open in a piece.
+  const [menuMapEl, setMenuMapEl] = useState(null);
 
   // ── The kiosk surfaces Learn reads ───────────────────────────────────────
   const userValue = useMemo(() => ({
@@ -221,8 +255,17 @@ export default function OfficeSheetMusic({
   // `canListen`: the office piano's recorder only reads the keyboard; there is no note OUTPUT to play a
   // passage through (OfficeMidiProvider's sends are no-ops), so Listen is not drawn (owner ruling).
   const keyboardOnly = useMemo(() => ({
-    input: 'keyboard-only', canListen: false, onExit: backToPieces, publishStrip,
-  }), [backToPieces, publishStrip]);
+    input: 'keyboard-only', canListen: false, onExit: backToPieces, publishStrip, menuOpen, menuHolding: holding,
+    menuMapTarget: menuOpen ? menuMapEl : null,
+  }), [backToPieces, publishStrip, menuOpen, holding, menuMapEl]);
+
+  const menu = (
+    <>
+      <OfficeMenu open={menuOpen} choices={choices} activeNotes={activeNotes} onSelect={onMenuChoice} mapRef={inDrill ? setMenuMapEl : null}
+        subtitle={takeHeld ? 'Your take is paused.' : inDrill ? null : 'Close goes back to the list; Leave ends Sheet Music.'} />
+      {holding && <HoldRing holdMs={2000} label={menuOpen ? 'HOLD TO CLOSE' : 'HOLD FOR THE MENU'} />}
+    </>
+  );
 
   useEffect(() => {
     logger.info('office-sheet-music.mounted', { userId: currentUser, stale: identityStale });
@@ -235,6 +278,7 @@ export default function OfficeSheetMusic({
       <div className="office-sheet-music office-sheet-music--who">
         <NoteLauncher slots={userSlots} variant="users" showTimer={false} title="Who's practising? · play their key"
           showPlayer={false} />
+        {menu}
       </div>
     );
   }
@@ -245,14 +289,14 @@ export default function OfficeSheetMusic({
         <div className="office-sheet-music__body">
           {!scoreId && (
             pieces === null ? <p className="office-sheet-music__status" role="status">Finding your pieces…</p>
-              : <OfficePiecePicker title={pickerTitle} status={pickerStatus} kind={browse.level === 'shelves' ? 'shelves' : 'pieces'}
-                  slots={page.slots} browse={browseRow} page={page}
-                  keyCount={browse.level === 'shelves' ? Math.max(page.slots.length, 4) : PIECE_NOTES.length} />
+              : <OfficePiecePicker title={pickerTitle} status={pickerStatus}
+                  notice={browse.level === 'shelves' && !hasOwn ? 'No pieces started yet. Pick a shelf.' : null} kind={browse.level === 'shelves' ? 'shelves' : 'pieces'}
+                  slots={page.slots} browse={browseRow} page={page} hint={MENU_HINT} />
           )}
           {scoreId && (
             <ActivePianoProvider pianoId="office" basePath="/" config={config}>
               <PianoUserContext.Provider value={userValue}>
-                <OfficeMidiProvider activeNotes={activeNotes} subscribe={subscribe} subscribeRaw={subscribeRaw} claimed={stripActive ? STRIP_CLAIM : null}>
+                <OfficeMidiProvider activeNotes={activeNotes} subscribe={subscribe} subscribeRaw={subscribeRaw} claimed={claim}>
                   <PianoPlaybackProvider>
                     <IsolatedMemoryRouter>
                       <div className="office-sheet-music__learn">
@@ -265,11 +309,7 @@ export default function OfficeSheetMusic({
             </ActivePianoProvider>
           )}
         </div>
-        {scoreId && (
-          <footer className="office-sheet-music__strip">
-            <KeyStrip activeNotes={activeNotes} actions={stripActions} active={stripActive} canListen={keyboardOnly.canListen} onSelect={onStripKey} />
-          </footer>
-        )}
+        {menu}
       </div>
     </KeyboardOnlyContext.Provider>
   );

@@ -1,8 +1,10 @@
 import { act, fireEvent, render, renderHook, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import LearnLab, { learnPracticeRequirement } from './LearnLab.jsx';
+import KeyboardOnlyContext from './office/KeyboardOnlyContext.js';
 import { createClickScheduler } from './clickScheduler.js';
 import { useMetronomeClick } from './useMetronomeClick.js';
+import { PianoFullscreenProvider, usePianoFullscreen } from '../../PianoFullscreenContext.jsx';
 
 const exercise = vi.hoisted(() => ({ props: null }));
 const log = vi.hoisted(() => ({ info: vi.fn() }));
@@ -27,6 +29,57 @@ const base = { score: { id: 'score', musicXml: '<score />' }, revision: 'rev', s
 describe('LearnLab', () => {
   beforeEach(() => { localStorage.clear(); log.info.mockClear(); });
   afterEach(() => vi.useRealTimers());
+
+  // Two rails (2026-11-24): the status line replaces the app's top bar while a Learn drill is open.
+  it('an uncoached Learn drill takes the kiosk full screen while open, so the app bar steps aside, and gives it back on leaving', () => {
+    const memory = new Map();
+    const store = { getItem: (key) => memory.get(key) ?? null, setItem: (key, value) => memory.set(key, value), removeItem: (key) => memory.delete(key) };
+    const seen = {};
+    const Probe = () => { Object.assign(seen, usePianoFullscreen()); return null; };
+    const { rerender } = render(<PianoFullscreenProvider storage={store}><Probe /><LearnLab {...base} /></PianoFullscreenProvider>);
+    // The app bar (PianoChrome) is drawn only when not full screen; the drill hosts no toggle, so none floats either.
+    expect(seen).toMatchObject({ fullscreen: true, hosted: true });
+    rerender(<PianoFullscreenProvider storage={store}><Probe /></PianoFullscreenProvider>);
+    expect(seen).toMatchObject({ fullscreen: false, hosted: false });
+    // The kiosk's own remembered choice was never touched.
+    expect(memory.size).toBe(0);
+  });
+
+  it('draws the keyboard row only for a learner whose config asks for key hints (always or after-wrong), never by default', () => {
+    const { rerender } = render(<LearnLab {...base} />);
+    expect(exercise.props.keyboard).toBe(false);
+    rerender(<LearnLab {...base} assist={{ keyboardHints: 'always' }} />);
+    expect(exercise.props.keyboard).toBe(true);
+    rerender(<LearnLab {...base} assist={{ keyboardHints: 'after-wrong' }} />);
+    expect(exercise.props.keyboard).toBe(true);
+    rerender(<LearnLab {...base} assist={{ keyboardHints: 'never' }} />);
+    expect(exercise.props.keyboard).toBe(false);
+  });
+
+  it('a save problem is said in the prompt slot, so the status line keeps its height and its heading', () => {
+    render(<LearnLab {...base} notice={<div className="piano-learn-coach__save" role="status">Progress not saved</div>} />);
+    expect(document.querySelector('.piano-learn-lab__prompt .piano-learn-coach__save')).not.toBeNull();
+    // Only the cue is announced; the prompt's buttons are not a live region.
+    expect(document.querySelector('.piano-learn-lab__prompt').getAttribute('aria-live')).toBeNull();
+    expect(document.querySelector('.piano-learn-lab__cue').getAttribute('aria-live')).toBe('polite');
+  });
+
+  it('after a missed take the tablet keeps Listen beside the result\'s actions', () => {
+    render(<LearnLab {...base} coachingTask={{ key: 'task' }} onOutcome={vi.fn()} onListen={vi.fn()} resultActions={<button type="button">Try again</button>} />);
+    phase('done');
+    expect(screen.getByRole('button', { name: 'Listen' })).toBeInTheDocument();
+  });
+
+  it('the status line says what to do and which bars on one line, with the player; no set or rep count', () => {
+    render(<LearnLab {...base} player={{ id: 'learner4', name: 'Learner Four' }} />);
+    const status = document.querySelector('.piano-learn-lab__toolbar');
+    expect(status.querySelector('.piano-learn-lab__heading').textContent).toBe('Right handBars 1–4');
+    expect(status.querySelector('.piano-learn-lab__avatar')).not.toBeNull();
+    expect(status.textContent).not.toMatch(/Set \d+ of|Rep \d+ of/);
+    // The run draws into the lab's two rails.
+    expect(document.querySelector('.piano-learn-lab__rail .piano-learn-lab__rail-middle')).not.toBeNull();
+    expect(exercise.props.slots).toEqual({ prompt: expect.any(HTMLElement), rail: expect.any(HTMLElement) });
+  });
 
   it('logs actual preference transitions once and carries semantic selections into the run', () => {
     const timed = { ...rung, mode: 'cued', tempoPercent: 60 };
@@ -121,7 +174,9 @@ describe('LearnLab', () => {
     expect(screen.getByRole('button', { name: 'Back to Segment 1' })).toBeInTheDocument();
     expect(document.querySelector('.piano-learn-lab__toolbar')).toBeInTheDocument();
     expect(screen.getByText('Bars 1–4')).toBeInTheDocument();
-    expect(screen.getByText('Set 1 of 1 · Rep 1 of 1')).toBeInTheDocument();
+    // Which set and rep: the pills on the coach rail (the run's projection), not a line of words.
+    expect(screen.queryByText(/Set 1 of 1/)).toBeNull();
+    expect(exercise.props.drillProjection.steps).toHaveLength(1);
     expect(screen.queryByText(/roadmap/i)).not.toBeInTheDocument();
     expect(exercise.props.score).toMatchObject({ rangeIndices: { start: 0, end: 3 }, activeParts: ['rh'] });
     expect(exercise.props).toMatchObject({ scoreCursorPolicy: 'always', scoreLayoutPolicy: 'whole-passage', keyboardHintPolicy: 'after-wrong', surface: 'learn-lab', hideHeading: true });
@@ -158,13 +213,62 @@ describe('LearnLab', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Start over' }));
     expect(exercise.props.controlKey).not.toBe(firstKey);
     phase('ready');
-    expect(screen.getByText('Set 1 of 1 · Rep 1 of 1')).toBeInTheDocument();
+    // Which set and rep: the pills on the coach rail (the run's projection), not a line of words.
+    expect(screen.queryByText(/Set 1 of 1/)).toBeNull();
+    expect(exercise.props.drillProjection.steps).toHaveLength(1);
     fireEvent.click(screen.getByRole('button', { name: 'Change practice' }));
     expect(onChangePractice).toHaveBeenCalledWith(expect.objectContaining({ parts: ['rh'], mode: 'free' }));
     expect(log.info).toHaveBeenCalledWith('piano.learn.control', expect.objectContaining({ action: 'pause', scoreId: 'score', revision: 'rev', passageId: 'm0-3', mode: 'free', parts: ['rh'], creditEligible: true, runId: expect.any(String) }));
     expect(log.info).toHaveBeenCalledWith('piano.learn.control', expect.objectContaining({ action: 'restart' }));
     expect(log.info).toHaveBeenCalledWith('piano.learn.control', expect.objectContaining({ action: 'change-practice' }));
     expect(JSON.stringify(log.info.mock.calls)).not.toMatch(/\"midi\"|rawMidi/i);
+  });
+
+  it('the hold mid-take pauses the take; Resume continues it without a new take', () => {
+    // The office menu (KeyboardOnlyContext `menuOpen`) pauses a take under way: no credit, no failure.
+    const office = (menuOpen) => ({ input: 'keyboard-only', canListen: false, menuOpen, publishStrip: () => {} });
+    const onOutcome = vi.fn();
+    const { rerender } = render(<KeyboardOnlyContext.Provider value={office(false)}><LearnLab {...base} onOutcome={onOutcome} /></KeyboardOnlyContext.Provider>);
+    phase('running');
+    const take = exercise.props.controlKey;
+    rerender(<KeyboardOnlyContext.Provider value={office(true)}><LearnLab {...base} onOutcome={onOutcome} /></KeyboardOnlyContext.Provider>);
+    expect(exercise.props.paused).toBe(true);
+    phase('paused');
+    rerender(<KeyboardOnlyContext.Provider value={office(false)}><LearnLab {...base} onOutcome={onOutcome} /></KeyboardOnlyContext.Provider>);
+    expect(exercise.props.paused).toBe(false);
+    expect(exercise.props.controlKey).toBe(take); // the same take continues
+    expect(onOutcome).not.toHaveBeenCalled();
+    expect(log.info).toHaveBeenCalledWith('piano.learn.control', expect.objectContaining({ action: 'pause', by: 'office-menu' }));
+    expect(log.info).toHaveBeenCalledWith('piano.learn.control', expect.objectContaining({ action: 'resume', by: 'office-menu' }));
+  });
+
+  it('the hold pauses a take while it counts; let go early and the same take carries on', () => {
+    const office = (menuHolding) => ({ input: 'keyboard-only', canListen: false, menuOpen: false, menuHolding, publishStrip: () => {} });
+    const { rerender } = render(<KeyboardOnlyContext.Provider value={office(false)}><LearnLab {...base} /></KeyboardOnlyContext.Provider>);
+    phase('running');
+    const take = exercise.props.controlKey;
+    rerender(<KeyboardOnlyContext.Provider value={office(true)}><LearnLab {...base} /></KeyboardOnlyContext.Provider>);
+    expect(exercise.props.paused).toBe(true);
+    rerender(<KeyboardOnlyContext.Provider value={office(false)}><LearnLab {...base} /></KeyboardOnlyContext.Provider>);
+    expect(exercise.props.paused).toBe(false);
+    expect(exercise.props.controlKey).toBe(take);
+  });
+
+  it('a take the menu paused and then left is logged as abandoned, and the run says the hold opens the menu', () => {
+    const office = { input: 'keyboard-only', canListen: false, menuOpen: false, publishStrip: () => {} };
+    const { rerender, unmount } = render(<KeyboardOnlyContext.Provider value={office}><LearnLab {...base} /></KeyboardOnlyContext.Provider>);
+    expect(exercise.props.exitHint).toBe('Hold the lowest and highest keys for the menu.');
+    phase('running');
+    rerender(<KeyboardOnlyContext.Provider value={{ ...office, menuOpen: true }}><LearnLab {...base} /></KeyboardOnlyContext.Provider>);
+    unmount();
+    expect(log.info).toHaveBeenCalledWith('piano.learn.take-abandoned', expect.objectContaining({ reason: 'office-menu', creditOutcome: 'none' }));
+  });
+
+  it('the office menu opened between takes pauses nothing', () => {
+    const office = (menuOpen) => ({ input: 'keyboard-only', canListen: false, menuOpen, publishStrip: () => {} });
+    const { rerender } = render(<KeyboardOnlyContext.Provider value={office(false)}><LearnLab {...base} /></KeyboardOnlyContext.Provider>);
+    rerender(<KeyboardOnlyContext.Provider value={office(true)}><LearnLab {...base} /></KeyboardOnlyContext.Provider>);
+    expect(exercise.props.paused).toBe(false);
   });
 
   it('speed and volume are absent during a take and Listen, and their slot keeps its place', () => {
@@ -222,9 +326,10 @@ describe('LearnLab', () => {
   it('Back names its destination, the score', () => {
     const onClose = vi.fn();
     render(<LearnLab {...base} coachingTask={{ key: 'task' }} onClose={onClose} onOutcome={vi.fn()} />);
+    // A 48px mark at the far right of the status line; its name says where it goes.
     const back = screen.getByRole('button', { name: 'Back to score' });
-    expect(back).toHaveTextContent('Score');
-    expect(back).not.toHaveTextContent(/^‹?\s*Back$/);
+    expect(back).toHaveClass('piano-learn-lab__back');
+    expect(back.closest('.piano-learn-lab__toolbar').lastElementChild).toBe(back);
     fireEvent.click(back);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
@@ -269,7 +374,8 @@ describe('LearnLab', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Finish take' }));
     expect(onRecord).not.toHaveBeenCalled();
     expect(onFinished).not.toHaveBeenCalled();
-    expect(screen.getByText('Set 1 of 1 · Rep 2 of 2')).toBeInTheDocument();
+    // The rep banked on the pills (the run's projection): the second rep is the current one.
+    expect(exercise.props.drillProjection.steps[0]).toMatchObject({ pass_count: 1, state: 'current' });
     fireEvent.click(screen.getByRole('button', { name: 'Finish take' }));
     expect(onFinished).toHaveBeenCalledWith(expect.objectContaining({ verdict: { passed: true } }));
   });
@@ -473,10 +579,11 @@ describe('LearnLab', () => {
     expect(log.info).toHaveBeenCalledWith('piano.learn.control', expect.objectContaining({ action: 'listen' }));
   });
 
-  it('keeps the uncoached lab as it was: segment name, set and rep line, no Listen', () => {
+  it('the uncoached lab: Back names its passage, the status line its bars, the rail its sets; no Listen', () => {
     render(<LearnLab {...base} />);
-    expect(screen.getByText('Segment 1')).toBeInTheDocument();
-    expect(screen.getByText(/Set 1 of 1/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Back to Segment 1' })).toBeInTheDocument();
+    expect(document.querySelector('.piano-learn-lab__heading span')).toHaveTextContent('Bars 1–4');
+    expect(screen.queryByText(/Set 1 of 1/)).toBeNull();
     expect(screen.queryByRole('button', { name: 'Listen' })).not.toBeInTheDocument();
     expect(exercise.props.stepId).toBe('right:set-1');
   });

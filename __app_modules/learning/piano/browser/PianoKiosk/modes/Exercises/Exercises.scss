@@ -1,5 +1,8 @@
 .piano-exercises,
-.piano-exercise-run {
+.piano-exercise-run,
+// A host's rails (LearnLab) hold what the run draws into them (ExerciseRun `slots`): they read the same tokens.
+.piano-learn-lab__rail,
+.piano-learn-lab__prompt {
   --ex-bg: var(--piano-bg, #16161b);
   --ex-fg: var(--piano-fg, #f1f1f4);
   --ex-muted: var(--piano-muted, #9a9aa6);
@@ -606,6 +609,78 @@
   gap: var(--run-row-gap);
   padding-block-start: 0.4rem;
 }
+
+/* TWO RAILS (2026-11-24): a host that draws its own rails (LearnLab's status line and coach rail) takes
+   the run's rail row, and with it the result, the count and the live tally (ExerciseRun `slots`). The run is
+   then the score alone, edge to edge between the rails, plus the keyboard for a learner whose keys are lit
+   on every take. The paper keeps no strip for the tally: the tally is on the rail. */
+.piano-exercise-run[data-surface='learn-lab'][data-rails='host'] {
+  --run-rail-row: 0px;
+  grid-template-rows: 0 minmax(0, 1fr);
+  padding-block: 0.4rem;
+}
+.piano-exercise-run[data-surface='learn-lab'][data-rails='host'][data-keyboard] {
+  grid-template-rows: 0 minmax(0, 1fr) var(--run-keys-row);
+  padding-block-end: 0;
+}
+.piano-exercise-run[data-rails='host'] .piano-exercise-run__score:has(.piano-score-passage) { padding-top: 0.5rem; }
+/* The rail's middle zone: the step pills, and the live count in a slot of its own beside them. */
+.piano-exercise-run__rail-steps { flex: 0 1 auto; min-width: 0; height: 100%; display: flex; align-items: center; overflow: hidden; }
+.piano-exercise-run__rail-tally { justify-self: end; display: flex; align-items: center; font-variant-numeric: tabular-nums; }
+.piano-learn-lab__rail .piano-exercise-run__result.is-on-rail { grid-column: 1 / -1; }
+.piano-exercise-run__rail-tally .piano-exercise-run__tally,
+.piano-exercise-run__result.is-on-rail .piano-exercise-run__tally { position: static; inset: auto; max-width: none; flex-wrap: nowrap; }
+.piano-learn-lab__rail .piano-exercise-run__tally span { min-height: 2.25rem; padding: 0.2rem 0.65rem; font-size: 1.05rem; background: var(--ex-surface); box-shadow: none; }
+.piano-learn-lab__rail .piano-exercise-run__tally span > span { all: unset; }
+/* The docked result on the rail: the middle zone, in its place, at its size. (Scoped to the rail, so it
+   outranks the card's own docked placement below.) */
+.piano-learn-lab__rail .piano-exercise-run__result.is-on-rail {
+  position: static; box-sizing: border-box; width: 100%; height: 100%;
+  display: grid; grid-template-columns: auto minmax(0, max-content) auto; justify-content: center; align-items: center; column-gap: 1.25rem;
+  margin: 0; padding: 0; border: 0; border-radius: 0; background: none; overflow: hidden; text-align: start;
+}
+.piano-exercise-run__result.is-on-rail .piano-exercise-run__verdict { width: 2.75rem; height: 2.75rem; font-size: 1.8rem; }
+.piano-exercise-run__result.is-on-rail .piano-exercise-run__verdict-line { font-size: 1.2rem; }
+.piano-exercise-run__result.is-on-rail .piano-exercise-run__meters { gap: 0.8rem; }
+.piano-exercise-run__result.is-on-rail .piano-exercise-run__meters li { font-size: 1.1rem; }
+.piano-exercise-run__result.is-on-rail .piano-exercise-run__meter { width: 3.5rem; }
+/* Listen on the rail: the headphones and how far through, across the middle zone. */
+.piano-learn-lab__rail .piano-exercise-run__listen { box-sizing: border-box; width: 28rem; max-width: 100%; }
+/* The prompt slot after a docked result: the way on, held invisible (its room kept) until the card takes a key. */
+.piano-exercise-run__next { margin: 0; color: var(--ex-fg); font-size: 1.25rem; font-weight: 800; white-space: nowrap; visibility: hidden; }
+.piano-exercise-run__next[data-ready] { visibility: visible; }
+.piano-learn-lab__prompt .piano-exercise-run__result-actions { display: flex; align-items: center; gap: 0.5rem; }
+.piano-exercise-run__next-keys { order: -2; display: inline-flex; align-items: center; gap: 0.2rem; color: var(--ex-fg); font-size: 1.6rem; visibility: hidden; }
+/* Three ways on and more: the slot keeps its room for the buttons, the key and pedal marks go. */
+.piano-exercise-run__result-actions:has(> button:nth-of-type(3)) .piano-exercise-run__next-keys { display: none; }
+.piano-exercise-run__next-keys[data-ready] { visibility: visible; }
+.piano-learn-lab__prompt .piano-exercise-run__result-actions button {
+  box-sizing: border-box; height: var(--learn-control, 48px); padding: 0 0.7rem; border: 1px solid var(--piano-border); border-radius: var(--r-md, 12px);
+  background: var(--ex-surface-2); color: var(--ex-fg); font: inherit; font-size: 1.1rem; font-weight: 750; white-space: nowrap; cursor: pointer;
+}
+.piano-learn-lab__prompt .piano-exercise-run__result-actions button.is-primary { order: -1; background: var(--ex-fg); color: var(--ex-bg); border-color: var(--ex-fg); font-weight: 800; }
+/* The count in the prompt slot: the same pips, in the line, not a band over the music. */
+.piano-learn-lab__prompt .piano-learn-countin { position: static; transform: none; padding: 0; border: 0; background: none; gap: 0.6rem; }
+.piano-learn-lab__prompt .piano-learn-countin__pip { width: 1.75rem; height: 1.75rem; font-size: 0.95rem; }
+/* The cue (and a missed cue's sentence) may take two lines, so the band never runs under the buttons. */
+.piano-learn-lab__prompt .piano-learn-countin__cue { max-width: 10rem; white-space: normal; font-size: 0.95rem; line-height: 1.1; }
+.piano-learn-lab__prompt .piano-score-countin { position: static; inset: auto; flex-direction: row; gap: 0.6rem; }
+.piano-learn-lab__prompt .piano-score-countin__beat { font-size: 2.2rem; text-shadow: none; }
+.piano-learn-lab__prompt .piano-score-countin__bar { width: 8rem; }
+.piano-learn-lab__prompt .piano-score-countin.is-play { padding-top: 0; }
+/* The steps on the rail are dots: each step's rep pills, ringed while it is the one being played. Their
+   names are the status line's (the current one) and their accessible names (every one). */
+.piano-learn-lab__rail .drill-progress { width: auto; gap: 0; }
+.piano-learn-lab__rail .drill-progress__rail { flex-wrap: nowrap; gap: 0.35rem; }
+.piano-learn-lab__rail .drill-cluster { box-sizing: border-box; min-width: 2.75rem; min-height: 2.75rem; padding: 0.25rem 0.35rem; justify-content: center; gap: 0; border: 2px solid transparent; border-radius: 999px; background: none; color: inherit; font: inherit; }
+.piano-learn-lab__rail .drill-cluster[data-active] { border-color: var(--piano-fg, #f1f1f4); }
+.piano-learn-lab__rail .drill-cluster__label,
+.piano-learn-lab__rail .drill-cluster__rollup { display: none; }
+.piano-learn-lab__rail .drill-cluster__pills { gap: 0.3rem; }
+.piano-learn-lab__rail .drill-pill { width: 18px; height: 18px; }
+/* On the rail's dark surface a step to do is a clear ring, not a socket in the dark. */
+.piano-learn-lab__rail .drill-pill__track { stroke: #6b6b78; }
+.piano-learn-lab__rail .drill-pill__core { inset: 4px; background: #2c2c35; box-shadow: none; }
 
 /* THE DOCKED RESULT TAKES THE RAIL'S OWN SLOT, AND ONLY IT. It is the step strip's
    row, exactly: same top, same height, so nothing on the screen moves when a take
