@@ -62,12 +62,12 @@ export function parseSrt(text) {
 const STOP = new Set(('a an and the of to in on is it for with be we you i he she they '
   + 'our his her my me us oh o this that all are as at by from not but so ye thy thee').split(' '));
 
-/** Content words: lowercased, accents and apostrophes gone, 3+ letters, no stop words. */
+/** Content words: lowercased, accents and apostrophes (straight or curly) gone, 3+ letters, no stop words. */
 export function words(s) {
   return String(s ?? '')
     .toLowerCase()
     .normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
-    .replace(/'/g, '')
+    .replace(/['\u2018\u2019]/g, '')
     .replace(/[^a-z0-9]+/g, ' ')
     .split(' ')
     .filter((w) => w.length > 2 && !STOP.has(w));

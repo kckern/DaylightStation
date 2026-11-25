@@ -45,6 +45,11 @@ describe('lyricOverlap', () => {
     expect(lyricOverlap('', GOD_REST)).toBe(0);
     expect(lyricOverlap(HEARD, '')).toBe(0);
   });
+  it('words() treats a curly apostrophe like a straight one', () => {
+    expect(words('David\u2019s City')).toEqual(['davids', 'city']);
+    expect(words('Man\u2018s')).toEqual(['mans']);
+    expect(lyricOverlap("ONCE IN ROYAL DAVID\u2019S CITY", "Once in Royal David's City")).toBe(1);
+  });
   it('words() drops stop words, short words, accents and apostrophes', () => {
     expect(words("O Holy Night, Noël — Satan's")).toEqual(['holy', 'night', 'noel', 'satans']);
   });
