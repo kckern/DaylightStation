@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import getLogger from '../../../../../frontend/src/lib/logging/Logger.js';
 
 let _logger;
@@ -189,7 +189,8 @@ export function usePianoFullscreen() {
 export function useHostedFullscreenToggle(enabled) {
   const { available, hostToggle } = usePianoFullscreen();
   const active = Boolean(enabled) && available;
-  useEffect(() => (active ? hostToggle() : undefined), [active, hostToggle]);
+  // Before paint, like the claim below: the surface's first frame is already laid out for it.
+  useLayoutEffect(() => (active ? hostToggle() : undefined), [active, hostToggle]);
   return active;
 }
 
@@ -204,7 +205,11 @@ export function useHostedFullscreenToggle(enabled) {
 export function useBoardGameFullscreen(gameId, { enter = true } = {}) {
   const { available, claimBoardGame } = usePianoFullscreen();
   const active = available && Boolean(gameId);
-  useEffect(
+  // A layout effect, so the claim's state update lands BEFORE the browser paints: the surface's first frame
+  // is already full screen. As a plain effect, a drill mounted from loaded data (not a tap) painted one frame
+  // with the app bar still there, 61 px lower and shorter, then jumped; the score was laid out at the short
+  // size and rescaled (2026-11-25). No on-screen resize after first paint.
+  useLayoutEffect(
     () => (active ? claimBoardGame(gameId, { enter }) : undefined),
     [active, gameId, enter, claimBoardGame],
   );
