@@ -54,10 +54,57 @@ const characterList = (v) => asArray(v)
 // a Frog and Toad chapter, or thousands of unrelated items. The exact-id lane
 // remains available to legitimately one-word works; only guess-based recovery
 // refuses them.
+//
+// CONTAINMENT IS BY WHOLE WORDS, NEVER BY CHARACTERS. Mozart's
+// `Symphony No. 10 in G Major, K. 74` contains `symphony no 1` as characters,
+// and the store pinned Sibelius's First Symphony over it: the plate named the
+// wrong composer and the playhead never moved, because every segment on the
+// borrowed rail was stamped with Sibelius's id. `no 1` and `no 10` are
+// different words.
+const hasPhrase = (hay, needle) => !!hay && !!needle && ` ${hay} `.includes(` ${needle} `);
 const titlesOverlap = (a, b) => {
-  if (!a || !b || (!a.includes(b) && !b.includes(a))) return false;
+  if (!a || !b || (!hasPhrase(a, b) && !hasPhrase(b, a))) return false;
   const shorter = a.length <= b.length ? a : b;
   return shorter.split(/\s+/).filter(Boolean).length >= 2;
+};
+// WHO MADE THE WORK, as the phrases a live item would carry: the corpus slug
+// that heads the `work:` ref (`sibelius/symphony-1` -> `sibelius`) and the
+// surname on the composer's own file (`Jean Sibelius` -> `sibelius`).
+// A title alone is not identity for a numbered work — every composer of
+// symphonies wrote a `Symphony No. 1` — so a stale-id rebind must also find the
+// work's maker named somewhere on the live item (its title, show, album or
+// artist). Pieces that name no maker are not gated.
+const creatorPhrases = (work, composer) => {
+  const out = new Set();
+  const slug = typeof work === 'string' ? normalizeTitle(work.split('/')[0]) : '';
+  if (slug) out.add(slug);
+  const name = normalizeTitle(composer?.name);
+  const surname = name ? name.split(' ').pop() : '';
+  if (surname) out.add(surname);
+  return [...out];
+};
+// The live item's own words about itself, for the maker check above. Read off
+// the item and its `metadata` alike: adapters put the show/album in either.
+const IDENTITY_FIELDS = ['grandparentTitle', 'parentTitle', 'artist', 'album'];
+const liveIdentity = (title, context) => normalizeTitle([
+  typeof title === 'string' ? title : '',
+  ...IDENTITY_FIELDS.flatMap((k) => [context?.[k], context?.metadata?.[k]])
+    .map((v) => (typeof v === 'string' ? v : '')),
+].join(' '));
+const namesCreator = (identity, creators) => (
+  !creators?.length || creators.some((phrase) => hasPhrase(identity, phrase))
+);
+// A rebound payload still carries the STALE id on every segment and timeline
+// slot, and the frame finds what is sounding by matching those stamps against
+// the playing item's id. Unrestamped, a correct rebind draws a rail with no
+// sounding segment and no playhead. Only the piece's own id is rewritten; a
+// container's parts keep theirs.
+const restamp = (payload, staleId, liveId) => {
+  if (!payload || liveId == null || String(liveId) === '' || String(staleId) === String(liveId)) return payload;
+  const swap = (o) => (o && String(o.contentId) === String(staleId) ? { ...o, contentId: String(liveId) } : o);
+  if (Array.isArray(payload.segments)) payload.segments = payload.segments.map(swap);
+  if (Array.isArray(payload.timeline?.parts)) payload.timeline.parts = payload.timeline.parts.map(swap);
+  return payload;
 };
 // An absent key is authoring intent (the block is optional); a present key of
 // the wrong shape is a mistake the type guards quietly paper over.
@@ -296,16 +343,31 @@ export class YamlSurroundStore extends ISurroundStore {
    *
    * @param {string} contentId - Compound content ID (e.g. 'plex:663134')
    * @param {string} title - Item title
+   * @param {Object|null} [context] - The live item's other words about itself
+   *   (`grandparentTitle`, `parentTitle`, `artist`, `album`); a stale-id rebind
+   *   must find the work's maker named in these or the title.
    * @returns {Object|null} Resolved surround payload, or null
    */
-  lookup(contentId, title) {
+  lookup(contentId, title, context = null) {
     try {
       this.#refreshIfStale();
 
       const payload = this.#byContentId.get(String(contentId));
       if (payload) return structuredClone(payload);
 
-      const candidates = this.#rebind(title);
+      const matched = this.#rebind(title);
+      const identity = liveIdentity(title, context);
+      const candidates = matched.filter((c) => namesCreator(identity, c.creators));
+      if (matched.length > candidates.length) {
+        // The title matched a piece by someone the live item never names —
+        // Sibelius's `Symphony No. 1` against a Mozart symphony. Refused, and
+        // said so, because a refusal and "no sidecar" otherwise look the same.
+        this.logger?.debug?.('surround.match.creator-mismatch', {
+          staleContentId: contentId,
+          liveTitle: title,
+          refused: matched.filter((c) => !candidates.includes(c)).map(({ file, creators }) => ({ file, creators }))
+        });
+      }
       if (candidates.length === 1) {
         const [rebound] = candidates;
         // Warn, not info: the sidecar still works, but its contentId is wrong and
@@ -316,7 +378,7 @@ export class YamlSurroundStore extends ISurroundStore {
           file: rebound.file,
           contentId: rebound.contentId
         });
-        return structuredClone(rebound.payload);
+        return restamp(structuredClone(rebound.payload), rebound.contentId, contentId);
       }
       if (candidates.length > 1) {
         // Refuse rather than guess. A wrong surround is a visible error to whoever
@@ -596,6 +658,7 @@ export class YamlSurroundStore extends ISurroundStore {
           title: resolved.title,
           file: resolved.file,
           contentId: resolved.contentId,
+          creators: creatorPhrases(resolved.work, resolved.payload?.composer),
           payload: resolved.payload
         });
       }
@@ -853,6 +916,10 @@ export class YamlSurroundStore extends ISurroundStore {
         for (let j = 0; j < titles.length; j += 1) {
           if (grouped.has(j)) continue;
           if (!titlesOverlap(titles[seed].normalized, titles[j].normalized)) continue;
+          // Two makers' `Symphony No. 5` never compete: the live item names one.
+          const a = titles[seed].creators ?? [];
+          const b = titles[j].creators ?? [];
+          if (a.length && b.length && !a.some((p) => b.includes(p))) continue;
           grouped.add(j);
           queue.push(j);
         }

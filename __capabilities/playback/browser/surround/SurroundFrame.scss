@@ -28,19 +28,19 @@
      the strip of hall the plate hangs on.
      Wave 5 raised it 3.4rem -> 4.2rem for a straddle that put the plate a
      THIRD on the picture (two thirds — ~55px of an ~82px plate — needing room
-     above the video's top edge). `--placard-straddle` is now -50% (Task 7,
-     half and half): only ~40px of the plate's ~80px height sits above the
-     line today, not ~55px, so 4.2rem (67px) leaves ~27px of dark hall above
-     the plate rather than the ~12px wave 2 tuned for — generous now, not
-     tight. The value has not been re-tuned down for the new ratio; it simply
-     still clears it with room to spare. The video is nudged down; it is not
+     above the video's top edge). The straddle went to -50% in 2026-09 and back
+     to -66.67% on 2026-11-24, with a plate tightened to ~77px: ~51px of it
+     sits above the line, so 4.2rem (67px) leaves ~16px of dark hall above
+     the plate. The video is nudged down; it is not
      made smaller (it is width-limited at every kiosk size in the fleet). */
   --placard-inset: 4.2rem;
-  /* HOW FAR THE PLATE SITS OVER THE PICTURE. Half on the hall, half on the
-     picture: the plate reads as a caption fixed to the frame's top edge rather
-     than as a band floating above it. One number, read by the base transform AND
-     by the entrance's settle, so the two can never disagree. */
-  --placard-straddle: -50%;
+  /* HOW FAR THE PLATE SITS OVER THE PICTURE. Two thirds on the hall, a third
+     on the picture — wave 5's judgement, restored 2026-11-24 when the owner
+     found half-and-half covered too much of the video ("the top plaque covers
+     too much"). Still a straddle: the plate is fixed to the frame's top edge,
+     not floating above it. One number, read by the base transform AND by the
+     entrance's settle, so the two can never disagree. */
+  --placard-straddle: -66.67%;
   /* How far the dark band rides up over the video's last pixels. Visual only —
      a negative margin on the footer, never a change to the media box. */
   --band-overlap: 10px;

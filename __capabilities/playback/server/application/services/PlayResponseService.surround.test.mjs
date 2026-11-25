@@ -71,7 +71,7 @@ describe('PlayResponseService surround attachment', () => {
     const store = { lookup: vi.fn().mockReturnValue(PAYLOAD) };
     const response = makeService(store, logger).toPlayResponse(ITEM);
 
-    expect(store.lookup).toHaveBeenCalledWith('plex:663134', 'Beethoven: 3. Sinfonie');
+    expect(store.lookup).toHaveBeenCalledWith('plex:663134', 'Beethoven: 3. Sinfonie', expect.objectContaining({ title: 'Beethoven: 3. Sinfonie' }));
     expect(response.surround).toEqual(PAYLOAD);
     const attached = logger.debug.mock.calls.find((c) => c[0] === 'surround.attach');
     expect(attached).toBeDefined();

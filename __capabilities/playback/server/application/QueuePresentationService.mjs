@@ -20,7 +20,7 @@ export class QueuePresentationService {
     const prepared = selected.map((item) => {
       try {
         const part = plan?.surroundFor.get(item.id) ?? null;
-        const surround = part?.payload ?? (plan?.refused ? null : this.store?.lookup(item.id, item.title));
+        const surround = part?.payload ?? (plan?.refused ? null : this.store?.lookup(item.id, item.title, item));
         if (!surround) return item;
         const result = { ...item, surround };
         if (part) Object.assign(result, { surroundPart: part.part, resumePosition: null, resume: false });

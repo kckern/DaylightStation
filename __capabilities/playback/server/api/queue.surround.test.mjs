@@ -102,7 +102,7 @@ describe('queue router surround attachment', () => {
     const res = await request(makeApp({ items, surroundStore, logger })).get('/api/v1/queue/plex:eroica');
 
     expect(res.status).toBe(200);
-    expect(surroundStore.lookup).toHaveBeenCalledWith('plex:663134', 'Beethoven: 3. Sinfonie');
+    expect(surroundStore.lookup).toHaveBeenCalledWith('plex:663134', 'Beethoven: 3. Sinfonie', expect.objectContaining({ title: 'Beethoven: 3. Sinfonie' }));
     expect(res.body.items[0].surround).toEqual(PAYLOAD);
     const attached = logger.debug.mock.calls.find((c) => c[0] === 'surround.attach');
     expect(attached).toBeDefined();

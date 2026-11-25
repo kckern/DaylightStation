@@ -529,6 +529,32 @@ recovers a stale id, even if the longer title contains that word. Exact
 their surround when their authored id is current. This rule deliberately prefers
 no surround over a confident-looking wrong one.
 
+**Overlap is by whole words.** `Symphony No. 10 in G Major` does not contain
+`Symphony No. 1`: `no 10` and `no 1` are different words. Before 2026-11-24 the
+comparison was by characters, and a shuffled queue of Mozart symphonies on the
+living-room TV wore Sibelius's First Symphony over every Mozart title beginning
+`Symphony No. 1…` (and his Second over `Symphony No. 2…`).
+
+**The maker must be named on the live item.** A title is not identity for a
+numbered work — every symphonist wrote a `Symphony No. 1`. A rebind candidate's
+maker is the slug heading its `work:` ref (`sibelius/symphony-1` → `sibelius`)
+and the surname on its `_composer.yml` (`Jean Sibelius` → `sibelius`); one of
+them must appear, as whole words, in the live title or the item's
+`grandparentTitle`, `parentTitle`, `artist` or `album` (on the item or under its
+`metadata`). The play and queue paths pass the item itself to `lookup` as its
+third argument. A candidate whose maker is not named is refused and logged at
+debug as `surround.match.creator-mismatch`, naming the file. The build-time
+`surround.titles.ambiguous` pre-warning skips pairs by different makers for the
+same reason. A piece whose maker cannot be derived is not gated.
+
+**A rebound payload is restamped with the live id.** Every segment and timeline
+slot carries the `contentId` its sidecar authored, and the frame finds the
+sounding segment — the playhead, the bond — by matching those stamps against the
+playing item's id. A rebind that returned the stale stamps drew a rail with no
+sounding segment and a playhead that never moved (`surround.rail.unmapped`).
+The store rewrites the piece's own id to the live one on the rebound copy; a
+container's parts keep theirs, and the index keeps the authored id.
+
 When a rebind happens it logs `surround.match.rebound` (warn) naming the stale id
 and the file, so the fix is a one-line edit rather than a mystery. **If two
 sidecars match the same title the store refuses and logs
@@ -800,7 +826,7 @@ The `concert-hall` definition's regions resolve to named modules from
 
 | Module | Region | Draws |
 |---|---|---|
-| `work-placard` | top | The floating stone plate: piece title, opus, composed, premiere. On a container it headlines the sounding segment and locates it in the set beneath (see "One programme across several media items"). The composer is never named here — the person lives on brass in the rail, and the plate is stone, which carries only the work. |
+| `work-placard` | top | The floating stone plate: piece title, opus, composed, premiere — two thirds on the hall, a third on the picture (see design.md; tightened 2026-11-24 because it covered too much of the video). On a container it headlines the sounding segment and locates it in the set beneath (see "One programme across several media items"). The composer is never named here — the person lives on brass in the rail, and the plate is stone, which carries only the work. |
 | `composer-card` | right (rail) | The header row — portrait plate and brass nameplate — and, below it, the rotating composer fact. |
 | `place-carousel` | right (rail) | The foot of the rail, one slide at a time: the composer's city photograph, the country in continental context, the country at city zoom, and the era timeline. Each is captioned with what its plate CANNOT draw — see "What the other identity fields are FOR". |
 | `country-map` | right, bottom | The regional map component itself (see below). |

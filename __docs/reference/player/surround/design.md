@@ -151,7 +151,13 @@ video's top edge as a content-width museum plate — **two thirds on the hall ab
 one third over the picture** (`--placard-straddle`). A plate is pinned to the wall
 the painting hangs on; it overlaps the frame, not the canvas. The hall strip above
 it (`--placard-inset`) is sized to hold that two thirds with ~12px to spare, so
-the plate never reads as cropped by the frame's own edge. The bottom band spans exactly
+the plate never reads as cropped by the frame's own edge. (Half-and-half ran
+from 2026-09 to 2026-11-24, when the owner found the plate covered too much of
+the video; the third came back with a tighter plate — 0.72rem provenance lines,
+less padding — so on the living-room TV (960x540 CSS) it is ~72px tall with
+~23px on the picture, down from 94px with 47px. `band.measure.test.jsx` holds
+the overlap to at most a third of the plate and 7.5% of the picture's height at
+every fleet size.) The bottom band spans exactly
 the video's width — so it reads as that video's timeline, not as page furniture —
 and rides up over the video's last ~10px so the join is one edge, not two boxes
 meeting. The rail runs full height because it carries identity, not progress, and

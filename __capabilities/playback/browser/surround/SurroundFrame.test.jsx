@@ -738,6 +738,12 @@ describe('SurroundFrame — the shipped composition', () => {
    * finds the plate cuts too deep, wave 5 said so first. It was overruled by
    * the owner, not by a build that would not go green.
    *
+   * AND RESTORED 2026-11-24, again on the owner's word ("the top plaque covers
+   * too much of the video"): the token is back at -66.67%, a third on the
+   * picture, and the upper bound comes down from 55 to 35 so half-and-half
+   * cannot return unnoticed. `band.measure.test.jsx` ("the plate keeps off the
+   * picture") holds the measured overlap.
+   *
    * One token still carries it, so the base straddle and the entrance's
    * settle cannot drift apart.
    */
@@ -746,7 +752,7 @@ describe('SurroundFrame — the shipped composition', () => {
     const declared = css.match(/--placard-straddle: (-[\d.]+)%/);
     expect(declared, 'no --placard-straddle token').not.toBeNull();
     const overlapPct = 100 + Number(declared[1]);        // -50% -> 50% below the edge
-    expect(overlapPct, 'the plate cuts too deep into the video').toBeLessThan(55);
+    expect(overlapPct, 'the plate cuts too deep into the video').toBeLessThan(35);
     expect(overlapPct, 'the plate barely touches the video — it is not straddling').toBeGreaterThan(20);
     // Both the resting transform and the entrance's settle read the token.
     expect(css).toMatch(/\.surround-frame__header \{[^}]*transform: translate\(-50%, var\(--placard-straddle\)\)/);
