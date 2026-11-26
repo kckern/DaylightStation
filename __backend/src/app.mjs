@@ -530,7 +530,7 @@ const __dirname = path.dirname(new URL(import.meta.url).pathname);
  * @param {boolean} [options.enableMqtt=true] - Whether to enable MQTT (false for toggle mode - legacy handles it)
  * @returns {Promise<express.Application>} Configured Express app
  */
-export async function createApp({ server, logger, configPaths, configExists, enableScheduler = true, enableMqtt = true }) {
+export async function createApp({ server, logger, configPaths, configExists, enableScheduler = true, enableMqtt = true, accessObservation = null }) {
   const assetProbe = new FilesystemAssetProbe();
   const isDocker = assetProbe.exists('/.dockerenv');
   // Transitional legacy consumers still expect this narrow persistence object.
@@ -686,7 +686,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     }),
     getTimezone: (id) => configService.getHouseholdTimezone(id),
   });
-  app.use('/api/v1', householdResolver({ domainConfig, householdContext }));
+  app.use('/api/v1', householdResolver({
+    domainConfig,
+    householdContext,
+    observe: accessObservation?.recordResolution,
+  }));
 
   // 2. networkTrustResolver assigns household roles for LAN requests
   app.use('/api/v1', networkTrustResolver({ householdRoles: authConfig?.household_roles || {} }));
@@ -708,6 +712,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       return Boolean(device && (device.content_control || device.fleet === true));
     },
     logger: rootLogger.child({ module: 'auth' }),
+    observe: accessObservation?.recordStation,
   }));
 
   // 4. permissionGate enforces role-based access (auth endpoints are exempt — they're unrestricted in app_routes)
@@ -842,6 +847,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     httpServer: server,
     path: '/ws',
     logger: rootLogger,
+    observeUpgrade: accessObservation?.record,
     // Same allow-list as the HTTP cross-site guard: pages from other sites
     // may not open the bus. __docs/reference/core/network-exposure.md.
     allowedOrigins,
@@ -4964,6 +4970,8 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   }
 
   process.on('SIGTERM', () => stateGatesModule.dispose());
+
+  accessObservation?.recordScheduledJobs(agentsServices.scheduler?.list?.() ?? []);
 
   return app;
 }

@@ -81,6 +81,7 @@ export class WebSocketEventBus {
   #path;
   #logger;
   #allowedOrigins;
+  #observeUpgrade;
   #running = false;
   #pingInterval = null;
 
@@ -139,6 +140,7 @@ export class WebSocketEventBus {
       ? options.allowedOrigins
       : originAllowList(options.allowedOrigins || [], { logger: this.#logger });
     this.#livenessService = options.livenessService || null;
+    this.#observeUpgrade = options.observeUpgrade;
   }
 
   /**
@@ -203,7 +205,10 @@ export class WebSocketEventBus {
     this.#wss = new WebSocketServer({
       server,
       path: this.#path,
-      verifyClient: (info, accept) => accept(...this.#verifyOrigin(info.req)),
+      verifyClient: (info, accept) => {
+        this.#observeUpgrade?.({ host: info.req.headers.host, ingress: 'websocket' });
+        accept(...this.#verifyOrigin(info.req));
+      },
     });
     this.#running = true;
     this.#metrics.startedAt = Date.now();

@@ -919,6 +919,32 @@ server: {
 
 ## Troubleshooting
 
+### Identity and access inventory
+
+The installed server emits one `access.inventory.window` event per UTC minute
+with aggregate HTTP counts and separate WebSocket upgrade counts. Use the
+read-only inventory CLI with the installation's log-store URL.
+
+```sh
+node cli/identity-access.cli.mjs inventory \
+  --since <UTC-start> --until <UTC-end> --evidence <private.json>
+```
+
+Set `DAYLIGHT_LOGSTORE` or pass `--log-store`. Choose minute-aligned UTC
+boundaries and wait for the final window to reach the log store. Capture daily
+counts before retention expires. A gap, overflow, overlapping writer window
+or missing activity counts as incomplete. Exit codes are `0` for complete
+coverage with no unknown callers, `2` for incomplete coverage or unknown
+callers, and `1` for a failed source or invalid input.
+
+The private evidence file contains `activities` and `callers` arrays. Each
+activity records `activity` and its UTC `at` timestamp. The installation
+rehearsal covers `school`, `workout`, `piano`, `film` and `phone-share`.
+Record each separately traced caller with `householdId`, `id`, `kind`,
+`transport`, `host`, `identifiesBy`, `credentialStore` and
+`provisioningOwner`. Use labels for credential storage and identity methods.
+Keep secret values and the evidence file in private operations storage.
+
 ### "Port already in use"
 Check which environment's ports you're using. Docker (3111) and dev (3112) use different ports.
 

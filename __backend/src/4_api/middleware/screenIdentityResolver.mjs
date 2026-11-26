@@ -12,9 +12,10 @@
  *
  * Fails closed: an unreadable device registry identifies no screen.
  */
-export function screenIdentityResolver({ isDeclaredScreen, logger = null }) {
+export function screenIdentityResolver({ isDeclaredScreen, logger = null, observe = null, clock = Date.now }) {
   if (typeof isDeclaredScreen !== 'function') throw new Error('isDeclaredScreen is required');
   const announced = new Set();
+  let currentHour;
   return (req, _res, next) => {
     if (req.user || !req.isLocal || req.deviceIdSource !== 'header') return next();
     const deviceId = req.deviceId;
@@ -25,9 +26,17 @@ export function screenIdentityResolver({ isDeclaredScreen, logger = null }) {
     catch (error) { logger?.warn?.('auth.screen.registry_unreadable', { error: error.message }); }
     if (!declared) return next();
     req.screen = { id };
-    if (!announced.has(id)) {
-      announced.add(id);
-      logger?.info?.('auth.screen.identified', { screen: id });
+    const lastSeen = clock();
+    const hour = Math.floor(lastSeen / 3_600_000);
+    if (hour !== currentHour) {
+      announced.clear();
+      currentHour = hour;
+    }
+    const key = JSON.stringify([req.householdId, id]);
+    if (!announced.has(key)) {
+      announced.add(key);
+      logger?.info?.('auth.screen.identified', { screen: id, householdId: req.householdId });
+      observe?.({ householdId: req.householdId, id, lastSeen });
     }
     next();
   };

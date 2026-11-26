@@ -4,20 +4,22 @@
  * Middleware that resolves household from request host.
  * Uses explicit domain mapping first, then pattern matching, then default.
  */
-export function householdResolver({ domainConfig, householdContext }) {
+export function householdResolver({ domainConfig, householdContext, observe = null }) {
   const explicitMap = domainConfig.domain_mapping || {};
   const patterns = domainConfig.patterns || [];
 
   return (req, res, next) => {
     const host = req.headers.host || '';
 
-    // 1. Check explicit mapping
-    if (explicitMap[host]) {
-      req.householdId = explicitMap[host];
-    }
-    // 2. Try pattern matching
-    else {
-      req.householdId = matchPatterns(host, patterns) || householdContext.resolve();
+    const exact = explicitMap[host];
+    const pattern = exact ? null : matchPatterns(host, patterns);
+    req.householdId = exact || pattern || householdContext.resolve();
+    if (observe) {
+      req.accessObservation = {
+        resolution: exact ? 'exact' : pattern ? 'pattern' : 'fallback',
+        householdId: req.householdId ?? null,
+      };
+      observe({ host, ...req.accessObservation });
     }
 
     // 3. Validate household exists

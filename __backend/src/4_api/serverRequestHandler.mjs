@@ -1,9 +1,18 @@
 import { processUptime } from '#system/runtime/processMetrics.mjs';
 
 /** Node HTTP edge behavior for health probes and Express fall-through. */
-export function createServerRequestHandler({ app, clock = Date.now, uptime = processUptime } = {}) {
+export function createServerRequestHandler({ app, clock = Date.now, uptime = processUptime, observe = null } = {}) {
   if (typeof app !== 'function') throw new Error('createServerRequestHandler requires app');
   return (req, res) => {
+    if (observe) {
+      const record = () => {
+        res.off('finish', record);
+        res.off('close', record);
+        observe({ host: req.headers.host, ingress: 'http', ...req.accessObservation });
+      };
+      res.once('finish', record);
+      res.once('close', record);
+    }
     if (req.url === '/healthz' || req.url === '/api/v1/health/live') {
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify({ ok: true, server: 'main', timestamp: clock(), uptime: uptime() }));

@@ -11,6 +11,7 @@ import { installCrashHandlers } from '#system/boot/installCrashHandlers.mjs';
 import { backendModulePaths, resolveRuntimeDataPaths, runtimeLogDirectory } from '#system/boot/runtimePaths.mjs';
 import { createEventLoopLagMonitor } from '#system/runtime/eventLoopLag.mjs';
 import { createServerRequestHandler } from '#api/serverRequestHandler.mjs';
+import { createAccessObservationCounts } from '#system/logging/accessObservationCounts.mjs';
 
 installCrashHandlers();
 
@@ -209,6 +210,7 @@ export async function main() {
   // ==========================================================================
 
   const server = createServer();
+  const accessObservation = createAccessObservationCounts({ logger });
 
   logger.info('router.loading_backend', { message: 'Loading DDD backend...' });
 
@@ -217,7 +219,8 @@ export async function main() {
     server,
     logger,
     configPaths,
-    configExists
+    configExists,
+    accessObservation,
   });
   logger.info('router.backend_loaded', { message: 'DDD backend loaded' });
 
@@ -225,7 +228,7 @@ export async function main() {
   // Request Routing
   // ==========================================================================
 
-  server.on('request', createServerRequestHandler({ app }));
+  server.on('request', createServerRequestHandler({ app, observe: accessObservation.record }));
 
   // ==========================================================================
   // Start Server
@@ -237,6 +240,7 @@ export async function main() {
   const appPort = configService.getAppPort();
   const port = isDocker ? appPort : appPort + 1;
   server.listen(port, '0.0.0.0', () => {
+    server.once('close', accessObservation.start());
     logger.info('server.started', {
       port,
       appPort,

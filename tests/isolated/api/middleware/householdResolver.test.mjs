@@ -3,6 +3,22 @@ import { vi } from 'vitest';
 import { householdResolver, matchPatterns } from '#backend/src/4_api/middleware/householdResolver.mjs';
 
 describe('householdResolver middleware', () => {
+  test('annotates the edge request without changing fallback routing', () => {
+    const observe = vi.fn();
+    const resolver = householdResolver({
+      domainConfig: { domain_mapping: { 'mapped.example': 'a' }, patterns: [] },
+      householdContext: { resolve: () => 'default', exists: () => true, household: id => ({ id }) },
+      observe,
+    });
+    const mapped = { headers: { host: 'mapped.example' } };
+    const fallback = { headers: { host: 'legacy.example' } };
+    resolver(mapped, {}, vi.fn());
+    resolver(fallback, {}, vi.fn());
+    expect(mapped.accessObservation).toEqual({ resolution: 'exact', householdId: 'a' });
+    expect(fallback.household).toEqual({ id: 'default' });
+    expect(observe).toHaveBeenCalledWith({ host: 'legacy.example', resolution: 'fallback', householdId: 'default' });
+  });
+
   let householdContext;
   let mockReq;
   let mockRes;

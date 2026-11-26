@@ -663,14 +663,14 @@ let eventBusInstance = null;
  * @returns {Promise<WebSocketEventBus>}
  */
 export async function createEventBus(config) {
-  const { httpServer, path = '/ws', logger = console, allowedOrigins = [] } = config;
+  const { httpServer, path = '/ws', logger = console, allowedOrigins = [], observeUpgrade } = config;
 
   if (eventBusInstance) {
     logger.warn?.('eventbus.already_created', { message: 'EventBus already exists, returning existing instance' });
     return eventBusInstance;
   }
 
-  eventBusInstance = new WebSocketEventBus({ path, logger, allowedOrigins });
+  eventBusInstance = new WebSocketEventBus({ path, logger, allowedOrigins, observeUpgrade });
   await eventBusInstance.start(httpServer);
 
   return eventBusInstance;
