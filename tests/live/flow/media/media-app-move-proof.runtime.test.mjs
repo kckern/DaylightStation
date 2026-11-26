@@ -4,7 +4,7 @@ import { resetHouseholdAt } from './lib/household.mjs';
 import { scriptReceiver, SCRIPTED } from './lib/scriptedReceiver.mjs';
 import {
   A, A_NAME, ITEM, VIEWPORTS, call, receiverState, openReceiver, startOn, stopReceiver, resetControls,
-  newAppPage, gotoMedia, warmMedia, openRemote,
+  newAppPage, gotoMedia, warmMedia, openRemote, expectStarted,
 } from './lib/receivers.mjs';
 import { openSearch, resultRow, closeSearch, playResult } from './lib/search.mjs';
 import { aimAt, aimHere } from './lib/aim.mjs';
@@ -156,8 +156,8 @@ test('[PLACE.8a/AC4] hand-off from Now Playing with "Keep playing here too": the
   // The screen page's own video element agrees: it is playing from the spot, not from the start.
   const screenVideo = receiver.page.locator('video').first();
   await expect.poll(() => screenVideo.evaluate((v) => (v.readyState >= 2 && !v.paused ? v.currentTime : -1)), { timeout: 60000 }).toBeGreaterThanOrEqual(spot - 3);
-  await expect(rowWith(page, A_NAME).first()).toBeVisible({ timeout: 20000 });
-  await expect(rowWith(page, 'Hospital').first()).toBeVisible();
+  // The newest far start reads on the screen's handle (title · screen).
+  await expectStarted(page, { screen: A_NAME, title: 'Hospital', timeout: 20000 });
   // (keep) this device carries on, as chosen.
   await page.waitForTimeout(3000);
   expect(await local.evaluate((v) => !v.paused)).toBe(true);

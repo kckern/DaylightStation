@@ -565,6 +565,7 @@ export class WakeAndLoadService {
         params: { snapshot: adoptSnapshot, autoplay: adoptSnapshot?.state !== 'paused' },
       });
 
+      const adoptBaseline = this.#deviceLivenessService?.getLastSnapshot?.(deviceId)?.snapshot ?? null;
       const adoptResult = await this.#sessionControlService.sendCommand(envelope);
       if (adoptResult && adoptResult.ok === true) {
         result.steps.load = { ok: true, method: 'adopt-snapshot', commandId: dispatchId };
@@ -600,6 +601,19 @@ export class WakeAndLoadService {
       this.#logger.info?.('wake-and-load.complete', {
         deviceId, dispatchId, totalElapsedMs: result.totalElapsedMs, mode: 'adopt',
       });
+      // A hand-off that plays on arrival is started only when the screen
+      // reports the adopted item playing; without this its start stayed at
+      // "delivered" and the sender's handle read Starting… forever. A paused
+      // move is not watched: it never plays by itself.
+      const adoptedContentId = adoptSnapshot?.currentItem?.contentId ?? null;
+      if (adoptedContentId && adoptSnapshot?.state !== 'paused') {
+        this.#armReceiverOutcomeWatchdog({
+          deviceId, dispatchId, topic,
+          contentQuery: { contentId: adoptedContentId },
+          outcomeBaseline: adoptBaseline,
+          commandAcknowledged: true,
+        });
+      }
       return result;
     }
 
