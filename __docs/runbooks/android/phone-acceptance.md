@@ -1,7 +1,9 @@
 # Phone build: on-device acceptance
 
-**Nothing in this checklist has been run.** The phone build passes its unit tests,
-lint and the build verifier, and has never been installed. Every expectation below
+**Most of this checklist has not been run.** The phone build passes its unit tests,
+lint and the build verifier. Build 49 has been installed and observed on Android 17
+with Apex as the launcher (see the [phone capabilities](../../reference/android/phone.md)),
+but no line below is marked verified yet. Every expectation below
 is from Android's documentation and from the backend's code as read. Mark each line
 "verified on the phone, <date>" or write down what happened instead. A line that
 was not run is "not run".
@@ -9,8 +11,8 @@ was not run is "not run".
 See the [phone capabilities](../../reference/android/phone.md) and [build instructions](../../../_extensions/daylight-android/README.md).
 
 Needs the owner's go-ahead before step A2. What installing does: the package
-`net.kckern.daylight.phone` is added to the owner's phone with a persistent
-"Daylight" notification, four quick-settings tiles the owner may add, two widgets
+`net.kckern.daylight.phone` is added to the owner's phone (no permanent
+notification: the shell service starts on demand), four quick-settings tiles the owner may add, two widgets
 (four buttons, and a one-action button), launcher shortcuts, and a list of actions
 in Android Auto. `adb uninstall net.kckern.daylight.phone` removes all of it,
 including any quick input (a recording, typed text, a photo) not yet uploaded.
