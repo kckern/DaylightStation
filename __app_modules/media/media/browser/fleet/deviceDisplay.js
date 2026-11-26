@@ -83,6 +83,36 @@ export function deviceIcon(device) {
   return TYPE_ICONS[device?.type] ?? DEFAULT_ICON;
 }
 
+// The one monochrome glyph per kind of device (the picker draws it as a
+// Tabler icon): by type first, since a configured emoji says nothing about
+// the hardware ("🎹" is on a tablet as well as on the piano itself).
+const TYPE_GLYPHS = {
+  'shield-tv': 'tv',
+  'linux-pc': 'desktop',
+  'android-tablet': 'tablet',
+  'midi-keyboard': 'tablet',
+  speaker: 'speaker',
+  'speaker-lane': 'speaker',
+  browser: 'browser',
+};
+
+/**
+ * Kind of device for its icon: 'tv' | 'desktop' | 'tablet' | 'speaker' | 'browser'.
+ * @param {{type?: string, id?: string, icon?: string}|null} device
+ */
+export function deviceGlyph(device) {
+  const type = typeof device?.type === 'string' ? device.type : '';
+  if (TYPE_GLYPHS[type]) return TYPE_GLYPHS[type];
+  if (/^browser:/.test(String(device?.id ?? ''))) return 'browser';
+  if (/tv$/i.test(type)) return 'tv';
+  if (/tablet/i.test(type)) return 'tablet';
+  const icon = typeof device?.icon === 'string' ? device.icon.trim() : '';
+  if (icon === '🔊' || icon === 'speaker') return 'speaker';
+  if (icon === '📱') return 'tablet';
+  if (icon === '📺' || icon === 'tv') return 'tv';
+  return 'desktop';
+}
+
 /**
  * Location sub-label ("Living Room"), empty string when unconfigured.
  * @param {{location?: string}|null} device
@@ -92,4 +122,4 @@ export function deviceLocation(device) {
   return typeof loc === 'string' ? loc.trim() : '';
 }
 
-export default { deviceName, displayDeviceName, deviceIcon, deviceLocation };
+export default { deviceName, displayDeviceName, deviceIcon, deviceGlyph, deviceLocation };

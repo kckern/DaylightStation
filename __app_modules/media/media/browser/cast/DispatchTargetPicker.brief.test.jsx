@@ -1,6 +1,9 @@
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render as renderView, screen, waitFor } from '@testing-library/react';
+import { MantineProvider } from '@mantine/core';
+
+const render = (ui) => renderView(ui, { wrapper: ({ children }) => <MantineProvider>{children}</MantineProvider> });
 
 // Show briefly (PLAY.8a/AC1): from any item, for any screen. The press is a
 // plain play with `brief=1` — never an item action, never a Move.
@@ -29,9 +32,9 @@ describe('Show briefly on…', () => {
         <DispatchTargetPicker source={{ play: 'plex:77', title: 'Clip', brief: true }} verb="Show briefly" onComplete={complete} />
       </DispatchProvider>,
     );
+    expect(screen.queryByRole('switch')).toBeNull();
+    // A brief show never replaces the screen's programme, so the tap is the send.
     fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
-    expect(screen.queryByTestId('picker-mode-transfer')).toBeNull();
-    fireEvent.click(screen.getByTestId('picker-submit'));
     await waitFor(() => expect(DaylightAPI).toHaveBeenCalledTimes(1));
     const url = new URL(DaylightAPI.mock.calls[0][0], 'http://x/');
     expect(url.pathname).toBe('/api/v1/device/livingroom-tv/load');

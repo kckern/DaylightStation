@@ -11,41 +11,45 @@
 @use "../theme/ink" as *;
 @use "../theme/motion" as *;
 
+// The picker is a plain list on whatever surface holds it (the Play on…
+// dialog, the Cast popover, Now Playing). No card inside a card, no fill per
+// row: rows are separated by space, a hover/press tint shows what a tap hits,
+// and amber appears only on selection (multi / destination), the replace
+// confirm and the several-screens confirm.
 .cast-picker {
-  min-width: 280px;
-  max-width: 340px;
-  background: var(--mantine-color-dark-6);
-  border: 1px solid chalk(0.1);
-  border-radius: var(--mantine-radius-md);
-  box-shadow: 0 12px 32px scrim(0.5);
-  padding: var(--mantine-spacing-sm);
-  color: var(--mantine-color-dark-0);
-  font-size: 14px;
-}
-
-.cast-picker-label {
-  font-size: 0.8125rem;
-  color: var(--mantine-color-dark-2);
-  margin-bottom: 6px;
-  font-weight: 600;
-}
-
-.cast-picker-empty {
-  color: var(--mantine-color-dark-2);
-  padding: 6px;
-}
-
-.cast-picker-devices {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  margin-bottom: var(--mantine-spacing-xs);
+  min-width: 0;
+  color: var(--media-text, var(--mantine-color-dark-0));
+  font-size: 0.9375rem;
 }
 
-// The detail-result Cast button portals this picker near the viewport edge.
-// Scroll the whole floating instance: reserving fixed mode/CTA space can
-// otherwise shrink a long device list to zero in a short viewport. The inline
-// Now Playing picker retains its existing natural-height layout.
+.cast-picker__heading {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--media-text, var(--mantine-color-dark-0));
+  padding: 4px 8px 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cast-picker__empty {
+  color: var(--media-muted, var(--mantine-color-dark-1));
+  font-size: 0.875rem;
+  padding: 8px;
+}
+
+.cast-picker__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+// The Cast button portals this picker near the viewport edge: there it is a
+// floating surface of its own, and the whole instance scrolls so a long list
+// never pushes the footer off screen.
 .cast-button-popover-portal {
   position: fixed;
   z-index: 1000;
@@ -57,206 +61,220 @@
   max-width: min(340px, var(--cast-picker-max-width));
   max-height: var(--cast-picker-max-height);
   overflow-y: auto;
+  padding: 6px;
+  background: var(--media-surface, var(--mantine-color-dark-5));
+  border: 1px solid var(--media-line, var(--mantine-color-dark-4));
+  border-radius: var(--mantine-radius-md);
+  box-shadow: 0 12px 32px scrim(0.5);
 }
 
-// A tile is a real button that reads as one: full-width, 44px+ target,
-// hover lift, amber ring when selected.
-.cast-tile {
+// ---- Rows -----------------------------------------------------------------
+.cast-row {
+  border-radius: var(--mantine-radius-sm);
+  transition: background var(--ds-motion-fast) ease;
+
+  &--asking { background: var(--mantine-color-dark-5); }
+}
+
+.cast-row__button {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   width: 100%;
   min-height: 52px;
-  padding: 8px 10px;
+  padding: 6px 8px;
+  border-radius: var(--mantine-radius-sm);
+  color: inherit;
   text-align: left;
-  background: var(--mantine-color-dark-5);
-  border: 1px solid chalk(0.06);
-  border-radius: var(--mantine-radius-md);
-  color: var(--mantine-color-dark-0);
-  font: inherit;
   cursor: pointer;
-  transition: background var(--ds-motion-fast) ease, border-color var(--ds-motion-fast) ease;
+  transition: background var(--ds-motion-fast) ease;
 
-  &:hover { background: var(--mantine-color-dark-4); }
+  &:hover { background: var(--mantine-color-dark-5); }
+  &:active { background: var(--mantine-color-dark-4); }
   &:focus-visible {
-    outline: 2px solid var(--mantine-color-amber-5);
-    outline-offset: 2px;
-  }
-
-  &--selected,
-  &--selected:hover {
-    background: var(--mantine-color-dark-4);
-    border-color: var(--mantine-color-amber-5);
+    outline: 2px solid var(--media-accent, var(--mantine-color-amber-5));
+    outline-offset: -2px;
   }
 }
 
-.cast-tile-icon {
-  font-size: 22px;
-  line-height: 1;
+.cast-row__icon {
   flex-shrink: 0;
+  color: var(--media-muted, var(--mantine-color-dark-1));
 }
 
-.cast-tile-main {
+.cast-row__text {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
   min-width: 0;
   flex: 1;
 }
 
-.cast-tile-name {
+.cast-row__name-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.cast-row__name {
   font-weight: 600;
+  line-height: 1.3;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
 }
 
-.cast-tile-location {
-  font-size: 12px;
-  color: var(--mantine-color-dark-2);
-}
-
-.cast-tile-status {
-  font-size: 12px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-
-  &--active { color: var(--mantine-color-dark-0); }
-  &--idle { color: var(--mantine-color-dark-2); }
-  &--off { color: var(--mantine-color-dark-3); }
-}
-
-.cast-tile-check {
-  color: var(--mantine-color-amber-5);
-  font-weight: 700;
-  width: 16px;
+// The usual screen: a quiet word, outlined, never a filled pill.
+.cast-row__usual {
   flex-shrink: 0;
-  text-align: center;
-}
-
-// Subtle opt-in to multi-select — secondary by design.
-.cast-picker-multi {
-  display: block;
-  background: none;
-  border: none;
-  color: var(--mantine-color-dark-2);
-  font-size: 12px;
-  padding: 6px 4px;
-  min-height: 44px;
-  cursor: pointer;
+  font-size: 0.75rem;
+  line-height: 1;
+  padding: 3px 6px;
+  border: 1px solid var(--media-line, var(--mantine-color-dark-4));
   border-radius: var(--mantine-radius-sm);
-
-  &:hover { color: var(--mantine-color-dark-0); }
-  &:focus-visible {
-    outline: 2px solid var(--mantine-color-amber-5);
-    outline-offset: 1px;
-  }
-  &[aria-pressed='true'] { color: var(--mantine-color-dark-0); text-decoration: underline; }
+  color: var(--media-muted, var(--mantine-color-dark-1));
 }
 
-// Inline busy warning — informative, not modal.
-.cast-picker-warning {
+.cast-row__meta {
+  font-size: 0.8125rem;
+  line-height: 1.3;
+  color: var(--media-muted, var(--mantine-color-dark-1));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  &--off { color: var(--mantine-color-dark-2); }
+}
+
+.cast-row__check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1.5px solid var(--media-control-line, var(--mantine-color-dark-2));
+  color: $on-accent;
+}
+
+.cast-row--selected .cast-row__check {
+  background: var(--media-accent, var(--mantine-color-amber-5));
+  border-color: var(--media-accent, var(--mantine-color-amber-5));
+}
+
+// A screen that is playing something asks in its own row before replacing it.
+.cast-row-confirm {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin: 6px 0;
-  padding: 8px 10px;
-  border-radius: var(--mantine-radius-sm);
-  background: color-mix(in srgb, var(--media-accent) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--media-accent) 35%, transparent);
-  color: var(--mantine-color-amber-3);
-  font-size: 13px;
-  line-height: 1.35;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 8px 8px 40px;
+  font-size: 0.875rem;
 }
 
-// Plain-language mode choice (only rendered when local playback exists).
-.cast-picker-mode {
+.cast-row-confirm__text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--media-text, var(--mantine-color-dark-0));
+}
+
+.cast-row-confirm__go {
+  flex-shrink: 0;
+  min-height: 36px;
+  color: $on-accent;
+}
+
+// ---- This device ----------------------------------------------------------
+.cast-picker__here {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin: var(--mantine-spacing-xs) 0;
+  gap: 2px;
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px solid var(--media-line, var(--mantine-color-dark-4));
 }
 
-.cast-picker-mode-option {
-  display: block;
+// Lines up with the rows' text, under "Here": it is about this device.
+.cast-picker__stop {
+  padding: 0 8px 0 40px;
+
+  .mantine-Switch-body {
+    align-items: center;
+    justify-content: space-between;
+    min-height: 44px;
+  }
+  .mantine-Switch-labelWrapper { flex: 1; }
+  .mantine-Switch-label {
+    padding-inline: 0 12px;
+    font-size: 0.875rem;
+    color: var(--media-text, var(--mantine-color-dark-0));
+    cursor: pointer;
+  }
+  .mantine-Switch-track { cursor: pointer; }
 }
 
-.cast-picker-mode-option__content {
+// ---- Notes and footer -----------------------------------------------------
+.cast-picker-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 6px 8px;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--media-muted, var(--mantine-color-dark-1));
+
+  &--error { color: var(--media-text, var(--mantine-color-dark-0)); }
+}
+
+.cast-picker-note__icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--mantine-color-red-4);
+}
+
+.cast-picker__footer {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
   gap: 8px;
-  min-height: 44px;
-  padding: 0 10px;
-  text-align: left;
-  background: none;
-  border: 1px solid transparent;
-  border-radius: var(--mantine-radius-sm);
-  color: var(--mantine-color-dark-1);
-  font: inherit;
-  font-size: 13px;
-  cursor: inherit;
-
-  &::before {
-    content: '';
-    width: 14px;
-    height: 14px;
-    flex-shrink: 0;
-    border-radius: 50%;
-    border: 2px solid var(--mantine-color-dark-2);
-  }
-
+  margin-top: 4px;
 }
 
-.cast-picker-mode-option[data-checked='true'] .cast-picker-mode-option__content {
-  color: var(--mantine-color-dark-0);
-  &::before {
-    border-color: var(--mantine-color-amber-5);
-    background: radial-gradient(circle, var(--mantine-color-amber-5) 45%, transparent 50%);
-  }
-}
-
-.cast-picker-mode-option:hover:not([data-disabled='true']) .cast-picker-mode-option__content { background: var(--mantine-color-dark-5); }
-
-.cast-picker-cta {
-  // Never below the fold: however long the screen list, the button that
-  // sends stays on screen at the bottom of whatever scrolls (the Play on…
-  // sheet, the Cast popover), with the picker's own surface behind its edge.
-  position: sticky;
-  bottom: 0;
-  z-index: 1;
-  box-shadow: 0 -8px 0 var(--mantine-color-dark-6);
-  width: 100%;
+.cast-picker__multi {
   min-height: 44px;
-  background: var(--mantine-color-amber-5);
-  color: $on-accent;
-  border: none;
+  padding: 0 8px;
   border-radius: var(--mantine-radius-sm);
-  font: inherit;
-  font-weight: 600;
+  font-size: 0.8125rem;
+  color: var(--media-muted, var(--mantine-color-dark-1));
   cursor: pointer;
 
-  &:hover { background: var(--mantine-color-amber-4); }
+  &:hover { color: var(--media-text, var(--mantine-color-dark-0)); }
   &:focus-visible {
-    outline: 2px solid var(--mantine-color-amber-3);
-    outline-offset: 2px;
-  }
-  &:disabled {
-    background: var(--mantine-color-dark-4);
-    color: var(--mantine-color-dark-2);
-    cursor: default;
+    outline: 2px solid var(--media-accent, var(--mantine-color-amber-5));
+    outline-offset: -2px;
   }
 }
 
-// Inside Now Playing the picker is inline, not floating.
-.handoff-section .cast-picker {
-  box-shadow: none;
-  background: var(--mantine-color-dark-5);
-  max-width: none;
+.cast-picker__cta {
+  min-height: 44px;
+  margin-left: auto;
+  color: $on-accent;
 
-  .cast-tile { background: var(--mantine-color-dark-6); }
-  .cast-tile:hover,
-  .cast-tile--selected { background: var(--mantine-color-dark-4); }
+  &:disabled,
+  &[data-disabled] {
+    background: var(--mantine-color-dark-5);
+    color: var(--mantine-color-dark-2);
+  }
+}
+
+// Inside Now Playing the picker is inline, on that panel's surface.
+.handoff-section .cast-picker {
+  max-width: none;
 }
 
 // ---- Progress tray ----------------------------------------------------------

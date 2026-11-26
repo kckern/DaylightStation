@@ -1,6 +1,9 @@
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render as renderView, screen, waitFor } from '@testing-library/react';
+import { MantineProvider } from '@mantine/core';
+
+const render = (ui) => renderView(ui, { wrapper: ({ children }) => <MantineProvider>{children}</MantineProvider> });
 
 const DaylightAPI = vi.fn();
 vi.mock("../../../../../frontend/src/lib/api.mjs", () => ({ DaylightAPI: (...args) => DaylightAPI(...args) }));
@@ -43,9 +46,8 @@ describe('DispatchTargetPicker → DispatchProvider M0', () => {
       </DispatchProvider>,
     );
 
+    fireEvent.click(screen.getByRole('switch', { name: 'Stop it here' }));
     fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
-    fireEvent.click(screen.getByTestId('picker-mode-fork'));
-    fireEvent.click(screen.getByTestId('picker-submit'));
 
     expect(await screen.findByTestId('picker-dispatch-failed')).toHaveTextContent('Playback is no longer available');
     expect(DaylightAPI).not.toHaveBeenCalled();

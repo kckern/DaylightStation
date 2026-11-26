@@ -258,13 +258,30 @@ wraps at phone width, so nothing is lost to a narrow screen.
   The tablet and laptop dock search stays open with the typed words, the
   narrowing and the results while the screen picker is open and after it
   closes, as the phone's search does.
-- **Play on… while something plays here** (PLACE.6a/AC2). A one-off **Play on…**
-  of an item asks, at that moment, **Move: stop playing here** or **Keep
-  playing here too**, pre-set to the choice made last time (shown before you
-  confirm; the tap on a screen then waits for the confirm instead of sending
-  at once). Keep leaves this device playing. Move stops this device only
-  after the screen has **confirmed it is playing** — a screen that fails or
-  never confirms leaves this device playing.
+- **The screen picker** (`cast/DispatchTargetPicker.jsx`: Play on…, Add on…,
+  Show on…, Show briefly on…, the Cast popover, Now Playing's hand-off and the
+  destination sheet). One heading names the item ("Play Sonic the Hedgehog
+  on…"). Each screen is one row: a monochrome icon for its kind (TV, desktop,
+  tablet, speaker, browser — `deviceGlyph()`), its name, and one muted line
+  "Room · status" in the same shape on every row (`pickerStatus()`: Ready,
+  Off, Playing: <title>, Paused: <title>). The screen this browser usually
+  uses for this kind of thing comes first with a quiet **Usual** tag. **A tap
+  is the send.** A screen that is playing something asks in its own row —
+  "Replace Arrival? [Play here instead]" — and a second tap on that row also
+  sends; a brief show, an Add and the destination sheet never ask, because
+  nothing is replaced. This device is never listed among the screens: it sits
+  last under a hairline as **Here (this Mac)** ("Here" when the browser has
+  no name), with what it is playing; choosing it runs the item on this
+  device's own session. **Choose several screens** is a quiet text button at
+  the foot; only then do the rows take checkmarks and a confirm button
+  ("Play on Office Screen + Living Room TV") appear.
+- **Play on… while something plays here** (PLACE.6a/AC2). The picker shows
+  one switch under Here, **Stop it here** (on = Move, off = keep playing here
+  too), pre-set to the choice made last time; changing it is remembered. A
+  tap on a screen still sends at once. Keep leaves this device playing. Move
+  stops this device only after the screen has **confirmed it is playing** — a
+  screen that fails or never confirms leaves this device playing. Hand-off
+  from Now Playing uses the same switch.
 - **Move here from the house** (HOUSE.2a/AC4, PLACE.7a/AC1). Every playing
   row in Devices carries **Move here** next to Pause and Stop (not on this
   device's own row; disabled with the reason when the screen carries no
@@ -995,11 +1012,10 @@ closes search and replaces its history marker. A row's ▶, explicit container
 playback and queue actions retain the search surface, query and narrowing. Browser Back or explicit close consumes the one marker pushed
 on open, so repeated playback actions do not add extra Back presses. The
 **Play on…** (send one item to a screen other than the aim) is in every
-result's ⋯ menu; with an idle screen the tile tap itself sends it (three taps:
-⋯, Play on…, the screen), and the outcome row names where it went with Undo.
-A plain play has no session to move, so no Move option is shown; a screen that
-is busy shows its warning and waits for the confirm button, as do Move
-(hand-off) and several screens. The house indicator stays in the phone dock beside the
+result's ⋯ menu; the tap on a screen sends it (three taps: ⋯, Play on…, the
+screen), and the outcome row names where it went with Undo. A screen that is
+busy asks "Replace …?" in its own row first; several screens take a confirm
+button. The house indicator stays in the phone dock beside the
 launcher; the Devices tab carries the playing-count badge as well. The phone's
 bottom tab bar also carries **Search** (it opens this same Search Mode), so
 the one-handed reach to search, play/pause and the aim does not depend on the

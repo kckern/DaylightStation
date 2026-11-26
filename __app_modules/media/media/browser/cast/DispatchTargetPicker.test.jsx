@@ -1,6 +1,7 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, render as renderView, screen, fireEvent, waitFor } from '@testing-library/react';
+import { MantineProvider } from '@mantine/core';
 import { FleetContext } from "../fleet/FleetProvider.jsx";
 import { createSessionStore } from "../session/sessionStore.js";
 import { LocalSessionContext } from "../session/LocalSessionContext.js";
@@ -26,8 +27,13 @@ const fleetRegistry = {
   roomAdjacency: {},
 };
 
+let fleetIdentity = null;
 function withFleet(children, registry = fleetRegistry) {
-  return <FleetContext.Provider value={{ devices: fleetDevices, store: fleetStore, registry }}>{children}</FleetContext.Provider>;
+  return (
+    <MantineProvider>
+      <FleetContext.Provider value={{ devices: fleetDevices, store: fleetStore, registry, identity: fleetIdentity }}>{children}</FleetContext.Provider>
+    </MantineProvider>
+  );
 }
 
 function render(children) {
@@ -88,6 +94,7 @@ beforeEach(() => {
     { id: 'office-tv', name: 'Office TV' },
   ];
   castTargetState = { targetIds: [], mode: 'transfer' };
+  fleetIdentity = null;
 });
 
 describe('DispatchTargetPicker / useDispatchTargetPicker', () => {
@@ -104,94 +111,193 @@ describe('DispatchTargetPicker / useDispatchTargetPicker', () => {
     expect(mediaLog.castSheetOpened).toHaveBeenCalledTimes(1);
   });
 
-  describe('default intent="dispatch" (CastButton, NowPlayingView — unchanged)', () => {
-    it('PLACE.2b keeps This device out of explicit one-off dispatch pickers', () => {
+  describe('rows: one shape for every screen', () => {
+    it('reads "Room · status" on every row, with a status even for a screen that never reported', () => {
+      fleetDevices = [
+        { id: 'livingroom-tv', name: 'Living Room TV', type: 'shield-tv', location: 'Living Room' },
+        { id: 'office-tv', name: 'Office Screen', type: 'linux-pc', location: 'Office' },
+        { id: 'yellow-room-tablet', name: 'Piano Tablet', type: 'android-tablet', location: 'Yellow Room' },
+      ];
+      fleetEntries = {
+        'office-tv': { snapshot: { state: 'idle' } },
+        'yellow-room-tablet': { offline: true, snapshot: { state: 'idle' } },
+      };
       render(<DispatchTargetPicker source={{ play: 'plex:1' }} />);
-      expect(screen.queryByRole('button', { name: 'This device' })).toBeNull();
+      expect(screen.getByTestId('picker-device-status-livingroom-tv')).toHaveTextContent('Living Room · Ready');
+      expect(screen.getByTestId('picker-device-status-office-tv')).toHaveTextContent('Office · Ready');
+      expect(screen.getByTestId('picker-device-status-yellow-room-tablet')).toHaveTextContent('Yellow Room · Off');
     });
 
-  it('NF-TAP-10: tapping an idle device tile sends a plain Play at once, without a Move option', async () => {
-    const onComplete = vi.fn();
-    render(<DispatchTargetPicker source={{ play: 'plex:1', title: 'Bluey' }} onComplete={onComplete} />);
-    expect(screen.queryByTestId('picker-mode-transfer')).toBeNull();
-    fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
-    expect(dispatchToTarget).toHaveBeenCalledWith({
-      targetIds: ['livingroom-tv'], mode: 'fork', play: 'plex:1', title: 'Bluey',
+    it('has no confirm button and no title of its own in single-select', () => {
+      render(<DispatchTargetPicker source={{ play: 'plex:1' }} />);
+      expect(screen.queryByTestId('picker-submit')).toBeNull();
+      expect(screen.queryByText('Cast to')).toBeNull();
     });
-    await waitFor(() => expect(onComplete).toHaveBeenCalledWith({ targetIds: ['livingroom-tv'], mode: 'fork' }));
   });
 
-  it('a busy screen still shows the warning and needs a confirming tap', () => {
-    fleetEntries = { 'livingroom-tv': { snapshot: { state: 'playing', currentItem: { title: 'Arrival' } } } };
-    render(<DispatchTargetPicker source={{ play: 'plex:1', title: 'Bluey' }} />);
-    fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
-    expect(dispatchToTarget).not.toHaveBeenCalled();
-    expect(screen.getByTestId('cast-busy-warning-livingroom-tv')).toHaveTextContent('playing Arrival');
-    fireEvent.click(screen.getByTestId('picker-submit'));
-    expect(dispatchToTarget).toHaveBeenCalledTimes(1);
-  });
+  describe('a tap sends', () => {
+    it('PLACE.2b keeps This device out when there is no local session to run it', () => {
+      render(<DispatchTargetPicker source={{ play: 'plex:1' }} />);
+      expect(screen.queryByTestId('picker-this-device')).toBeNull();
+    });
 
-  it('a hand-off (move) source and multi-select keep select then confirm', () => {
-    render(<DispatchTargetPicker source={{ getSnapshot: () => ({ sessionId: 's1', currentItem: { contentId: 'plex:1' } }) }} />);
-    fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
-    expect(dispatchToTarget).not.toHaveBeenCalled();
-    expect(screen.getByTestId('picker-submit')).not.toBeDisabled();
-  });
+    it('NF-TAP-10: tapping an idle screen sends a plain Play at once, without a Move option', async () => {
+      const onComplete = vi.fn();
+      render(<DispatchTargetPicker source={{ play: 'plex:1', title: 'Bluey' }} onComplete={onComplete} />);
+      expect(screen.queryByTestId('picker-stop-here')).toBeNull();
+      fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
+      expect(dispatchToTarget).toHaveBeenCalledWith({
+        targetIds: ['livingroom-tv'], mode: 'fork', play: 'plex:1', title: 'Bluey',
+      });
+      await waitFor(() => expect(onComplete).toHaveBeenCalledWith({ targetIds: ['livingroom-tv'], mode: 'fork' }));
+    });
 
-  it('keeps the picker open and reports failure when a dispatch returns no ids', async () => {
-    dispatchToTarget.mockResolvedValueOnce([]);
-    const onComplete = vi.fn();
-    render(<DispatchTargetPicker source={{ play: 'plex:1', title: 'Bluey' }} onComplete={onComplete} />);
-    fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
+    it('a busy screen asks in its own row, and its one confirm sends', () => {
+      fleetEntries = { 'livingroom-tv': { snapshot: { state: 'playing', currentItem: { title: 'Arrival' } } } };
+      render(<DispatchTargetPicker source={{ play: 'plex:1', title: 'Bluey' }} verb="Play" />);
+      expect(screen.getByTestId('picker-device-status-livingroom-tv')).toHaveTextContent('Playing: Arrival');
+      fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
+      expect(dispatchToTarget).not.toHaveBeenCalled();
+      expect(screen.getByTestId('cast-busy-warning-livingroom-tv')).toHaveTextContent('Replace Arrival?');
+      expect(screen.queryByTestId('picker-submit')).toBeNull();
+      fireEvent.click(screen.getByTestId('picker-replace-livingroom-tv'));
+      expect(screen.queryByTestId('cast-busy-warning-livingroom-tv')).toBeNull();
+      expect(dispatchToTarget).toHaveBeenCalledTimes(1);
+      expect(dispatchToTarget.mock.calls[0][0]).toMatchObject({ targetIds: ['livingroom-tv'], play: 'plex:1' });
+    });
 
-    expect(await screen.findByTestId('picker-dispatch-failed')).toHaveTextContent('Could not start playback on that device');
-    expect(onComplete).not.toHaveBeenCalled();
-  });
+    it('the replace confirm names the verb', () => {
+      fleetEntries = { 'livingroom-tv': { snapshot: { state: 'paused', currentItem: { title: 'Arrival' } } } };
+      render(<DispatchTargetPicker source={{ play: 'plex:1' }} verb="Play" />);
+      fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
+      expect(screen.getByTestId('picker-replace-livingroom-tv')).toHaveTextContent('Play here instead');
+    });
 
-  it('keeps the picker open and reports failure when dispatch rejects', async () => {
-    dispatchToTarget.mockRejectedValueOnce(new Error('offline'));
-    const onComplete = vi.fn();
-    render(<DispatchTargetPicker source={{ play: 'plex:1', title: 'Bluey' }} onComplete={onComplete} />);
-    fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
+    it('a second tap on the asking row sends too', () => {
+      fleetEntries = { 'livingroom-tv': { snapshot: { state: 'playing', currentItem: { title: 'Arrival' } } } };
+      render(<DispatchTargetPicker source={{ play: 'plex:1' }} />);
+      fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
+      fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
+      expect(dispatchToTarget).toHaveBeenCalledTimes(1);
+    });
 
-    expect(await screen.findByTestId('picker-dispatch-failed')).toHaveTextContent('Could not start playback on that device');
-    expect(onComplete).not.toHaveBeenCalled();
-  });
+    it('Add on… never asks to replace: an add appends', () => {
+      fleetEntries = { 'livingroom-tv': { snapshot: { state: 'playing', currentItem: { title: 'Arrival' } } } };
+      const item = { contentId: 'plex:9', title: 'Song' };
+      render(<DispatchTargetPicker source={{ queue: 'plex:9', itemAction: { kind: 'add', item } }} verb="Add" />);
+      fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
+      expect(dispatchToTarget).toHaveBeenCalledTimes(1);
+    });
 
-    it('a queue source still dispatches after explicitly choosing the non-destructive mode', () => {
+    it('a hand-off source sends on the tap, as Move by default', async () => {
+      render(<DispatchTargetPicker source={{ getSnapshot: () => ({ sessionId: 's1', currentItem: { contentId: 'plex:1' } }) }} />);
+      expect(screen.getByRole('switch', { name: 'Stop it here' })).toBeChecked();
+      fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
+      // Move goes through the hand-off, never a plain dispatch.
+      expect(dispatchToTarget).not.toHaveBeenCalled();
+    });
+
+    it('keeps the picker open and reports failure when a dispatch returns no ids', async () => {
+      dispatchToTarget.mockResolvedValueOnce([]);
+      const onComplete = vi.fn();
+      render(<DispatchTargetPicker source={{ play: 'plex:1', title: 'Bluey' }} onComplete={onComplete} />);
+      fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
+      expect(await screen.findByTestId('picker-dispatch-failed')).toHaveTextContent('Could not start playback on that device');
+      expect(onComplete).not.toHaveBeenCalled();
+    });
+
+    it('keeps the picker open and reports failure when dispatch rejects', async () => {
+      dispatchToTarget.mockRejectedValueOnce(new Error('offline'));
+      const onComplete = vi.fn();
+      render(<DispatchTargetPicker source={{ play: 'plex:1', title: 'Bluey' }} onComplete={onComplete} />);
+      fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
+      expect(await screen.findByTestId('picker-dispatch-failed')).toHaveTextContent('Could not start playback on that device');
+      expect(onComplete).not.toHaveBeenCalled();
+    });
+
+    it('a queue source dispatches its queue', () => {
       render(<DispatchTargetPicker source={{ queue: 'plex:playlist:1' }} />);
       fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
-      expect(dispatchToTarget).toHaveBeenCalledWith(
-        expect.objectContaining({ queue: 'plex:playlist:1' })
-      );
+      expect(dispatchToTarget).toHaveBeenCalledWith(expect.objectContaining({ queue: 'plex:playlist:1' }));
     });
 
-    it('a hand-off snapshot remains available after explicitly choosing Keep', () => {
-    render(<DispatchTargetPicker source={{ getSnapshot: () => ({ sessionId: 's1', currentItem: { contentId: 'plex:1' } }) }} />);
+    it('a hand-off with Stop it here off sends the snapshot as Keep', () => {
+      render(<DispatchTargetPicker source={{ getSnapshot: () => ({ sessionId: 's1', currentItem: { contentId: 'plex:1' } }) }} />);
+      fireEvent.click(screen.getByRole('switch', { name: 'Stop it here' }));
       fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
-      fireEvent.click(screen.getByTestId('picker-mode-fork'));
-      fireEvent.click(screen.getByTestId('picker-submit'));
       expect(dispatchToTarget).toHaveBeenCalledWith(
         expect.objectContaining({ snapshot: expect.objectContaining({ sessionId: 's1' }), mode: 'fork' })
       );
     });
+  });
 
-    it('renders the Cast CTA, naming the device', () => {
-      render(<DispatchTargetPicker source={{ play: 'plex:1' }} />);
-      fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
-      expect(screen.getByTestId('picker-submit')).toHaveTextContent('Cast to Living Room TV');
+  describe('"Usual" and Here', () => {
+    const film = { contentId: 'plex:775444', title: 'Sonic the Hedgehog', type: 'movie', format: 'video' };
+    const filmSource = { play: film.contentId, title: film.title, itemAction: { kind: 'playNow', item: film } };
+
+    it('tags the learned screen "Usual" and only that one', () => {
+      habitsStore().recordScreen('video', ['office-tv']);
+      render(<DispatchTargetPicker source={filmSource} verb="Play" />);
+      expect(screen.getByTestId('picker-device-office-tv-usual')).toHaveTextContent('Usual');
+      expect(screen.queryByTestId('picker-device-livingroom-tv-usual')).toBeNull();
     });
 
-    it('shows the fork choice (and Move only for a session source) when something is playing locally', () => {
-      render(withLocalPlaybackActive(<DispatchTargetPicker source={{ getSnapshot: () => ({ sessionId: 's1', currentItem: { contentId: 'plex:1' } }) }} />));
-      fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
-      expect(screen.getByTestId('picker-mode-transfer')).toBeInTheDocument();
-      expect(screen.getByTestId('picker-mode-fork')).toBeInTheDocument();
+    function localSession({ state = 'paused', title = 'Sonic the Hedgehog', execute = vi.fn(async () => ({ ok: true })) } = {}) {
+      const snapshot = { currentItem: { contentId: 'plex:1', title }, state };
+      const controller = { id: 'local', subscribe: () => () => {}, getSnapshot: () => snapshot, execute, portability: { capture: () => ({}) } };
+      return { execute, wrap: (children) => <LocalSessionContext.Provider value={{ controller }}>{children}</LocalSessionContext.Provider> };
+    }
+
+    it('lists this device last, never among the screens, as "Here (this Mac)" with what it plays', () => {
+      fleetIdentity = { deviceId: 'browser:abc' };
+      fleetDevices = [...fleetDevices, { id: 'browser:abc', name: 'Mac', type: 'browser', isLocal: true }];
+      const { wrap } = localSession();
+      render(wrap(<DispatchTargetPicker source={filmSource} verb="Play" />));
+      expect(screen.queryByTestId('picker-device-browser:abc')).toBeNull();
+      expect(screen.getByTestId('picker-this-device')).toHaveTextContent('Here (this Mac)');
+      expect(screen.getByTestId('picker-this-device-status')).toHaveTextContent('Paused: Sonic the Hedgehog');
+      const rows = screen.getAllByRole('button').map((el) => el.dataset.testid).filter((id) => id?.startsWith('picker-'));
+      expect(rows.indexOf('picker-this-device')).toBeGreaterThan(rows.indexOf('picker-device-office-tv'));
+    });
+
+    it('reads plain "Here" when the browser has no name', () => {
+      fleetIdentity = { deviceId: 'browser:abc' };
+      fleetDevices = [...fleetDevices, { id: 'browser:abc', name: 'Browser 4778f429', type: 'browser', isLocal: true }];
+      const { wrap } = localSession({ state: 'idle' });
+      render(wrap(<DispatchTargetPicker source={filmSource} verb="Play" />));
+      expect(screen.getByTestId('picker-this-device')).toHaveTextContent(/^Here$/);
+    });
+
+    it('Here asks before replacing what plays here, then runs the item on this device', async () => {
+      const onComplete = vi.fn();
+      const { execute, wrap } = localSession();
+      render(wrap(<DispatchTargetPicker source={filmSource} verb="Play" onComplete={onComplete} />));
+      fireEvent.click(screen.getByTestId('picker-this-device'));
+      expect(execute).not.toHaveBeenCalled();
+      expect(screen.getByTestId('cast-busy-warning-this-device')).toHaveTextContent('Replace Sonic the Hedgehog?');
+      fireEvent.click(screen.getByTestId('picker-replace-this-device'));
+      await waitFor(() => expect(execute).toHaveBeenCalledTimes(1));
+      expect(execute.mock.calls[0][0]).toMatchObject({ kind: 'playNow', item: expect.objectContaining({ contentId: film.contentId }) });
+      expect(dispatchToTarget).not.toHaveBeenCalled();
+      await waitFor(() => expect(onComplete).toHaveBeenCalledWith({ targetIds: [], mode: 'fork' }));
+      expect(mediaLog.playOnHere).toHaveBeenCalled();
+    });
+
+    it('Here runs at once when nothing plays here', async () => {
+      const { execute, wrap } = localSession({ state: 'idle' });
+      render(wrap(<DispatchTargetPicker source={filmSource} verb="Play" />));
+      fireEvent.click(screen.getByTestId('picker-this-device'));
+      await waitFor(() => expect(execute).toHaveBeenCalledTimes(1));
+    });
+
+    it('a brief show never offers Here', () => {
+      const { wrap } = localSession();
+      render(wrap(<DispatchTargetPicker source={{ ...filmSource, brief: true }} verb="Show briefly" />));
+      expect(screen.queryByTestId('picker-this-device')).toBeNull();
     });
   });
 
   describe('PLACE.6a/AC2 — item-level Play on… asks Move or Keep when something plays here', () => {
-    // A controller that records the stop: Move must only stop THIS device after the send succeeded.
     function localWith({ stopIfCurrent = vi.fn(() => ({ ok: true })), capture = () => ({ identity: { ownerInstanceId: 'o1', playbackRevision: 3 } }) } = {}) {
       const snapshot = { currentItem: { id: 1 }, state: 'playing' };
       const controller = {
@@ -204,70 +310,56 @@ describe('DispatchTargetPicker / useDispatchTargetPicker', () => {
       ) };
     }
 
-    it('offers Move (stop here) and Keep for a plain play source, with no unavailable noise', () => {
+    it('shows one "Stop it here" switch for a plain play source, with no unavailable noise', () => {
       render(withLocalPlaybackActive(<DispatchTargetPicker source={{ play: 'plex:1' }} />));
-      fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
-      expect(screen.getByTestId('picker-mode-transfer')).toHaveTextContent(/stop playing here/i);
-      expect(screen.getByTestId('picker-mode-fork')).toHaveTextContent('Keep playing here too');
+      expect(screen.getByRole('switch', { name: 'Stop it here' })).toBeInTheDocument();
       expect(screen.queryByTestId('picker-move-unavailable')).toBeNull();
     });
 
-    it('updates the Move choice when playback starts and stops while the picker is open', () => {
+    it('shows the switch only while something plays here', () => {
       const idle = { state: 'idle', currentItem: null };
       const controller = createSessionStore(idle);
       render(<LocalSessionContext.Provider value={{ controller }}>
         <DispatchTargetPicker source={{ play: 'plex:1' }} />
       </LocalSessionContext.Provider>);
-      expect(screen.queryByTestId('picker-mode-transfer')).toBeNull();
+      expect(screen.queryByRole('switch')).toBeNull();
       act(() => controller.replace({ state: 'paused', currentItem: { contentId: 'plex:2' } }));
-      expect(screen.getByTestId('picker-mode-transfer')).toHaveTextContent(/stop playing here/i);
+      expect(screen.getByRole('switch', { name: 'Stop it here' })).toBeInTheDocument();
       act(() => controller.replace(idle));
-      expect(screen.queryByTestId('picker-mode-transfer')).toBeNull();
+      expect(screen.queryByRole('switch')).toBeNull();
     });
 
-    it('does not ask when nothing plays here (tap sends at once)', () => {
-      render(<DispatchTargetPicker source={{ play: 'plex:1' }} />);
-      expect(screen.queryByTestId('picker-mode-transfer')).toBeNull();
-      fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
-      expect(dispatchToTarget).toHaveBeenCalled();
-    });
-
-    it('a tile tap no longer sends at once when it must ask; the CTA sends', () => {
+    it('a tap still sends at once while something plays here', () => {
       render(withLocalPlaybackActive(<DispatchTargetPicker source={{ play: 'plex:1' }} />));
       fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
-      expect(dispatchToTarget).not.toHaveBeenCalled();
-      fireEvent.click(screen.getByTestId('picker-submit'));
       expect(dispatchToTarget).toHaveBeenCalledTimes(1);
     });
 
-    it('is pre-set to the remembered choice and shows it before confirming', () => {
+    it('is pre-set to the remembered choice', () => {
       castTargetState = { targetIds: [], mode: 'fork', setMode: vi.fn() };
       render(withLocalPlaybackActive(<DispatchTargetPicker source={{ play: 'plex:1' }} />));
-      expect(screen.getByTestId('picker-mode-fork').querySelector('input').checked).toBe(true);
-      castTargetState = { targetIds: [], mode: 'transfer', setMode: vi.fn() };
+      expect(screen.getByRole('switch', { name: 'Stop it here' })).not.toBeChecked();
     });
 
-    it('Keep sends and leaves this device playing; the choice is remembered', async () => {
+    it('Keep (switch off) sends and leaves this device playing; the choice is remembered', async () => {
       const setMode = vi.fn();
       castTargetState = { targetIds: [], mode: 'transfer', setMode };
       const { stopIfCurrent, wrap } = localWith();
       render(wrap(<DispatchTargetPicker source={{ play: 'plex:1' }} />));
-      fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
-      fireEvent.click(screen.getByTestId('picker-mode-fork'));
+      fireEvent.click(screen.getByRole('switch', { name: 'Stop it here' }));
       expect(setMode).toHaveBeenCalledWith('fork');
-      fireEvent.click(screen.getByTestId('picker-submit'));
+      fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
       await waitFor(() => expect(dispatchToTarget).toHaveBeenCalled());
       expect(dispatchToTarget.mock.calls[0][0]).toMatchObject({ mode: 'fork', play: 'plex:1' });
       expect(dispatchToTarget.mock.calls[0][0].onConfirmed).toBeUndefined();
       expect(stopIfCurrent).not.toHaveBeenCalled();
     });
 
-    it('Move sends as a second-room start and stops this device only after the screen confirmed playing', async () => {
+    it('Move (switch on) sends as a second-room start and stops this device only after the screen confirmed playing', async () => {
       castTargetState = { targetIds: [], mode: 'transfer', setMode: vi.fn() };
       const { stopIfCurrent, wrap } = localWith();
       render(wrap(<DispatchTargetPicker source={{ play: 'plex:1' }} />));
       fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
-      fireEvent.click(screen.getByTestId('picker-submit'));
       await waitFor(() => expect(dispatchToTarget).toHaveBeenCalled());
       const params = dispatchToTarget.mock.calls[0][0];
       expect(params.mode).toBe('fork');
@@ -279,62 +371,48 @@ describe('DispatchTargetPicker / useDispatchTargetPicker', () => {
   });
 
   describe('intent="destination" (DestinationLine\'s device sheet)', () => {
-    it('PLACE.2b offers This device and selects the local aim immediately', () => {
+    it('PLACE.2b offers Here and selects the local aim immediately', () => {
       const onComplete = vi.fn();
       castTargetState = { targetIds: ['livingroom-tv'], mode: 'transfer' };
       render(<DispatchTargetPicker intent="destination" onComplete={onComplete} />);
-
-      const localChoice = screen.getByRole('button', { name: 'This device' });
+      const localChoice = screen.getByTestId('picker-this-device');
+      expect(localChoice).toHaveTextContent('Here');
       expect(localChoice).toHaveAttribute('aria-pressed', 'false');
+      expect(screen.getByTestId('picker-device-livingroom-tv')).toHaveAttribute('aria-pressed', 'true');
       fireEvent.click(localChoice);
-
       expect(onComplete).toHaveBeenCalledWith({ targetIds: [], mode: 'transfer' });
       expect(dispatchToTarget).not.toHaveBeenCalled();
     });
 
-    it('submit with NO source does NOT call dispatchToTarget', () => {
+    it('a tap on a screen sets the destination at once and never dispatches', () => {
       const onComplete = vi.fn();
       render(<DispatchTargetPicker intent="destination" onComplete={onComplete} />);
       fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
-      fireEvent.click(screen.getByTestId('picker-submit'));
       expect(dispatchToTarget).not.toHaveBeenCalled();
-      // The preference change still happens — onComplete always fires.
       expect(onComplete).toHaveBeenCalledWith({ targetIds: ['livingroom-tv'], mode: 'transfer' });
     });
 
-    it('does not throw and does not leave any dispatch behind when submitted with no content', () => {
-      // Regression guard for the bug this fixes: buildDispatchUrl throws
-      // without play/queue/snapshot, which (pre-fix) would have surfaced as
-      // an unhandled promise rejection from dispatchToTarget and an
-      // INITIATED row stuck at "running" forever. With the guard,
-      // dispatchToTarget is simply never invoked, so neither can happen.
-      render(<DispatchTargetPicker intent="destination" />);
+    it('a busy screen does not ask: nothing is replaced by choosing a destination', () => {
+      fleetEntries = { 'livingroom-tv': { snapshot: { state: 'playing', currentItem: { title: 'Arrival' } } } };
+      const onComplete = vi.fn();
+      render(<DispatchTargetPicker intent="destination" onComplete={onComplete} />);
       fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
-      expect(() => fireEvent.click(screen.getByTestId('picker-submit'))).not.toThrow();
-      expect(dispatchToTarget).not.toHaveBeenCalled();
+      expect(screen.queryByTestId('cast-busy-warning-livingroom-tv')).toBeNull();
+      expect(onComplete).toHaveBeenCalledTimes(1);
     });
 
-    it('renders "Set destination" chrome, never claims to Cast', () => {
+    it('several screens: the confirm says "Set destination", never Cast', () => {
       render(<DispatchTargetPicker intent="destination" />);
-      expect(screen.getByText('Destination')).toBeInTheDocument();
+      fireEvent.click(screen.getByTestId('picker-multi-toggle'));
       fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
-      expect(screen.getByTestId('picker-submit')).toHaveTextContent('Set destination: Living Room TV');
+      fireEvent.click(screen.getByTestId('picker-device-office-tv'));
+      expect(screen.getByTestId('picker-submit')).toHaveTextContent('Set destination: Living Room TV + Office TV');
       expect(screen.queryByText(/cast/i)).toBeNull();
     });
 
-    it('hides the transfer/fork mode toggle even when something is playing locally — no dispatch happens here', () => {
+    it('hides the Stop it here switch even when something is playing locally', () => {
       render(withLocalPlaybackActive(<DispatchTargetPicker intent="destination" />));
-      fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
-      expect(screen.queryByTestId('picker-mode-transfer')).toBeNull();
-      expect(screen.queryByTestId('picker-mode-fork')).toBeNull();
-    });
-
-    it('still respects the single-select/multi-opt-in semantics unchanged', () => {
-      render(<DispatchTargetPicker intent="destination" />);
-      fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
-      fireEvent.click(screen.getByTestId('picker-device-office-tv'));
-      // Single-select by default: picking a second tile REPLACES the first.
-      expect(screen.getByTestId('picker-submit')).toHaveTextContent('Set destination: Office TV');
+      expect(screen.queryByRole('switch')).toBeNull();
     });
   });
 });
@@ -353,11 +431,14 @@ describe('DispatchTargetPicker — several screens (PLACE.4a)', () => {
     render(<DispatchTargetPicker source={{ play: 'plex:1', title: 'Song' }} />);
     const toggle = screen.getByTestId('picker-multi-toggle');
     expect(toggle).toHaveTextContent('Choose several screens');
+    expect(screen.queryByTestId('picker-submit')).toBeNull();
     fireEvent.click(toggle);
-    expect(screen.getByTestId('picker-multi-toggle')).toHaveTextContent('Several screens: on');
+    expect(screen.getByTestId('picker-multi-toggle')).toHaveTextContent('Choose one screen');
+    expect(screen.getByTestId('picker-submit')).toBeDisabled();
     fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
     fireEvent.click(screen.getByTestId('picker-device-office-tv'));
-    expect(screen.getByTestId('picker-submit')).toHaveTextContent('Living Room TV + Office TV');
+    expect(dispatchToTarget).not.toHaveBeenCalled();
+    expect(screen.getByTestId('picker-submit')).toHaveTextContent('Cast to Living Room TV + Office TV');
     expect(screen.queryByTestId('picker-drift-warning')).toBeNull();
     fireEvent.click(screen.getByTestId('picker-device-den-speaker'));
     expect(await screen.findByTestId('picker-drift-warning')).toHaveTextContent(
@@ -400,7 +481,7 @@ describe('DispatchTargetPicker — only the screens that can take it, the usual 
   const film = { contentId: 'plex:775444', title: 'Sonic the Hedgehog', type: 'movie', format: 'video' };
   const song = { contentId: 'plex:565457', title: 'Marble Zone', type: 'track', format: 'audio' };
   const offered = () => screen.getAllByTestId(/^picker-device-[^s]/).map((el) => el.dataset.testid.replace('picker-device-', ''))
-    .filter((id) => !id.startsWith('status-'));
+    .filter((id) => !id.startsWith('status-') && !id.endsWith('-usual'));
 
   it('a film never lists a headset, and a display that takes no content is never listed', () => {
     render(<DispatchTargetPicker source={{ play: film.contentId, title: film.title, itemAction: { kind: 'playNow', item: film } }} />);

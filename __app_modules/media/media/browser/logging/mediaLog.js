@@ -172,6 +172,8 @@ export const mediaLog = {
   playOnChoiceChanged:    info('play-on.choice-changed'),
   playOnChoiceApplied:    info('play-on.choice-applied'),
   playOnStopHere:         info('play-on.stop-here'),
+  playOnHere:             info('play-on.here'),
+  playOnReplaceAsked:     debug('play-on.replace-asked'),
   followUpDropped:        info('dispatch.follow-up-dropped'),
   collectionContinued:    info('find.collection-continued'),
   playNextHoldOffered:    info('play-next.hold-offered'),
