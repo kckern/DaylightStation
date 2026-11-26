@@ -123,6 +123,55 @@ Three layers, each overriding the previous:
 2. **Theme** — named color/typography preset via CSS class (`.titlecard--theme-{name}`). Built-in: `default`, `warm-gold`, `minimal`, `bold`
 3. **Explicit CSS** — per-element inline styles from the YAML `css` map, applied as React `style` objects
 
+### People query (`params.personIds`)
+
+An Immich entry can select photos by face tag instead of by date. List Immich
+person ids (the id in the server's `/people/<id>` URL):
+
+```yaml
+- type: immich
+  instance: familyphotos        # optional: a second Immich server (see below)
+  sort: date_asc                # oldest first
+  params:
+    match: any                  # any (default) | all
+    personIds:
+      - <person-id-1>
+      - <person-id-2>
+    yearFrom: 1970              # optional bounds on the capture year
+    yearTo: 2000
+  slideshow:
+    duration: 5
+    showMetadata: true
+```
+
+| Field | Description |
+|-------|-------------|
+| `params.personIds` | Immich person ids. When present, `month`/`day` are not needed. |
+| `params.match` | `any` (default): a photo of any listed person, one search per person, results unioned and deduplicated. `all`: only photos containing every listed person (Immich ANDs a `personIds` list). |
+| `params.yearFrom` / `params.yearTo` | Optional capture-year bounds. |
+
+Every result page is fetched, and faces come back inline, so `focusPerson`
+zoom works. `exclude`, `includeTags`, `slideshow`, `videoRules` and `sort`
+apply as they do for date queries.
+
+### `instance`
+
+Which Immich server an entry reads from. Default `immich` (the main library).
+Another value names an additional server registered at startup (see
+[Additional Immich servers](#additional-immich-servers)); its items carry that
+name as their content id prefix (`familyphotos:<asset>`) and load through
+`/api/v1/proxy/<name>/`. An entry naming a server that is not registered
+resolves to nothing; it never falls back to the main library.
+
+### `params.includeTags`
+
+Immich query entries can set `params.includeTags: [MiloBirthday]` to include
+assets with those exact tag names alongside their date matches. Tag matches
+bypass date, year, and time filters; explicit asset exclusions still apply.
+The union is deduplicated before sorting and video segmentation, and tagged
+assets receive the entry's slideshow and video rules. Each tag search retrieves
+all pages; missing tags contribute no assets rather than broadening the search.
+
 ### `exclude`
 
 An array of Immich asset UUIDs to filter out of the results. Applied after search and deduplication.
@@ -174,7 +223,7 @@ Background audio track configuration. Returned at the root level of the queue AP
 - **Flat query** (no `items:` key) → wrapped into `{ title, items: [{ source, params, ... }] }`
 - **Composite query** (`items:` key present) → items array passed through as-is
 
-**Location:** `__backend/src/3_applications/content/SavedQueryService.mjs`
+**Location:** `__capabilities/content-catalog/server/application/SavedQueryService.mjs`
 
 ### QueryAdapter
 
@@ -188,19 +237,34 @@ Background audio track configuration. Returned at the root level of the queue AP
 
 Results concatenate in array order. Title card IDs are deterministic: `titlecard:{queryName}:{index}`.
 
-**Location:** `__backend/src/1_adapters/content/query/QueryAdapter.mjs`
+**Location:** `__capabilities/content-catalog/server/adapters/providers/query/QueryAdapter.mjs`
 
 ### ImmichAdapter
 
 `ImmichAdapter` creates `PlayableItem` instances for each asset, including face bounding box data in `metadata.people`. This face data drives the Ken Burns smart zoom on the frontend.
 
-**Location:** `__backend/src/1_adapters/content/gallery/immich/ImmichAdapter.mjs`
+**Location:** `__capabilities/content-catalog/server/adapters/providers/gallery/immich/ImmichAdapter.mjs`
+
+### Additional Immich servers
+
+The backend can read more than one Immich server. Each additional server has
+one name, used as:
+
+- its `services.yml` key (URL per host, as for `immich`),
+- its household auth file `auth/<name>.yml` with `token:` (an Immich API key),
+- its content id prefix, registry source and provider (`<name>:<asset>`),
+- its proxy route (`/api/v1/proxy/<name>/...`).
+
+The list of names is in `__backend/src/app.mjs` (`immichInstances`); today it
+holds `familyphotos`, the family-history archive. A name with no URL or no token
+is skipped at startup, so a missing key means the source is simply absent. Only
+the default `immich` server claims bare asset UUIDs as direct references.
 
 ### Queue API
 
 `GET /api/v1/queue/query/{queryName}` serializes the resolved items. Each item's `slideshow` config is passed through via `toQueueItem()`. The `audio` config is included at the response root level.
 
-**Location:** `__backend/src/4_api/v1/routers/queue.mjs`
+**Location:** `__capabilities/playback/server/api/queue.mjs`
 
 ---
 
@@ -210,7 +274,7 @@ Results concatenate in array order. Title card IDs are deterministic: `titlecard
 
 Renders individual photos with Ken Burns animation and cross-dissolve transitions.
 
-**Location:** `frontend/src/modules/Player/renderers/ImageFrame.jsx`
+**Location:** `__capabilities/playback/browser/player/renderers/ImageFrame.jsx`
 
 **Reads from each queue item:**
 - `slideshow.duration` — auto-advance timer
@@ -242,25 +306,19 @@ Slides initially display the thumbnail for fast rendering, then upgrade to the f
 
 Renders a background audio player that reacts to the current item's media type.
 
-**Location:** `frontend/src/modules/Player/components/AudioLayer.jsx`
+**Location:** `__capabilities/playback/browser/player/components/AudioLayer.jsx`
 
 | Behavior | On video start | On video end |
 |----------|---------------|--------------|
 | `pause` | Pauses audio | Resumes audio |
 | `duck` | Fades music volume to `duckLevel` over 300ms | Restores music volume over 300ms |
+| `skip` | Audio continues unchanged | — |
 
 AudioLayer ramps the nested music Player's controlled `volume` prop. Player gives
 that prop precedence over stored session preferences, and its media controller
 applies screen master volume. The foreground video's volume is independent.
 Interrupted fades resume from the current ramp value, without compounding ducks.
 
-Immich query entries can set `params.includeTags: [MiloBirthday]` to include
-assets with those exact tag names alongside their date matches. Tag matches
-bypass date, year, and time filters; explicit asset exclusions still apply.
-The union is deduplicated before sorting and video segmentation, and tagged
-assets receive the entry's slideshow and video rules. Each tag search retrieves
-all pages; missing tags contribute no assets rather than broadening the search.
-| `skip` | Audio continues unchanged | — |
 
 When `mode` is `hidden`, the audio player is rendered in a zero-size container with no pointer events.
 
@@ -268,7 +326,7 @@ When `mode` is `hidden`, the audio player is rendered in a zero-size container w
 
 Renders title cards as slides in the player queue. Registered in the format registry as `'titlecard'`.
 
-**Location:** `frontend/src/modules/Player/renderers/TitleCardRenderer.jsx`
+**Location:** `__capabilities/playback/browser/player/renderers/TitleCardRenderer.jsx`
 
 **Features:**
 - Four built-in templates: `centered`, `section-header`, `credits`, `lower-third`
@@ -283,7 +341,7 @@ Title cards use `mediaType: 'image'`, so AudioLayer treats them like photos — 
 
 Displays photo metadata (date, people names, location) in a bottom overlay when `showMetadata` is enabled.
 
-**Location:** `frontend/src/modules/Player/components/SlideshowMetadataOverlay.jsx`
+**Location:** `__capabilities/playback/browser/player/components/SlideshowMetadataOverlay.jsx`
 
 Metadata is either preloaded by `ImageFrame` (via `requestIdleCallback`) or JIT-fetched from `/api/v1/info/{contentId}`. The overlay fades in/out using the Web Animations API.
 

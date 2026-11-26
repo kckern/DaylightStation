@@ -13,18 +13,22 @@
 export class ImmichProxyAdapter {
   #host;
   #apiKey;
+  #serviceName;
   #logger;
 
   /**
    * @param {Object} config
    * @param {string} config.host - Immich server URL (e.g., 'http://localhost:2283')
    * @param {string} config.apiKey - Immich API key
+   * @param {string} [config.serviceName] - Proxy service name and route (default: 'immich');
+   *   a second Immich server proxies under its own name (`/api/v1/proxy/<name>`)
    * @param {Object} [options]
    * @param {Object} [options.logger] - Logger instance
    */
   constructor(config, options = {}) {
     this.#host = config.host;
     this.#apiKey = config.apiKey;
+    this.#serviceName = config.serviceName || 'immich';
     this.#logger = options.logger || console;
   }
 
@@ -32,8 +36,17 @@ export class ImmichProxyAdapter {
    * Get service identifier
    * @returns {string}
    */
-  getServiceName() {
+  /**
+   * Adapter family. The router mounts every Immich proxy that is not the
+   * default `immich` one at `/api/v1/proxy/<serviceName>`.
+   * @returns {'immich'}
+   */
+  get kind() {
     return 'immich';
+  }
+
+  getServiceName() {
+    return this.#serviceName;
   }
 
   /**

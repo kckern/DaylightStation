@@ -41,7 +41,7 @@ This is well-supported via the `personId`.
 ```
 
 
-*Note: This usually acts as an "OR" filter. If you need "AND" (both people in the same photo), you'll need to filter the results programmatically.*
+*Note: Immich treats a `personIds` list as **AND**: only assets containing every listed person come back. For "any of these people", search one id at a time and union the results (what a slideshow query's `match: any` does; see `__docs/reference/content/content-slideshows.md`). Results are paged (`size`, `page`, `nextPage`); fetch every page.*
 
 ## 4. Video Length (Duration)
 

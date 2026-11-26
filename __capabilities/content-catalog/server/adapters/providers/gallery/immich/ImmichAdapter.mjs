@@ -14,7 +14,9 @@ import { InfrastructureError } from '#system/utils/errors/index.mjs';
  */
 export class ImmichAdapter {
   #client;
+  #source;
   #proxyPath;
+  #claimsBareIds;
   #peopleCache;
   #peopleCacheTime;
 
@@ -22,7 +24,12 @@ export class ImmichAdapter {
    * @param {Object} config
    * @param {string} config.host - Immich server URL
    * @param {string} config.apiKey - Immich API key
-   * @param {string} [config.proxyPath] - Proxy path for URLs (default: '/api/v1/proxy/immich')
+   * @param {string} [config.source] - Source name and content id prefix (default: 'immich').
+   *   A second Immich server registers under its own name (e.g. 'familyphotos'), so its
+   *   ids (`familyphotos:<asset>`) and proxy route never collide with the first.
+   * @param {string} [config.proxyPath] - Proxy path for URLs (default: '/api/v1/proxy/<source>')
+   * @param {boolean} [config.claimBareIds] - Whether a bare asset UUID resolves to this
+   *   instance (default: only the default 'immich' instance; two servers cannot both claim them)
    * @param {number} [config.slideDuration] - Default slide duration in seconds (default: 10)
    * @param {Object} deps
    * @param {Object} deps.httpClient - HttpClient instance
@@ -42,7 +49,9 @@ export class ImmichAdapter {
     }
 
     this.#client = new ImmichClient(config, deps);
-    this.#proxyPath = config.proxyPath || '/api/v1/proxy/immich';
+    this.#source = config.source || 'immich';
+    this.#proxyPath = config.proxyPath || `/api/v1/proxy/${this.#source}`;
+    this.#claimsBareIds = config.claimBareIds ?? (this.#source === 'immich');
     this.slideDuration = config.slideDuration || 10;
     this.#peopleCache = null;
     this.#peopleCacheTime = 0;
@@ -50,12 +59,12 @@ export class ImmichAdapter {
 
   /** @returns {string} */
   get source() {
-    return 'immich';
+    return this.#source;
   }
 
   /** @returns {Array<{prefix: string}>} */
   get prefixes() {
-    return [{ prefix: 'immich' }];
+    return [{ prefix: this.#source }];
   }
 
   /**
@@ -63,9 +72,10 @@ export class ImmichAdapter {
    * @returns {Array<{pattern: RegExp, toId: function(RegExpMatchArray): string}>}
    */
   get directIdPatterns() {
+    if (!this.#claimsBareIds) return [];
     return [{
       pattern: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
-      toId: (m) => `immich:${m[0]}`,
+      toId: (m) => `${this.#source}:${m[0]}`,
     }];
   }
 
@@ -75,7 +85,9 @@ export class ImmichAdapter {
    * @returns {string}
    */
   #stripPrefix(id) {
-    return String(id || '').replace(/^immich:/, '');
+    const id_ = String(id || '');
+    const prefix = `${this.#source}:`;
+    return id_.startsWith(prefix) ? id_.slice(prefix.length) : id_;
   }
 
   /**
@@ -230,7 +242,7 @@ export class ImmichAdapter {
         const assets = await this.#client.getTagAssets(tagId);
         const context = {
           parentTitle: tagName,
-          parentId: `immich:tag:${tagId}`
+          parentId: `${this.#source}:tag:${tagId}`
         };
         return assets.map(asset =>
           asset.type === 'VIDEO'
@@ -250,7 +262,7 @@ export class ImmichAdapter {
         const assets = await this.#client.getPersonAssets(personId);
         const context = {
           parentTitle: personName,
-          parentId: `immich:person:${personId}`
+          parentId: `${this.#source}:person:${personId}`
         };
         return assets.map(asset =>
           asset.type === 'VIDEO'
@@ -265,7 +277,7 @@ export class ImmichAdapter {
         const album = await this.#client.getAlbum(albumId);
         const context = {
           parentTitle: album.albumName,
-          parentId: `immich:album:${albumId}`
+          parentId: `${this.#source}:album:${albumId}`
         };
         return (album.assets || []).map(asset =>
           asset.type === 'VIDEO'
@@ -300,7 +312,7 @@ export class ImmichAdapter {
         const assets = await this.#client.getPersonAssets(personId);
         const context = {
           parentTitle: personName,
-          parentId: `immich:person:${personId}`
+          parentId: `${this.#source}:person:${personId}`
         };
         return assets.map(asset => this.#toPlayableItem(asset, true, context));
       }
@@ -311,7 +323,7 @@ export class ImmichAdapter {
         const album = await this.#client.getAlbum(albumId);
         const context = {
           parentTitle: album.albumName,
-          parentId: `immich:album:${albumId}`
+          parentId: `${this.#source}:album:${albumId}`
         };
         return (album.assets || []).map(asset => this.#toPlayableItem(asset, true, context));
       }
@@ -340,8 +352,8 @@ export class ImmichAdapter {
       const { width, height } = immichDimensions(asset);
       const capture = captureClock(asset);
       return new DisplayableItem({
-        id: `immich:${asset.id}`,
-        source: 'immich',
+        id: `${this.#source}:${asset.id}`,
+        source: this.#source,
         title: asset.originalFileName,
         imageUrl: this.#displayImageUrl(asset.id),
         thumbnail: this.#thumbnailUrl(asset.id),
@@ -424,10 +436,12 @@ export class ImmichAdapter {
     const immichQuery = await this.#buildImmichQuery(query);
     const result = await this.#client.searchMetadata(immichQuery);
     const assets = [...(result.items || [])];
-    // Explicit tag inclusions must not silently stop at the first search page.
+    // Explicit tag and person inclusions must not silently stop at the first
+    // search page.
+    const fetchAllPages = Boolean(query.tags?.length || query.personIds?.length);
     let nextPage = result.nextPage;
     const visitedPages = new Set();
-    while (query.tags?.length && nextPage && !visitedPages.has(nextPage)) {
+    while (fetchAllPages && nextPage && !visitedPages.has(nextPage)) {
       visitedPages.add(nextPage);
       const page = await this.#client.searchMetadata({ ...immichQuery, page: Number(nextPage) });
       assets.push(...(page.items || []));
@@ -578,8 +592,8 @@ export class ImmichAdapter {
    */
   #toTagListable(tag) {
     return new ListableItem({
-      id: `immich:tag:${tag.id}`,
-      source: 'immich',
+      id: `${this.#source}:tag:${tag.id}`,
+      source: this.#source,
       title: tag.name,
       itemType: 'container',
       childCount: tag.assetCount || 0,
@@ -647,7 +661,7 @@ export class ImmichAdapter {
    * @returns {Promise<string>}
    */
   async getStoragePath() {
-    return 'immich';
+    return this.#source;
   }
 
   /**
@@ -736,6 +750,18 @@ export class ImmichAdapter {
       immichQuery.skip = query.skip;
     }
 
+    // Explicit person ids (a slideshow of one person's photos). Immich ANDs a
+    // personIds list, so a caller wanting "any of these people" searches one id
+    // at a time and unions the results. Every page is fetched (see #searchAssets),
+    // and faces come back inline for focusPerson zoom.
+    if (query.personIds?.length > 0) {
+      immichQuery.personIds = query.personIds;
+      immichQuery.size = 1000;
+      immichQuery.page = 1;
+      immichQuery.withExif = true;
+      immichQuery.withPeople = true;
+    }
+
     // Resolve people names to IDs
     if (query.people?.length > 0) {
       const personIds = await this.#resolvePersonIds(query.people);
@@ -774,8 +800,8 @@ export class ImmichAdapter {
   #toAlbumListable(album) {
     const assetCount = album.assetCount || album.assets?.length || 0;
     return new ListableItem({
-      id: `immich:album:${album.id}`,
-      source: 'immich',
+      id: `${this.#source}:album:${album.id}`,
+      source: this.#source,
       title: album.albumName,
       itemType: 'container',
       childCount: assetCount,
@@ -806,8 +832,8 @@ export class ImmichAdapter {
   #toPersonListable(person) {
     const assetCount = person.assetCount || 0;
     return new ListableItem({
-      id: `immich:person:${person.id}`,
-      source: 'immich',
+      id: `${this.#source}:person:${person.id}`,
+      source: this.#source,
       title: person.name || 'Unknown',
       itemType: 'container',
       childCount: assetCount,
@@ -870,8 +896,8 @@ export class ImmichAdapter {
     const { width, height } = immichDimensions(asset);
     const capture = captureClock(asset);
     return new ListableItem({
-      id: `immich:${asset.id}`,
-      source: 'immich',
+      id: `${this.#source}:${asset.id}`,
+      source: this.#source,
       title: asset.originalFileName,
       itemType: 'leaf',
       mediaType: 'image',
@@ -924,8 +950,8 @@ export class ImmichAdapter {
     const capture = captureClock(asset);
 
     return new PlayableItem({
-      id: `immich:${asset.id}`,
-      source: 'immich',
+      id: `${this.#source}:${asset.id}`,
+      source: this.#source,
       title: asset.originalFileName,
       mediaType: isVideo ? 'video' : 'image',
       mediaUrl: isVideo ? this.#videoUrl(asset.id) : this.#displayImageUrl(asset.id),
@@ -974,7 +1000,7 @@ export class ImmichAdapter {
    * @returns {Promise<{parent: Object|null, items: Array}|null>}
    */
   async resolveSiblings(compoundId) {
-    const localId = compoundId.replace(/^immich:/, '');
+    const localId = this.#stripPrefix(compoundId);
     if (!localId) return null;
 
     // For container items (album:id, person:id, tag:id), list their children
@@ -985,9 +1011,9 @@ export class ImmichAdapter {
       const containerItem = await this.getItem(localId);
 
       const parent = containerItem ? {
-        id: containerItem.id || `immich:${localId}`,
+        id: containerItem.id || `${this.#source}:${localId}`,
         title: containerItem.title || localId,
-        source: 'immich',
+        source: this.#source,
         thumbnail: containerItem.thumbnail || null,
         parentId: null,
         libraryId: null

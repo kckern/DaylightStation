@@ -58,7 +58,7 @@ describe('gateway parseDirectReference(s)', () => {
 
   it('the real Plex and Immich adapters declare their shapes', () => {
     const plex = Object.create(PlexAdapter.prototype);
-    const immich = Object.create(ImmichAdapter.prototype);
+    const immich = new ImmichAdapter({ host: 'http://immich.test', apiKey: 'k' }, { httpClient: {} });
     const [pp] = plex.directIdPatterns;
     expect(pp.pattern.test('697495')).toBe(true);
     expect(pp.pattern.test('9')).toBe(false);
@@ -67,5 +67,16 @@ describe('gateway parseDirectReference(s)', () => {
     const [ip] = immich.directIdPatterns;
     expect(ip.pattern.test('ff940f1a-f5ea-4580-a517-dfc68413e215')).toBe(true);
     expect(ip.pattern.test('697495')).toBe(false);
+    expect(ip.toId('ff940f1a-f5ea-4580-a517-dfc68413e215'.match(ip.pattern))).toBe('immich:ff940f1a-f5ea-4580-a517-dfc68413e215');
+  });
+
+  it('a second Immich server does not claim bare asset UUIDs', () => {
+    const family = new ImmichAdapter(
+      { source: 'familyphotos', host: 'http://family.test', apiKey: 'k' },
+      { httpClient: {} }
+    );
+    expect(family.source).toBe('familyphotos');
+    expect(family.prefixes).toEqual([{ prefix: 'familyphotos' }]);
+    expect(family.directIdPatterns).toEqual([]);
   });
 });
