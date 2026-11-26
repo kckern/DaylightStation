@@ -46,14 +46,21 @@ public final class MediaServiceCapability implements Capability {
     static final String PORT = "media";
     static final String WORKER = "Daylight-media";
     private static final String PLAY_ACTIVITY = "net.kckern.daylight.cap.mediaservice.shell.PlayActivity";
+    private static final String NOW_PLAYING_ACTIVITY = "net.kckern.daylight.cap.mediaservice.shell.NowPlayingActivity";
     private static final String ROOTS = "media.roots";
     private static final String RECENT_LIMIT = "media.recentLimit";
     private static final String PAGE_SIZE = "media.pageSize";
+    /** How a screen's notes name this device when it pauses or skips there: "Paused by Phone". */
+    static final String REMOTE_NAME = "media.remoteName";
     /** A level is asked for again after this long; until then it is served from memory. */
     private static final long FRESH_MS = 60_000;
 
     /** Starts the installed play screen for one media id. */
-    interface Launcher { void play(String mediaId); }
+    interface Launcher {
+        void play(String mediaId);
+        /** Opens the player screen on a target: "local", a screen's device id, or "" for the last one used. */
+        default void nowPlaying(String target) { }
+    }
 
     /** An answer for the port and for a route: the body, and the status a route gives it. */
     static final class Outcome {
@@ -72,6 +79,8 @@ public final class MediaServiceCapability implements Capability {
     private CoreContext core;
     private Backend backend;
     private MediaApi api;
+    /** The phone as a screen's remote. Replaced in tests. */
+    ScreenRemote screens;
     private LongSupplier clock;
     private Launcher launcher;
     private volatile ExecutorService worker;
@@ -101,7 +110,9 @@ public final class MediaServiceCapability implements Capability {
     @Override public void register(final CoreContext core) {
         this.core = core;
         this.backend = Backend.from(core);
-        if (api == null) api = new BackendMediaApi(backend, new BackendHttp(backend::deviceHeader));
+        BackendHttp http = new BackendHttp(backend::deviceHeader);
+        if (api == null) api = new BackendMediaApi(backend, http);
+        if (screens == null) screens = new ScreenRemote(http, backend::url, () -> (String) core.settings().get(REMOTE_NAME));
         if (clock == null) clock = System::currentTimeMillis;
         // The tabs a car shows: "Label=target;Label=target", a target being recent,
         // catalog or a container's content id.
@@ -110,6 +121,8 @@ public final class MediaServiceCapability implements Capability {
         core.settings().declare(RECENT_LIMIT, SettingsRegistry.Type.INTEGER, 30, SettingsRegistry.range(1, 100));
         // How many entries one browse level holds. A car limits what it shows per level.
         core.settings().declare(PAGE_SIZE, SettingsRegistry.Type.INTEGER, 50, SettingsRegistry.range(10, 200));
+        core.settings().declare(REMOTE_NAME, SettingsRegistry.Type.STRING, "Phone",
+                value -> ((String) value).length() > 80 ? "media.remoteName: at most 80 characters" : null);
         // The apps that may connect to the media session beside this app and the system:
         // "package=sha256 of its signing certificate", comma-separated. Empty: none. The
         // installed service refuses a package with no pin and logs its digest.
@@ -121,6 +134,19 @@ public final class MediaServiceCapability implements Capability {
             @Override public JSONObject handle(String arg, Map<String, String> query) throws Exception {
                 // Only the id is read, and only as a content id: never a URL, never a media id
                 // of the tree. The link reached here carrying this install's key.
+                if ("now-playing".equals(arg)) {
+                    // The player screen (media/now-playing?target=<local|device id>). The target is
+                    // only ever a device id of the registry's spelling; the screen asks the payload
+                    // which screens exist.
+                    String target = query.get("target") == null ? "" : query.get("target");
+                    if (!target.isEmpty() && !"local".equals(target) && !ScreenRemote.ID.matcher(target).matches()) {
+                        throw new IllegalArgumentException("expected media/now-playing?target=<local or a device id>");
+                    }
+                    Launcher l = launcher();
+                    if (l == null) return LinkEffect.toast("Not available on this device");
+                    l.nowPlaying(target);
+                    return LinkEffect.none();
+                }
                 String id = query.get("id");
                 if (!"play".equals(arg) || !ContentId.valid(id)) throw new IllegalArgumentException("expected media/play?id=<content id>");
                 Launcher l = launcher();
@@ -211,6 +237,9 @@ public final class MediaServiceCapability implements Capability {
             if ("event".equals(op)) return event(request);
             if ("action".equals(op)) return action(request);
             if ("search".equals(op)) return search(request);
+            if ("screens".equals(op)) return new Outcome(200, screens.screens());
+            if ("screen-session".equals(op)) return new Outcome(200, screens.session(Json.str(request, "device")));
+            if ("screen-command".equals(op)) return new Outcome(200, screens.command(request));
             return failure(400, "bad_request");
         } catch (IllegalArgumentException refused) {
             return failure(400, "bad_request");
@@ -432,13 +461,21 @@ public final class MediaServiceCapability implements Capability {
             final Object context = core.shell().context();
             // A JVM test of the whole payload has no Android context: there is no player.
             if (context == null) return null;
-            launcher = mediaId -> {
-                Context c = (Context) context;
-                // By name: the play screen is installed code in this capability's shell half.
-                // It is not exported, so only this app can start it. Started while the link
-                // activity is on screen, which is what lets a service context start one.
-                c.startActivity(new Intent().setClassName(c, PLAY_ACTIVITY).putExtra("id", mediaId)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            launcher = new Launcher() {
+                @Override public void play(String mediaId) {
+                    Context c = (Context) context;
+                    // By name: the play screen is installed code in this capability's shell half.
+                    // It is not exported, so only this app can start it. Started while the link
+                    // activity is on screen, which is what lets a service context start one.
+                    c.startActivity(new Intent().setClassName(c, PLAY_ACTIVITY).putExtra("id", mediaId)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                }
+
+                @Override public void nowPlaying(String target) {
+                    Context c = (Context) context;
+                    c.startActivity(new Intent().setClassName(c, NOW_PLAYING_ACTIVITY).putExtra("target", target)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP));
+                }
             };
         }
         return launcher;

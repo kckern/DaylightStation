@@ -2,6 +2,7 @@
 import getLogger from '../../../../../frontend/src/lib/logging/Logger.js';
 import { getActiveGamepads } from '../gamepadFiltering.js';
 import { interactionIntent } from '@shared-interaction/index.mjs';
+import { deliverPress } from '../deliverPress.js';
 
 const SEMANTIC_BUTTON_ACTIONS = Object.freeze({
   0: 'button.a', 1: 'button.b', 2: 'button.x', 3: 'button.y', 4: 'button.lb', 5: 'button.rb',
@@ -457,19 +458,9 @@ export class GamepadAdapter {
       });
     }
 
-    // Emit to ActionBus for useScreenAction consumers
-    // A scoped owner can consume and synchronously unmount on Back. Do not
-    // send a second legacy event into the newly exposed parent screen.
-    if (this.actionBus.emit(mapping.action, mapping.payload) === true) return;
-
-    // Dispatch synthetic KeyboardEvent for direct keydown listeners (Menu.jsx, ArcadeSelector.jsx)
-    const event = new KeyboardEvent('keydown', {
-      key: mapping.key,
-      bubbles: true,
-      cancelable: true,
-    });
-    event.__gamepadSynthetic = true;
-    window.dispatchEvent(event);
+    // ActionBus first (a scoped owner may consume and unmount on Back), else a synthetic
+    // keydown for direct listeners: the same path a phone's D-pad press takes.
+    deliverPress(this.actionBus, mapping);
   }
 
   _emitSemantic(gamepad, buttonIndex, phase, action = SEMANTIC_BUTTON_ACTIONS[buttonIndex] || `button.${buttonIndex}`) {

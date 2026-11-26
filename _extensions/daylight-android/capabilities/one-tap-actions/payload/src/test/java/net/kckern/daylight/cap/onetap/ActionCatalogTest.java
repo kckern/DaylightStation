@@ -140,4 +140,20 @@ public class ActionCatalogTest {
         assertEquals("new", memo.linkArg());
         assertTrue(memo.linkQuery().isEmpty());
     }
+
+    /** player: opens the Now playing screen through the media link: the last target, this phone, or a screen. */
+    @Test public void playerOpensNowPlayingOnATarget() {
+        ActionCatalog catalog = ActionCatalog.parse(Arrays.asList(
+                "remote|Now playing|play|player:", "phone|This phone|play|player:local", "tv|Office TV|play|player:office-tv"));
+        Action last = catalog.find("remote");
+        assertEquals(Kind.PLAYER, last.kind);
+        assertEquals("media", last.linkKind());
+        assertEquals("now-playing", last.linkArg());
+        assertTrue(last.linkQuery().isEmpty());
+        assertEquals("local", catalog.find("phone").linkQuery().get("target"));
+        assertEquals("office-tv", catalog.find("tv").linkQuery().get("target"));
+        for (String bad : new String[] { "player:Office", "player:../x", "player:a b", "player:-x" }) {
+            assertTrue(bad, message("x|X|play|" + bad).contains("player: needs nothing, local, or a screen's device id"));
+        }
+    }
 }

@@ -209,7 +209,7 @@ public class TextInputActivity extends Activity {
         layout.setBackgroundColor(CaptureUi.PAPER);
 
         TextView heading = CaptureUi.text(this, label, 22, CaptureUi.INK, true);
-        heading.setAccessibilityHeading(true);
+        if (android.os.Build.VERSION.SDK_INT >= 28) heading.setAccessibilityHeading(true); // API 28; the phone floor is 26
         layout.addView(heading);
 
         field = new EditText(this);

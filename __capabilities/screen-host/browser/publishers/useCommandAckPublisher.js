@@ -27,6 +27,8 @@ const ACKED_COMMAND_EVENTS = Object.freeze([
   'escape',
   'display:sleep',
   'display:wake',
+  // An `input` press (a phone's D-pad), emitted once it reached the bus or a keydown.
+  'remote:input-delivered',
 ]);
 
 const ERROR_EVENT = 'command-handler-error';

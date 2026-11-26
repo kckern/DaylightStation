@@ -5,7 +5,7 @@ import { buildErrorBody, ERROR_CODES } from '#shared-contracts/media/errors.mjs'
 import { validateHandoffCommandAck, validateHandoffParams } from '#shared-contracts/media/handoff.mjs';
 import { validateSessionSnapshot } from '#shared-contracts/media/shapes.mjs';
 import { buildCommandEnvelope, validateCommandEnvelope } from '#shared-contracts/media/envelopes.mjs';
-import { TRANSPORT_ACTIONS, QUEUE_OPS, REPEAT_MODES, isTransportAction, isKeepMusicParam, isQueueOp, isRepeatMode } from '#shared-contracts/media/commands.mjs';
+import { TRANSPORT_ACTIONS, QUEUE_OPS, REPEAT_MODES, INPUT_ACTIONS, INPUT_DIRECTIONS, isTransportAction, isKeepMusicParam, isQueueOp, isRepeatMode, isInputAction, isInputDirection } from '#shared-contracts/media/commands.mjs';
 import { END_OF_QUEUE_MODES, isEndOfQueueMode, validateSessionActionParams } from '#shared-contracts/media/sessionControls.mjs';
 import { normalizePlaybackQuality, normalizePlaybackQualityChange } from '#shared-contracts/media/playbackQuality.mjs';
 
@@ -232,6 +232,22 @@ export function createDeviceRouter({ fleetService, presenceService, sessionServi
     const { origin, error: originError } = commandOrigin(req);
     if (originError) return badRequest(res, originError);
     return mapCommand(await sessionService.transport(req.params.deviceId, { action, value, commandId, origin, ...(keepMusic !== undefined && action === 'stop' ? { keepMusic } : {}) }), res);
+  }));
+
+  // A remote-control press from another device (the phone's D-pad). The screen gets it
+  // as an `input` command and delivers it like a gamepad press; 200 once the screen
+  // acked delivery, 409 offline, 502 no ack. One press, one request: never retried here.
+  router.post('/:deviceId/input', asyncHandler(async (req, res) => {
+    if (!requireSessions(sessionService, res)) return;
+    const { action, direction, commandId } = req.body || {};
+    if (!nonEmpty(commandId)) return res.status(400).json(buildErrorBody({ error: 'commandId required (non-empty string)' }));
+    if (!isInputAction(action)) return res.status(400).json(buildErrorBody({ error: `action must be one of: ${INPUT_ACTIONS.join(', ')}` }));
+    if (action === 'navigate' && !isInputDirection(direction)) {
+      return res.status(400).json(buildErrorBody({ error: `direction must be one of: ${INPUT_DIRECTIONS.join(', ')}` }));
+    }
+    const { origin, error: originError } = commandOrigin(req);
+    if (originError) return badRequest(res, originError);
+    return mapCommand(await sessionService.input(req.params.deviceId, { action, direction, commandId, origin }), res);
   }));
 
   // Cancellation is coordinated before a cold screen owns a session. A claim

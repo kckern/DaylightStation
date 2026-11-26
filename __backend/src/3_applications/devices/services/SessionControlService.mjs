@@ -200,6 +200,15 @@ export class SessionControlService extends ISessionControl {
       params: { action, ...(value !== undefined ? { value } : {}), ...(typeof keepMusic === 'boolean' ? { keepMusic } : {}) }, ...originField(origin) }));
   }
 
+  /**
+   * A remote-control press (a phone's D-pad): navigate/select/escape, delivered on the
+   * screen like a gamepad press. Same gates as any command (offline 409, ack or 502).
+   */
+  input(deviceId, { action, direction, commandId, origin }) {
+    return this.sendCommand(this.#transport.buildCommand({ targetDevice: deviceId, command: 'input', commandId,
+      params: { action, ...(action === 'navigate' ? { direction } : {}) }, ...originField(origin) }));
+  }
+
   queue(deviceId, commandId, params, origin) {
     return this.sendCommand(this.#transport.buildCommand({ targetDevice: deviceId, command: 'queue', commandId, params, ...originField(origin) }));
   }

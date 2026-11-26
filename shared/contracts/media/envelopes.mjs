@@ -5,6 +5,8 @@ import {
   isQueueOp,
   isConfigSetting,
   isSystemAction,
+  isInputAction,
+  isInputDirection,
   isRepeatMode,
   TRANSPORT_INTENTS,
 } from './commands.mjs';
@@ -232,6 +234,20 @@ function validateCommandParams(command, params, errors) {
   if (command === 'system') {
     if (!isSystemAction(p.action)) {
       errors.push('params.action: required system action');
+    }
+    return;
+  }
+
+  if (command === 'input') {
+    if (!isInputAction(p.action)) {
+      errors.push('params.action: required input action (navigate, select, escape)');
+      return;
+    }
+    if (p.action === 'navigate' && !isInputDirection(p.direction)) {
+      errors.push('params.direction: required for navigate (up, down, left, right)');
+    }
+    if (p.action !== 'navigate' && p.direction !== undefined) {
+      errors.push('params.direction: only navigate takes a direction');
     }
     return;
   }

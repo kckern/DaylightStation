@@ -21,6 +21,16 @@ and recover failed submissions. Call requests camera and microphone access when
 it opens. The startup text sits on a dark preview until video starts. Use
 **Exit** to close the Call view and release capture.
 
+## Now playing: this phone or a screen
+
+**Play → Now playing** opens one player. The strip at the top chooses what it
+controls: **This phone**, or a screen such as the living-room TV or the office.
+The controls, the queue, the notification and the lock-screen card are the same
+for both. While a screen is chosen, the phone's volume keys set the screen's
+volume. Something you share to a screen shows up here too, so you can pause it,
+skip it or clear it. Tapping either media notification opens this screen. A
+`player:` action (`actions.14`) can be placed on Home or a tile.
+
 ## Playlist widgets on Apex
 
 1. In Daylight, open **Play on demand → Playlists** and choose a cover. The server

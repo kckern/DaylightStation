@@ -86,6 +86,21 @@ final class PayloadMedia {
         }
     }
 
+    /** The screens this phone can be a remote for: {ok, items:[{id, name}]}. */
+    String screens(long waitMs) throws Exception {
+        return port.call(new JSONObject().put("op", "screens").toString(), waitMs);
+    }
+
+    /** What one screen is doing now: {ok, status, snapshot?, lastSeenAt?}. */
+    String screenSession(String device, long waitMs) throws Exception {
+        return port.call(new JSONObject().put("op", "screen-session").put("device", device).toString(), waitMs);
+    }
+
+    /** One command to a screen (built by ScreenCommands): {ok, status, accepted, commandId, code?, error?}. */
+    String screenCommand(JSONObject request, long waitMs) throws Exception {
+        return port.call(request.toString(), waitMs);
+    }
+
     /** Waits for a payload to attach. True as soon as one has. */
     boolean awaitReady(long waitMs) {
         return port.awaitReady(waitMs);

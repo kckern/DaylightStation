@@ -17,6 +17,7 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -139,6 +140,57 @@ public class MediaServiceCapabilityTest {
         assertEquals("play/log answered 400", status.getString("lastError"));
         assertFalse("what was played is not in the status", status.toString().contains("So What"));
         assertEquals(400, post("/media/event", "{\"title\":\"x\"}").getInt("_status"));
+    }
+
+    @Test public void aNowPlayingLinkOpensThePlayerScreenOnACheckedTarget() throws Exception {
+        List<String> opened = new ArrayList<>();
+        MediaServiceCapability other = new MediaServiceCapability(api, () -> now, new MediaServiceCapability.Launcher() {
+            @Override public void play(String mediaId) { fail("not a play"); }
+            @Override public void nowPlaying(String target) { opened.add(target); }
+        });
+        net.kckern.daylight.core.CoreRuntime second = TestCore.create(tmp.newFolder());
+        second.add(other);
+        second.prepare(new JSONObject());
+        second.settings().set(Backend.BASE_URL, "https://kiosk.example");
+        LinkHandler link = null;
+        for (LinkHandler h : second.services().all(LinkHandler.class)) if ("media".equals(h.kind())) link = h;
+        link.handle("now-playing", Collections.<String, String>emptyMap());
+        link.handle("now-playing", Collections.singletonMap("target", "local"));
+        link.handle("now-playing", Collections.singletonMap("target", "office-tv"));
+        assertEquals(Arrays.asList("", "local", "office-tv"), opened);
+        for (String bad : new String[] { "Office", "../x", "https://evil.example" }) {
+            try { link.handle("now-playing", Collections.singletonMap("target", bad)); fail("accepted " + bad); }
+            catch (IllegalArgumentException expected) { }
+        }
+        other.stop();
+    }
+
+    /** The screen ops reach ScreenRemote; a refused command kind is a 400, not a send. */
+    @Test public void theScreenOpsAnswerThroughThePort() throws Exception {
+        List<String> sent = new ArrayList<>();
+        cap.screens = new ScreenRemote(new net.kckern.daylight.core.backend.Http() {
+            @Override public Reply get(String url) {
+                sent.add("GET " + url);
+                return url.endsWith("/config") ? new Reply(200, "{\"devices\":{\"office-tv\":{\"fleet\":true,\"name\":\"Office\"}}}")
+                        : new Reply(204, "");
+            }
+            @Override public Reply postJson(String url, String json) { sent.add("POST " + url); return new Reply(200, "{\"ok\":true}"); }
+            @Override public Reply postFile(String url, String type, java.io.File f, Map<String, String> h) { throw new AssertionError(); }
+        }, path -> "https://kiosk.example" + path, () -> "Phone");
+        assertEquals("Office", cap.call(new JSONObject().put("op", "screens")).body.getJSONArray("items").getJSONObject(0).getString("name"));
+        assertEquals(204, cap.call(new JSONObject().put("op", "screen-session").put("device", "office-tv")).body.getInt("status"));
+        MediaServiceCapability.Outcome play = cap.call(new JSONObject().put("op", "screen-command").put("device", "office-tv")
+                .put("command", "transport").put("action", "play"));
+        assertTrue(play.body.getBoolean("accepted"));
+        // The shape the installed player sends (ScreenCommands): op is the port's, queueOp the queue's.
+        MediaServiceCapability.Outcome clear = cap.call(new JSONObject().put("op", "screen-command").put("device", "office-tv")
+                .put("command", "queue").put("queueOp", "clear"));
+        assertEquals(200, clear.status);
+        assertTrue(clear.body.getBoolean("accepted"));
+        assertEquals(400, cap.call(new JSONObject().put("op", "screen-command").put("device", "office-tv").put("command", "system")).status);
+        assertEquals(400, cap.call(new JSONObject().put("op", "screen-session").put("device", "../x")).status);
+        assertEquals(4, sent.size());
+        assertTrue(sent.get(3), sent.get(3).endsWith("/session/queue/clear"));
     }
 
     @Test public void aKeyedMediaLinkStartsThePlayerWithAContentIdAndNothingElse() throws Exception {

@@ -45,6 +45,7 @@ import java.util.concurrent.Executors;
 /** The phone launcher. Incoming intents never select or run an action. */
 public class PhoneHomeActivity extends Activity {
     private static final int INK = 0xff14382f, GREEN = 0xff125b47, PAPER = 0xfff4f7f4;
+    private static final String NOW_PLAYING = "net.kckern.daylight.cap.mediaservice.shell.NowPlayingActivity";
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private JSONArray pages = new JSONArray();
     private JSONArray configuredActions = new JSONArray();
@@ -380,6 +381,12 @@ public class PhoneHomeActivity extends Activity {
     }
 
     private void addPlay() {
+        // The player screen is media-service's (installed code in another capability), so
+        // it is named, and offered only in a build that has it.
+        Intent nowPlaying = new Intent().setClassName(this, NOW_PLAYING);
+        if (getPackageManager().resolveActivity(nowPlaying, 0) != null) {
+            row("Now playing", "Control this phone or a screen", "play", "›", () -> startActivity(nowPlaying));
+        }
         row("Drive playlists", "The playlists on the car's Drive tab", "play", "›", this::showMediaChoices);
         row("Driving Radio", "Set the default and day rules", "play", "›", this::showDrivingRadio);
         if (!canPinWidgets()) {
@@ -496,7 +503,7 @@ public class PhoneHomeActivity extends Activity {
         back.setContentDescription("Back to setup");
         header.addView(back, dp(48), dp(48));
         TextView heading = label("Drive playlists", 24, INK);
-        heading.setAccessibilityHeading(true);
+        if (android.os.Build.VERSION.SDK_INT >= 28) heading.setAccessibilityHeading(true); // API 28; the phone floor is 26
         header.addView(heading, new LinearLayout.LayoutParams(0, -2, 1));
         TextView add = PlaylistPicker.text(this, "+ Add", 15, android.graphics.Color.WHITE, true);
         add.setGravity(Gravity.CENTER);

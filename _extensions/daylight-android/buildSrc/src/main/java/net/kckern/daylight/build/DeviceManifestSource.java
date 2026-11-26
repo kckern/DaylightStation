@@ -131,7 +131,7 @@ public final class DeviceManifestSource {
                 s.append("            <intent-filter tools:node=\"removeAll\" />\n");
                 if (d.capabilities.contains("widgets")) {
                     s.append("        </activity>\n");
-                    s.append("        <activity android:name=\"net.kckern.daylight.cap.widgets.shell.PhoneHomeActivity\">\n");
+                    s.append("        <activity android:name=\"net.kckern.daylight.cap.widgets.shell.PhoneHomeActivity\" android:exported=\"true\">\n");
                 }
                 s.append("            <intent-filter>\n");
                 s.append("                <action android:name=\"android.intent.action.MAIN\" />\n");

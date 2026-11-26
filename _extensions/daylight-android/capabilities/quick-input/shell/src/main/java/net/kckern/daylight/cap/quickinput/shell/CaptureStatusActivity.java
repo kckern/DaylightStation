@@ -56,7 +56,7 @@ public final class CaptureStatusActivity extends Activity {
         int padding = CaptureUi.dp(this, 20);
         layout.setPadding(padding, padding, padding, padding);
         TextView heading = CaptureUi.text(this, "Captures", 28, CaptureUi.INK, true);
-        heading.setAccessibilityHeading(true);
+        if (android.os.Build.VERSION.SDK_INT >= 28) heading.setAccessibilityHeading(true); // API 28; the phone floor is 26
         layout.addView(heading);
         summary = CaptureUi.text(this, "Loading captures…", 16, CaptureUi.INK, false);
         summary.setAlpha(0.75f);

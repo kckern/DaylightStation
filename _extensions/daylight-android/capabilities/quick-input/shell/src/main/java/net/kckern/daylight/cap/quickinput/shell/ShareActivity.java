@@ -118,7 +118,7 @@ public class ShareActivity extends Activity {
         layout.setPadding(pad, pad, pad, pad / 2);
         layout.setBackgroundColor(CaptureUi.PAPER);
         TextView heading = CaptureUi.text(this, "Share to Daylight", 22, CaptureUi.INK, true);
-        heading.setAccessibilityHeading(true);
+        if (android.os.Build.VERSION.SDK_INT >= 28) heading.setAccessibilityHeading(true); // API 28; the phone floor is 26
         layout.addView(heading);
         status = CaptureUi.text(this, "Getting ready…", 16, CaptureUi.INK, false);
         status.setAlpha(0.75f);

@@ -1125,7 +1125,7 @@ Mutates the remote session's queue.
 | `play-next` | `{ contentId, commandId }` | Insert after current item. |
 | `add-up-next` | `{ contentId, commandId }` | Append to Up Next sub-queue. |
 | `add` | `{ contentId, commandId }` | Append to end. |
-| `reorder` | `{ from, to, commandId }` OR `{ items: queueItemId[], commandId }` | Move one item or replace ordering. |
+| `reorder` | `{ from, to, commandId }` OR `{ items: queueItemId[], commandId }` | Move one item or replace ordering. `from` and `to` are queueItemIds, not indices: the router refuses anything but non-empty strings. |
 | `remove` | `{ queueItemId, commandId }` | Remove an item. |
 | `jump` | `{ queueItemId, commandId }` | Jump to a specific queue item. |
 | `clear` | `{ commandId }` | Clear entire queue. |
@@ -1135,6 +1135,20 @@ Mutates the remote session's queue.
 **Verified by:**
 - `__backend/tests/unit/suite/4_api/v1/routers/device.session-queue.test.mjs` — per-op validation for all 8 ops
 - `shared/contracts/media/envelopes.test.mjs` — envelope validator accepts each op shape
+
+### 4.6 `POST /api/v1/device/:id/input`
+
+A remote-control press from another device (the phone's D-pad) for a screen-framework
+screen.
+
+**Request body:** `{ "action": "navigate" | "select" | "escape", "direction": "up" |
+"down" | "left" | "right" (navigate only), "commandId": "<uuid>", "origin"?: {...} }`
+
+Published as an `input` CommandEnvelope on `screen:<id>`; the screen delivers it like a
+gamepad press (screen-framework.md, "Remote input from another device") and acks with
+`remote:input-delivered`. **200** delivered, **409** screen offline, **502** no ack,
+**400** a bad action/direction. One press, one request; senders never retry (a late OK
+on a menu is worse than none).
 
 ### 4.5 Session configuration setters
 
