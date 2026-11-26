@@ -393,7 +393,10 @@ rails on the office canvas"). **The keyboard row** is drawn only for a learner w
 every take, or after a wrong note, by their own entry (`sheetmusic.learners.<id>.keyboardHints: always`
 or `after-wrong`, `ExerciseRun keyboard`): a ruling of this change, since that assist is the keyboard,
 and the score's share is lower (about 72% on the tablet) for those learners alone. Without an entry the
-default after-wrong key hint went with the row (the office never had it).
+default after-wrong key hint went with the row (the office never had it). **The office screen draws
+the keyboard row for every learner** (2026-11-25, at the owner's request; `LearnLab` `keyboard` when
+`KeyboardOnlyContext` is present): a mirror of the keys under the player's hands, lit for the owed note only
+when the learner has key hints. The score's share there is about 70% of the 1280×720 canvas.
 
 - **Steps per lap.** The progress row shows only the steps of the lap the step
   being played belongs to: on the Bronze/Silver lap the hands, together and the
@@ -2020,9 +2023,9 @@ way out on a keyboard-only screen is the launcher's hold-to-quit). Every other g
 
 **The drill on the office** is the tablet's two rails (see "Two rails" under the drill screen): a
 56px status line (the avatar, the step and its bars, the prompt slot: how to start, the count,
-`Play any key to try again`), the score, the 72px coach rail; the launcher's `SHEET MUSIC` bar is
-hidden while a drill is open and comes back in the picker. **What is not drawn:** the tablet's
-on-screen keyboard, the result's buttons, Back, the tempo track and click volume (both keep their
+`Play any key to try again`), the score, the keyboard row (for every learner: it mirrors the keys
+played), the 72px coach rail; the launcher's `SHEET MUSIC` bar is
+hidden while a drill is open and comes back in the picker. **What is not drawn:** the result's buttons, Back, the tempo track and click volume (both keep their
 defaults), the run's Pause/Listen buttons, the step dots as choices; the coins and ladder are a map,
 not controls. The office screen's recorder has **no note
 output**, so Listen is not offered and the click is the browser's WebAudio blip plus the run's visual beat

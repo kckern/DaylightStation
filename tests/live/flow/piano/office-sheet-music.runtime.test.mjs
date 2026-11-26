@@ -263,7 +263,7 @@ const visibleTexts = (page) => page.evaluate(() => {
 });
 const countIn = (texts, pattern) => texts.reduce((n, text) => n + (text.match(pattern)?.length ?? 0), 0);
 
-test('two rails on the office canvas: fixed heights in every state, no fact twice, the result on the rail, the score ≥ 75%', async ({ page }) => {
+test('two rails on the office canvas: fixed heights in every state, no fact twice, the result on the rail, the score ≥ 68% above the keyboard row', async ({ page }) => {
   await installOfficeRoutes(page, { studyDate: 'today', pieces: deskPieces(2) });
   await page.goto('/', { waitUntil: 'networkidle' });
   await chord(page, [LOW, HIGH], 150);
@@ -282,8 +282,13 @@ test('two rails on the office canvas: fixed heights in every state, no fact twic
   // The launcher's "SHEET MUSIC" bar steps aside while a drill is open; the status line carries the player.
   await expect(page.locator('.office-game-chrome')).toBeHidden();
   await expect(page.locator('.piano-learn-lab__avatar .piano-avatar')).toBeVisible();
-  // Score share ≥ 75% of the canvas.
-  expect(ready.score[2] * ready.score[3] / (1280 * 720)).toBeGreaterThanOrEqual(0.75);
+  // The keyboard row is drawn on the office for every learner, between the score and the coach rail.
+  const keys = await page.locator('.piano-exercise-run__keys').boundingBox();
+  expect(keys).not.toBeNull();
+  expect(keys.y).toBeGreaterThanOrEqual(ready.score[1] + ready.score[3] - 0.5);
+  expect(keys.y + keys.height).toBeLessThanOrEqual(ready.rail[1] + 0.5);
+  // Score share ≥ 68% of the canvas (about 70% with the keyboard row; 75% before it came back).
+  expect(ready.score[2] * ready.score[3] / (1280 * 720)).toBeGreaterThanOrEqual(0.68);
   // No fact twice: the passage letter, bars and level each appear once.
   const texts = await visibleTexts(page);
   expect(countIn(texts, /\bA\b/g), texts.join(' | ')).toBe(1);

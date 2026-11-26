@@ -58,10 +58,8 @@
   .piano-passage-path { pointer-events: none; }
   .piano-passage-path__all,
   .piano-passage-path__play { display: none; } // the play disc says "tap me": here the unit is already open
-  // The tablet's on-screen keyboard is a touch surface; here the real keyboard is
-  // under the player's hands. Its height goes to the score.
-  .piano-exercise-run__keys { display: none; }
-  .piano-exercise-run[data-surface='learn-lab'] { --run-keys-row: 0px; }
+  // The drill keyboard is drawn here for every learner (LearnLab `keyboard`): it mirrors the
+  // real keys under the player's hands and lights the owed ones when the learner has key hints.
   // The result card's touch icons (continue, leave): nothing can press them. Any
   // key continues; Try again and the rest are in the menu.
   .piano-exercise-run__onward,

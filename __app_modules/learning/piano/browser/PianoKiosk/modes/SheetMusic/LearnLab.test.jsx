@@ -56,6 +56,12 @@ describe('LearnLab', () => {
     expect(exercise.props.keyboard).toBe(false);
   });
 
+  it('the office screen draws the keyboard row for every learner, key hints or not', () => {
+    const office = { input: 'keyboard-only', canListen: false, menuOpen: false, publishStrip: () => {} };
+    render(<KeyboardOnlyContext.Provider value={office}><LearnLab {...base} /></KeyboardOnlyContext.Provider>);
+    expect(exercise.props.keyboard).toBe(true);
+  });
+
   it('a save problem is said in the prompt slot, so the status line keeps its height and its heading', () => {
     render(<LearnLab {...base} notice={<div className="piano-learn-coach__save" role="status">Progress not saved</div>} />);
     expect(document.querySelector('.piano-learn-lab__prompt .piano-learn-coach__save')).not.toBeNull();

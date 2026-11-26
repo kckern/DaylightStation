@@ -385,7 +385,7 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
       fullKeyboardHints={assist?.keyboardHints === 'always'} wrongNoteGhosts={assist?.wrongNoteGhosts === true && !rhythm}
       incompleteAfterMs={coachingTask?.assist === 'none' && coachingTask.stallSeconds ? coachingTask.stallSeconds * 1000 : null}
       failurePresentation="local" resultPresentation="docked" resultLabel={resultLabel} resultActions={resultActions} resultContinueLabel={resultContinueLabel} onResultContinue={onResultContinue} onPickStep={onPickStep} onStarted={takeStarted} onExit={onClose} onPassed={settle}
-      onFailed={failTake} onPhase={setRunPhase} slots={runSlots} keyboard={assist?.keyboardHints === 'always' || assist?.keyboardHints === 'after-wrong'}
+      onFailed={failTake} onPhase={setRunPhase} slots={runSlots} keyboard={Boolean(keyOnly) || assist?.keyboardHints === 'always' || assist?.keyboardHints === 'after-wrong'}
       demonstration={listening ? { playing: listening === 'playing', onDone: () => stopListening('end') } : null}
       onUnavailable={(reason, detail) => onUnavailable?.(detail || reason)}
     />
