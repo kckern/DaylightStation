@@ -57,6 +57,8 @@ public class RemoteControlService extends MediaSessionService {
     static final String EXTRA_ON = "on";
     /** Session extra: the line under the controls. */
     static final String EXTRA_STATUS = "status";
+    /** Session extra: the screen's reach (IDLE, OFF, NOT_ON, …), so an idle screen can offer a start. */
+    static final String EXTRA_REACH = "reach";
     static final String PREFS = "daylight.remote";
     private static final long WAIT_MS = 4000;
     private static final long WATCHED_MS = 1000, PLAYING_MS = 5000, RESTING_MS = 15000;
@@ -101,6 +103,7 @@ public class RemoteControlService extends MediaSessionService {
             }
         }, line -> {
             extras.putString(EXTRA_STATUS, line);
+            extras.putString(EXTRA_REACH, player == null ? "" : player.reach().name());
             if (session != null) session.setSessionExtras(new Bundle(extras));
         });
         player.addListener(new Player.Listener() {

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Now playing opens as a sheet rising from the bottom. -->
+<translate xmlns:android="http://schemas.android.com/apk/res/android"
+    android:duration="260" android:fromYDelta="100%p" android:toYDelta="0"
+    android:interpolator="@android:interpolator/decelerate_cubic" />

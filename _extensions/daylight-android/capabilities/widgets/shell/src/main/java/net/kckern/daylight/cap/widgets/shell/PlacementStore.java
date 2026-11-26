@@ -72,6 +72,11 @@ final class PlacementStore {
     }
 
     /** Forget that this page or action is on the home screen, e.g. after it was removed from the launcher. */
+    /** Forgets one placement attempt: its banner goes. The item itself is untouched. */
+    void dismiss(String requestId) {
+        prefs.edit().remove(REQUEST + requestId).apply();
+    }
+
     void clearAdded(String contentId) {
         SharedPreferences.Editor edit = prefs.edit();
         for (LauncherPlacement request : requests()) {

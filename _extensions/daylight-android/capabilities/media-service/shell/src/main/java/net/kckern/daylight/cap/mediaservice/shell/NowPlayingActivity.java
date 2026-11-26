@@ -134,6 +134,12 @@ public class NowPlayingActivity extends Activity {
     private ListenableFuture<MediaController> pending;
     private MediaController controller;
     private String remoteStatus = "";
+    /** The screen's reach as its session last said (IDLE, OFF, NOT_ON, …); empty for this phone. */
+    private String remoteReach = "";
+    /** Over the stage while the screen has nothing to play: what to start there, or a way out. */
+    private ScrollView startBox;
+    private LinearLayout startList;
+    private String startShownFor = "";
     private String volumeLine = "";
     private String shownArtwork;
 
@@ -190,6 +196,8 @@ public class NowPlayingActivity extends Activity {
 
     @Override protected void onCreate(Bundle saved) {
         super.onCreate(saved);
+        // A sheet over what was there: it rises on open and falls back down on close.
+        overridePendingTransition(R.anim.daylight_np_rise, R.anim.daylight_np_hold);
         UiTelemetry.install(this);
         io = executor("Daylight-nowplaying");
         padIo = executor("Daylight-nowplaying-pad");
@@ -263,6 +271,11 @@ public class NowPlayingActivity extends Activity {
         super.onStop();
     }
 
+    @Override public void finish() {
+        super.finish();
+        overridePendingTransition(R.anim.daylight_np_hold, R.anim.daylight_np_fall);
+    }
+
     @Override protected void onDestroy() {
         for (ExecutorService e : new ExecutorService[] { io, artIo, padIo, detailIo }) if (e != null) e.shutdownNow();
         super.onDestroy();
@@ -319,6 +332,7 @@ public class NowPlayingActivity extends Activity {
         reconnectMs = 1000;
         connectionLine = "";
         remoteStatus = "";
+        remoteReach = "";
         shownArtwork = null;
         clock.reset();
         renderTargets();
@@ -382,6 +396,7 @@ public class NowPlayingActivity extends Activity {
                         @Override public void onExtrasChanged(MediaController c, Bundle extras) {
                             if (c != controller) return;
                             remoteStatus = extras.getString(RemoteControlService.EXTRA_STATUS, "");
+                            remoteReach = extras.getString(RemoteControlService.EXTRA_REACH, "");
                             render();
                         }
                         @Override public void onDisconnected(MediaController c) {
@@ -484,7 +499,12 @@ public class NowPlayingActivity extends Activity {
         MediaMetadata meta = c == null ? MediaMetadata.EMPTY : c.getMediaMetadata();
         boolean hasItem = c != null && c.getMediaItemCount() > 0;
         CharSequence name = meta.title != null ? meta.title : meta.displayTitle;
-        title.setText(hasItem && !TextUtils.isEmpty(name) ? name : "Nothing playing");
+        boolean idleScreen = remote() && !hasItem && "IDLE".equals(remoteReach);
+        boolean offScreen = remote() && !hasItem && ("OFF".equals(remoteReach) || "NOT_ON".equals(remoteReach));
+        title.setText(hasItem && !TextUtils.isEmpty(name) ? name
+                : idleScreen ? "Play something on " + targetName
+                : offScreen ? targetName + " is off" : "Nothing playing");
+        showStart(idleScreen ? "idle" : offScreen ? "off" : "");
         title.setTextColor(hasItem ? theme.ink : theme.inkMuted);
         // A screen's player names the screen as the artist; that is the top bar's job.
         CharSequence by = remote() ? null : meta.artist;
@@ -819,6 +839,136 @@ public class NowPlayingActivity extends Activity {
         });
     }
 
+    // ── an idle or off screen: what to start there, or a way out ─────────────
+
+    /**
+     * A screen with nothing on it is a place to start something, not a status to read:
+     * Continue listening and your playlists, each started there with one tap, and its own
+     * menu through the D-pad. An off screen offers this phone instead. "" hides it.
+     */
+    private void showStart(String mode) {
+        String key = mode.isEmpty() ? "" : mode + ":" + target;
+        if (key.equals(startShownFor)) return;
+        startShownFor = key;
+        boolean on = !mode.isEmpty();
+        crossfade(startBox, on);
+        crossfade(artFrame, !on && stage == Stage.ART);
+        if (!on) return;
+        startList.removeAllViews();
+        note("player.start-panel", "mode", mode);
+        if (mode.equals("off")) {
+            startList.addView(startRow(R.drawable.daylight_np_cast, "Play on this phone instead",
+                    "Pick another player, or turn " + targetName + " on", "start.local", () -> switchTo(LOCAL, "This phone"), null));
+            startList.addView(startRow(R.drawable.daylight_np_cast, "Play on another screen", null, "start.targets", this::openTargets, null));
+            return;
+        }
+        String cached = getSharedPreferences("daylight.home", MODE_PRIVATE).getString("continue", "");
+        try {
+            JSONArray items = cached.isEmpty() ? new JSONArray() : new JSONArray(cached);
+            if (items.length() > 0) startList.addView(startHeading("Continue listening"));
+            for (int i = 0; i < items.length(); i++) {
+                JSONObject item = items.optJSONObject(i);
+                if (item == null) continue;
+                String id = contentOf(item.optString("id")), title = item.optString("title");
+                if (id.isEmpty()) continue;
+                startList.addView(startRow(0, title, item.optString("subtitle"), "start.continue",
+                        () -> startOnScreen("play", id, false, title), item.optString("art")));
+            }
+        } catch (Exception unreadable) { /* the Play tab fills this cache; without it the list is shorter */ }
+        java.util.List<net.kckern.daylight.shellkit.DrivingRadioSettings.Staple> mine =
+                new net.kckern.daylight.shellkit.DrivingRadioSettings(this).staged();
+        if (!mine.isEmpty()) startList.addView(startHeading("Your playlists"));
+        for (net.kckern.daylight.shellkit.DrivingRadioSettings.Staple p : mine) {
+            String id = contentOf(p.id);
+            startList.addView(startRow(0, p.title, null, "start.playlist",
+                    () -> startOnScreen("queue", id, true, p.title), p.art));
+        }
+        startList.addView(startHeading("Or"));
+        startList.addView(startRow(R.drawable.daylight_np_dpad, "Browse on " + targetName,
+                "Its own menu, with the phone as the remote", "start.browse", () -> showPad(true), null));
+    }
+
+    private static String contentOf(String mediaId) {
+        return mediaId != null && mediaId.startsWith("c:") ? mediaId.substring(2) : mediaId == null ? "" : mediaId;
+    }
+
+    private TextView startHeading(String words) {
+        TextView h = theme.text(this, words, Type.LABEL, theme.inkMuted, true);
+        h.setPadding(dp(4), dp(14), 0, dp(6));
+        return h;
+    }
+
+    private View startRow(int icon, String title, String sub, String tag, Runnable tap, String art) {
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setMinimumHeight(dp(60));
+        row.setPadding(dp(8), dp(6), dp(8), dp(6));
+        row.setBackground(theme.pressable(null));
+        ImageView cover = new ImageView(this);
+        cover.setScaleType(icon != 0 ? ImageView.ScaleType.CENTER_INSIDE : ImageView.ScaleType.CENTER_CROP);
+        cover.setClipToOutline(true);
+        cover.setBackground(theme.round(theme.surfaceVariant, DaylightTheme.Radius.SMALL));
+        if (icon != 0) {
+            cover.setImageResource(icon);
+            cover.setImageTintList(ColorStateList.valueOf(theme.ink));
+            cover.setPadding(dp(12), dp(12), dp(12), dp(12));
+        }
+        row.addView(cover, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        if (art != null && !art.isEmpty() && io != null) io.execute(() -> {
+            Bitmap b = net.kckern.daylight.shellkit.PlaylistArtwork.load(art, 144);
+            if (b != null) main.post(() -> cover.setImageBitmap(b));
+        });
+        LinearLayout words = new LinearLayout(this);
+        words.setOrientation(LinearLayout.VERTICAL);
+        words.setPaddingRelative(dp(12), 0, 0, 0);
+        TextView t = theme.text(this, title, Type.BODY, theme.ink, true);
+        t.setMaxLines(1);
+        t.setEllipsize(TextUtils.TruncateAt.END);
+        words.addView(t);
+        if (!TextUtils.isEmpty(sub)) {
+            TextView s = theme.text(this, sub, Type.LABEL, theme.inkMuted, false);
+            s.setMaxLines(1);
+            s.setEllipsize(TextUtils.TruncateAt.END);
+            words.addView(s);
+        }
+        row.addView(words, new LinearLayout.LayoutParams(0, -2, 1));
+        row.setContentDescription(title);
+        UiTelemetry.tag(row, tag);
+        row.setOnClickListener(v -> tap.run());
+        return row;
+    }
+
+    /** One tap starts it on the screen (the web's Play on); the player then follows what the screen does. */
+    private void startOnScreen(String how, String contentId, boolean shuffle, String title) {
+        final String device = target, name = targetName;
+        volumeLine = "Starting " + title + " on " + name + "…";
+        render();
+        note("player.start", "how", how);
+        io.execute(() -> {
+            String line;
+            try {
+                JSONObject request = new JSONObject().put("op", "screen-command").put("device", device)
+                        .put("command", "load").put(how, contentId);
+                if (shuffle) request.put("shuffle", true);
+                JSONObject reply = new JSONObject(media.screenCommand(request, 45_000));
+                boolean ok = reply.optBoolean("accepted", false);
+                line = ok ? "" : "no_answer".equals(reply.optString("code"))
+                        ? name + " has not answered yet" : name + " could not start it";
+                if (!ok) Log.w(TAG, "start on screen refused " + reply.optInt("status") + " " + reply.optString("code"));
+            } catch (Exception failed) {
+                line = "Can't reach home";
+                Log.w(TAG, "start on screen failed", failed);
+            }
+            String said = line;
+            main.post(() -> {
+                if (!device.equals(target)) return;
+                volumeLine = said;
+                render();
+                if (!said.isEmpty()) main.postDelayed(() -> { if (said.equals(volumeLine)) { volumeLine = ""; render(); } }, 6000);
+            });
+        });
+    }
+
     // ── targets, menus ───────────────────────────────────────────────────────
 
     /** The target button: which player this screen drives. */
@@ -850,9 +1000,18 @@ public class NowPlayingActivity extends Activity {
             kind.setImageResource(targetIcon(id));
             kind.setImageTintList(ColorStateList.valueOf(on ? base.primary : base.ink));
             row.addView(kind, new LinearLayout.LayoutParams(dp(24), dp(24)));
+            LinearLayout words = new LinearLayout(this);
+            words.setOrientation(LinearLayout.VERTICAL);
+            words.setPaddingRelative(dp(16), 0, 0, 0);
             TextView t = base.text(this, label, Type.BODY, on ? base.primary : base.ink, on);
-            t.setPaddingRelative(dp(16), 0, 0, 0);
-            row.addView(t, new LinearLayout.LayoutParams(0, -2, 1));
+            words.addView(t);
+            // What each player is doing, checked as the list opens; the line is reserved so rows
+            // do not jump when the answers arrive.
+            TextView state = base.text(this, LOCAL.equals(id) ? "Ready" : "Checking…", Type.LABEL, base.inkMuted, false);
+            state.setMaxLines(1);
+            state.setEllipsize(TextUtils.TruncateAt.END);
+            words.addView(state);
+            row.addView(words, new LinearLayout.LayoutParams(0, -2, 1));
             if (on) {
                 ImageView check = new ImageView(this);
                 check.setImageResource(R.drawable.daylight_np_check);
@@ -863,6 +1022,13 @@ public class NowPlayingActivity extends Activity {
             UiTelemetry.tag(row, "play-on." + (LOCAL.equals(id) ? "local" : id));
             row.setOnClickListener(v -> { dialog.dismiss(); if (!id.equals(target)) switchTo(id, label); });
             col.addView(row);
+            if (!LOCAL.equals(id) && io != null) io.execute(() -> {
+                ScreenSnapshot snap;
+                try { snap = ScreenSnapshot.parse(new JSONObject(media.screenSession(id, 4000))); }
+                catch (Exception unreachable) { snap = ScreenSnapshot.unreachable(); }
+                ScreenSnapshot answer = snap;
+                main.post(() -> markTarget(row, kind, t, state, answer, on));
+            });
         }
         if (!screensProblem.isEmpty()) {
             TextView note = base.text(this, screensProblem, Type.LABEL, base.inkMuted, false);
@@ -870,6 +1036,32 @@ public class NowPlayingActivity extends Activity {
             col.addView(note);
         }
         dialog.show();
+    }
+
+    /**
+     * A player that is off cannot be picked: it is greyed, says Off, and a tap does nothing
+     * (the one in use stays pickable so it can be seen). Idle and playing say so.
+     */
+    private void markTarget(View row, ImageView kind, TextView name, TextView state, ScreenSnapshot snap, boolean current) {
+        ScreenSnapshot.Entry now = snap.currentEntry();
+        boolean off = snap.reach == ScreenSnapshot.Reach.OFF || snap.reach == ScreenSnapshot.Reach.NOT_ON;
+        String line;
+        switch (snap.reach) {
+            case OFF: case NOT_ON: line = "Off"; break;
+            case IDLE: line = "Nothing playing"; break;
+            case PLAYING_OR_PAUSED:
+                line = (now == null ? "" : now.title) + ("playing".equals(snap.state) ? "" : " · paused");
+                if (line.trim().isEmpty() || line.startsWith(" ·")) line = "playing".equals(snap.state) ? "Playing" : "Paused";
+                break;
+            default: line = "Can't check";
+        }
+        state.setText(line);
+        if (off && !current) {
+            row.setAlpha(0.45f);
+            row.setEnabled(false);
+            row.setClickable(false);
+            row.setContentDescription(name.getText() + ", off");
+        }
     }
 
     private void openMore() {
@@ -1256,6 +1448,13 @@ public class NowPlayingActivity extends Activity {
         queueBox.addView(queueScroll, new LinearLayout.LayoutParams(-1, 0, 1));
         queueBox.setVisibility(View.GONE);
         stageBox.addView(queueBox, new FrameLayout.LayoutParams(-1, -1));
+        startBox = new ScrollView(this);
+        startBox.setVerticalScrollBarEnabled(false);
+        startList = new LinearLayout(this);
+        startList.setOrientation(LinearLayout.VERTICAL);
+        startBox.addView(startList);
+        startBox.setVisibility(View.GONE);
+        stageBox.addView(startBox, new FrameLayout.LayoutParams(-1, -1));
         player.addView(stageBox, new LinearLayout.LayoutParams(-1, 0, 1));
 
         // The seek bar is the track's loudness, with the times at its ends.
@@ -1339,14 +1538,16 @@ public class NowPlayingActivity extends Activity {
         next = icon(R.drawable.daylight_np_next, "Next", 0, () -> { skipNext(); clock.reset(); });
         prev.setPadding(dp(14), dp(14), dp(14), dp(14));
         next.setPadding(dp(14), dp(14), dp(14), dp(14));
-        transport.addView(leftEdgeBox, new LinearLayout.LayoutParams(dp(52), dp(52)));
-        LinearLayout.LayoutParams skipLp = new LinearLayout.LayoutParams(dp(68), dp(68));
-        skipLp.setMarginStart(dp(12));
-        skipLp.setMarginEnd(dp(12));
-        transport.addView(prev, skipLp);
-        transport.addView(playPause, new LinearLayout.LayoutParams(dp(84), dp(84)));
-        transport.addView(next, new LinearLayout.LayoutParams(skipLp));
-        transport.addView(rightEdgeBox, new LinearLayout.LayoutParams(dp(52), dp(52)));
+        // Only the play disc is a fixed size; the others share what is left, so the row fits
+        // any width (a 411 dp phone spilled the ±10 buttons off both edges).
+        transport.addView(leftEdgeBox, new LinearLayout.LayoutParams(0, dp(52), 1));
+        transport.addView(prev, new LinearLayout.LayoutParams(0, dp(64), 1.2f));
+        LinearLayout.LayoutParams discLp = new LinearLayout.LayoutParams(dp(84), dp(84));
+        discLp.setMarginStart(dp(6));
+        discLp.setMarginEnd(dp(6));
+        transport.addView(playPause, discLp);
+        transport.addView(next, new LinearLayout.LayoutParams(0, dp(64), 1.2f));
+        transport.addView(rightEdgeBox, new LinearLayout.LayoutParams(0, dp(52), 1));
         LinearLayout.LayoutParams transportLp = new LinearLayout.LayoutParams(-1, -2);
         transportLp.topMargin = dp(16);
         player.addView(transport, transportLp);

@@ -164,6 +164,7 @@ final class ScreenRemote {
         JSONObject body = new JSONObject().put("commandId", commandId);
         String path;
         boolean put = false;
+        if (kind.equals("load")) return load(device, request, commandId);
         switch (kind) {
             case "transport": {
                 String action = request.optString("action", "");
@@ -249,6 +250,42 @@ final class ScreenRemote {
         JSONObject reply = Replies.ok().put("status", r.status).put("commandId", commandId).put("accepted", r.ok());
         if (!r.ok()) {
             reply.put("code", answer.optString("code", ""));
+            reply.put("error", answer.optString("error", ""));
+        }
+        return reply;
+    }
+
+    /** A content id the load route takes: a source, a colon, then the source's own id. */
+    static final Pattern CONTENT = Pattern.compile("[a-z][a-z0-9_-]{0,31}:[^\\s?&#]{1,200}");
+
+    /**
+     * Starts something on a screen, as the web's Play on does: GET /device/<id>/load with
+     * play (one item) or queue (a list), never both. A Media press is not replayed later
+     * behind the person's back, so the backend's deferred retry is turned off. Waking a
+     * screen can take a while; no answer in time is said, not retried.
+     */
+    private JSONObject load(String device, JSONObject request, String commandId) throws Exception {
+        String play = request.optString("play", ""), queue = request.optString("queue", "");
+        if (play.isEmpty() == queue.isEmpty()) throw new IllegalArgumentException("play or queue");
+        String content = play.isEmpty() ? queue : play;
+        if (!CONTENT.matcher(content).matches()) throw new IllegalArgumentException("content");
+        StringBuilder q = new StringBuilder(play.isEmpty() ? "queue=" : "play=")
+                .append(java.net.URLEncoder.encode(content, "UTF-8"))
+                .append("&dispatchId=").append(java.net.URLEncoder.encode(commandId, "UTF-8"))
+                .append("&deferredRetry=0");
+        if (request.optBoolean("shuffle", false)) q.append("&shuffle=1");
+        Http.Reply r;
+        try {
+            r = http.get(url.apply("/api/v1/device/" + checked(device) + "/load?" + q));
+        } catch (java.net.SocketTimeoutException sentNoAnswer) {
+            return Replies.ok().put("status", 0).put("commandId", commandId).put("accepted", false)
+                    .put("code", "no_answer").put("error", "");
+        }
+        JSONObject answer = parse(r.body);
+        boolean ok = r.ok() && answer.optBoolean("ok", true);
+        JSONObject reply = Replies.ok().put("status", r.status).put("commandId", commandId).put("accepted", ok);
+        if (!ok) {
+            reply.put("code", answer.optString("code", answer.optString("failedStep", "")));
             reply.put("error", answer.optString("error", ""));
         }
         return reply;

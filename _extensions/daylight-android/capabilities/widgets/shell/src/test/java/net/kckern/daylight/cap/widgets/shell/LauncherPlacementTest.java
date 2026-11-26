@@ -85,4 +85,13 @@ public class LauncherPlacementTest {
         assertEquals(7, retry.manualWidget);
         assertEquals("original", retry.retry("third", 31000).lineageId);
     }
+
+    /** A failed placement does not sit on the home screen forever: after a day it stops showing. */
+    @Test public void aDayOldProblemNoLongerShows() {
+        LauncherPlacement refused = LauncherPlacement.pending("old", "meal-barcode", "Meal barcode", false, 1000).refuse();
+        java.util.List<LauncherPlacement> requests = new java.util.ArrayList<>();
+        requests.add(refused);
+        assertEquals(1, LauncherPlacement.visible(requests, 60_000).size());
+        assertEquals(0, LauncherPlacement.visible(requests, 1000 + LauncherPlacement.STALE_MS + 1).size());
+    }
 }
