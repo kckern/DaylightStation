@@ -1,3 +1,4 @@
+import { splitInstallTarget } from "./phoneKeeps.js";
 import { usePlaybackQuality } from "../quality/PlaybackQualityProvider.jsx";
 // frontend/src/modules/Media/cast/DispatchProvider.jsx
 // The one outcome system for /media (PR-6, RELY.1a–RELY.6a). It owns:
@@ -226,7 +227,9 @@ export function DispatchProvider({ children }) {
     };
     inFlightRef.current.set(key, new Set());
 
-    for (const deviceId of targetIds) {
+    for (const targetId of targetIds) {
+      // `phone#<installId>`: one install of a phone (two live, the person picked one).
+      const { deviceId, installId } = splitInstallTarget(targetId);
       const dispatchId = uuid();
       dispatchIds.push(dispatchId);
       inFlightRef.current.get(key)?.add(dispatchId);
@@ -234,13 +237,13 @@ export function DispatchProvider({ children }) {
       // CONFIRMS playing — never on the mere acceptance of the request.
       if (typeof onConfirmed === 'function') followUpsRef.current.set(dispatchId, { run: onConfirmed, deviceId });
       attemptsRef.current.set(dispatchId, {
-        targetIds: [deviceId], play, queue, mode, shader, volume, shuffle, snapshot: retrySnapshot, title, itemAction,
+        targetIds: [targetId], play, queue, mode, shader, volume, shuffle, snapshot: retrySnapshot, title, itemAction,
         ...(brief ? { brief: true } : {}),
       });
       dispatch({
         type: 'INITIATED', dispatchId, deviceId, contentId, title: contentTitle,
         mode: mode ?? 'transfer', operation: queue ? 'add' : 'play-now',
-        command: { targetIds: [deviceId], play, queue, mode, shader, volume, shuffle, snapshot: retrySnapshot, title, itemAction },
+        command: { targetIds: [targetId], play, queue, mode, shader, volume, shuffle, snapshot: retrySnapshot, title, itemAction },
         snapshot: retrySnapshot,
         undo,
         ...(startOver ? { startOver: true, resumedFrom } : {}),
@@ -250,7 +253,7 @@ export function DispatchProvider({ children }) {
 
       const httpPromise = isAdopt
         ? DaylightAPI(`api/v1/device/${deviceId}/load`, { dispatchId, snapshot, mode: 'adopt' }, 'POST')
-        : DaylightAPI(buildDispatchUrl({ deviceId, play, queue, dispatchId, shader, volume, shuffle, itemAction, brief, title: brief ? contentTitle : null, manualRetryOnly: true }));
+        : DaylightAPI(buildDispatchUrl({ deviceId, play, queue, dispatchId, shader, volume, shuffle, itemAction, brief, title: brief ? contentTitle : null, manualRetryOnly: true, installId }));
       httpPromise
         .then((res) => {
           settle(dispatchId);

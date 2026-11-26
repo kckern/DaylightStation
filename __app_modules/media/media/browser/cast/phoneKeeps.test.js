@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isKeepable, keepTargets, keepStatus, keepEntries, parseKeepKind, keepIdsFor, phonePage } from './phoneKeeps.js';
+import { isKeepable, keepTargets, keepStatus, keepEntries, parseKeepKind, keepIdsFor, phonePage, expandPhoneInstalls, splitInstallTarget } from './phoneKeeps.js';
 
 // ops:docs/superpowers/specs/2026-11-26-phone-downloads-lifecycle.md §2, §3.2, §3.8.
 const A = 'install-aaaa-1111';
@@ -99,5 +99,20 @@ describe('phoneKeeps', () => {
     expect(page.installs[0].space).toBe('910 MB kept · 4.0 GB limit · 15.0 GB free on phone');
     expect(page.installs[1].gone).toBe(true);
     expect(page.waiting[0].asked).toBeTruthy();
+  });
+
+  it('Play on: a phone with two live installs is one row per install; one live install stays one row', () => {
+    const devices = [{ id: 'phone', name: 'Phone' }, { id: 'office-tv', name: 'Office TV' }];
+    const isPhone = (d) => d.id === 'phone';
+    const two = expandPhoneInstalls(devices, { phone: view({ installs: [
+      { installId: A, model: 'SM-S921U', current: true, live: true }, { installId: B, model: 'sdk_gphone64', live: true },
+    ] }) }, isPhone);
+    expect(two.map((d) => [d.id, d.name, d.fleetId ?? null])).toEqual([
+      [`phone#${A}`, 'Phone · SM-S921U', 'phone'], [`phone#${B}`, 'Phone · sdk_gphone64', 'phone'], ['office-tv', 'Office TV', null],
+    ]);
+    expect(expandPhoneInstalls(devices, { phone: view() }, isPhone).map((d) => d.id)).toEqual(['phone', 'office-tv']);
+    expect(splitInstallTarget(`phone#${B}`)).toEqual({ deviceId: 'phone', installId: B });
+    expect(splitInstallTarget('office-tv')).toEqual({ deviceId: 'office-tv', installId: null });
+    expect(splitInstallTarget('phone#x')).toEqual({ deviceId: 'phone', installId: null });
   });
 });

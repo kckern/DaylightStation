@@ -209,3 +209,39 @@ export function phonePage(phone, view) {
   const waiting = (view?.waiting ?? []).map((w) => ({ ...w, asked: clock(w.queuedAt) }));
   return { name, installs, waiting, refused: view?.refused ?? [], storeUnavailable: !!view?.storeUnavailable };
 }
+
+/**
+ * Play on with two phones (item 6, CHOOSE_PHONE): a phone with more than one live
+ * install becomes one picker row per install, named by model ("Phone · SM-S921U"),
+ * with the target id `phone#<installId>`; with one live install it stays one row.
+ * Rows keep the phone's own id as `fleetId` (for its status) and `installId`.
+ * @param {Array<Object>} devices picker devices (fleet rows)
+ * @param {Object<string, {installs?:Array}>} views GET keeps answers by device id
+ * @param {(device:Object)=>boolean} isPhone
+ */
+export function expandPhoneInstalls(devices = [], views = {}, isPhone = () => false) {
+  const out = [];
+  for (const device of devices) {
+    const live = isPhone(device) ? (views[device.id]?.installs ?? []).filter((i) => i.live && !i.gone) : [];
+    if (live.length < 2) { out.push(device); continue; }
+    const name = device.name || device.id;
+    for (const i of live) {
+      out.push({ ...device, id: installTargetId(device.id, i.installId), fleetId: device.id, installId: i.installId, name: `${name} · ${i.model || i.installId.slice(0, 6)}` });
+    }
+  }
+  return out;
+}
+
+/** `phone#<installId>`: one install of a phone as a dispatch target. */
+export function installTargetId(deviceId, installId) {
+  return `${deviceId}#${installId}`;
+}
+
+/** A dispatch target id → {deviceId, installId|null}. */
+export function splitInstallTarget(targetId) {
+  const text = String(targetId ?? '');
+  const at = text.indexOf('#');
+  if (at < 0) return { deviceId: text, installId: null };
+  const installId = text.slice(at + 1);
+  return /^[A-Za-z0-9_-]{8,64}$/.test(installId) ? { deviceId: text.slice(0, at), installId } : { deviceId: text.slice(0, at), installId: null };
+}

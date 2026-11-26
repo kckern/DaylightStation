@@ -1484,7 +1484,10 @@ send is unchanged (`GET /api/v1/device/:id/load`, WakeAndLoad, the dispatch tray
   `[A-Za-z0-9_-]`, made once per install, new on a reinstall) and `model`. The inbox
   remembers the installs (household data `history/devices/<id>/inbox.yml`; `lastPollAt`
   lives in memory and is written at most every 6 hours). A Play-on send is addressed to
-  one install: the one named (`installId` on the load query), else the only live install
+  one install: the one named (`installId` on the load query; the Play-on picker shows a
+  phone with two live installs as one row per install, "Phone · SM-S921U", whose target
+  id `phone#<installId>` the dispatch splits into the device and its `installId`), else
+  the only live install
   (polled within 2 minutes), else the install seen last; with **two live installs and
   none named** the load fails at once with `code: CHOOSE_PHONE` and the live
   `installs` (no page load or socket fallback is tried). A poll from another install
