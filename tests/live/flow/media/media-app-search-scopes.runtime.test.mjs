@@ -89,10 +89,10 @@ function searchSurface(page, isPhone) {
 }
 
 // The destination is read and changed where it lives: the destination line inside the phone's
-// search surface, the header's "Playing on <name>" control everywhere else.
+// search surface, the search box's "▶ <name>" destination chip everywhere else.
 const destinationName = (page, isPhone) => (isPhone
   ? searchSurface(page, true).getByTestId('destination-line-name')
-  : page.getByTestId('destination-control-name'));
+  : page.getByTestId('search-destination-chip'));
 
 async function setDestination(page, isPhone, targetId) {
   if (!isPhone) {
@@ -176,7 +176,7 @@ for (const [surface, viewport, isPhone] of surfaces) {
       actions: await actionSnapshot(page, id),
     };
     expect(baseline.scope).toBe('true');
-    await expect(destinationName(page, isPhone)).toHaveText(/^(Playing on )?(This device|this device)/);
+    await expect(destinationName(page, isPhone)).toHaveText(/^(▶ )?(This device|this device)/);
 
     await setDestination(page, isPhone, 'acceptance-media');
     await expect(destinationName(page, isPhone)).toHaveText(/^(Playing on )?Acceptance receiver/);
@@ -188,7 +188,7 @@ for (const [surface, viewport, isPhone] of surfaces) {
     }).toEqual(baseline);
 
     await setDestination(page, isPhone, null);
-    await expect(destinationName(page, isPhone)).toHaveText(/^(Playing on )?(This device|this device)/);
+    await expect(destinationName(page, isPhone)).toHaveText(/^(▶ )?(This device|this device)/);
     expect({
       query: await input.inputValue(),
       scope: await scopeChip(page, isPhone, selectable.key).getAttribute('aria-pressed'),

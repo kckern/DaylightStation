@@ -81,8 +81,8 @@ const resultRow = (d) => d.page.getByTestId(d.phone ? `search-mode-result-${FIXT
 const closeSearch = async (d) => { if (d.phone) await d.page.getByTestId('search-mode-close').click(); else await d.page.keyboard.press('Escape'); };
 const aimScope = (d) => d.page.getByTestId('search-mode');
 // Where the aim is changed: the search surface's destination line on a phone;
-// everywhere else the header's "Playing on <name>" destination control.
-const aimName = (d) => (d.phone ? aimScope(d).getByTestId('destination-line-name') : d.page.getByTestId('destination-control-name'));
+// everywhere else the search box's destination chip ("▶ <name>").
+const aimName = (d) => (d.phone ? aimScope(d).getByTestId('destination-line-name') : d.page.getByTestId('search-destination-chip'));
 const aimAtReceiver = async (d) => {
   if (d.phone) {
     await aimScope(d).getByTestId('destination-line').click();

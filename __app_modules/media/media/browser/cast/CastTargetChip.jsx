@@ -8,7 +8,7 @@
 // configured household is one tap per cast. It absorbs the old cast icon; the
 // first-use naming popover anchors to it (identity/FirstUseCard.jsx).
 import React, { useState, useCallback, useContext, useEffect, useId, useRef } from 'react';
-import { Popover, Text, UnstyledButton } from '@mantine/core';
+import { Checkbox, Popover, Text, UnstyledButton } from '@mantine/core';
 import { useMergedRef } from '@mantine/hooks';
 import { IconChevronDown } from '@tabler/icons-react';
 import { useDismissLayer } from "@/lib/ui/dismiss/useDismissLayer.js";
@@ -31,7 +31,7 @@ export function CastTargetChip({ controlRef }) {
     trigger.current?.focus({ preventScroll: true });
   }, []);
   useDismissLayer(open, dismissFromKeyboard);
-  const { mode, targetIds, setMode, toggleTarget } = useCastTarget();
+  const { mode, targetIds, here, setMode, setTargets, toggleTarget } = useCastTarget();
   const { devices } = useFleetContext();
   const identity = useContext(ClientIdentityContext);
   const { setActive } = useDestinationInteraction();
@@ -102,6 +102,14 @@ export function CastTargetChip({ controlRef }) {
         <div className="cast-popover-section">
           <Text size="sm" c="dimmed" fw={600} mb={4} id={targetLabelId}>Play on</Text>
           <div role="group" aria-labelledby={targetLabelId}>
+            <Checkbox
+              className="cast-popover-row"
+              size="sm"
+              label="This device"
+              checked={here === true && targetIds.length === 0}
+              onChange={(e) => (e.currentTarget.checked ? setTargets([], { here: true }) : setTargets([]))}
+              data-testid="cast-target-here"
+            />
             {devices.length === 0 && <Text size="sm" c="dimmed">No devices</Text>}
             {devices.map((d) => (
               <label key={d.id} className="cast-popover-row">

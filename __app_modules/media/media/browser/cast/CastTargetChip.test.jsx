@@ -7,9 +7,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 
-const state = vi.hoisted(() => ({ targetIds: [], here: false, devices: [] }));
+const state = vi.hoisted(() => ({ targetIds: [], here: false, devices: [], setTargets: null }));
 vi.mock("./useCastTarget.js", () => ({
-  useCastTarget: () => ({ mode: 'transfer', targetIds: state.targetIds, setMode: vi.fn(), toggleTarget: vi.fn() }),
+  useCastTarget: () => ({ mode: 'transfer', targetIds: state.targetIds, here: state.here, setMode: vi.fn(), setTargets: state.setTargets, toggleTarget: vi.fn() }),
 }));
 vi.mock("../fleet/useFleetContext.js", () => ({ useFleetContext: () => ({ devices: state.devices }) }));
 vi.mock("../logging/mediaLog.js", () => {
@@ -46,6 +46,7 @@ beforeEach(() => {
   resetHabitsStoreForTests();
   state.targetIds = [];
   state.here = false;
+  state.setTargets = vi.fn();
   state.devices = [{ id: 'kitchen', name: 'Kitchen' }, { id: 'living', name: 'Living Room' }];
 });
 
@@ -99,6 +100,25 @@ describe('CastTargetChip as the destination control', () => {
     expect(await screen.findByTestId('cast-popover')).toBeInTheDocument();
     expect(screen.getByTestId('cast-target-checkbox-kitchen')).toBeInTheDocument();
     expect(screen.getByTestId('cast-mode-fork')).toBeInTheDocument();
+  });
+
+  it('lists "This device" in Play on: checked when here, choosing it sets the sticky here', async () => {
+    renderChip();
+    fireEvent.click(screen.getByTestId('cast-target-chip'));
+    const here = await screen.findByTestId('cast-target-here');
+    expect(here).not.toBeChecked();
+    fireEvent.click(here);
+    expect(state.setTargets).toHaveBeenCalledWith([], { here: true });
+  });
+
+  it('"This device" shows checked when here is chosen, and unchecking lets go of it', async () => {
+    state.here = true;
+    renderChip();
+    fireEvent.click(screen.getByTestId('cast-target-chip'));
+    const here = await screen.findByTestId('cast-target-here');
+    expect(here).toBeChecked();
+    fireEvent.click(here);
+    expect(state.setTargets).toHaveBeenCalledWith([]);
   });
 
   it('answers a pending first-use naming prompt ("Not now") when it is reached for', () => {

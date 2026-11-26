@@ -23,8 +23,8 @@ test('NowPlaying hand-off shows truthful aim plus explicit move/keep choices', a
   // NowPlaying view contains a DispatchTargetPicker for hand-off
   const handoffPicker = page.locator('[data-testid="handoff-section"] [data-testid="dispatch-target-picker"]');
   await expect(handoffPicker).toBeVisible({ timeout: 5000 });
-  // The header's destination control carries the aim on this (wide) viewport.
-  await expect(page.getByTestId('destination-control-name')).toHaveText(/this device/i);
+  // On this (wide) viewport the search box's destination chip carries the aim; unaimed and unlearned it asks.
+  await expect(page.getByTestId('search-destination-chip')).toHaveText(/Choose a screen/);
   const firstDevice = page.locator('[data-testid="handoff-section"] [data-testid^="picker-device-"]').first();
   await expect(firstDevice).toBeVisible();
   await firstDevice.click();
