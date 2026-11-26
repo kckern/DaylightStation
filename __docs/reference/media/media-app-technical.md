@@ -1458,6 +1458,42 @@ back from a row calls `sessionControls.putBack(noteId)` (§4.9); Add only off,
 - `__backend/tests/unit/suite/0_system/eventbus/WebSocketEventBus.deviceStart.test.mjs` — routing + replay
 - `__backend/src/5_composition/composition-contract-registry.test.mjs` (`devices.start-status-reaches-every-house-view`)
 
+### 4.12 The phone as a Play-on target (`phone-inbox`)
+
+The household phone app holds no WebSocket, so a screen's `queue` command cannot be
+broadcast to it. A device with `content_control.provider: phone-inbox` (and `type:
+phone`) gets its commands from an inbox it long-polls; everything else about a Play-on
+send is unchanged (`GET /api/v1/device/:id/load`, WakeAndLoad, the dispatch tray).
+
+- **Steps.** No device control, so power and verify are skipped; no volume capability;
+  prepare is a no-op; prewarm is skipped (the phone streams on its own:
+  `wantsPrewarm()` is false). Load queues the same `queue` CommandEnvelope a screen gets,
+  `commandId` = the dispatch id. A phone that has not polled within 35 s answers "not
+  connected": the row reads not delivered, never sent.
+- **`GET /api/v1/device/:id/commands?wait=<s>`** (wait default 25, 0..30). 200
+  `{commands:[CommandEnvelope]}` as soon as any are queued (handed over once; put back
+  if the caller left), 204 when none came. Each poll is presence: the device is online
+  while a poll is held or one ended within 35 s, and its heartbeat (`device-state`,
+  `reason: heartbeat`) goes out at the poll and every 10 s while it is held, so the fleet
+  and the picker show it online. Optional `state=idle|playing|paused&contentId=&title=`
+  reports what it plays. Queued commands expire unseen after 2 minutes; at most 20 wait.
+- **`POST /api/v1/device/:id/ack`** `{commandId, ok, error?, appliedAs?, state?}`, state
+  being `{contentId, title?, playing?}`. Published as the device's `device-ack` (what the
+  load step waits for) and, with a state, a `device-state` snapshot (a session per
+  command, an owner `phone-inbox:<id>` with a rising revision) so the dispatch confirms
+  "playing". 204; 400 for a missing commandId or a non-boolean ok.
+- Both routes are 404 for any device whose provider is not `phone-inbox`.
+- **Picker.** A phone (`type: phone`, or the provider) is listed for sound only, like a
+  speaker (`canPlayOn`), with a phone icon; offline while it is not polling.
+- **Bus.** HTTP-originated device messages enter through
+  `WebSocketEventBus.publishAsClient(clientId, message)`: the same authorizer and
+  client-message handlers as a socket message, so client ingress, the liveness services
+  and `waitForMessage` see them.
+
+**Verified by:** `PhoneInboxService.test.mjs`, `PhoneInboxContentAdapter.test.mjs`,
+`device.phoneInbox.test.mjs`, `WebSocketEventBus.publishAsClient.test.mjs`,
+`playDestination.phone.test.js`.
+
 ### 4.11 Client side of the session controls, moves and several screens (batch B)
 
 **One controls surface.** `useSessionControls(target)` returns `{ controls,

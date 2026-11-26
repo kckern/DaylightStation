@@ -98,10 +98,68 @@ function requireSessions(service, res) {
 }
 
 export function createDeviceRouter({ fleetService, presenceService, sessionService, screenService,
-  dispatchService, recoveryService, kioskFrictionTracker, excursionGuard, startStatusService, prepareService } = {}) {
+  dispatchService, recoveryService, kioskFrictionTracker, excursionGuard, startStatusService, prepareService,
+  phoneInbox = null } = {}) {
   const router = express.Router();
 
   router.get('/config', (req, res) => res.json(fleetService.configuration(req.query.householdId)));
+
+  /**
+   * A device with no socket (`content_control.provider: phone-inbox`, the phone app)
+   * long-polls for its commands. `wait` seconds (default 25, at most 30): 200
+   * {commands:[CommandEnvelope]} as soon as any are queued (they are handed over once),
+   * 204 when none came. Each poll keeps the device online in the fleet and the Play-on
+   * picker; an optional `state` (idle|playing|paused) with `contentId` and `title`
+   * reports what it plays. A poll whose caller left before the answer puts its commands
+   * back. Any other device: 404.
+   */
+  router.get('/:deviceId/commands', asyncHandler(async (req, res) => {
+    const { deviceId } = req.params;
+    if (!phoneInbox?.serves(deviceId)) return notFound(res);
+    const waitRaw = req.query.wait === undefined ? 25 : Number(req.query.wait);
+    const wait = Number.isFinite(waitRaw) ? Math.max(0, Math.min(30, waitRaw)) : 25;
+    const state = typeof req.query.state === 'string' ? req.query.state : null;
+    if (state === 'idle' || state === 'playing' || state === 'paused') {
+      phoneInbox.report(deviceId, {
+        contentId: state === 'idle' ? null : (typeof req.query.contentId === 'string' ? req.query.contentId : null),
+        title: typeof req.query.title === 'string' ? req.query.title : undefined,
+        playing: state === 'playing',
+        paused: state === 'paused',
+      }, { reason: 'heartbeat' });
+    }
+    let gone = false;
+    req.on('close', () => { if (!res.writableEnded) gone = true; });
+    const commands = await phoneInbox.poll(deviceId, wait);
+    if (gone) {
+      for (const envelope of commands) phoneInbox.enqueue(deviceId, envelope);
+      return undefined;
+    }
+    if (!commands.length) return res.status(204).end();
+    return res.json({ commands });
+  }));
+
+  /**
+   * The inbox device answered a command: {commandId, ok, error?, appliedAs?, state?}
+   * where state is {contentId, title?, playing?}. Published as the device's
+   * device-ack (what a dispatch waits for) and, with a state, its device-state, so a
+   * Play-on row reads "playing". 204. Any other device: 404.
+   */
+  router.post('/:deviceId/ack', (req, res) => {
+    const { deviceId } = req.params;
+    if (!phoneInbox?.serves(deviceId)) return notFound(res);
+    const body = isRecord(req.body) ? req.body : {};
+    if (!nonEmpty(body.commandId) || body.commandId.length > 200) return badRequest(res, 'commandId is required');
+    if (typeof body.ok !== 'boolean') return badRequest(res, 'ok must be true or false');
+    if (body.state !== undefined && !isRecord(body.state)) return badRequest(res, 'state must be an object');
+    phoneInbox.ack(deviceId, {
+      commandId: body.commandId,
+      ok: body.ok,
+      error: typeof body.error === 'string' ? body.error : undefined,
+      appliedAs: typeof body.appliedAs === 'string' ? body.appliedAs : undefined,
+      state: body.state,
+    });
+    return res.status(204).end();
+  });
 
   /**
    * What input hardware the ASKING device is declared to have.

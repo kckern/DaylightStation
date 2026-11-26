@@ -48,6 +48,8 @@ public final class MediaServiceCapability implements Capability {
     private static final String PLAY_ACTIVITY = "net.kckern.daylight.cap.mediaservice.shell.PlayActivity";
     private static final String NOW_PLAYING_ACTIVITY = "net.kckern.daylight.cap.mediaservice.shell.NowPlayingActivity";
     private static final String ROOTS = "media.roots";
+    /** Whether this device takes "Play on" from the household's web (the phone: long-polls the backend). */
+    static final String PLAY_ON_TARGET = "media.playOnTarget";
     private static final String RECENT_LIMIT = "media.recentLimit";
     private static final String PAGE_SIZE = "media.pageSize";
     /** How a screen's notes name this device when it pauses or skips there: "Paused by Phone". */
@@ -121,6 +123,14 @@ public final class MediaServiceCapability implements Capability {
         core.settings().declare(RECENT_LIMIT, SettingsRegistry.Type.INTEGER, 30, SettingsRegistry.range(1, 100));
         // How many entries one browse level holds. A car limits what it shows per level.
         core.settings().declare(PAGE_SIZE, SettingsRegistry.Type.INTEGER, 50, SettingsRegistry.range(10, 200));
+        core.settings().declare(PLAY_ON_TARGET, SettingsRegistry.Type.BOOLEAN, false, null);
+        if (inbox == null) {
+            inbox = new PlayInbox(http, backend::url, core.deviceId(), mediaId -> {
+                Launcher l = launcher();
+                if (l == null) throw new IllegalStateException("no player");
+                l.play(mediaId);
+            });
+        }
         core.settings().declare(REMOTE_NAME, SettingsRegistry.Type.STRING, "Phone",
                 value -> ((String) value).length() > 80 ? "media.remoteName: at most 80 characters" : null);
         // The apps that may connect to the media session beside this app and the system:
@@ -192,6 +202,7 @@ public final class MediaServiceCapability implements Capability {
         started = true;
         writePins();
         port.attach(onCall);
+        if (Boolean.TRUE.equals(core.settings().get(PLAY_ON_TARGET)) && inbox != null) inbox.start();
     }
 
     /** The installed service reads the pins from the surface cache: it may run with no payload loaded. */
@@ -218,6 +229,7 @@ public final class MediaServiceCapability implements Capability {
     @Override public void stop() {
         started = false;
         port.detach(onCall);
+        if (inbox != null) inbox.stop();
         ExecutorService w = worker;
         worker = null;
         if (w != null) w.shutdownNow();
@@ -371,6 +383,7 @@ public final class MediaServiceCapability implements Capability {
     }
 
     private RecentLists recentLists;
+    private PlayInbox inbox;
     private final java.util.concurrent.ExecutorService listNamer = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "daylight-recent-lists");
         t.setDaemon(true);

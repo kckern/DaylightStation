@@ -94,6 +94,7 @@ const TYPE_GLYPHS = {
   speaker: 'speaker',
   'speaker-lane': 'speaker',
   browser: 'browser',
+  phone: 'phone',
 };
 
 /**

@@ -434,7 +434,9 @@ export class WakeAndLoadService {
     // A camera (Show briefly, RQ-PLAY-11) is a live feed, not catalog content:
     // there is nothing to resolve or transcode.
     const isCameraRef = typeof prewarmRef === 'string' && prewarmRef.startsWith('camera:');
-    if (!isAdopt && this.#prewarmService && prewarmRef && !isCameraRef) {
+    // A device that streams on its own (the phone app) has nothing to prewarm.
+    const prewarmWanted = typeof device.wantsPrewarm !== 'function' || device.wantsPrewarm();
+    if (!isAdopt && this.#prewarmService && prewarmRef && !isCameraRef && prewarmWanted) {
       this.#emitProgress(topic, dispatchId, 'prewarm', 'running');
       this.#logger.info?.('wake-and-load.prewarm.start', { deviceId, dispatchId, contentRef: prewarmRef });
 

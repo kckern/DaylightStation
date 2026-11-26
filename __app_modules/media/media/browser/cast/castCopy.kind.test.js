@@ -10,6 +10,8 @@ describe('step wording by screen kind', () => {
     expect(deviceKind({ type: 'speaker-lane' })).toBe('speaker');
     expect(deviceKind({ type: 'android-tablet' })).toBe('screen');
     expect(deviceKind(null)).toBe('screen');
+    expect(deviceKind({ type: 'phone' })).toBe('phone');
+    expect(deviceKind({ content_control: { provider: 'phone-inbox' } })).toBe('phone');
   });
 
   it('never says TV for a speaker or a generic screen', () => {

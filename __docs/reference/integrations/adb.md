@@ -301,6 +301,24 @@ and the in-page bridge in
 
 ---
 
+### The `phone-inbox` provider (the household phone app)
+
+Not a kiosk: the phone app has no control API and no socket, so a Play-on send waits
+in an inbox the app long-polls (`GET /api/v1/device/<id>/commands`) and is answered
+with `POST /api/v1/device/<id>/ack`. Contract: `__docs/reference/media/media-app-technical.md`
+§4.12.
+
+```yaml
+phone:
+  type: phone
+  name: Phone
+  content_control:
+    provider: phone-inbox
+```
+
+No host, port or token: the app reaches the backend, never the other way round. Other
+keys of the phone's entry (`quick_input`, …) are unaffected.
+
 ## Backend Files
 
 | File | Purpose |

@@ -98,6 +98,9 @@ defaults:
   # target being recent, continue (long items in progress, then the lists played lately),
   # catalog or a container's content id. No folder browsing in the car.
   media.roots: "Drive=drive:;Continue=continue;Recent=recent"
+  # Take "Play on" from the household's web: while the app runs it long-polls the
+  # backend for commands addressed to this device (the backend's phone-inbox provider).
+  media.playOnTarget: true
   # The apps that may connect to the media session beside this app and the system (a
   # car, an assistant): "package=sha256 of its signing certificate", comma-separated.
   # Signer verified on the Play-installed Android Auto app. The package must also

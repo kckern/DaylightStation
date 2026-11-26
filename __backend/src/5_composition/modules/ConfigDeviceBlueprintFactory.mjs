@@ -323,6 +323,11 @@ export class ConfigDeviceBlueprintFactory extends IDeviceBlueprintFactory {
       }, { wsBus: this.#wsBus, logger: this.#logger }) ?? null;
     }
 
+    if (config.provider === 'phone-inbox') {
+      // The phone app: commands wait in an inbox its long-poll collects (PhoneInboxService).
+      return this.#factories.phoneInbox?.({ deviceId }, { logger: this.#logger }) ?? null;
+    }
+
     this.#logger.warn?.('deviceFactory.unsupportedContentProvider', { provider: config.provider });
     return null;
   }

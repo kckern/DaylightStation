@@ -5,6 +5,7 @@ import { createPianoScreenHoldPolicy } from "../../../../__app_modules/learning/
 import { createDeviceRouter } from '#api/v1/routers/device.mjs';
 import { getScreenOverrideService } from '#composition/modules/screenOverride.mjs';
 import { getVolumeBoostService } from '#composition/modules/volumeBoost.mjs';
+import { getPhoneInboxService } from '#composition/modules/phoneInbox.mjs';
 import { contentRequiresCamera } from "../policies/contentRequiresCamera.mjs";
 import { DispatchIdempotencyService } from '#apps/devices/services/DispatchIdempotencyService.mjs';
 import { DeviceFleetControlService } from '#apps/devices/services/DeviceFleetControlService.mjs';
@@ -106,6 +107,7 @@ export function createDeviceApiRouter(config) {
     ?? new DispatchIdempotencyService({ clock: { now: () => Date.now() }, logger });
 
   return createDeviceRouter({
+    phoneInbox: getPhoneInboxService({ logger }),
     fleetService: new DeviceFleetControlService({
       devices,
       configuration,
