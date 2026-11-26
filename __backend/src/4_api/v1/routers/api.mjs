@@ -115,6 +115,7 @@ export function createApiRouter(config) {
     '/fitness': 'fitness',
     '/media': 'media',
     '/media-source': 'media-source',
+    '/client-log': 'clientLog',  // Client log events over HTTP (Android native screens): same ingestion as the WS logging topic
     '/track': 'track',  // Player track extras: loudness waveform + quality, lyrics (media app)  // Plex file readability check + repair ladder (Player waits on it)
     '/home': 'home',
     '/home-automation': 'home',  // alias — matches the router's own docstrings and external callers (e.g. playback-hub)
