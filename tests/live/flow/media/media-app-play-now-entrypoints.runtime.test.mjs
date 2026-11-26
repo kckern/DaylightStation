@@ -77,30 +77,24 @@ async function openPlayNowEntry(sender, entry) {
     // (pause/resume) instead of ▶: Play Now is in the row's ⋯ menu.
     await sender.getByTestId('result-more-plex:55854').click();
     await sender.getByTestId('result-action-playNow-plex:55854').click();
-  } else if (entry === 'Detail') {
-    await sender.getByTestId('app-nav-browse').click();
-    await expect(sender.getByTestId('browse-view')).toBeVisible();
-    await sender.getByTestId('browse-open-plex:').click();
-    await sender.getByTestId('browse-open-plex:library/sections/6/all').click();
-    await revealBrowseRow(sender, 'browse-row-plex:55854');
-    await sender.getByTestId('browse-open-plex:55854').click();
-    await expect(sender.getByTestId('detail-view')).toBeVisible({ timeout: 30000 });
-    await sender.getByTestId('detail-play-now').click();
   } else {
     // Home's Recent is the household's list, answered by the seeded household
     // backend of the acceptance server (Arrival is in the seed). The tap is real.
     await sender.getByTestId('app-nav-browse').click();
     await sender.getByTestId('app-nav-home').click();
     await expect(sender.getByTestId('home-tile-recent-plex:55854')).toBeVisible({ timeout: 10000 });
-    await sender.getByTestId('home-tile-recent-plex:55854-play').click(); // the tile's ▶ (its picture opens the info view)
+    // Arrival is already on the screen, so the tile's disc pauses it ("On
+    // <screen>"); a fresh start is the tile's ⋯ Play Now.
+    await sender.getByTestId('home-tile-recent-plex:55854').getByRole('button', { name: /More actions for/ }).click();
+    await sender.getByTestId('home-tile-recent-plex:55854-verb-playNow').click();
   }
 }
 
-test('Browse, Detail, and Recent Play Now each starts a fresh receiver visit and retains the queued tail', async ({ context, page: sender }) => {
-  test.setTimeout(240000);
+test('Browse and Recent Play Now each starts a fresh receiver visit and retains the queued tail; Detail offers Start over on the same visit', async ({ context, page: sender }) => {
+  test.setTimeout(300000);
   const { receiver, native, loads } = await prepareQueuedArrival({ context, sender });
 
-  for (const entry of ['Browse leaf', 'Detail', 'Recents']) {
+  for (const entry of ['Browse leaf', 'Recents']) {
     const before = await receiverState(sender);
     const beforeOwner = before.snapshot.meta.playbackOwner;
     const startTime = await native.evaluate(video => video.currentTime);
@@ -148,5 +142,34 @@ test('Browse, Detail, and Recent Play Now each starts a fresh receiver visit and
     expect(afterVisit.snapshot.queue.items.at(-1).queueItemId).toBe(before.snapshot.queue.items.at(-1).queueItemId);
     await expectStarted(sender, { screen: 'Acceptance receiver' });
   }
+
+  // Detail: the item is already on the screen, so its PLAY is the explicit
+  // "Start over on <screen>" (spec: already playing is shown). It restarts the
+  // current visit from the beginning: a transport seek to 0, no new load, the
+  // same queue entry, the tail kept.
+  const before = await receiverState(sender);
+  const visit = before.snapshot.queue.items[before.snapshot.queue.currentIndex];
+  const video = receiver.locator('.video-player video');
+  await expect.poll(() => video.evaluate(el => !el.paused && el.currentTime > 10), { timeout: 30000 }).toBe(true);
+  const beforeLoadCount = loads.length;
+  await sender.getByTestId('app-nav-browse').click();
+  await expect(sender.getByTestId('browse-view')).toBeVisible();
+  await sender.getByTestId('browse-open-plex:').click();
+  await sender.getByTestId('browse-open-plex:library/sections/6/all').click();
+  await revealBrowseRow(sender, 'browse-row-plex:55854');
+  await sender.getByTestId('browse-open-plex:55854').click();
+  await expect(sender.getByTestId('detail-view')).toBeVisible({ timeout: 30000 });
+  const play = sender.getByTestId('detail-play-now');
+  await expect(play).toHaveText(/Start over on Acceptance receiver/);
+  const seek = sender.waitForRequest(r => r.method() === 'POST' && r.url().includes('/api/v1/device/acceptance-media/session/transport')
+    && r.postDataJSON()?.action === 'seekAbs');
+  await play.click();
+  expect((await seek).postDataJSON()).toMatchObject({ action: 'seekAbs', value: 0 });
+  await expect.poll(() => video.evaluate(el => el.currentTime < 10), { timeout: 30000 }).toBe(true);
+  await expect.poll(() => video.evaluate(el => !el.paused && el.currentTime > 1), { timeout: 30000 }).toBe(true);
+  const after = await receiverState(sender);
+  expect(after.snapshot.queue.items[after.snapshot.queue.currentIndex].queueItemId).toBe(visit.queueItemId);
+  expect(after.snapshot.queue.items.at(-1).queueItemId).toBe(before.snapshot.queue.items.at(-1).queueItemId);
+  expect(loads.length, 'Start over restarts the visit; it loads nothing').toBe(beforeLoadCount);
   await receiver.close();
 });

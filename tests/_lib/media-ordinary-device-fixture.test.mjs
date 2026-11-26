@@ -180,3 +180,45 @@ describe('media ordinary device fixture', () => {
     await fixture.stop();
   });
 });
+
+describe('virtual receiver readiness', () => {
+  it('is not ready from a /media tab\'s wildcard subscription and the previous receiver\'s fresh liveness', async () => {
+    const { createServer } = await import('node:http');
+    const { WebSocket } = await import('ws');
+    const fixture = createMediaOrdinaryDeviceFixture({ upstream: 'http://127.0.0.1:3111' });
+    const server = createServer(fixture.app);
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    await fixture.attach(server);
+    const url = `ws://127.0.0.1:${server.address().port}/ws`;
+    const open = (socket) => new Promise((resolve, reject) => { socket.once('open', resolve); socket.once('error', reject); });
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
+    const ready = async () => (await request(fixture.app).get('/acceptance-media/receiver-ready').expect(200)).body;
+    const sockets = [];
+    try {
+      // A /media tab (wildcard subscriber, never a command handler).
+      const sender = new WebSocket(url, { headers: { origin: `http://127.0.0.1:${server.address().port}` } });
+      sockets.push(sender);
+      await open(sender);
+      sender.send(JSON.stringify({ type: 'bus_command', action: 'subscribe', topics: ['*'] }));
+      // The screen page: subscribes and reports in as the device's command handler.
+      const receiver = new WebSocket(url, { headers: { origin: `http://127.0.0.1:${server.address().port}` } });
+      sockets.push(receiver);
+      await open(receiver);
+      receiver.send(JSON.stringify({ type: 'bus_command', action: 'subscribe', topics: ['*'] }));
+      receiver.send(JSON.stringify({ topic: 'command-handler-presence:acceptance-media', deviceId: 'acceptance-media' }));
+      await settle();
+      expect((await ready()).ready).toBe(true);
+      // The screen page closes (the next journey's page has not booted yet):
+      // liveness is still fresh and the tab still counts as a subscriber.
+      receiver.close();
+      await settle();
+      const after = await ready();
+      expect(after.subscribers).toBe(1);
+      expect(after.ready).toBe(false);
+    } finally {
+      for (const socket of sockets) socket.close();
+      await fixture.stop();
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});

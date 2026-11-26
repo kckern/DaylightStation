@@ -610,7 +610,11 @@ test('Peek Stop retains the receiver queue and Play resumes the stopped item', a
     return state?.snapshot?.state === 'playing'
       && state.snapshot.currentItem?.contentId === beforeStop.snapshot.currentItem.contentId;
   }, { timeout: 20000 }).toBe(true);
-  await expect.poll(() => videoHandle.evaluate((element, time) => !element.paused
+  // Stop ends the item (currentItem null), so the receiver unmounts its
+  // player; Play mounts a fresh one. Read the screen's video as it is now,
+  // not the element that Stop retired.
+  await expect(video).toHaveCount(1);
+  await expect.poll(() => video.evaluate((element, time) => !element.paused
     && element.currentTime > time + 1, stoppedNativeTime), { timeout: 20000 }).toBe(true);
   const resumedAfterStop = await readReceiverState(sender);
   expect(resumedAfterStop.snapshot.queue.items.map(item => ({

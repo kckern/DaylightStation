@@ -65,7 +65,8 @@ test('[FIND.1a/AC5] keyboard opens row actions and adds without clearing search 
   await more.focus();
   await page.keyboard.press('Enter');
   await expect(page.getByRole('menuitem', { name: 'Add to Queue', exact: true })).toBeVisible();
-  for (const action of ['Play Now', 'Play Next', 'Play First', 'Add to Queue']) {
+  // The row menu leads with four verbs, then More (smart long lists).
+  for (const action of ['Play Now', 'Play on…', 'Play Next', 'Add to Queue']) {
     await page.keyboard.press('ArrowDown');
     await expect(page.getByRole('menuitem', { name: action, exact: true })).toBeFocused();
   }

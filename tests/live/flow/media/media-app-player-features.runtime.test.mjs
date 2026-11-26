@@ -28,10 +28,15 @@ test.describe.configure({ mode: 'serial' });
 
 const DEVICE = 'acceptance-media';
 const base = `/api/v1/device/${DEVICE}`;
-const EP1 = 'plex:665638'; // 3 Body Problem S1E1 — 43 subtitle streams
-const EP2 = 'plex:665639'; // S1E2 — same show, its own stream ids
-const EP1_ENGLISH = '1278358';
-const EP2_ENGLISH = '1278403';
+// Maid S1E1/E2: one audio stream, 32 subtitle streams, one English each.
+// (Was 3 Body Problem S1E1/E2, whose files Plex intermittently refuses with
+// "Permission denied" from the network mount; a refused file cannot start.)
+const EP1 = 'plex:374045'; // Maid S1E1
+const EP2 = 'plex:374046'; // S1E2 — same show, its own stream ids
+const EP1_KEY = EP1.split(':')[1];
+const EP2_KEY = EP2.split(':')[1];
+const EP1_ENGLISH = '611720';
+const EP2_ENGLISH = '612678';
 const FILM = 'plex:703558'; // French original with Turkish and English audio
 const FILM_FRENCH = '1376006';
 const FILM_ENGLISH = '1376008';
@@ -181,6 +186,11 @@ test.describe('Subtitles and audio language (STEER.12a)', () => {
     await subtitles.click();
     const menu = sender.getByTestId('pf-subtitles-menu');
     await expect(menu).toBeVisible();
+    // A long track list shows Off and the top three, then More (k) for the
+    // rest (smart long lists); More opens every stream the file has, in place.
+    await expect(menu.locator('[data-testid^="pf-subtitle-"]')).toHaveCount(4);
+    await expect(sender.getByTestId('pf-subtitles-more')).toHaveText(`More (${fileSubtitles - 3})`);
+    await sender.getByTestId('pf-subtitles-more').click();
     await expect(menu.locator('[data-testid^="pf-subtitle-"]')).toHaveCount(fileSubtitles + 1);
     await shot(sender, 'steer12a-remote-subtitle-menu');
 
@@ -197,7 +207,7 @@ test.describe('Subtitles and audio language (STEER.12a)', () => {
       return snap?.controls?.tracks?.selected?.subtitle === EP1_ENGLISH && snap.state === 'playing';
     }, { timeout: 60000 }).toBe(true);
     // Re-streamed with the chosen stream, at the same spot.
-    expect(mints.some((m) => m.ratingKey === '665638' && m.params.subtitleStreamID === EP1_ENGLISH)).toBe(true);
+    expect(mints.some((m) => m.ratingKey === EP1_KEY && m.params.subtitleStreamID === EP1_ENGLISH)).toBe(true);
     expect(Math.abs((await state(request)).position - before)).toBeLessThan(30);
     await expect(subtitles).toHaveText(/Subtitles: English/);
     await receiver.waitForTimeout(6000);
@@ -208,7 +218,7 @@ test.describe('Subtitles and audio language (STEER.12a)', () => {
     // English stream — without anyone choosing again.
     const mintCount = mints.length;
     await playOnReceiver(request, receiver, `play=${EP2}`, EP2);
-    const ep2Mint = mints.slice(mintCount).find((m) => m.ratingKey === '665639');
+    const ep2Mint = mints.slice(mintCount).find((m) => m.ratingKey === EP2_KEY);
     expect(ep2Mint?.params?.subtitleStreamID).toBe(EP2_ENGLISH);
     await expect.poll(async () => (await state(request))?.controls?.tracks?.selected?.subtitle, { timeout: 30000 }).toBe(EP2_ENGLISH);
     await expect(subtitles).toHaveText(/Subtitles: English/, { timeout: 15000 });
@@ -224,7 +234,7 @@ test.describe('Subtitles and audio language (STEER.12a)', () => {
     }, { timeout: 60000 }).toBe('none');
     // Off re-streams plainly: the account has no subtitle selected on this file
     // (the mint restored it), so nothing is selected or burned.
-    expect(mints.at(-1)).toMatchObject({ ratingKey: '665639' });
+    expect(mints.at(-1)).toMatchObject({ ratingKey: EP2_KEY });
     expect(mints.at(-1).params).not.toHaveProperty('subtitleStreamID');
     await receiver.close();
   });
@@ -294,8 +304,9 @@ test.describe('Subtitles on this device (STEER.12a, phone)', () => {
     const subtitles = page.getByTestId('pf-subtitles');
     await expect(subtitles).toBeVisible({ timeout: 30000 });
     await subtitles.click();
+    await page.getByTestId('pf-subtitles-more').click(); // the full list (top three, then More)
     await page.getByTestId(`pf-subtitle-${EP1_ENGLISH}`).click();
-    await expect.poll(() => mints.some((m) => m.ratingKey === '665638' && m.params.subtitleStreamID === EP1_ENGLISH), { timeout: 30000 }).toBe(true);
+    await expect.poll(() => mints.some((m) => m.ratingKey === EP1_KEY && m.params.subtitleStreamID === EP1_ENGLISH), { timeout: 30000 }).toBe(true);
     await expect(subtitles).toHaveText(/Subtitles: English/, { timeout: 30000 });
     await expect.poll(() => video.evaluate((el) => !el.paused && el.currentTime > 1).catch(() => false), { timeout: 120000 }).toBe(true);
     await page.waitForTimeout(5000);
@@ -364,9 +375,9 @@ test.describe('Show briefly (PLAY.8a, PLAY.8b)', () => {
     sender.on('request', (r) => { if (r.url().includes(`${base}/load`)) loads.push(new URL(r.url())); });
     await openMedia(sender, `/media?view=detail&contentId=${KEEPY_UPPY}`, 'detail-more');
     await detailVerb(sender, 'detail-show-briefly');
-    await sender.getByTestId(`picker-device-${DEVICE}`).click();
     await shot(sender, 'play8a-show-briefly-picker');
-    await sender.getByTestId('picker-submit').click();
+    // The calm picker: a tap on the screen sends (no separate submit).
+    await sender.getByTestId(`picker-device-${DEVICE}`).click();
     await expect.poll(() => loads.length, { timeout: 15000 }).toBe(1);
     expect(loads[0].searchParams.get('play')).toBe(KEEPY_UPPY);
     expect(loads[0].searchParams.get('brief')).toBe('1');

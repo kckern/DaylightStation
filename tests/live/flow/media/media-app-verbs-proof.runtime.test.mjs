@@ -8,6 +8,7 @@ import {
 } from './lib/receivers.mjs';
 import { goArea, openSearch, resultRow, playResult, detailVerb, openDetailMore } from './lib/search.mjs';
 import { aimAt, aimLabel } from './lib/aim.mjs';
+import { revealBrowseRow } from '../../../_lib/mediaBrowseScroll.mjs';
 
 // The play and line-up verbs, at the aim, on every surface. Aim = a real
 // mounted receiver (acceptance-media), read back through its own published
@@ -79,17 +80,18 @@ test('[PLAY.1a/AC1][PLAY.1a/AC3][PLACE.1a/AC3] Play now plays at the aim from se
   await page.getByTestId(`home-tile-time-of-day-${ITEM.FAITH}-play`).click();
   await expectPlayedAtAim(ITEM.FAITH, 'Faith');
 
-  // Browsing: the first film in the Movies library.
+  // Browsing: a film in the Movies library. The acceptance server streams only
+  // its allowlisted titles (BRANCH_ALLOWED_TITLES), so the library's first film
+  // can never reach Playing there; Arrival is browsed to instead.
   await goArea(page, vp, 'browse');
   await page.getByTestId('browse-open-plex:').click();
-  await page.locator('[data-testid^="browse-open-plex:library/sections/6/"]').first().click();
+  await page.getByTestId('browse-open-plex:library/sections/6/all').click();
+  await expect(await revealBrowseRow(page, `browse-row-${ITEM.ARRIVAL}`)).toBeVisible({ timeout: 40000 });
   // A browse row's ▶ (PLAY; a tap on the row opens its info view).
-  const leaf = page.locator('[data-testid^="result-play-all-plex:"]').first();
+  const leaf = page.getByTestId(`result-play-all-${ITEM.ARRIVAL}`);
   await expect(leaf).toBeVisible({ timeout: 40000 });
-  const leafId = (await leaf.getAttribute('data-testid')).replace('result-play-all-', '');
-  const leafTitle = (await page.getByTestId(`browse-row-${leafId}`).locator('.media-result-title').innerText()).trim();
   await leaf.click();
-  await expectPlayedAtAim(leafId, leafTitle);
+  await expectPlayedAtAim(ITEM.ARRIVAL, 'Arrival');
   await done();
 });
 
@@ -151,6 +153,8 @@ test('[PLAY.2a/AC1][PLAY.2a/AC2][PLAY.2a/AC3][PLAY.3a/AC1][PLAY.3a/AC2][PLAY.3a/
   await searchFor(page, 'Baby Joy Joy', ALBUM);
   await page.getByTestId(`result-more-${ALBUM}`).click();
   await expect(page.getByRole('menuitem', { name: /^(Play Now|Play on .+[^…])$/ })).toBeVisible();
+  // The row menu leads with four verbs; Shuffle is behind its More (k).
+  await page.getByTestId(`result-action-more-${ALBUM}-more`).click();
   await expect(page.getByRole('menuitem', { name: 'Shuffle', exact: true })).toBeVisible();
   await page.keyboard.press('Escape');
   await gotoMedia(page, `/media?view=detail&contentId=${encodeURIComponent(ALBUM)}`);
@@ -162,6 +166,9 @@ test('[PLAY.2a/AC1][PLAY.2a/AC2][PLAY.2a/AC3][PLAY.3a/AC1][PLAY.3a/AC2][PLAY.3a/
   await gotoMedia(page, '/media');
   await expect(page.getByTestId('home-row-favourites')).toBeVisible({ timeout: 60000 });
   await page.getByTestId('home-tile-favourites-plex:59493').getByRole('button', { name: /More actions for/ }).click();
+  // The tile menu leads with four verbs (Continue <part> takes Play Now's
+  // place when the show has a next part); the rest are behind More (k).
+  await page.getByTestId('home-tile-favourites-plex:59493-verb-more-more').click();
   await expect(page.getByTestId('home-tile-favourites-plex:59493-verb-playNow')).toBeVisible();
   await expect(page.getByTestId('home-tile-favourites-plex:59493-verb-shuffle')).toBeVisible();
   await page.keyboard.press('Escape');

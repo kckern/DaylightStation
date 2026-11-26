@@ -21,6 +21,7 @@ import { createMediaHouseFixture } from './media-house-fixture.mjs';
 import { createMediaHouseholdFixture } from './media-household-fixture.mjs';
 import { createIdleSessionSnapshot, validateSessionSnapshot } from '../../shared/contracts/media/shapes.mjs';
 import { createDefaultSessionControls } from '../../shared/contracts/media/sessionControls.mjs';
+import { COMMAND_HANDLER_PRESENCE_TOPIC_PREFIX } from '../../shared/contracts/media/topics.mjs';
 
 export const ORDINARY_DEVICE_ID = 'acceptance-media';
 // A second virtual receiver (batch B: several-screen aim, line up, move
@@ -312,10 +313,28 @@ export function createMediaOrdinaryDeviceFixture({ upstream, logger = quiet, cat
   for (const { id } of VIRTUAL_DEVICES) {
     app.get(`/${id}/device-control-calls`, (_req, res) => res.json({ calls: deviceControlCalls.filter((c) => c.deviceId === id) }));
   }
+  // A receiver is ready when an OPEN connection has itself reported in as that
+  // device's command handler. The bus's homeline subscriber count also counts
+  // wildcard ('*') clients — every /media tab — and command liveness stays
+  // fresh for 30 s after the previous journey's receiver page closed, so the
+  // two together read "ready" while the new screen page is still booting, and
+  // a load sent then reaches nobody.
+  const handlerConnections = new Map(); // clientId -> deviceId
+  eventBus.onClientMessage((clientId, message) => {
+    const topic = message?.topic;
+    if (typeof topic !== 'string' || !topic.startsWith(COMMAND_HANDLER_PRESENCE_TOPIC_PREFIX)) return;
+    const deviceId = message.deviceId || topic.slice(COMMAND_HANDLER_PRESENCE_TOPIC_PREFIX.length);
+    if (message.online === false) handlerConnections.delete(clientId);
+    else if (deviceId) handlerConnections.set(clientId, deviceId);
+  });
+  eventBus.onClientDisconnection((clientId) => handlerConnections.delete(clientId));
+  const handlerConnected = (id) => [...handlerConnections].some(([clientId, deviceId]) => deviceId === id
+    && eventBus.getClientMeta(clientId) != null);
   for (const { id } of VIRTUAL_DEVICES) {
     app.get(`/${id}/receiver-ready`, (_req, res) => {
       const subscribers = eventBus.getTopicSubscriberCount(`homeline:${id}`);
-      return res.json({ ready: subscribers > 0 && commandLiveness.isFresh(id), subscribers });
+      const connected = handlerConnected(id);
+      return res.json({ ready: subscribers > 0 && connected && commandLiveness.isFresh(id), subscribers, handlerConnected: connected });
     });
     app.get(`/${id}/receiver-state`, (_req, res) => {
       const state = deviceLiveness.getLastSnapshot(id);
