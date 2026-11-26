@@ -85,7 +85,12 @@ export function CastButton({ contentId, queue, title, item, onAction }) {
           data-testid={`cast-button-popover-${id}`}
           className="media-app-portal cast-button-popover-portal"
         >
-          <DispatchTargetPicker source={source} onComplete={onComplete} autoFocus={false} />
+          <DispatchTargetPicker
+            source={source}
+            onComplete={onComplete}
+            autoFocus={false}
+            heading={source?.title ? `Cast ${source.title} to…` : 'Cast to…'}
+          />
         </div>,
         document.body
       )}

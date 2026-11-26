@@ -1,9 +1,13 @@
 // frontend/src/modules/Media/cast/useDispatchTargetPicker.js
 // State for the tap-a-device cast picker. Single-select is the primary
-// interaction (tap a tile, cast); multi-select is an explicit opt-in
-// affordance, not the default. Mode stays transfer/fork internally but the
-// UI surfaces the choice whenever a source can potentially dispatch content.
-// A `snapshot` source dispatches in adopt mode (hand-off).
+// interaction: a tap on a screen that is free sends at once; a tap on a screen
+// that is playing something asks, in that row, before replacing it
+// (`pendingId`). Multi-select is an explicit opt-in and the only path with a
+// confirm button. Mode stays transfer/fork internally; the UI shows it as one
+// "Stop it here" switch whenever something plays here. This device is never a
+// row among the screens: it is `here` (offered last), and choosing it runs the
+// item on the local session itself. A `snapshot` source dispatches in adopt
+// mode (hand-off).
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useFleetContext } from "../fleet/useFleetContext.js";
 import { useDispatch } from "./useDispatch.js";
@@ -11,12 +15,17 @@ import { useCastTarget } from "./useCastTarget.js";
 import { useHandOff } from "./useHandOff.js";
 import { useControllerSnapshot } from "../controller/useControllerSnapshot.js";
 import { LocalSessionContext } from "../session/LocalSessionContext.js";
+import { ClientIdentityContext } from "../identity/ClientIdentityProvider.jsx";
 import { describeBusy } from "./castCopy.js";
 import mediaLog from "../logging/mediaLog.js";
 import { itemKind } from "../habits/mediaHabits.js";
 import { canPlayOn } from "../habits/playDestination.js";
 import { usePlayDestination } from "../habits/usePlayDestination.js";
 import { deviceName } from "../fleet/deviceDisplay.js";
+import { executeItemAction } from "../actions/itemAction.js";
+
+/** The `pendingId` of this device's own row while it asks before replacing. */
+export const HERE_ID = '__here__';
 
 const LOCAL_ACTIVE_STATES = new Set(['playing', 'paused', 'buffering', 'stalled']);
 
@@ -45,6 +54,11 @@ export function useDispatchTargetPicker({ source, onComplete, intent = 'dispatch
   // A play/queue source has no session to move, so it can only ever fork.
   const noSnapshotSource = !!(source?.play || source?.queue) && !(source?.getSnapshot || source?.snapshot);
   const localPlaying = useLocalPlaybackActive(source);
+  const localSnap = useControllerSnapshot(local);
+  // What plays on this device, from its own session (the fleet's copy lags).
+  const localNow = localSnap?.currentItem && LOCAL_ACTIVE_STATES.has(localSnap.state)
+    ? { title: localSnap.currentItem.title ?? null, state: localSnap.state }
+    : null;
   // PLACE.6a/AC2: a one-off Play on… of an item, while something plays HERE,
   // asks at that moment whether this device stops (Move) or keeps playing,
   // pre-set to the remembered choice. Brief shows and destination-only picks
@@ -68,7 +82,11 @@ export function useDispatchTargetPicker({ source, onComplete, intent = 'dispatch
   const hasPotentialContent = !!(source?.getSnapshot || source?.snapshot || source?.play || source?.queue);
   const hasMoveSnapshot = !!(source?.getSnapshot || source?.snapshot);
   const moveSupported = hasMoveSnapshot && selected.size === 1;
-  const moveUnavailable = hasPotentialContent && mode === 'transfer' && !moveSupported && !asksKeepOrStop;
+  // Move needs exactly one screen. Judged on the screens actually being sent
+  // to (a tap sends before React has re-rendered the selection).
+  const moveBlockedFor = useCallback((count) => hasPotentialContent && mode === 'transfer' && !asksKeepOrStop
+    && !(hasMoveSnapshot && count === 1), [hasPotentialContent, mode, asksKeepOrStop, hasMoveSnapshot]);
+  const moveUnavailable = selected.size > 0 && moveBlockedFor(selected.size);
 
   // What is being sent decides which screens can take it: a film never lists
   // a speaker, and a screen that takes no content is never offered at all.
@@ -80,7 +98,30 @@ export function useDispatchTargetPicker({ source, onComplete, intent = 'dispatch
   const kind = itemKind(sourceItem);
   const learnedFirst = sourceItem ? destinationFor(sourceItem) : null;
   const preferredIds = learnedFirst && learnedFirst.source !== 'here' ? learnedFirst.targetIds : [];
-  const devices = orderPickerDevices((fleet.devices ?? []).filter(device => canPlayOn(device, kind)), preferredIds);
+  const localId = fleet.identity?.deviceId ?? null;
+  const isLocalDevice = (device) => device?.isLocal === true || (!!localId && device?.id === localId);
+  const playable = (fleet.devices ?? []).filter(device => canPlayOn(device, kind));
+  const devices = orderPickerDevices(playable.filter(device => !isLocalDevice(device)), preferredIds);
+  // "Usual" is only ever a learned habit, never the current aim.
+  const usualIds = learnedFirst?.source === 'learned' ? learnedFirst.targetIds : [];
+  // This browser's own name: its fleet row when the bus has it, else the name
+  // it was given here (the fleet hears about itself only over the bus).
+  const clientIdentity = useContext(ClientIdentityContext);
+  const fleetLocal = (fleet.devices ?? []).find(isLocalDevice) ?? null;
+  const localDevice = fleetLocal ?? (clientIdentity?.displayName
+    ? { id: localId ?? null, name: clientIdentity.displayName, type: 'browser', isLocal: true }
+    : null);
+  const itemAction = source?.itemAction ?? null;
+  const canRunHere = !!itemAction && typeof local?.execute === 'function';
+  // This device as a choice: always in the destination sheet; for a one-off
+  // send only when it can run the item here (a brief show or a hand-off of
+  // what already plays here has nothing to do on this device).
+  const here = intent === 'destination'
+    ? { device: localDevice }
+    : (!source?.brief && !hasMoveSnapshot && (canRunHere || (fleetLocal && playable.some(isLocalDevice))))
+      ? { device: localDevice }
+      : null;
+  const [pendingId, setPendingId] = useState(null);
 
   // Every mount of this picker IS an "open" — it's only ever rendered while
   // a popover/portal/sheet is showing it (CastButton, NowPlayingView's
@@ -93,40 +134,48 @@ export function useDispatchTargetPicker({ source, onComplete, intent = 'dispatch
      
   }, []);
 
-  // NF-TAP-10: a plain "play this on X" (no move, no brief, single-select, an
-  // idle target) is sent by the tile tap itself; the CTA stays for keyboard and
-  // screen-reader users. A busy target, a move source or multi-select keeps
-  // select -> confirm.
+  // NF-TAP-10: in single-select every tap is the send. Only replacing what a
+  // screen is playing asks first, in the row itself; a brief show returns the
+  // screen to its programme and an Add appends, so neither ever replaces.
   const submitRef = useRef(null);
-  const autoSendOnSelect = useCallback((id) => {
-    if (multi || intent === 'destination' || source?.brief || hasMoveSnapshot || asksKeepOrStop) return false;
-    if (!(source?.play || source?.queue)) return false;
-    if (describeBusy(fleet.store?.getEntry?.(id))) return false;
-    return true;
-  }, [multi, intent, source, hasMoveSnapshot, fleet.store, asksKeepOrStop]);
+  const replaces = !source?.brief && itemAction?.kind !== 'add' && intent !== 'destination';
+  const asksBeforeReplacing = useCallback((entry) => replaces && !!describeBusy(entry), [replaces]);
 
-  // Tap a tile: radio-like in single mode (tap again to deselect),
-  // accumulating in multi mode.
+  // Tap a row: in single mode it sends (or asks to replace); in multi mode it
+  // toggles that screen into the selection the confirm button sends.
   const select = useCallback((id) => {
-    if (autoSendOnSelect(id)) {
-      setSelected(new Set([id]));
-      submitRef.current?.([id]);
-      return;
-    }
-    setSelected((prev) => {
-      if (multi) {
+    if (multi) {
+      setPendingId(null);
+      setSelected((prev) => {
         const next = new Set(prev);
         if (next.has(id)) next.delete(id);
         else next.add(id);
         return next;
-      }
-      return prev.has(id) && prev.size === 1 ? new Set() : new Set([id]);
-    });
-  }, [multi, autoSendOnSelect]);
+      });
+      return;
+    }
+    setSelected(new Set([id]));
+    if (pendingId !== id && asksBeforeReplacing(fleet.store?.getEntry?.(id))) {
+      setPendingId(id);
+      mediaLog.playOnReplaceAsked?.({ targetId: id });
+      return;
+    }
+    setPendingId(null);
+    submitRef.current?.([id]);
+  }, [multi, pendingId, asksBeforeReplacing, fleet.store]);
+
+  /** The row's own "Play here instead": sends to the screen it asked about. */
+  const confirmReplace = useCallback((id) => {
+    setPendingId(null);
+    if (id === HERE_ID) return hereRef.current?.({ confirmed: true });
+    return submitRef.current?.([id]);
+  }, []);
+  const cancelReplace = useCallback(() => setPendingId(null), []);
 
   // Leaving multi mode collapses the selection back to one device so the
   // single-select invariant holds.
   const toggleMulti = useCallback(() => {
+    setPendingId(null);
     setMulti((wasMulti) => {
       if (wasMulti) setSelected((prev) => new Set([...prev].slice(0, 1)));
       return !wasMulti;
@@ -138,7 +187,7 @@ export function useDispatchTargetPicker({ source, onComplete, intent = 'dispatch
   const submit = useCallback(async (idsOverride) => {
     const chosen = Array.isArray(idsOverride) ? idsOverride : Array.from(selected);
     if (chosen.length === 0) return;
-    if (moveUnavailable) {
+    if (moveBlockedFor(chosen.length)) {
       setDispatchError(hasMoveSnapshot
         ? 'Move playback to one screen at a time.'
         : 'Move needs an active session. Keep playing here instead.');
@@ -217,11 +266,54 @@ export function useDispatchTargetPicker({ source, onComplete, intent = 'dispatch
     setDispatchError(null);
     onComplete?.({ targetIds, mode });
     return { ok: true, dispatchIds };
-  }, [moveUnavailable, hasMoveSnapshot, selected, mode, source, dispatchToTarget, handOff, onComplete, hasPotentialContent, asksKeepOrStop, local, recordPlay, sourceItem]);
+  }, [moveBlockedFor, hasMoveSnapshot, selected, mode, source, dispatchToTarget, handOff, onComplete, hasPotentialContent, asksKeepOrStop, local, recordPlay, sourceItem]);
 
   submitRef.current = submit;
 
-  return { devices, selected, multi, mode, asksKeepOrStop, canSubmit, localPlaying, hasPotentialContent, moveSupported, moveUnavailable, dispatchError, select, toggleMulti, setMode, submit };
+  // This device's row. The destination sheet just aims here; a one-off send
+  // runs the item on the local session (what Play here does), asking first
+  // when that would replace what plays here. Without a local session that can
+  // take it, it falls back to sending to this browser like any screen.
+  const hereRef = useRef(null);
+  const playHere = useCallback(async ({ confirmed = false } = {}) => {
+    if (intent === 'destination') {
+      onComplete?.({ targetIds: [], mode });
+      return { ok: true };
+    }
+    const localBusy = replaces && !!localNow;
+    if (!confirmed && localBusy) {
+      setPendingId(HERE_ID);
+      mediaLog.playOnReplaceAsked?.({ targetId: 'local' });
+      return { ok: false, pending: true };
+    }
+    setPendingId(null);
+    if (canRunHere) {
+      mediaLog.playOnHere({ kind: itemAction.kind, contentId: itemAction.item?.contentId ?? null });
+      let result;
+      try {
+        result = await executeItemAction({ kind: itemAction.kind, item: itemAction.item, collectionItems: itemAction.collectionItems, destination: local });
+      } catch (error) {
+        result = { ok: false, reason: error?.message };
+      }
+      if (result?.ok === false) {
+        setDispatchError('Could not start it here.');
+        return result;
+      }
+      setDispatchError(null);
+      if (itemAction.kind === 'playNow') recordPlay(sourceItem, []);
+      onComplete?.({ targetIds: [], mode: 'fork' });
+      return result ?? { ok: true };
+    }
+    if (fleetLocal) return submit([fleetLocal.id]);
+    return { ok: false, error: 'no-local' };
+  }, [intent, onComplete, mode, fleetLocal, replaces, localNow, canRunHere, itemAction, local, recordPlay, sourceItem, submit]);
+  hereRef.current = playHere;
+
+  return {
+    devices, selected, multi, mode, asksKeepOrStop, canSubmit, localPlaying, hasPotentialContent, moveSupported, moveUnavailable, dispatchError,
+    usualIds, here, pendingId, localNow,
+    select, toggleMulti, setMode, submit, playHere, confirmReplace, cancelReplace,
+  };
 }
 
 /** Preferred ids first (in their order), then everything else by name. */

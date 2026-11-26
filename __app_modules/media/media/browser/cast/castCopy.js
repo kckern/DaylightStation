@@ -98,6 +98,22 @@ export function deviceStatusLine(entry) {
 }
 
 /**
+ * The picker row's status word, the same shape on every row: "Off",
+ * "Playing: <title>", "Paused: <title>", or "Ready" (nothing on, or not yet
+ * heard from: a send wakes it either way). Never a countdown, never blank.
+ * @returns {{text: string, tone: 'active'|'idle'|'off'}}
+ */
+export function pickerStatus(entry, device = null) {
+  if (entry?.offline || (!entry?.snapshot && device?.state === 'off')) return { text: 'Off', tone: 'off' };
+  const snap = entry?.snapshot;
+  const title = snap?.currentItem?.title ?? null;
+  if (snap && title && snap.state === 'paused') return { text: `Paused: ${title}`, tone: 'active' };
+  if (snap && title && BUSY_STATES.has(snap.state)) return { text: `Playing: ${title}`, tone: 'active' };
+  if (snap && (snap.state === 'off' || snap.state === 'standby')) return { text: 'Off', tone: 'off' };
+  return { text: 'Ready', tone: 'idle' };
+}
+
+/**
  * Is this device mid-something a cast would steamroll?
  * Only answers when a snapshot exists — no snapshot means "unknown",
  * and unknown must not warn (returns null).
@@ -111,4 +127,4 @@ export function describeBusy(entry) {
   return { phrase: snap.state === 'paused' ? `paused on ${title}` : `playing ${title}` };
 }
 
-export default { friendlyStepLabel, friendlyStepPhrase, deviceKind, deviceKindNoun, deviceStatusLine, describeBusy };
+export default { friendlyStepLabel, friendlyStepPhrase, deviceKind, deviceKindNoun, deviceStatusLine, pickerStatus, describeBusy };
