@@ -17,7 +17,10 @@ const ALL_CLEARED = Object.freeze({ playing: true, queue: true, spot: true, aim:
 
 export function StartFreshDialog({ open, onClose }) {
   const { snapshot, lifecycle } = useSessionController('local');
-  const { targetIds = [], clearTargets } = useCastTarget();
+  const { targetIds = [], here = false, clearTargets } = useCastTarget();
+  // A sticky This device (chosen in the search chip or the Destination sheet)
+  // is an aim too: Start fresh clears it back to unaimed.
+  const hasAim = targetIds.length > 0 || here === true;
   const { devices } = useFleetContext();
   const [clear, setClear] = useState(ALL_CLEARED);
   useEffect(() => { if (open) setClear(ALL_CLEARED); }, [open]);
@@ -38,11 +41,12 @@ export function StartFreshDialog({ open, onClose }) {
     others.length > 0 && { part: 'queue', label: `Queue: ${others.length} ${current ? 'more ' : ''}item${others.length === 1 ? '' : 's'}` },
     current && position > 0 && { part: 'spot', label: `Spot: ${formatTime(position)} into ${title}` },
     targetIds.length > 0 && { part: 'aim', label: `Aim: ${aimNames} (return aim to this device)` },
+    targetIds.length === 0 && here === true && { part: 'aim', label: 'Aim: This device, always (forget the choice)' },
   ].filter(Boolean);
 
   const confirm = () => {
     lifecycle.reset?.({ keep: { playing: !clear.playing, queue: !clear.queue, spot: !clear.playing && !clear.spot } });
-    if (clear.aim && targetIds.length > 0) clearTargets?.();
+    if (clear.aim && hasAim) clearTargets?.();
     onClose?.();
   };
 

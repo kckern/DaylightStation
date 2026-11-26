@@ -583,8 +583,17 @@ describe('ContentCombobox (hook wiring)', () => {
     renderCombobox({ onClose });
 
     fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Escape' });
-    expect(currentHook.commit).toHaveBeenCalledWith('escape');
+    expect(currentHook.commit).toHaveBeenCalledWith('escape', expect.any(Array));
     expect(onClose).toHaveBeenCalledWith('escape');
+  });
+
+  it('Escape commits from the list as shown (transformResults), the same list Enter reads', () => {
+    const a = { id: 'plex:1', title: 'A', source: 'plex' };
+    const b = { id: 'plex:2', title: 'B', source: 'plex' };
+    currentHook = makeHook({ state: { ...initialState(''), mode: Modes.SEARCH, search: 'ab', results: [a, b] } });
+    renderCombobox({ transformResults: (rows) => [...rows].reverse() });
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Escape' });
+    expect(currentHook.commit).toHaveBeenCalledWith('escape', [b, a]);
   });
 
   it('notifies the transient owner when Tab closes the search', () => {
@@ -595,7 +604,7 @@ describe('ContentCombobox (hook wiring)', () => {
     renderCombobox({ onClose });
 
     fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Tab' });
-    expect(currentHook.commit).toHaveBeenCalledWith('tab');
+    expect(currentHook.commit).toHaveBeenCalledWith('tab', expect.any(Array));
     expect(onClose).toHaveBeenCalledWith('tab');
   });
 
@@ -618,6 +627,38 @@ describe('ContentCombobox (hook wiring)', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it('with onTabKey, Esc with the list already closed lets go of the box: the next Tab is not consumed', () => {
+    currentHook = makeHook({ state: { ...initialState(''), mode: Modes.DISPLAY } });
+    const onTabKey = vi.fn(() => true);
+    renderCombobox({ onTabKey });
+    const input = screen.getByRole('textbox');
+    input.focus();
+    expect(document.activeElement).toBe(input);
+    expect(fireEvent.keyDown(input, { key: 'Escape' })).toBe(false);
+    expect(document.activeElement).not.toBe(input);
+    fireEvent.keyDown(document.activeElement, { key: 'Tab' });
+    expect(onTabKey).not.toHaveBeenCalled();
+  });
+
+  it('with onTabKey, the first Esc (list open) only closes the list; the box keeps focus', () => {
+    currentHook = makeHook({ state: { ...initialState(''), mode: Modes.SEARCH, search: 'abc' } });
+    renderCombobox({ onTabKey: vi.fn(() => true) });
+    const input = screen.getByRole('textbox');
+    input.focus();
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(currentHook.commit).toHaveBeenCalledWith('escape', expect.any(Array));
+    expect(document.activeElement).toBe(input);
+  });
+
+  it('without onTabKey, Esc with the list closed leaves focus alone (non-Media callers unchanged)', () => {
+    currentHook = makeHook({ state: { ...initialState(''), mode: Modes.DISPLAY } });
+    renderCombobox();
+    const input = screen.getByRole('textbox');
+    input.focus();
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(document.activeElement).toBe(input);
+  });
+
   it('onTabKey returning false falls through to the ordinary Tab close', () => {
     currentHook = makeHook({
       state: { ...initialState(''), mode: Modes.SEARCH, search: 'abc' },
@@ -627,7 +668,7 @@ describe('ContentCombobox (hook wiring)', () => {
 
     const tab = fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Tab' });
     expect(tab).toBe(true);
-    expect(currentHook.commit).toHaveBeenCalledWith('tab');
+    expect(currentHook.commit).toHaveBeenCalledWith('tab', expect.any(Array));
     expect(onClose).toHaveBeenCalledWith('tab');
   });
 
@@ -638,7 +679,7 @@ describe('ContentCombobox (hook wiring)', () => {
     renderCombobox();
     const tab = fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Tab' });
     expect(tab).toBe(true);
-    expect(currentHook.commit).toHaveBeenCalledWith('tab');
+    expect(currentHook.commit).toHaveBeenCalledWith('tab', expect.any(Array));
     expect(screen.queryByTestId('combobox-input-accessory')).toBeNull();
   });
 
@@ -665,7 +706,7 @@ describe('ContentCombobox (hook wiring)', () => {
     // onBlur closes the Mantine dropdown → onDropdownClose fires while the
     // machine is still editing (mode !== DISPLAY) → commit('outside') → revert.
     fireEvent.blur(screen.getByRole('textbox'));
-    expect(currentHook.commit).toHaveBeenCalledWith('outside');
+    expect(currentHook.commit).toHaveBeenCalledWith('outside', expect.any(Array));
     expect(onClose).toHaveBeenCalledWith('outside');
   });
 

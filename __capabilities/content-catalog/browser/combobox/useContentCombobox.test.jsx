@@ -1036,6 +1036,65 @@ describe('useContentCombobox', () => {
     expect(result.current.state.search).toBeNull();
   });
 
+  // Back from an info view reopens the kept list on the row picked. That row is
+  // restored, not chosen again: Esc / outside close, only Enter reopens it —
+  // and from the list as shown (the surface reorders results).
+  describe('a reopened kept list (retainQueryOnClose)', () => {
+    const raw = [
+      { id: 'plex:1', title: 'One', type: 'movie' },
+      { id: 'plex:2', title: 'Two', type: 'movie' },
+      { id: 'plex:3', title: 'Three', type: 'movie' },
+    ];
+    const shown = [raw[2], raw[0], raw[1]]; // as a reordering surface shows them
+    async function pickThenReturn() {
+      vi.useFakeTimers();
+      const onChange = vi.fn();
+      fetchMock.mockImplementation((url) => (
+        url.startsWith('/api/v1/content/query/search') ? jsonResponse({ items: raw }) : jsonResponse({ items: [] })
+      ));
+      const view = setup({ onChange, retainQueryOnClose: true });
+      act(() => { view.result.current.handleInput('mo'); });
+      await act(async () => { vi.advanceTimersByTime(350); });
+      // Arrow to the 2nd SHOWN row (plex:1) and press Enter.
+      act(() => { view.result.current.dispatch({ type: 'ARROW', dir: 1, itemCount: 3 }); });
+      act(() => { view.result.current.dispatch({ type: 'ARROW', dir: 1, itemCount: 3 }); });
+      act(() => { view.result.current.commit('enter', shown); });
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expect(onChange).toHaveBeenLastCalledWith('plex:1', expect.objectContaining({ id: 'plex:1' }));
+      // Back: the box takes focus again and reopens on that row.
+      await act(async () => { await view.result.current.openWithSiblings(shown); });
+      expect(view.result.current.state.highlight).toMatchObject({ idx: 1, restored: true });
+      return { ...view, onChange };
+    }
+
+    it('then Esc closes without opening anything', async () => {
+      const { result, onChange } = await pickThenReturn();
+      act(() => { result.current.commit('escape', shown); });
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expect(result.current.state.mode).toBe(Modes.DISPLAY);
+    });
+
+    it('then Esc without the shown list closes without opening anything', async () => {
+      const { result, onChange } = await pickThenReturn();
+      act(() => { result.current.commit('escape'); });
+      expect(onChange).toHaveBeenCalledTimes(1);
+    });
+
+    it('then a click outside closes without opening anything', async () => {
+      const { result, onChange } = await pickThenReturn();
+      act(() => { result.current.commit('outside', shown); });
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expect(result.current.state.mode).toBe(Modes.DISPLAY);
+    });
+
+    it('then Enter opens the same film again', async () => {
+      const { result, onChange } = await pickThenReturn();
+      act(() => { result.current.commit('enter', shown); });
+      expect(onChange).toHaveBeenCalledTimes(2);
+      expect(onChange).toHaveBeenLastCalledWith('plex:1', expect.objectContaining({ id: 'plex:1' }));
+    });
+  });
+
   it("commit('enter') settled with empty results commits the raw text and flags a no-match toast", async () => {
     vi.useFakeTimers();
     const onChange = vi.fn();

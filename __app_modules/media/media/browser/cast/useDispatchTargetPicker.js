@@ -92,7 +92,9 @@ export function useDispatchTargetPicker({ source, onComplete, intent = 'dispatch
   // a speaker, and a screen that takes no content is never offered at all.
   // Order is stable — the screen this browser used last for this kind of
   // thing first, then by name — so the screen you want is where it was.
-  const { destinationFor, recordPlay } = usePlayDestination();
+  // Ordering and "Usual" come from the habit, not from a sticky This device:
+  // choosing here must not hide the usual screen in Play on….
+  const { destinationFor, recordPlay } = usePlayDestination({ here: false });
   const sourceItem = source?.itemAction?.item ?? source?.item
     ?? (source?.getSnapshot ? null : source?.snapshot?.currentItem) ?? null;
   const kind = itemKind(sourceItem);

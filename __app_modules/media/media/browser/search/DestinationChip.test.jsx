@@ -23,8 +23,8 @@ const office = { id: 'office-tv', type: 'linux-pc', name: 'Office Screen', conte
 const livingRoom = { id: 'livingroom-tv', type: 'shield-tv', name: 'Living Room TV', content_control: { provider: 'fully-kiosk' } };
 const DEVICES = [livingRoom, office];
 
-function fleetValue({ devices = DEVICES, loading = false } = {}) {
-  return { devices, loading, error: null, refresh: vi.fn(), identity: { clientId: 'me', deviceId: 'browser:me' } };
+function fleetValue({ devices = DEVICES, loading = false, error = null } = {}) {
+  return { devices, loading, error, refresh: vi.fn(), identity: { clientId: 'me', deviceId: 'browser:me' } };
 }
 
 function AimProbe() {
@@ -204,11 +204,52 @@ describe('DestinationChip', () => {
   it('keeps a remembered aim while the fleet is still loading', () => {
     localStorage.setItem(CAST_TARGET_KEY, JSON.stringify({ mode: 'transfer', targetIds: ['office-tv'], activityAt: Date.now() }));
     const { rerender } = render(tree(fleetValue({ devices: [], loading: true })));
-    expect(chip()).toHaveTextContent('▶ Choose a screen');
+    // Row ▶ still sends to the aim, so the chip names it — neutrally, never by id.
+    expect(chip()).toHaveTextContent('▶ Screen');
+    expect(chip().textContent).not.toMatch(/office/);
     expect(screen.getByTestId('aim-probe')).toHaveTextContent('office-tv');
 
     act(() => { rerender(tree(fleetValue())); });
     expect(chip()).toHaveTextContent('▶ Office Screen');
+  });
+
+  it('an errored fleet is not an answer: the aim is named, not read as stale, and kept', () => {
+    localStorage.setItem(CAST_TARGET_KEY, JSON.stringify({ mode: 'transfer', targetIds: ['livingroom-tv'], activityAt: Date.now() }));
+    render(tree(fleetValue({ devices: [office], error: new Error('fleet down') })));
+    expect(chip()).toHaveTextContent('▶ Screen');
+    expect(chip()).not.toHaveTextContent('Choose a screen');
+    expect(screen.getByTestId('aim-probe')).toHaveTextContent('livingroom-tv');
+    expect(mediaLog.searchDestinationStale).not.toHaveBeenCalled();
+  });
+
+  it('before the fleet answers, a several-screen aim reads as a count — never ids', () => {
+    localStorage.setItem(CAST_TARGET_KEY, JSON.stringify({ mode: 'transfer', targetIds: ['office-tv', 'livingroom-tv'], activityAt: Date.now() }));
+    render(tree(fleetValue({ devices: [], loading: true })));
+    expect(chip()).toHaveTextContent('▶ 2 screens');
+  });
+
+  it('compact (the phone search row): the ask reads short, the accessible name stays whole', () => {
+    render(
+      <MantineProvider>
+        <FleetContext.Provider value={fleetValue()}>
+          <CastTargetProvider><DestinationChip compact /></CastTargetProvider>
+        </FleetContext.Provider>
+      </MantineProvider>,
+    );
+    expect(chip().textContent).toBe('▶ Choose');
+    expect(chip()).toHaveAccessibleName('Plays on Choose a screen. Change where things play');
+  });
+
+  it('compact keeps a device name as it is (the ellipsis is the stylesheet\'s)', () => {
+    localStorage.setItem(CAST_TARGET_KEY, JSON.stringify({ mode: 'transfer', targetIds: ['office-tv'], activityAt: Date.now() }));
+    render(
+      <MantineProvider>
+        <FleetContext.Provider value={fleetValue()}>
+          <CastTargetProvider><DestinationChip compact /></CastTargetProvider>
+        </FleetContext.Provider>
+      </MantineProvider>,
+    );
+    expect(chip().textContent).toBe('▶ Office Screen');
   });
 
   it('names a several-screen aim by its screens', () => {

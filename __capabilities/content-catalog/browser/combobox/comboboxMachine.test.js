@@ -285,20 +285,30 @@ describe('comboboxMachine: a retained close keeps the highlighted row by id', ()
     expect(s.mode).toBe(Modes.DISPLAY);
     expect(s.highlight).toEqual({ idx: -1, userNavigated: false, id: 'b' });
     s = reducer(s, { type: 'OPEN' });
-    expect(s.highlight).toEqual({ idx: 1, userNavigated: true });
+    expect(s.highlight).toEqual({ idx: 1, userNavigated: false, restored: true });
   });
 
   it('OPEN restores by id against the list as shown when one is given', () => {
     let s = reducer(withResults(), { type: 'CLOSE', reason: 'select', retainSearch: 'mo', retainResults: true, highlightId: 'b' });
     s = reducer(s, { type: 'OPEN', items: [{ id: 'c' }, { id: 'b' }] });
-    expect(s.highlight).toEqual({ idx: 1, userNavigated: true });
+    expect(s.highlight).toEqual({ idx: 1, userNavigated: false, restored: true });
   });
 
   it('a list that changed so the id is gone highlights row 1, never a stale index', () => {
     let s = reducer(withResults(), { type: 'CLOSE', reason: 'select', retainSearch: 'mo', retainResults: true, highlightId: 'c' });
     s = reducer(s, { type: 'RESULTS', items: [{ id: 'x' }, { id: 'y' }, { id: 'z' }] });
     s = reducer(s, { type: 'OPEN' });
-    expect(s.highlight).toEqual({ idx: 0, userNavigated: true });
+    expect(s.highlight).toEqual({ idx: 0, userNavigated: false, restored: true });
+  });
+
+  it('ARROW, INPUT and HIGHLIGHT replace a restored highlight (it is no longer restored)', () => {
+    const reopened = () => reducer(
+      reducer(withResults(), { type: 'CLOSE', reason: 'select', retainSearch: 'mo', retainResults: true, highlightId: 'b' }),
+      { type: 'OPEN' },
+    );
+    expect(reducer(reopened(), { type: 'ARROW', dir: 1, itemCount: 3 }).highlight).toEqual({ idx: 2, userNavigated: true });
+    expect(reducer(reopened(), { type: 'INPUT', text: 'mov' }).highlight).toEqual({ idx: -1, userNavigated: false });
+    expect(reducer(reopened(), { type: 'HIGHLIGHT', idx: 0 }).highlight).toEqual({ idx: 0, userNavigated: false });
   });
 
   it('nothing is kept without retainResults (non-retaining callers unchanged)', () => {
@@ -347,6 +357,15 @@ describe('decideCommit', () => {
     const show = { id: 'plex:99', type: 'show' };
     const out = decideCommit(base({ results: [show], highlightIdx: 0, userNavigated: true, selectContainers: true }));
     expect(out).toEqual({ action: 'select', item: show });
+  });
+
+  it('a restored highlight is a pick for Enter only — never for escape / outside / tab / blur', () => {
+    const leaf = { id: 'plex:9', type: 'movie' };
+    const args = { search: 'mo', value: '', results: [{ id: 'plex:1' }, leaf], highlightIdx: 1, userNavigated: false, restored: true };
+    expect(decideCommit(base({ ...args, reason: 'enter' }))).toEqual({ action: 'select', item: leaf });
+    for (const reason of ['escape', 'outside', 'tab', 'blur']) {
+      expect(decideCommit(base({ ...args, reason })).action).toBe('revert');
+    }
   });
 
   it('highlightIdx set but userNavigated false is NOT a pick (Mar-01 invariant)', () => {

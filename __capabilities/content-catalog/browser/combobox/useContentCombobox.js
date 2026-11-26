@@ -688,7 +688,7 @@ export function useContentCombobox({
     const s = stateRef.current;
     const decision = decideCommit({
       reason, search: s.search, value: s.value, results: Array.isArray(visibleResults) ? visibleResults : s.results,
-      highlightIdx: s.highlight.idx, userNavigated: s.highlight.userNavigated,
+      highlightIdx: s.highlight.idx, userNavigated: s.highlight.userNavigated, restored: !!s.highlight.restored,
       selectContainers, searchSettled: searchSettledRef.current, isContainer,
       allowFreeform,
     });

@@ -370,7 +370,7 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
             if (cycleDestination(e.shiftKey ? -1 : 1, 'tab')) e.preventDefault();
           }}
         />
-        {!addTo && <DestinationChip />}
+        {!addTo && <DestinationChip compact />}
       </div>
 
       {addTo && (

@@ -263,6 +263,13 @@
   .media-destination-chip-icon { display: none; flex-shrink: 0; }
 }
 
+// Tablet widths: the dock's search input can be 120–160 px wide (MediaShell
+// .media-search-input-wrap) with a 36 px clear control beside the chip, so
+// the chip gives up its width first: a long name ellipsises.
+@media (max-width: 1099px) {
+  .media-search-input-wrap .media-destination-chip { max-width: 8rem; }
+}
+
 // Phone search surface: the chip rides the input's row as its own 44 px
 // control — device icon + name, capped so the input keeps most of the row.
 .search-mode-header .media-destination-chip {

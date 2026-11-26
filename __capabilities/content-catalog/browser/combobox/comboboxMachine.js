@@ -75,14 +75,18 @@ export function isContainer(item) {
  * @param {Array}  a.results       current search results (machine order)
  * @param {number} a.highlightIdx
  * @param {boolean} a.userNavigated
+ * @param {boolean} [a.restored]  the highlight was put back by a reopen (OPEN), not moved by the person
  * @param {boolean} a.selectContainers
  * @param {boolean} a.searchSettled  true iff a search for the current text has completed (not loading)
  * @param {(item:object)=>boolean} a.isContainer  injected predicate
  * @returns {{action:'select'|'drill'|'open'|'literal'|'revert'|'dismiss'|'none', item?:object, value?:string}}
  */
-export function decideCommit({ reason, search, value, results, highlightIdx, userNavigated, selectContainers, searchSettled, isContainer, allowFreeform = true }) {
+export function decideCommit({ reason, search, value, results, highlightIdx, userNavigated, restored = false, selectContainers, searchSettled, isContainer, allowFreeform = true }) {
   // 1. Explicit pick — any reason. Mar-01 invariant: ONLY user-navigated rows count as a pick.
-  if (userNavigated && highlightIdx >= 0 && results[highlightIdx]) {
+  // A row a reopen put back (`restored`) is a pick for Enter only: Esc or a
+  // click outside after coming back must close, never open that row again.
+  const picked = userNavigated || (restored && reason === 'enter');
+  if (picked && highlightIdx >= 0 && results[highlightIdx]) {
     const item = results[highlightIdx];
     return (isContainer(item) && !selectContainers) ? { action: 'drill', item } : { action: 'select', item };
   }
@@ -135,13 +139,15 @@ export function reducer(state, event) {
       // A retained close kept the highlighted row by id (see CLOSE): put the
       // highlight back on that row in the list as shown (`event.items`, when
       // the surface reorders results), else row 1 — never a stale index.
+      // It is `restored`, not user-navigated: Enter opens it, Esc / outside
+      // close without picking (ARROW / INPUT / HIGHLIGHT replace it).
       const keptId = state.highlight.id;
       let highlight = { idx: -1, userNavigated: false };
       if (keptId != null) {
         const list = Array.isArray(event.items) ? event.items : state.results;
         const found = list.findIndex((item) => item?.id === keptId);
         const idx = found >= 0 ? found : (list.length > 0 ? 0 : -1);
-        highlight = { idx, userNavigated: idx >= 0 };
+        highlight = idx >= 0 ? { idx, userNavigated: false, restored: true } : { idx, userNavigated: false };
       }
       return { ...state, mode: Modes.SEARCH, search: state.search ?? state.value ?? '', highlight };
     }

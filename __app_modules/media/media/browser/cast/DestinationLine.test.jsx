@@ -49,11 +49,12 @@ import mediaLog from "../logging/mediaLog.js";
 import { DestinationLine } from "./DestinationLine.jsx";
 
 function Probe() {
-  const { targetIds, mode } = useCastTarget();
+  const { targetIds, mode, here } = useCastTarget();
   return (
     <div>
       <span data-testid="probe-targets">{targetIds.join(',')}</span>
       <span data-testid="probe-mode">{mode}</span>
+      <span data-testid="probe-here">{here ? 'here' : 'unaimed'}</span>
     </div>
   );
 }
@@ -86,6 +87,29 @@ beforeEach(() => {
 });
 
 describe('DestinationLine', () => {
+  it('choosing This device in the sheet sticks: here, not unaimed', () => {
+    localStorage.setItem('media-app.cast-target', JSON.stringify({ mode: 'transfer', targetIds: ['livingroom-tv'], activityAt: Date.now() }));
+    lastPick = { targetIds: [], mode: 'transfer' };
+    renderLine();
+    fireEvent.click(screen.getByTestId('destination-line'));
+    fireEvent.click(screen.getByTestId('picker-stub-pick'));
+    expect(screen.getByTestId('probe-targets')).toHaveTextContent('');
+    expect(screen.getByTestId('probe-here')).toHaveTextContent('here');
+  });
+
+  it('choosing screens in the sheet aims there and is no longer here', () => {
+    renderLine();
+    lastPick = { targetIds: [], mode: 'transfer' };
+    fireEvent.click(screen.getByTestId('destination-line'));
+    fireEvent.click(screen.getByTestId('picker-stub-pick'));
+    expect(screen.getByTestId('probe-here')).toHaveTextContent('here');
+    lastPick = { targetIds: ['livingroom-tv', 'yellow-room-tablet'], mode: 'fork' };
+    fireEvent.click(screen.getByTestId('destination-line'));
+    fireEvent.click(screen.getByTestId('picker-stub-pick'));
+    expect(screen.getByTestId('probe-targets')).toHaveTextContent('livingroom-tv,yellow-room-tablet');
+    expect(screen.getByTestId('probe-here')).toHaveTextContent('unaimed');
+  });
+
   it('reads "This device" when no remote target is set', () => {
     renderLine();
     expect(screen.getByTestId('destination-line-name')).toHaveTextContent('This device');

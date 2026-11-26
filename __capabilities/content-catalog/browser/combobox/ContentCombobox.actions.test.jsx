@@ -209,21 +209,29 @@ describe('ContentCombobox result actions — real focus ownership', () => {
 
   it('retains query/results through nested device and submit actions across two destination picker cycles but closes on ordinary outside pointer', async () => {
     const { input } = await renderSearchedCombobox();
+    // The picker's row reads "Room · status" under the name; press that
+    // nested line (a child of the row's button), not the button itself.
+    const roomLine = (room) => screen.findByText((text, el) => el?.classList?.contains('cast-row__meta') && text.startsWith(`${room} ·`));
 
-    for (const location of ['Playroom', 'Living Room']) {
-      pointerActivate(screen.getByTestId('destination-line'));
-      const nestedDeviceChild = await screen.findByText(location);
-      expect(input).toHaveValue('bluey');
-      expect(nestedDeviceChild).toHaveClass('cast-tile-location');
-      pointerActivate(nestedDeviceChild);
-      await waitFor(() => expect(input).toHaveValue('bluey'));
-      await waitFor(() => expect(screen.getByTestId('result-more-plex:leaf-1')).toBeInTheDocument());
+    // Cycle 1: in single-select a tap on the row is the choice.
+    pointerActivate(screen.getByTestId('destination-line'));
+    const playroom = await roomLine('Playroom');
+    expect(input).toHaveValue('bluey');
+    pointerActivate(playroom);
+    await waitFor(() => expect(screen.queryByTestId('destination-sheet')).toBeNull());
+    expect(input).toHaveValue('bluey');
+    expect(screen.getByTestId('result-more-plex:leaf-1')).toBeInTheDocument();
 
-      pointerActivate(screen.getByTestId('picker-submit'));
-      await waitFor(() => expect(screen.queryByTestId('destination-sheet')).toBeNull());
-      expect(input).toHaveValue('bluey');
-      expect(screen.getByTestId('result-more-plex:leaf-1')).toBeInTheDocument();
-    }
+    // Cycle 2: several screens — the nested line toggles, the submit sends.
+    pointerActivate(screen.getByTestId('destination-line'));
+    pointerActivate(await screen.findByTestId('picker-multi-toggle'));
+    pointerActivate(await roomLine('Living Room'));
+    await waitFor(() => expect(input).toHaveValue('bluey'));
+    expect(screen.getByTestId('result-more-plex:leaf-1')).toBeInTheDocument();
+    pointerActivate(screen.getByTestId('picker-submit'));
+    await waitFor(() => expect(screen.queryByTestId('destination-sheet')).toBeNull());
+    expect(input).toHaveValue('bluey');
+    expect(screen.getByTestId('result-more-plex:leaf-1')).toBeInTheDocument();
 
     pointerActivate(screen.getByTestId('outside-surface'));
     await waitFor(() => expect(input).toHaveValue(''));

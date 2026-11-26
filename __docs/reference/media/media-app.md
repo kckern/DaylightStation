@@ -532,13 +532,26 @@ right end of the box says what ▶ would do — `▶ Office Screen`, `▶ This d
 or `▶ Choose a screen` when nothing is settled yet
 (`search/DestinationChip.jsx`, inside the combobox through its opt-in
 `inputAccessory` and `onTabKey`). **Tab and Shift+Tab cycle it while the box
-has focus**, and a click on the chip cycles too; Esc or a click leaves the box.
+has focus**, and a click on the chip cycles too. Leaving the box is Esc: the
+first Esc closes the list, a second (list already closed) lets go of the box so
+the next Tab moves focus on; a click elsewhere leaves it too. After Back from
+an info view the list reopens on the row picked, but only Enter opens it again
+— Esc or a click outside just closes.
 The cycle order is fixed: the usual screen for films first, then the other
-screens that can play films by name, then **This device**. A screen that has
-left the fleet is never shown: the chip falls back to the next honest entry.
+screens that can play films by name, then **This device**. **The chip names
+where films go**: with nothing aimed a song's ▶ follows its own habit and may
+play somewhere else. A screen that has left the fleet is never shown: once the
+fleet has answered without it the chip falls back to the next honest entry;
+while the fleet is still loading or unreachable the aim is named as it stands
+(its name if known, else `▶ Screen`), since row ▶ still sends there. On the
+phone's narrow search row the ask reads `▶ Choose`.
 The choice is **sticky** — it does not expire — and *This device* is a choice of
-its own, remembered apart from nothing being aimed (`here`). The header
-"Playing on" control is now phone-only; the first-use hint points at the chip.
+its own, remembered apart from nothing being aimed (`here`); choosing This
+device in the phone's Destination sheet sets the same sticky choice, Start
+fresh clears it, and it never hides the "Usual" screen in Play on…. The header
+"Playing on" control is now phone-only and reads the chip's own label
+(`useDestinationLabel`), so the two never disagree; the first-use hint points
+at the chip.
 Cycling logs `search.destination-cycled {from, to, via}`.
 
 **A tap is a look.** Tapping a search row, a start-page tile, a browse row or

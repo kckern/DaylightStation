@@ -1,7 +1,8 @@
 // frontend/src/modules/Media/cast/CastTargetChip.jsx
 // The header's destination control: "Playing on <name> ⌄". It says where the
-// next Play goes — this browser's own name, "this device" when it has none, or
-// "Kitchen + Living Room" for several screens — and opens the cast
+// next film's Play goes in the search chip's own words (useDestinationLabel:
+// the aimed screen(s), "This device", the learned screen, or "Choose a screen"
+// when ▶ would ask) — and opens the cast
 // preferences: the preferred target device(s) and the default Transfer/Fork
 // mode, persisted per browser. Inline cast pickers seed from these so a
 // configured household is one tap per cast. It absorbs the old cast icon; the
@@ -15,7 +16,7 @@ import { useCastTarget } from "./useCastTarget.js";
 import { useFleetContext } from "../fleet/useFleetContext.js";
 import { deviceName } from "../fleet/deviceDisplay.js";
 import { ClientIdentityContext } from "../identity/ClientIdentityProvider.jsx";
-import { destinationName } from "./AimLabel.jsx";
+import { useDestinationLabel } from "../search/DestinationChip.jsx";
 import { useDestinationInteraction } from "./destinationInteraction.js";
 import "./Cast.scss";
 
@@ -38,14 +39,17 @@ export function CastTargetChip({ controlRef }) {
   // (before the field blurs) and held while the popover is open.
   useEffect(() => { setActive(open); }, [open, setActive]);
   useEffect(() => () => setActive(false), [setActive]);
-  const name = destinationName(targetIds, devices, identity?.displayName ?? identity?.name ?? null);
+  // The same words as the search box's destination chip (one resolution:
+  // aim, This device chosen, the learned film screen, or ask), so the phone
+  // header and the search never name two different places.
+  const { label: name, asks } = useDestinationLabel();
 
   const control = (
     <UnstyledButton
       ref={setTriggerRef}
       data-testid="cast-target-chip"
       className="media-destination"
-      aria-label={`Playing on ${name}. Change where things play`}
+      aria-label={asks ? 'No screen chosen yet. Change where things play' : `Playing on ${name}. Change where things play`}
       aria-haspopup="dialog"
       aria-expanded={open}
       onPointerDown={() => setActive(true)}
@@ -59,7 +63,7 @@ export function CastTargetChip({ controlRef }) {
       }}
     >
       <span className="media-destination-text">
-        <span className="media-destination-prefix">Playing on</span>
+        {!asks && <span className="media-destination-prefix">Playing on</span>}
         <span className="media-destination-name" data-testid="destination-control-name">{name}</span>
       </span>
       <IconChevronDown size={16} aria-hidden />

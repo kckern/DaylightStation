@@ -47,7 +47,7 @@ export function DestinationLine({ surface, onInteractionStart, onInteractionEnd,
   const wasOpenRef = useRef(false);
   const interactionEndRef = useRef(onInteractionEnd);
   interactionEndRef.current = onInteractionEnd;
-  const { targetIds, mode, clearTargets, toggleTarget, setMode } = useCastTarget();
+  const { targetIds, mode, setTargets, setMode } = useCastTarget();
 
   useLayoutEffect(() => () => {
     const active = document.activeElement;
@@ -143,11 +143,14 @@ export function DestinationLine({ surface, onInteractionStart, onInteractionEnd,
     if (from !== to) {
       mediaLog.destinationChanged({ from, to, surface: surface ?? null });
     }
-    clearTargets();
-    nextIds.forEach((id) => toggleTarget(id));
+    // The sheet answers This device with no ids: that is This device chosen
+    // on purpose (sticky here), the same aim the search chip sets — never the
+    // unaimed state, where a film's ▶ follows a learned screen or asks.
+    if (nextIds.length === 0) setTargets([], { here: true });
+    else setTargets(nextIds);
     setMode(nextMode);
     close();
-  }, [targetIds, clearTargets, toggleTarget, setMode, surface, close]);
+  }, [targetIds, setTargets, setMode, surface, close]);
 
   return (
     <>

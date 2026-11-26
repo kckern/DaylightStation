@@ -306,8 +306,14 @@ export function ContentCombobox({
   // Search-session owners (MediaContentSearch) reset session-local scope only
   // after a real close gesture. Keep the callback beside every close commit so
   // Escape, Tab and genuine outside dismissal have identical lifecycle.
+  // A close reads a pick from the list as shown (results may be reordered or
+  // collapsed for display), the same list Enter reads; browse levels keep theirs.
+  const visibleItemsRef = useRef(null);
+  visibleItemsRef.current = isBrowse ? null : items;
   const commitClose = useCallback((reason) => {
-    commit(reason);
+    const visible = visibleItemsRef.current;
+    if (visible) commit(reason, visible);
+    else commit(reason);
     onClose?.(reason);
   }, [commit, onClose]);
 
@@ -445,6 +451,15 @@ export function ContentCombobox({
     if (e.key === 'Escape' && isEditing) {
       e.preventDefault();
       commitClose('escape');
+      return;
+    }
+    if (e.key === 'Escape' && onTabKey && e.target === e.currentTarget) {
+      // Opt-in Tab (Media) keeps Tab in the box, so leaving it is Esc: the
+      // first closes the list (above), a second with the list already closed
+      // lets go of the box so the next Tab moves focus on as usual.
+      e.preventDefault();
+      log.debug('key.escape.leave_box', {});
+      e.currentTarget.blur();
       return;
     }
     if (e.key === 'Tab') {

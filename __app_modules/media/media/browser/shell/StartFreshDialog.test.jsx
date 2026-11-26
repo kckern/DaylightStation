@@ -55,6 +55,22 @@ describe('StartFreshDialog', () => {
     expect(within(dialog).getByRole('checkbox', { name: /Aim: Office TV/ })).toBeChecked();
   });
 
+  it('a sticky This device is an aim too: listed, and cleared on confirm', () => {
+    aim = { targetIds: [], here: true };
+    renderDialog(controller());
+    expect(screen.getByRole('checkbox', { name: /Aim: This device/ })).toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: 'Start fresh', exact: true }));
+    expect(clearTargets).toHaveBeenCalledTimes(1);
+  });
+
+  it('nothing aimed and not here: no aim row, nothing to clear', () => {
+    aim = { targetIds: [], here: false };
+    renderDialog(controller());
+    expect(screen.queryByTestId('start-fresh-aim')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Start fresh', exact: true }));
+    expect(clearTargets).not.toHaveBeenCalled();
+  });
+
   it('nothing changes until confirmed', () => {
     const c = controller();
     const onClose = renderDialog(c);

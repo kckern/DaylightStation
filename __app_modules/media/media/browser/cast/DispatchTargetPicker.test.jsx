@@ -64,6 +64,7 @@ import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import mediaLog from "../logging/mediaLog.js";
 import { DispatchTargetPicker } from "./DispatchTargetPicker.jsx";
 import { habitsStore } from "../habits/mediaHabits.js";
+import { CastTargetContext } from "./CastTargetProvider.jsx";
 
 // Wrap with a LocalSessionContext whose controller reports active local
 // playback — this is what makes useLocalPlaybackActive (and therefore the
@@ -240,6 +241,18 @@ describe('DispatchTargetPicker / useDispatchTargetPicker', () => {
       render(<DispatchTargetPicker source={filmSource} verb="Play" />);
       expect(screen.getByTestId('picker-device-office-tv-usual')).toHaveTextContent('Usual');
       expect(screen.queryByTestId('picker-device-livingroom-tv-usual')).toBeNull();
+    });
+
+    it('a sticky This device (here) still tags the usual screen and lists it first', () => {
+      habitsStore().recordScreen('video', ['office-tv']);
+      render(
+        <CastTargetContext.Provider value={{ targetIds: [], here: true, mode: 'transfer' }}>
+          <DispatchTargetPicker source={filmSource} verb="Play" />
+        </CastTargetContext.Provider>
+      );
+      expect(screen.getByTestId('picker-device-office-tv-usual')).toHaveTextContent('Usual');
+      const rows = screen.getAllByRole('button').map((el) => el.dataset.testid).filter((id) => id?.startsWith('picker-device-') && !id.endsWith('-usual'));
+      expect(rows[0]).toBe('picker-device-office-tv');
     });
 
     function localSession({ state = 'paused', title = 'Sonic the Hedgehog', execute = vi.fn(async () => ({ ok: true })) } = {}) {

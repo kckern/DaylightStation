@@ -18,14 +18,11 @@ export function useHabits() {
 }
 
 /**
- * @param {{ aimIds?: string[] }} [options] - a caller that already holds the
- *   aim (useContentDispatch reads it through useCastTarget) passes it, so the
- *   two can never disagree.
- */
-/**
- * @param {{ aimIds?: string[], here?: boolean }} [options] - `here` overrides
- *   the explicit This-device choice (the destination chip passes false to ask
- *   what ▶ would do with nothing chosen).
+ * @param {{ aimIds?: string[], here?: boolean }} [options] - a caller that
+ *   already holds the aim (useContentDispatch reads it through useCastTarget)
+ *   passes `aimIds`, so the two can never disagree. `here` overrides the
+ *   explicit This-device choice (the destination chip and the Play on… sheet
+ *   pass false to ask what ▶ would do with nothing chosen).
  */
 export function usePlayDestination({ aimIds: aimOverride, here: hereOverride } = {}) {
   const { store, snapshot } = useHabits();
