@@ -657,6 +657,18 @@ under the same shell version after `adb shell pm clear net.kckern.daylight.phone
    off", greys the controls and keeps the last item.
 6. Play something on the phone (a Drive playlist), tap the media notification: Now
    playing opens on **This phone** with the phone's queue.
+7. D-pad: with a screen-framework screen as the target, tap the pad button (top right).
+   On the living-room TV open the FHE menu: Up/Down move the highlight, OK opens, Back
+   steps out; hold Down and the highlight runs. In Charades, Left/Right/OK drive the
+   stage buttons. A screen with an old page (not reloaded since the deploy) answers
+   "<screen> did not respond".
+
+**D-pad end to end, 2026-11-25** (prod 07f4372841, emulator → office screen): `remote
+input navigate down|left -> 200`, `select -> 200`; the office page received `ArrowLeft`
+and `Enter` keydowns marked `__remoteSynthetic` (its dashboard has no ActionBus owner, so
+the keydown fallback). The living-room TV was off; it gets the new page on its next
+wake-and-load. A screen page only picks up new code when it reloads: after a deploy, the
+office page was reloaded through its browser's DevTools (`Page.reload` on port 9222).
 
 ## G. Notifications
 
