@@ -45,4 +45,27 @@ public class KeptIndexTest {
         assertEquals("1 of 3 did not download", KeptIndex.describe(new JSONObject().put("done", 2).put("total", 3).put("failed", 1)));
         assertEquals("Waiting for Wi-Fi · 0 of 3", KeptIndex.describe(new JSONObject().put("done", 0).put("total", 3).put("waiting", true)));
     }
+
+    @Test public void eachCollectionHasOneStateAndSaysIt() throws Exception {
+        assertEquals(KeptIndex.READY, KeptIndex.stateOf(12, 12, 0, true, false, false));
+        assertEquals(KeptIndex.WAITING_HOME, KeptIndex.stateOf(0, 0, 0, false, false, true));
+        assertEquals(KeptIndex.FAILED, KeptIndex.stateOf(10, 12, 2, false, false, false));
+        assertEquals("some failed but others still moving is downloading",
+                KeptIndex.DOWNLOADING, KeptIndex.stateOf(5, 12, 2, false, false, false));
+        assertEquals(KeptIndex.WAITING_WIFI, KeptIndex.stateOf(3, 12, 0, true, false, false));
+        assertEquals(KeptIndex.WAITING_STORAGE, KeptIndex.stateOf(3, 12, 0, false, true, false));
+        assertEquals("queued", KeptIndex.reportState(KeptIndex.WAITING_WIFI));
+        assertEquals("failed", KeptIndex.reportState(KeptIndex.FAILED));
+        org.json.JSONObject failed = new org.json.JSONObject().put("state", "failed").put("done", 10).put("total", 12)
+                .put("failed", 2).put("reason", "Home not reachable");
+        assertEquals("2 of 12 failed: Home not reachable", KeptIndex.describe(failed));
+        assertTrue(KeptIndex.retryable(failed));
+        assertEquals("Waiting for home", KeptIndex.describe(new org.json.JSONObject().put("state", "waiting-home")));
+    }
+
+    @Test public void aLoweredCapDeletesNothingAndSaysHowFarOver() {
+        assertEquals(500_000_000L, KeptIndex.overCap(1000, 1_500_000_000L));
+        assertEquals(0, KeptIndex.overCap(0, 9_000_000_000L));
+        assertEquals(0, KeptIndex.overCap(4096, 1_000_000L));
+    }
 }

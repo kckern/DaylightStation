@@ -195,6 +195,7 @@ test('playing with no window adds one service of media-service, not exported, an
     'activity net.kckern.daylight.cap.mediaservice.shell.NowPlayingActivity exported=false permission=null',
     'activity net.kckern.daylight.cap.mediaservice.shell.PlayActivity exported=false permission=null',
     'service net.kckern.daylight.cap.mediaservice.shell.DaylightMediaService exported=true permission=null',
+    'service net.kckern.daylight.cap.mediaservice.shell.KeepJob exported=false permission=android.permission.BIND_JOB_SERVICE',
     'service net.kckern.daylight.cap.mediaservice.shell.KeepService exported=false permission=null',
     'service net.kckern.daylight.cap.mediaservice.shell.PlayActionService exported=false permission=null',
     'service net.kckern.daylight.cap.mediaservice.shell.RemoteControlService exported=false permission=null',
@@ -205,6 +206,9 @@ test('playing with no window adds one service of media-service, not exported, an
     ['mediaPlayback']);
   assert.deepEqual(EXPECTED_COMPONENTS['service net.kckern.daylight.cap.mediaservice.shell.KeepService'].foregroundServiceType,
     ['dataSync']);
+  // Media3's download scheduler: bound only by the job scheduler, never exported.
+  assert.deepEqual(EXPECTED_COMPONENTS['service androidx.media3.exoplayer.scheduler.PlatformScheduler$PlatformSchedulerService'],
+    { exported: false, permission: 'android.permission.BIND_JOB_SERVICE' });
 });
 
 test('the setup screen has direct destinations for Home and Lifelog', () => {

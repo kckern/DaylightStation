@@ -55,6 +55,17 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <!-- Not exported: only the system's job scheduler binds these. KeepJob keeps the
+             phone's downloads in line with what is kept, app closed (a keep from the web, a
+             retry that is due, a daily re-sync of kept playlists on Wi-Fi). Media3's
+             scheduler starts KeepService when downloads waiting on Wi-Fi or storage can go on. -->
+        <service android:name="net.kckern.daylight.cap.mediaservice.shell.KeepJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+        <service android:name="androidx.media3.exoplayer.scheduler.PlatformScheduler$PlatformSchedulerService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
         <!-- Not exported: the phone as a remote for one screen's session (a second Media3
              session beside the one above). Bound by this app's Now playing screen; the
              system reaches it only through its media notification. The action lets a

@@ -70,12 +70,61 @@ public final class KeptIndex {
         return false;
     }
 
-    /** "12 tracks · 230 MB", "Downloading 3 of 12", "2 of 12 failed: tap to retry". */
+    // One state per kept collection, as every screen shows it (the Play tab, Now playing's
+    // menu, the notification, the web through the inbox report).
+    public static final String READY = "ready", DOWNLOADING = "downloading", WAITING_WIFI = "waiting-wifi",
+            WAITING_STORAGE = "waiting-storage", WAITING_HOME = "waiting-home", FAILED = "failed", REFUSED = "refused";
+
+    /**
+     * The one state of a collection: ready when every track is on the phone (and checked
+     * whole); waiting for home (kept while away), Wi-Fi or storage; failed when some tracks
+     * failed and nothing else is moving; otherwise downloading.
+     */
+    public static String stateOf(int done, int total, int failed, boolean waitingNetwork, boolean waitingStorage,
+                                 boolean waitingHome) {
+        if (waitingHome) return WAITING_HOME;
+        if (total > 0 && done >= total) return READY;
+        if (failed > 0 && done + failed >= total) return FAILED;
+        if (waitingNetwork) return WAITING_WIFI;
+        if (waitingStorage) return WAITING_STORAGE;
+        return DOWNLOADING;
+    }
+
+    /** The inbox report's state for the web: queued | downloading | ready | failed | refused. */
+    public static String reportState(String state) {
+        if (WAITING_WIFI.equals(state) || WAITING_STORAGE.equals(state) || WAITING_HOME.equals(state)) return "queued";
+        return state == null || state.isEmpty() ? DOWNLOADING : state;
+    }
+
+    /** "On this phone · 12 tracks · 230 MB", "Downloading 3 of 12", "2 of 12 failed: Home not reachable". */
     public static String describe(JSONObject k) {
         int done = k.optInt("done"), total = k.optInt("total"), failed = k.optInt("failed");
+        String state = k.optString("state", "");
+        String reason = k.optString("reason", "");
+        switch (state) {
+            case READY: return "On this phone · " + total + (total == 1 ? " track" : " tracks") + " · " + size(k.optLong("bytes"));
+            case WAITING_HOME: return "Waiting for home";
+            case WAITING_WIFI: return "Waiting for Wi-Fi · " + done + " of " + total;
+            case WAITING_STORAGE: return "Waiting for storage · " + done + " of " + total;
+            case FAILED: return failed + " of " + total + " failed" + (reason.isEmpty() ? "" : ": " + reason);
+            case REFUSED: return "No room" + (k.optLong("needBytes") > 0 ? ": needs " + size(k.optLong("needBytes")) + " more" : "");
+            case DOWNLOADING: return "Downloading " + done + " of " + total + (k.optLong("bytes") > 0 ? " · " + size(k.optLong("bytes")) : "");
+            default: break;
+        }
+        // An index written before states (an older build).
         if (failed > 0) return failed + " of " + total + " did not download";
         if (done < total) return k.optBoolean("waiting") ? "Waiting for Wi-Fi · " + done + " of " + total : "Downloading " + done + " of " + total;
         return total + (total == 1 ? " track" : " tracks") + " · " + size(k.optLong("bytes"));
+    }
+
+    /** Whether a row offers Retry now. */
+    public static boolean retryable(JSONObject k) {
+        return FAILED.equals(k.optString("state")) || k.optInt("failed") > 0;
+    }
+
+    /** How far past the cap what is kept now is (bytes, 0 when within): a lowered cap deletes nothing. */
+    public static long overCap(long capMb, long usedBytes) {
+        return capMb <= 0 ? 0 : Math.max(0, usedBytes - capMb * 1_000_000L);
     }
 
     public static String size(long bytes) {

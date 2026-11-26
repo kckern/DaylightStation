@@ -31,7 +31,7 @@ public class KeepOfflineTest {
         assertEquals("plex:10", kept.holding("plex:13").getString("contentId"));
         assertNull(kept.holding("plex:99"));
         // Removing a collection frees only the tracks no other kept collection holds.
-        List<String> orphaned = kept.remove("plex:10");
+        List<String> orphaned = kept.remove("plex:10", 5);
         assertEquals(List.of("plex:11", "plex:13"), orphaned);
         assertEquals(1, kept.list().size());
     }

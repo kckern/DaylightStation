@@ -37,7 +37,7 @@ final class BrowseTree {
         int count = 0;
         for (String entry : (spec == null ? "" : spec).split(";")) {
             if (entry.trim().isEmpty()) continue;
-            if (root(entry) == null) return "must give each tab as Label=target, where a target is recent, continue, catalog or a content id";
+            if (root(entry) == null) return "must give each tab as Label=target, where a target is recent, continue, catalog, kept or a content id";
             count++;
         }
         if (count == 0) return "must name at least one tab, as Label=target";
@@ -62,7 +62,8 @@ final class BrowseTree {
         String target = entry.substring(eq + 1).trim();
         if (label.isEmpty() || label.length() > MAX_LABEL) return null;
         String id;
-        if (MediaId.RECENT.equals(target) || MediaId.CATALOG.equals(target) || MediaId.CONTINUE.equals(target)) id = target;
+        if (MediaId.RECENT.equals(target) || MediaId.CATALOG.equals(target) || MediaId.CONTINUE.equals(target)
+                || MediaId.KEPT.equals(target)) id = target;
         else if (ContentId.valid(target)) id = MediaId.container(target);
         else return null;
         return new MediaNode(id, label, "", null, true, false);
@@ -229,6 +230,41 @@ final class BrowseTree {
             String id = l.optString("contentId");
             if (!ContentId.valid(id) || !shown.add(id)) continue;
             out.add(new MediaNode(MediaId.container(id), l.optString("title"), "Played lately", l.optString("art", null), false, true));
+        }
+        return out;
+    }
+
+    /**
+     * The collections kept on this phone, newest kept first, one page of them: each opens to
+     * its tracks and plays whole. Answered from the phone, never the network, so a car in a
+     * dead zone lists them at once. {@code header} (offline) heads the list with what it is.
+     */
+    static List<MediaNode> keptNodes(List<JSONObject> kept, int pageSize, String header) {
+        List<MediaNode> out = new ArrayList<>();
+        if (header != null) out.add(new MediaNode(MediaId.KEPT, header, "Kept on this phone", null, true, false));
+        for (JSONObject k : kept) {
+            if (out.size() >= pageSize) break;
+            String cid = k.optString("contentId");
+            if (!ContentId.valid(cid)) continue;
+            JSONArray tracks = k.optJSONArray("tracks");
+            int n = tracks == null ? 0 : tracks.length();
+            String art = k.has("art") ? k.optString("art") : null;
+            out.add(new MediaNode(MediaId.container(cid), Json.first(k.optString("title"), "Kept"),
+                    n + (n == 1 ? " track" : " tracks") + " · on this phone", art, true, true));
+        }
+        return out;
+    }
+
+    /** One kept collection's tracks (from the phone), each playing on from itself. */
+    static List<MediaNode> keptTracks(JSONObject collection, int skip, int pageSize) {
+        List<MediaNode> out = new ArrayList<>();
+        JSONArray tracks = collection == null ? null : collection.optJSONArray("tracks");
+        String cid = collection == null ? "" : collection.optString("contentId");
+        for (int i = skip; tracks != null && i < tracks.length() && out.size() < pageSize; i++) {
+            JSONObject t = tracks.optJSONObject(i);
+            if (t == null || !ContentId.valid(t.optString("id"))) continue;
+            out.add(new MediaNode(MediaId.leaf(t.optString("id"), cid), Json.first(t.optString("title"), "Untitled"),
+                    Json.first(t.optString("artist"), t.optString("album")), t.has("artUrl") ? t.optString("artUrl") : null, false, true));
         }
         return out;
     }

@@ -24,6 +24,8 @@ final class ProgressReporter {
         final long seconds;
         final double percent;
         final boolean naturalEnd;
+        /** When this position was heard on the phone (epoch ms); 0 when not known. */
+        long observedAt;
 
         Report(String contentId, String title, String listId, long seconds, double percent, boolean naturalEnd) {
             this.contentId = contentId;
@@ -49,6 +51,9 @@ final class ProgressReporter {
                     .put("title", title)
                     .put("listId", listId == null || listId.isEmpty() ? JSONObject.NULL : listId);
             if (naturalEnd) body.put("naturalEnd", true);
+            // When it was heard, not when it arrives: a report sent late (kept while offline)
+            // must not move the place back past a newer one from another player.
+            if (observedAt > 0) body.put("observedAt", observedAt);
             return body;
         }
     }

@@ -48,6 +48,8 @@ final class PendingProgress {
             JSONObject b = all.optJSONObject(k.next());
             if (b != null) out.add(b);
         }
+        // Oldest heard first, so the backend sees them in the order they happened.
+        out.sort((x, y) -> Long.compare(x.optLong("observedAt", 0), y.optLong("observedAt", 0)));
         return out;
     }
 

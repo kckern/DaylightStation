@@ -212,6 +212,7 @@ public class ShellService extends Service implements ShellServer.Host {
         @Override public String deviceId() { return BuildConfig.DEVICE_ID; }
         @Override public int shellVersionCode() { return versionCode(); }
         @Override public String controlToken() { return TOKEN; }
+        @Override public String inboxToken() { return BuildConfig.INBOX_TOKEN; }
         @Override public File payloadDir() {
             PayloadLoader l = loader;
             return l == null ? new File(getFilesDir(), "payloads") : l.store().dir();

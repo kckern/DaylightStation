@@ -115,7 +115,8 @@ public final class MediaServiceCapability implements Capability {
     @Override public void register(final CoreContext core) {
         this.core = core;
         this.backend = Backend.from(core);
-        BackendHttp http = new BackendHttp(backend::deviceHeader);
+        // Media calls decide "is home there": a short connect timeout (captive Wi-Fi answers nothing).
+        BackendHttp http = BackendHttp.fastConnect(backend::deviceHeader, CONNECT_MS);
         if (api == null) api = new BackendMediaApi(backend, http);
         if (screens == null) screens = new ScreenRemote(http, backend::url, () -> (String) core.settings().get(REMOTE_NAME));
         if (clock == null) clock = System::currentTimeMillis;
@@ -130,11 +131,23 @@ public final class MediaServiceCapability implements Capability {
         core.settings().declare(DOWNLOAD_CAP_MB, SettingsRegistry.Type.INTEGER, 4096, SettingsRegistry.range(0, 512_000));
         core.settings().declare(DOWNLOAD_ON_CELLULAR, SettingsRegistry.Type.BOOLEAN, false, null);
         if (inbox == null) {
-            inbox = new PlayInbox(http, backend::url, core.deviceId(), mediaId -> {
+            boolean emulator = runningOnEmulator();
+            inbox = new PlayInbox(http, backend::url, InboxIdentity.inboxDeviceId(core.deviceId(), emulator),
+                    InboxIdentity.installId(stateDir()), InboxIdentity.model(buildModel()), this::inboxToken, mediaId -> {
                 Launcher l = launcher();
                 if (l == null) throw new IllegalStateException("no player");
                 l.play(mediaId);
-            });
+            }, new PlayInbox.Keeper() {
+                @Override public void keep(String contentId, String title) throws Exception {
+                    Outcome o = MediaServiceCapability.this.keep(new JSONObject().put("id", contentId));
+                    if (o.status != 200) throw new IllegalStateException(o.body.optString("error", "could_not_keep"));
+                    signalKeeper();
+                }
+                @Override public void unkeep(String contentId) {
+                    kept().remove(contentId, clock.getAsLong());
+                    signalKeeper();
+                }
+            }, answered -> { if (answered) health.answered(); else health.failed(clock.getAsLong()); });
         }
         core.settings().declare(REMOTE_NAME, SettingsRegistry.Type.STRING, "Phone",
                 value -> ((String) value).length() > 80 ? "media.remoteName: at most 80 characters" : null);
@@ -280,6 +293,18 @@ public final class MediaServiceCapability implements Capability {
             if ("search".equals(op)) return search(request);
             if ("keep".equals(op)) return keep(request);
             if ("kept".equals(op)) return keptList();
+            if ("kept-restore".equals(op)) {
+                return new Outcome(200, Replies.ok().put("restored", kept().restore(request.optJSONArray("items"))));
+            }
+            if ("keeps-report".equals(op)) {
+                if (inbox != null) inbox.reportKeeps(request.optJSONArray("items") == null ? new JSONArray() : request.optJSONArray("items"));
+                return new Outcome(200, Replies.ok());
+            }
+            if ("inbox".equals(op)) {
+                return new Outcome(200, Replies.ok().put("status", inbox == null ? "none" : inbox.status())
+                        .put("deviceId", inbox == null ? "" : inbox.deviceId()).put("installId", inbox == null ? "" : inbox.installId())
+                        .put("homeDown", health.down(clock.getAsLong())));
+            }
             if ("downloadRules".equals(op)) {
                 return new Outcome(200, Replies.ok().put("capMb", (Integer) core.settings().get(DOWNLOAD_CAP_MB))
                         .put("onCellular", Boolean.TRUE.equals(core.settings().get(DOWNLOAD_ON_CELLULAR))));
@@ -288,12 +313,13 @@ public final class MediaServiceCapability implements Capability {
                 String id = Json.str(request, "id");
                 if (!ContentId.valid(id)) return failure(400, "bad_request");
                 JSONArray orphaned = new JSONArray();
-                for (String t : kept().remove(id)) orphaned.put(t);
+                for (String t : kept().remove(id, clock.getAsLong())) orphaned.put(t);
                 return new Outcome(200, Replies.ok().put("orphaned", orphaned));
             }
             if ("continue".equals(op)) {
-                return new Outcome(200, Replies.ok().put("items",
-                        BrowseTree.continueItems(api.recent(50), backend, Math.max(1, Math.min(20, request.optInt("limit", 8))))));
+                JSONArray items = BrowseTree.continueItems(api.recent(50), backend, Math.max(1, Math.min(20, request.optInt("limit", 8))));
+                health.answered();
+                return new Outcome(200, Replies.ok().put("items", items));
             }
             if ("track-levels".equals(op)) return trackDetail(request, true);
             if ("track-lyrics".equals(op)) return trackDetail(request, false);
@@ -365,6 +391,31 @@ public final class MediaServiceCapability implements Capability {
     }
 
     private List<MediaNode> load(MediaId id, int pageSize) throws Exception {
+        if (id.kind == MediaId.Kind.KEPT) return BrowseTree.keptNodes(kept().list(), pageSize, null);
+        if (id.kind == MediaId.Kind.CONTAINER) {
+            JSONObject k = kept().get(id.contentId);
+            if (k != null && health.down(clock.getAsLong())) return BrowseTree.keptTracks(k, 0, pageSize);
+        }
+        try {
+            List<MediaNode> nodes = loadFromHome(id, pageSize);
+            health.answered();
+            return nodes;
+        } catch (Exception unreachable) {
+            if (unreachable instanceof IllegalArgumentException) throw unreachable;
+            if (unreachable instanceof MediaApi.Refused && ((MediaApi.Refused) unreachable).status < 500) throw unreachable;
+            health.failed(clock.getAsLong());
+            // Offline: a kept collection opens from the phone, and every other level says
+            // what it can show instead of an error: what is on this phone.
+            if (id.kind == MediaId.Kind.CONTAINER && kept().get(id.contentId) != null) {
+                return BrowseTree.keptTracks(kept().get(id.contentId), 0, pageSize);
+            }
+            List<JSONObject> k = kept().list();
+            if (k.isEmpty()) throw unreachable;
+            return BrowseTree.keptNodes(k, pageSize, "Offline: showing what is on this phone");
+        }
+    }
+
+    private List<MediaNode> loadFromHome(MediaId id, int pageSize) throws Exception {
         List<MediaNode> nodes;
         if (id.kind == MediaId.Kind.CONTINUE) {
             nodes = BrowseTree.continueNodes(api.recent(50), backend, recentLists().list());
@@ -402,20 +453,31 @@ public final class MediaServiceCapability implements Capability {
             String album = meta == null ? "" : meta.optString("albumId", "");
             if (!album.isEmpty()) cid = ContentId.source(cid) + ":" + album;
         }
-        Resolver.Resolved r = Resolver.resolve(java.util.Collections.singletonList("c:" + cid), -1, false,
-                api, backend, "daylight-" + core.deviceId(), false);
-        if (r.tracks.isEmpty()) return failure(404, "not_found");
+        // The whole list, not a player's 500-track window: a kept playlist is all of it.
+        List<Track> all = QueueMapper.fromQueue(api.queue(cid, false), backend, "daylight-" + core.deviceId());
+        if (all.isEmpty()) return failure(404, "not_found");
+        boolean cut = all.size() > MAX_KEPT_TRACKS;
+        if (cut) all = new ArrayList<>(all.subList(0, MAX_KEPT_TRACKS));
         JSONArray tracks = new JSONArray();
-        for (Track t : r.tracks) tracks.put(t.toJson());
-        String title = r.tracks.get(0).album, art = r.tracks.get(0).artUrl;
+        for (Track t : all) tracks.put(t.toJson());
+        String title = all.get(0).album, art = all.get(0).artUrl;
         try {
             JSONObject l = api.list(cid, 1, 0);
             title = Json.first(Json.str(l, "title"), Json.str(l, "label"), title);
             String image = BrowseTree.art(backend, Json.str(l, "image"));
             if (image != null) art = image;
         } catch (Exception unnamed) { /* the first track's album and cover */ }
+        // A re-sync of a kept list: tracks taken off it since are released (their audio may go).
+        JSONObject before = kept().get(cid);
         kept().save(cid, title, art, tracks, clock.getAsLong());
+        if (before != null) {
+            java.util.Set<String> now = new java.util.HashSet<>(KeptCollections.trackIds(new JSONObject().put("tracks", tracks)));
+            List<String> dropped = new ArrayList<>();
+            for (String t : KeptCollections.trackIds(before)) if (!now.contains(t)) dropped.add(t);
+            kept().release(cid, dropped, clock.getAsLong());
+        }
         JSONObject out = Replies.ok().put("contentId", cid).put("title", title == null ? "" : title).put("tracks", tracks)
+                .put("cut", cut)
                 .put("capMb", core == null ? 4096 : (Integer) core.settings().get(DOWNLOAD_CAP_MB))
                 .put("onCellular", core != null && Boolean.TRUE.equals(core.settings().get(DOWNLOAD_ON_CELLULAR)));
         if (art != null) out.put("art", art);
@@ -431,19 +493,64 @@ public final class MediaServiceCapability implements Capability {
             if (k.has("art")) o.put("art", k.optString("art"));
             items.put(o);
         }
-        return new Outcome(200, Replies.ok().put("items", items));
+        // Only these tracks' audio may be deleted: ones an explicit removal released. While a
+        // kept file could not be read, nothing may be (the shell is told why).
+        JSONArray deletable = new JSONArray();
+        List<String> bad = kept().quarantined();
+        if (bad.isEmpty()) for (String t : kept().deletable()) deletable.put(t);
+        return new Outcome(200, Replies.ok().put("items", items).put("deletable", deletable)
+                .put("quarantined", new JSONArray(bad)));
     }
 
-    /** Sends progress kept while offline, oldest first; stops at the first that still cannot go. */
+    /**
+     * Sends progress kept while offline, oldest first; stops at the first that still cannot
+     * go. One the backend calls stale (it has newer progress, from another player) is
+     * dropped, not retried, and the phone's own resume point takes the backend's.
+     */
     private void flushPending() {
         for (JSONObject body : pending().waiting()) {
             try {
-                api.log(body);
+                answered(body, api.log(body));
                 pending().sent(body.optString("assetId"));
+            } catch (MediaApi.Refused refused) {
+                // A 4xx is a refusal to keep it: it will never be accepted. A 5xx: later.
+                if (refused.status < 500) { pending().sent(body.optString("assetId")); continue; }
+                return;
             } catch (Exception stillOffline) {
                 return;
             }
         }
+    }
+
+    /** Whether play/log said the report was older than what it has. */
+    static boolean stale(JSONObject answer) {
+        if (answer == null) return false;
+        if (answer.optBoolean("stale", false)) return true;
+        JSONObject r = answer.optJSONObject("response");
+        return r != null && r.optBoolean("stale", false);
+    }
+
+    /** The newer position the backend holds, in seconds, when a stale answer says it; -1 otherwise. */
+    static long serverSeconds(JSONObject answer) {
+        JSONObject r = answer == null ? null : answer.optJSONObject("response");
+        for (JSONObject o : new JSONObject[] { r, answer }) {
+            if (o == null) continue;
+            for (String key : new String[] { "seconds", "playhead", "currentSeconds" }) {
+                if (o.has(key) && o.optLong(key, -1) >= 0) return o.optLong(key);
+            }
+        }
+        return -1;
+    }
+
+    /** A stale answer: the phone's offline resume point follows the backend's newer one. */
+    private void answered(JSONObject body, JSONObject answer) {
+        if (!stale(answer)) return;
+        long seconds = serverSeconds(answer);
+        try {
+            if (seconds >= 0) positions().keep(new JSONObject(body.toString()).put("seconds", seconds)
+                    .put("observedAt", clock.getAsLong()));
+        } catch (Exception ignored) { }
+        if (core != null) core.shell().note("MEDIA", "play/log: newer progress on home for " + body.optString("assetId") + "; this report dropped");
     }
 
     private Outcome resolve(JSONObject request) throws Exception {
@@ -454,18 +561,26 @@ public final class MediaServiceCapability implements Capability {
             Object id = ids.opt(i);
             mediaIds.add(id instanceof String ? (String) id : null);
         }
-        Resolver.Resolved r;
-        try {
-            r = Resolver.resolve(mediaIds, request.optInt("startIndex", -1), request.optBoolean("explicitPosition"),
-                    api, backend, "daylight-" + core.deviceId(), request.optBoolean("shuffle"));
-        } catch (Exception unreachable) {
-            // No backend (no network, a restart): a collection kept on this phone plays from here.
-            // A bad request or a 404 is an answer, not an outage.
-            if (unreachable instanceof IllegalArgumentException) throw unreachable;
-            if (unreachable instanceof MediaApi.Refused && ((MediaApi.Refused) unreachable).status == 404) throw unreachable;
-            Resolver.Resolved offline = mediaIds.size() == 1 ? Offline.resolve(mediaIds.get(0), kept(), positions()) : null;
-            if (offline == null) throw unreachable;
-            r = offline;
+        Resolver.Resolved r = null;
+        Resolver.Resolved offline = mediaIds.size() == 1 ? Offline.resolve(mediaIds.get(0), kept(), positions()) : null;
+        // Home failed a moment ago: something kept plays from the phone at once.
+        if (offline != null && health.down(clock.getAsLong())) r = offline;
+        if (r == null) {
+            try {
+                // A place listened to offline goes out first, so home resumes from the newer one.
+                flushPending();
+                r = Resolver.resolve(mediaIds, request.optInt("startIndex", -1), request.optBoolean("explicitPosition"),
+                        api, backend, "daylight-" + core.deviceId(), request.optBoolean("shuffle"));
+                health.answered();
+            } catch (Exception unreachable) {
+                // No backend (no network, a restart): a collection kept on this phone plays from here.
+                // A bad request or a 404 is an answer, not an outage.
+                if (unreachable instanceof IllegalArgumentException) throw unreachable;
+                if (unreachable instanceof MediaApi.Refused && ((MediaApi.Refused) unreachable).status < 500) throw unreachable;
+                health.failed(clock.getAsLong());
+                if (offline == null) throw unreachable;
+                r = offline;
+            }
         }
         JSONArray tracks = new JSONArray();
         for (Track t : r.tracks) tracks.put(t.toJson());
@@ -499,6 +614,52 @@ public final class MediaServiceCapability implements Capability {
         }
         stateDir = dir;
         return dir;
+    }
+
+    /** The most tracks one kept collection holds; a longer list is kept to here and says so. */
+    static final int MAX_KEPT_TRACKS = 5000;
+    /** Media calls give up connecting after this: offline is learnt in seconds. */
+    static final int CONNECT_MS = 3_000;
+    private final BackendHealth health = new BackendHealth();
+
+    /** The token the shell holds for the inbox (empty when it holds none, or is too old to say). */
+    private String inboxToken() {
+        try {
+            Object shell = core == null ? null : core.shell();
+            return shell == null ? "" : ((net.kckern.daylight.api.ShellServices) shell).inboxToken();
+        } catch (LinkageError olderShell) {
+            return "";
+        }
+    }
+
+    private static boolean runningOnEmulator() {
+        try {
+            return InboxIdentity.emulator(android.os.Build.FINGERPRINT, android.os.Build.HARDWARE,
+                    android.os.Build.PRODUCT, android.os.Build.MODEL);
+        } catch (Throwable noAndroid) {
+            return false;   // a JVM test
+        }
+    }
+
+    private static String buildModel() {
+        try { return android.os.Build.MODEL; } catch (Throwable noAndroid) { return ""; }
+    }
+
+    /** Kept collections changed from here (the inbox): the shell's keeper downloads or deletes to match. */
+    static final String KEEP_JOB = "net.kckern.daylight.cap.mediaservice.shell.KeepJob";
+    static final int KEEP_JOB_SYNC_ID = 7_204;
+
+    private void signalKeeper() {
+        Object context = core == null ? null : core.shell().context();
+        if (context == null) return;
+        try {
+            android.content.Context c = (android.content.Context) context;
+            android.app.job.JobScheduler js = (android.app.job.JobScheduler) c.getSystemService(android.content.Context.JOB_SCHEDULER_SERVICE);
+            js.schedule(new android.app.job.JobInfo.Builder(KEEP_JOB_SYNC_ID,
+                    new android.content.ComponentName(c.getPackageName(), KEEP_JOB)).setOverrideDeadline(0).build());
+        } catch (Throwable noJob) {
+            core.shell().note("MEDIA", "keep: could not ask the shell to sync (" + noJob.getClass().getSimpleName() + ")");
+        }
     }
 
     private KeptCollections kept;
@@ -627,7 +788,8 @@ public final class MediaServiceCapability implements Capability {
         if (!ContentId.valid(id)) throw new IllegalArgumentException("event needs 'id'");
         List<ProgressReporter.Report> reports = reporter.onEvent(id, Json.str(e, "title"), Json.str(e, "listId"),
                 e.optLong("positionMs", 0), e.optLong("durationMs", 0), Json.str(e, "state"), clock.getAsLong());
-        for (ProgressReporter.Report report : reports) send(report);
+        long heard = clock.getAsLong();
+        for (ProgressReporter.Report report : reports) { report.observedAt = heard; send(report); }
         return new Outcome(200, Replies.ok().put("reports", reports.size()));
     }
 
@@ -641,7 +803,7 @@ public final class MediaServiceCapability implements Capability {
                 JSONObject body = report.toBody();
                 positions().keep(body);
                 try {
-                    api.log(body);
+                    answered(body, api.log(body));
                 } catch (MediaApi.Refused answered) {
                     // A server error is a backend that was not there; a 4xx is a refusal to keep.
                     if (answered.status >= 500) pending().keep(body);

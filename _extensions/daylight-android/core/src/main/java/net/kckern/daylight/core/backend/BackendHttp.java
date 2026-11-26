@@ -37,6 +37,14 @@ public final class BackendHttp implements Http {
 
     public BackendHttp(DeviceHeader device) { this(device, CONNECT_MS, UPLOAD_READ_MS); }
 
+    /**
+     * For calls that decide "is home there": a short connect timeout, so a phone on a
+     * captive or in-flight Wi-Fi learns it is offline in seconds, not after five.
+     */
+    public static BackendHttp fastConnect(DeviceHeader device, int connectMs) {
+        return new BackendHttp(device, connectMs, UPLOAD_READ_MS);
+    }
+
     /** With its own timeouts, for a test. */
     BackendHttp(DeviceHeader device, int connectMs, int uploadReadMs) {
         this.device = device;
@@ -58,11 +66,21 @@ public final class BackendHttp implements Http {
     }
 
     @Override public Reply postJson(String url, String json) throws IOException {
-        return sendJson("POST", url, json);
+        return sendJson("POST", url, json, null);
+    }
+
+    @Override public Reply get(String url, Map<String, String> headers) throws IOException {
+        HttpURLConnection c = open(url, "GET", READ_MS);
+        if (headers != null) for (Map.Entry<String, String> h : headers.entrySet()) c.setRequestProperty(h.getKey(), h.getValue());
+        return finish(c);
+    }
+
+    @Override public Reply postJson(String url, String json, Map<String, String> headers) throws IOException {
+        return sendJson("POST", url, json, headers);
     }
 
     @Override public Reply putJson(String url, String json) throws IOException {
-        return sendJson("PUT", url, json);
+        return sendJson("PUT", url, json, null);
     }
 
     /**
@@ -70,13 +88,14 @@ public final class BackendHttp implements Http {
      * a SocketTimeoutException after it means sent and not answered in time. A caller that
      * must not repeat a command (a screen's pause) tells the two apart.
      */
-    private Reply sendJson(String method, String url, String json) throws IOException {
+    private Reply sendJson(String method, String url, String json, Map<String, String> headers) throws IOException {
         byte[] bytes = (json == null ? "{}" : json).getBytes(StandardCharsets.UTF_8);
         HttpURLConnection c;
         try {
             c = open(url, method, READ_MS);
             c.setDoOutput(true);
             c.setRequestProperty("Content-Type", "application/json");
+            if (headers != null) for (Map.Entry<String, String> h : headers.entrySet()) c.setRequestProperty(h.getKey(), h.getValue());
             c.setFixedLengthStreamingMode(bytes.length);
             try (OutputStream out = c.getOutputStream()) { out.write(bytes); }
         } catch (IOException notSent) {

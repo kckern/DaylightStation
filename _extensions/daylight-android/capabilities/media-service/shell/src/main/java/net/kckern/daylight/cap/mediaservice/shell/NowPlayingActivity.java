@@ -885,7 +885,8 @@ public class NowPlayingActivity extends Activity {
             kept = KeepStore.get(this).keptHolding(current.mediaId);
             if (kept == null) menu.getMenu().add(0, 6, 0, "Keep on this phone");
             else {
-                menu.getMenu().add(0, 8, 0, "On this phone: " + net.kckern.daylight.shellkit.KeptIndex.describe(kept)).setEnabled(false);
+                menu.getMenu().add(0, 8, 0, net.kckern.daylight.shellkit.KeptIndex.describe(kept)).setEnabled(false);
+                if (net.kckern.daylight.shellkit.KeptIndex.retryable(kept)) menu.getMenu().add(0, 9, 0, "Retry now");
                 menu.getMenu().add(0, 7, 0, "Remove from this phone");
             }
         }
@@ -904,6 +905,11 @@ public class NowPlayingActivity extends Activity {
                         KeepStore.get(this).remove(keptNow.optString("contentId"), this::say);
                     }
                     break;
+                case 9: if (keptNow != null) {
+                        note("download.retry.tap");
+                        KeepStore.get(this).retry(keptNow.optString("contentId"), this::say);
+                    }
+                    break;
                 default: break;
             }
             return true;
@@ -918,7 +924,21 @@ public class NowPlayingActivity extends Activity {
         String id = list.contains(":") ? "c:" + list : "p:" + item.mediaId;
         note("download.keep.tap", "fromList", !list.isEmpty());
         say("Getting it ready to keep…");
-        KeepStore.get(this).keep(id, this::say);
+        KeepStore.get(this).keep(id, this::askBigKeep, this::say);
+    }
+
+    /** A keep over a quarter of the space set for downloads is asked about once, with its size. */
+    private void askBigKeep(String title, long needBytes, long capMb, Runnable yes, Runnable no) {
+        if (isFinishing() || isDestroyed()) { no.run(); return; }
+        note("download.ask", "mb", needBytes / 1_000_000);
+        String size = net.kckern.daylight.shellkit.KeptIndex.size(needBytes);
+        new android.app.AlertDialog.Builder(this, DaylightTheme.alert())
+                .setTitle("Keep " + (title == null || title.isEmpty() ? "this" : title) + "?")
+                .setMessage(size + " of the " + capMb + " MB set for downloads.")
+                .setPositiveButton("Keep", (d, w) -> { note("download.ask.yes"); yes.run(); })
+                .setNegativeButton("Cancel", (d, w) -> { note("download.ask.no"); no.run(); })
+                .setOnCancelListener(d -> no.run())
+                .show();
     }
 
     private void say(String line) {

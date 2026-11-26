@@ -38,7 +38,7 @@ public class BrowseTreeTest {
     @Test public void rootsAreLimitedToWhatACarShows() {
         assertEquals("must have at most 4 tabs (a car shows no more)", BrowseTree.rootsProblem("A=recent;B=catalog;C=plex:1;D=plex:2;E=plex:3"));
         assertEquals("must name at least one tab, as Label=target", BrowseTree.rootsProblem(""));
-        assertEquals("must give each tab as Label=target, where a target is recent, continue, catalog or a content id",
+        assertEquals("must give each tab as Label=target, where a target is recent, continue, catalog, kept or a content id",
                 BrowseTree.rootsProblem("Music=albums"));
         assertNotNull(BrowseTree.rootsProblem("=recent"));
         assertNotNull(BrowseTree.rootsProblem("Music=plex:../x"));

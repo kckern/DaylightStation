@@ -17,6 +17,13 @@ public interface ShellServices {
     /** The secret every control API request must present. */
     String controlToken();
 
+    /**
+     * The device's bearer token for the backend's command inbox (a phone polled for Play-on
+     * and Keep commands); "" when the build holds none. Default: none, for shells older
+     * than the inbox.
+     */
+    default String inboxToken() { return ""; }
+
     /** Directory payloads live in. A payload may keep its own state beneath it. */
     File payloadDir();
 

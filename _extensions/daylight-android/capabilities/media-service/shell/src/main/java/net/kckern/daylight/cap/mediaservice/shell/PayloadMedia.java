@@ -127,6 +127,16 @@ final class PayloadMedia {
         return port.call(new JSONObject().put("op", "unkeep").put("id", contentId).toString(), waitMs);
     }
 
+    /** Puts back kept collections the payload lost (from the shell's mirror): {ok, restored}. */
+    String keptRestore(org.json.JSONArray items, long waitMs) throws Exception {
+        return port.call(new JSONObject().put("op", "kept-restore").put("items", items).toString(), waitMs);
+    }
+
+    /** The whole kept list with each one's state, for the web (through the inbox). */
+    String keepsReport(org.json.JSONArray items, long waitMs) throws Exception {
+        return port.call(new JSONObject().put("op", "keeps-report").put("items", items).toString(), waitMs);
+    }
+
     String trackLyrics(String contentId, long waitMs) throws Exception {
         return port.call(new JSONObject().put("op", "track-lyrics").put("id", contentId).toString(), waitMs);
     }

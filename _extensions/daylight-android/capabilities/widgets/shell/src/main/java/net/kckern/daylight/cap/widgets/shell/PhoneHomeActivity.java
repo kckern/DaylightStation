@@ -618,13 +618,23 @@ public class PhoneHomeActivity extends Activity {
         keptBox.addView(label(net.kckern.daylight.shellkit.KeptIndex.size(used)
                 + (cap > 0 ? " of " + net.kckern.daylight.shellkit.KeptIndex.size(cap * 1_000_000L) : "") + " used for downloads",
                 Type.LABEL, t.inkMuted));
+        long over = net.kckern.daylight.shellkit.KeptIndex.overCap(cap, used);
+        if (over > 0) {
+            // A lowered cap deletes nothing: it says so, and new keeps wait for room.
+            keptBox.addView(label(net.kckern.daylight.shellkit.KeptIndex.size(over) + " over the space set for downloads."
+                    + " Nothing was deleted; remove something to keep more.", Type.LABEL, t.attention));
+        }
         boolean busy = false;
         for (JSONObject k : index) {
-            boolean whole = k.optInt("total") > 0 && k.optInt("done") >= k.optInt("total");
-            if (!whole && k.optInt("failed") == 0) busy = true;
+            String state = k.optString("state");
+            boolean whole = net.kckern.daylight.shellkit.KeptIndex.READY.equals(state)
+                    || (state.isEmpty() && k.optInt("total") > 0 && k.optInt("done") >= k.optInt("total"));
+            if (net.kckern.daylight.shellkit.KeptIndex.DOWNLOADING.equals(state)) busy = true;
             keptBox.addView(keptCard(k, whole));
         }
+        // Moving: redrawn every 3 s; waiting: every 30 s (a network or room may come).
         if (busy) timer.postDelayed(keptTick, 3000);
+        else if (!index.isEmpty()) timer.postDelayed(keptTick, 30_000);
     }
 
     private View keptCard(JSONObject k, boolean whole) {
@@ -651,11 +661,36 @@ public class PhoneHomeActivity extends Activity {
         sub.setEllipsize(android.text.TextUtils.TruncateAt.END);
         words.addView(sub);
         card.addView(words, new LinearLayout.LayoutParams(0, -2, 1));
-        card.setContentDescription(title + ", on this phone. " + line);
+        String cid = k.optString("contentId");
+        String state = k.optString("state");
+        boolean playable = k.optInt("total") > 0;
+        if (net.kckern.daylight.shellkit.KeptIndex.retryable(k)) {
+            TextView retry = label("Retry", Type.LABEL, t.primary);
+            retry.setPadding(dp(12), dp(10), dp(4), dp(10));
+            retry.setContentDescription("Retry " + title);
+            net.kckern.daylight.shellkit.UiTelemetry.tag(retry, "play.kept.retry");
+            retry.setOnClickListener(v -> { keepJob("retry", cid); toast("Trying again"); });
+            card.addView(retry);
+        }
+        card.setContentDescription(title + ". " + line);
         net.kckern.daylight.shellkit.UiTelemetry.tag(card, "play.kept");
-        String id = "c:" + k.optString("contentId");
+        String id = "c:" + cid;
         // A part-kept collection plays too: online it streams the rest; offline, what is here.
-        card.setOnClickListener(v -> playHere(id));
+        if (playable) card.setOnClickListener(v -> playHere(id));
+        else card.setOnClickListener(v -> toast(line));
+        // Long-press: Remove (also for one refused or waiting for home), Retry when it failed.
+        card.setOnLongClickListener(v -> {
+            android.widget.PopupMenu menu = new android.widget.PopupMenu(this, card);
+            if (net.kckern.daylight.shellkit.KeptIndex.retryable(k)) menu.getMenu().add(0, 2, 0, "Retry now");
+            menu.getMenu().add(0, 1, 0, "Remove from this phone");
+            menu.setOnMenuItemClickListener(item -> {
+                if (item.getItemId() == 2) { keepJob("retry", cid); toast("Trying again"); }
+                else { keepJob("remove", cid); toast("Removing"); }
+                return true;
+            });
+            menu.show();
+            return true;
+        });
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.topMargin = dp(6);
         card.setLayoutParams(lp);
@@ -676,6 +711,28 @@ public class PhoneHomeActivity extends Activity {
             return true;
         }
     }
+
+    /**
+     * Asks media-service's keeper (its KeepJob, so it runs whether or not the player is up)
+     * to retry or remove one kept collection.
+     */
+    private void keepJob(String what, String contentId) {
+        try {
+            android.app.job.JobScheduler js = getSystemService(android.app.job.JobScheduler.class);
+            android.os.PersistableBundle extras = new android.os.PersistableBundle();
+            extras.putString("action", what);
+            extras.putString("contentId", contentId);
+            js.schedule(new android.app.job.JobInfo.Builder(KEEP_ACTION_JOB_ID,
+                    new android.content.ComponentName(getPackageName(), KEEP_JOB)).setOverrideDeadline(0).setExtras(extras).build());
+            timer.postDelayed(keptTick, 1500);
+        } catch (RuntimeException notScheduled) {
+            toast("Could not do that now");
+        }
+    }
+
+    /** media-service's job for kept collections (KeepJob.ACTION_ID); widgets does not link media-service. */
+    private static final String KEEP_JOB = "net.kckern.daylight.cap.mediaservice.shell.KeepJob";
+    private static final int KEEP_ACTION_JOB_ID = 7_208;
 
     /** Opens Now playing on this phone and starts {@code mediaId} there (p: resumes a track, c: plays a list). */
     private void playHere(String mediaId) {
