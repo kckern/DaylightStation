@@ -64,13 +64,20 @@ export function useItemVerbs() {
       case 'details':
         push('detail', { contentId: item.id });
         return 'detail';
-      case 'playNow':
-        return collection ? playContainerAsQueue(item.id, item) : playLeaf(item, ctx.entry);
+      case 'playNow': {
+        const route = collection ? playContainerAsQueue(item.id, item) : playLeaf(item, ctx.entry);
+        // A film nobody has chosen a screen for: ask where (Play on…).
+        if (route === 'ask') { setOneShot({ kind: 'playOn', item }); return 'picker'; }
+        return route;
+      }
       case 'playHere':
         return dispatchLeafVerb('playNow', item.id, collection ? { ...item, itemType: 'container' } : item,
           collection ? { targetIds: [], collection: true } : { targetIds: [] });
-      case 'shuffle':
-        return playContainerAsQueue(item.id, item, { shuffle: true });
+      case 'shuffle': {
+        const route = playContainerAsQueue(item.id, item, { shuffle: true });
+        if (route === 'ask') { setOneShot({ kind: 'playOn', item }); return 'picker'; }
+        return route;
+      }
       case 'add':
         return collection ? addContainerToQueue(item.id, item) : dispatchLeafVerb('add', item.id, item);
       case 'playNext':
@@ -98,7 +105,7 @@ export function useItemVerbs() {
     setChoice(null);
     if (!current) return;
     mediaLog.spotChosen({ contentId: current.item.id, startAt, deviceId: spot?.deviceId ?? null });
-    dispatchLeafVerb('playNow', current.item.id, current.item, { startAt });
+    if (dispatchLeafVerb('playNow', current.item.id, current.item, { startAt }) === 'ask') setOneShot({ kind: 'playOn', item: current.item });
   }, [choice, dispatchLeafVerb]);
 
   const overlays = (

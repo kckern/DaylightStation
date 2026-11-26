@@ -45,7 +45,7 @@ import "./Search.scss";
 
 export function MediaContentSearch({ inputRef }) {
   const [oneShotAction, setOneShotAction] = useState(null);
-  const { scopes, currentScopeKey, currentScope, resetScope } = useSearchContext();
+  const { scopes, currentScopeKey, currentScope } = useSearchContext();
   const { dispatch, dispatchLeafVerb, playContainerAsQueue } = useContentDispatch();
   const { rowLabelsFor, continueFor } = useRowLabels();
   const { extraActions, runHousehold } = useHouseholdResultActions();
@@ -102,8 +102,11 @@ export function MediaContentSearch({ inputRef }) {
     log.info('select', { contentId: id, title: item?.title ?? null, type: item?.type ?? null, verb: 'playAll' });
     recordPick(queryRef.current, item, 'play');
     // A playable row's own ▶: play it where the ▶ says.
+    // A film nobody has chosen a screen for asks where (its ▶ read "Play on…").
+    const ask = (route, what = item) => { if (route === 'ask') setOneShotAction({ kind: 'playOn', item: what }); };
     if (!isContainer(item)) {
       const route = dispatchLeafVerb('playNow', id, item);
+      ask(route);
       log.info('dispatch', { contentId: id, route, verb: 'play' });
       return;
     }
@@ -111,11 +114,14 @@ export function MediaContentSearch({ inputRef }) {
     const cont = continueFor(item);
     if (cont) {
       mediaLog.collectionContinued({ collectionId: id, contentId: cont.contentId, label: cont.label });
-      const route = dispatchLeafVerb('playNow', cont.contentId, { id: cont.contentId, title: cont.title, type: 'episode', itemType: 'leaf' });
+      const episode = { id: cont.contentId, title: cont.title, type: 'episode', itemType: 'leaf' };
+      const route = dispatchLeafVerb('playNow', cont.contentId, episode);
+      ask(route, episode);
       log.info('dispatch', { contentId: cont.contentId, route, verb: 'continue' });
       return;
     }
     const route = playContainerAsQueue(id, item);
+    ask(route);
     log.info('dispatch', { contentId: id, route, verb: 'playAll' });
   }, [playContainerAsQueue, dispatchLeafVerb, continueFor, log, recordPick]);
 
@@ -130,7 +136,8 @@ export function MediaContentSearch({ inputRef }) {
     if (action === 'playHere') { dispatchLeafVerb('playNow', id, item, { targetIds: [] }); return; }
     if (action === 'playOn' || action === 'addOn') { setOneShotAction({ kind: action, item }); return; }
     if (action !== 'detail' && action !== 'details') {
-      dispatchLeafVerb(action === 'upNext' ? 'playFirst' : action, id, item);
+      const route = dispatchLeafVerb(action === 'upNext' ? 'playFirst' : action, id, item);
+      if (route === 'ask') setOneShotAction({ kind: 'playOn', item });
       return;
     }
     applyResultRowVerb('detail', item, { queue, push });
@@ -169,9 +176,14 @@ export function MediaContentSearch({ inputRef }) {
             appResults
             allowFreeform={false}
             retainQueryOnEscape
+            // The box keeps its words and results when the list closes for any
+            // reason (clicking away, opening a result): going back to the same
+            // search is the common case. ✕ clears it.
+            retainQueryOnClose
             // No retainPlayableSelection: picking a playable row OPENS it (its
             // detail page), so the list closes like any navigation does.
-            onClose={resetScope}
+            // No scope reset on close: the kept query keeps its scope too, so the
+            // results shown on reopen are the ones it found.
             // A one-shot Play on… / Add on… picker is a destination choice made FOR this search: its
             // modal takes focus, which must not read as leaving the search (FIND.1a/AC5).
             destinationInteractionActive={destinationInteractionActive || oneShotAction !== null}

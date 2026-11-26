@@ -26,11 +26,13 @@ export function useRowLabels() {
     const subtitle = startingOnFor(item.id) ?? undefined;
     if (isShowItem(item)) return { playOn: 'Show on…', subtitle };
     const { short, sentence } = labelsFor(item);
-    const elsewhere = destinationFor(item).targetIds.length > 0;
+    const where = destinationFor(item);
+    const elsewhere = where.targetIds.length > 0;
     const title = item.title ? `${sentence.replace(/^Play/, `Play ${item.title}`)}` : sentence;
     const named = {
       playTitle: title,
-      playNow: sentence,
+      // Asking ("Play on…") already has its own menu item: Play Now keeps its name.
+      playNow: where.source === 'ask' ? null : sentence,
       playHere: elsewhere ? 'Play here' : null,
       playElsewhere: elsewhere,
       queueWhere: elsewhere ? short : null,

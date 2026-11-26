@@ -24,6 +24,11 @@ vi.mock("../shell/NavProvider.jsx", () => ({ useNav: () => ({ pop, backDestinati
 import { DetailView } from "./DetailView.jsx";
 import { FleetContext } from "../fleet/FleetProvider.jsx";
 import { habitsStore } from "../habits/mediaHabits.js";
+import { habitsStore as seedHabits } from "../habits/mediaHabits.js";
+
+// These tests describe a browser that has chosen to watch here: with nothing
+// chosen, a film's ▶ asks where (Play on…) instead — see habits/playDestination.js.
+beforeEach(() => { seedHabits().recordScreen('video', []); });
 
 beforeEach(() => {
   vi.clearAllMocks();

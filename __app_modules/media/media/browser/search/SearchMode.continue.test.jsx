@@ -39,6 +39,11 @@ vi.mock("../../../../../frontend/src/lib/api.mjs", () => ({ DaylightAPI: vi.fn()
 import { SearchProvider } from "./SearchProvider.jsx";
 import { CastTargetProvider } from "../cast/CastTargetProvider.jsx";
 import { SearchMode } from "./SearchMode.jsx";
+import { habitsStore as seedHabits } from "../habits/mediaHabits.js";
+
+// These tests describe a browser that has chosen to watch here: with nothing
+// chosen, a film's ▶ asks where (Play on…) instead — see habits/playDestination.js.
+beforeEach(() => { seedHabits().recordScreen('video', []); });
 
 const show = { id: 'plex:100', title: 'Bluey', type: 'show', itemType: 'container', childCount: 155 };
 
@@ -66,7 +71,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   resetApiResourceCache();
   results = [show];
-  localStorage.clear();
+  localStorage.clear(); seedHabits().recordScreen('video', []);
 });
 
 describe('SearchMode collection inline play (FIND.8b/AC2)', () => {

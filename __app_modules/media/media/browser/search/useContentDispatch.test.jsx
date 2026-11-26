@@ -50,6 +50,11 @@ vi.mock('@mantine/notifications', () => ({
 
 import { useContentDispatch } from "./useContentDispatch.js";
 import { createLocalSessionController } from "../session/LocalSessionController.js";
+import { habitsStore as seedHabits } from "../habits/mediaHabits.js";
+
+// These tests describe a browser that has chosen to watch here: with nothing
+// chosen, a film's ▶ asks where (Play on…) instead — see habits/playDestination.js.
+beforeEach(() => { seedHabits().recordScreen('video', []); });
 
 // Helper: render the hook and return bound dispatch/playContainerAsQueue
 // functions (call-through, so `act` around the caller's own call still works).

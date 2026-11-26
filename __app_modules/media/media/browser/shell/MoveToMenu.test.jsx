@@ -21,7 +21,7 @@ import { MoveToMenu, moveDestinations } from "./MoveToMenu.jsx";
 
 const devices = [
   { id: 'kitchen', name: 'Kitchen TV', content_control: {} },
-  { id: 'den', name: 'Den TV', location: 'Den', fleet: true },
+  { id: 'den', name: 'Den TV', location: 'Den', fleet: true, content_control: { type: 'websocket' } },
   { id: 'browser:x', name: 'Phone' },
   { id: 'piano', name: 'Piano' },
 ];
@@ -29,6 +29,20 @@ const devices = [
 describe('MoveToMenu', () => {
   it('offers this device and every other content screen, never the source or a browser', () => {
     expect(moveDestinations(devices, 'kitchen').map((d) => d.id)).toEqual(['den']);
+  });
+
+  it('a film never moves to a headset or a display with no receiver; the usual screen comes first, then by name', () => {
+    const house = [
+      { id: 'zeta-tv', name: 'Zeta TV', content_control: {} },
+      { id: 'garage-tv', name: 'Garage Gym TV', fleet: true },
+      { id: 'speaker-red', name: 'Red Headset', type: 'speaker', fleet: true },
+      { id: 'alpha-tv', name: 'Alpha TV', content_control: {} },
+      { id: 'office-tv', name: 'Office Screen', content_control: {} },
+    ];
+    expect(moveDestinations(house, null, { kind: 'video', preferredIds: ['office-tv'] }).map((d) => d.id))
+      .toEqual(['office-tv', 'alpha-tv', 'zeta-tv']);
+    expect(moveDestinations(house, null, { kind: 'audio' }).map((d) => d.id))
+      .toEqual(['alpha-tv', 'office-tv', 'speaker-red', 'zeta-tv']); // by name: Red Headset
   });
 
   it('moves the screen\'s playback here and hands navigation back to Remote', async () => {

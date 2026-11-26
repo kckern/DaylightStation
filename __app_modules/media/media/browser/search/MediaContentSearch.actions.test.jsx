@@ -164,7 +164,7 @@ describe('MediaContentSearch action-menu retention', () => {
     await waitFor(() => expect(onBaseDismiss).toHaveBeenCalledTimes(1));
   });
 
-  it('[RELY.10a] retains the desktop draft across Escape but not base dismissal', async () => {
+  it('[RELY.10a] retains the desktop draft and its scope across Escape, without the base dismissal', async () => {
     const { onBaseDismiss } = renderSearch();
     const input = screen.getByRole('textbox', { name: 'Search media…' });
     act(() => input.focus());
@@ -175,11 +175,27 @@ describe('MediaContentSearch action-menu retention', () => {
 
     await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
     expect(input).toHaveValue('Frozen');
-    expect(resetScope).toHaveBeenCalledTimes(1);
+    // The kept query keeps its scope: no reset on close.
+    expect(resetScope).not.toHaveBeenCalled();
     expect(onBaseDismiss).not.toHaveBeenCalled();
     fireEvent.focus(input);
     expect(input).toHaveValue('Frozen');
     await expect(screen.getByRole('listbox')).toBeVisible();
+  });
+
+  it('a kept query reopens with the results it found, and ✕ clears it', async () => {
+    renderSearch();
+    const input = screen.getByRole('textbox', { name: 'Search media…' });
+    act(() => input.focus());
+    fireEvent.change(input, { target: { value: 'Disclosure Day' } });
+    await screen.findByTestId('combobox-option-plex:697368');
+    pointerActivate(screen.getByTestId('outside-surface'));
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
+    fireEvent.focus(input);
+    expect(input).toHaveValue('Disclosure Day');
+    expect(await screen.findByTestId('combobox-option-plex:697368')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('combobox-clear-search'));
+    await waitFor(() => expect(input).toHaveValue(''));
   });
 
   it.each([
@@ -187,7 +203,7 @@ describe('MediaContentSearch action-menu retention', () => {
     { outsideId: 'outside-focus', addCount: 1 },
     { outsideId: 'outside-surface', addCount: 2 },
     { outsideId: 'outside-focus', addCount: 2 },
-  ])('closes on the first $outsideId pointer after $addCount pointer Add actions without reopening', async ({ outsideId, addCount }) => {
+  ])('closes on the first $outsideId pointer after $addCount pointer Add actions, keeping the query for next time', async ({ outsideId, addCount }) => {
     const { controller, play } = renderSearch();
     const input = screen.getByRole('textbox', { name: 'Search media…' });
     act(() => input.focus());
@@ -207,10 +223,11 @@ describe('MediaContentSearch action-menu retention', () => {
     const focusBeforeOutside = document.activeElement;
     pointerActivate(screen.getByTestId(outsideId));
     if (outsideId === 'outside-surface') expect(document.activeElement).toBe(focusBeforeOutside);
-    await waitFor(() => expect(input).toHaveValue(''));
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
     await nextFrame();
     await nextFrame();
-    expect(input).toHaveValue('');
+    // Closed, but the words stay: going back to the same search is the common case.
+    expect(input).toHaveValue('Disclosure Day');
     expect(screen.queryByRole('listbox')).toBeNull();
     expect(controller.getSnapshot().queue.items.map(item => item.contentId)).toEqual(
       addCount === 1 ? ['plex:existing', 'plex:697368'] : ['plex:existing', 'plex:697368', 'plex:697368']

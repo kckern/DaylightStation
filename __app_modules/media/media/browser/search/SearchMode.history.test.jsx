@@ -117,6 +117,11 @@ import { CastTargetProvider } from "../cast/CastTargetProvider.jsx";
 import { NavProvider, useNav } from "../shell/NavProvider.jsx";
 import { SearchMode } from "./SearchMode.jsx";
 import { createLocalSessionController } from "../session/LocalSessionController.js";
+import { habitsStore as seedHabits } from "../habits/mediaHabits.js";
+
+// These tests describe a browser that has chosen to watch here: with nothing
+// chosen, a film's ▶ asks where (Play on…) instead — see habits/playDestination.js.
+beforeEach(() => { seedHabits().recordScreen('video', []); });
 
 // Reads the REAL NavProvider so "where did the user end up" is an assertion on
 // the live nav state, not on a spy's arguments.
@@ -150,7 +155,7 @@ const probe = () => screen.getByTestId('nav-probe');
 
 beforeEach(() => {
   vi.clearAllMocks();
-  localStorage.clear();
+  localStorage.clear(); seedHabits().recordScreen('video', []);
   dispatches = new Map();
   dispatchResult = Promise.resolve([]);
   controllerFetch = vi.fn(async () => ({

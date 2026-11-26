@@ -30,6 +30,11 @@ import { createFleetStore } from "../fleet/fleetStore.js";
 import { FleetContext } from "../fleet/FleetProvider.jsx";
 import { invalidateApiResources, resetApiResourceCache, useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 import { HOUSEHOLD_PATHS } from '../household/householdApi.js';
+import { habitsStore as seedHabits } from "../habits/mediaHabits.js";
+
+// These tests describe a browser that has chosen to watch here: with nothing
+// chosen, a film's ▶ asks where (Play on…) instead — see habits/playDestination.js.
+beforeEach(() => { seedHabits().recordScreen('video', []); });
 
 const SCREENS = { available: true, screens: [
   { id: 'fleet:livingroom-tv', screenId: 'livingroom-tv', name: 'Living Room TV', aliases: [] },

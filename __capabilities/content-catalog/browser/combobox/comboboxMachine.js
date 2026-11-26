@@ -180,7 +180,13 @@ export function reducer(state, event) {
     case 'VALUE_CHANGED':
       return initialState(event.value);
     case 'CLOSE':
-      return { ...initialState(state.value), search: event.retainSearch ?? null };
+      // `retainResults` (with a retained search): the list it found stays, so
+      // reopening shows it at once instead of searching again.
+      return {
+        ...initialState(state.value),
+        search: event.retainSearch ?? null,
+        ...(event.retainResults && event.retainSearch ? { results: state.results } : {}),
+      };
     default:
       return state;
   }

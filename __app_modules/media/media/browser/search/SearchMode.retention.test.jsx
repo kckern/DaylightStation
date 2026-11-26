@@ -61,6 +61,11 @@ import { CastTargetProvider } from "../cast/CastTargetProvider.jsx";
 import { NavProvider } from "../shell/NavProvider.jsx";
 import { SearchProvider } from "./SearchProvider.jsx";
 import { SearchMode } from "./SearchMode.jsx";
+import { habitsStore as seedHabits } from "../habits/mediaHabits.js";
+
+// These tests describe a browser that has chosen to watch here: with nothing
+// chosen, a film's ▶ asks where (Play on…) instead — see habits/playDestination.js.
+beforeEach(() => { seedHabits().recordScreen('video', []); });
 
 let controller;
 
@@ -84,7 +89,7 @@ function Harness() {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubGlobal('EventSource', class EventSource {});
-  localStorage.clear();
+  localStorage.clear(); seedHabits().recordScreen('video', []);
   window.history.replaceState(null, '', '/');
   controller = createLocalSessionController({
     clientId: 'search-retention-test',

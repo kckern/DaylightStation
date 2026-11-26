@@ -25,6 +25,8 @@ import { flingStartChoice, flingStartAt } from "../cast/flingStart.js";
 import { deviceName, deviceLocation } from "../fleet/deviceDisplay.js";
 import { DeviceIcon } from "../fleet/DeviceIcon.jsx";
 import { moveDestinations } from "./MoveToMenu.jsx";
+import { itemKind } from "../habits/mediaHabits.js";
+import { usePlayDestination } from "../habits/usePlayDestination.js";
 import { formatTime } from "./formatTime.js";
 import { useDismissLayer } from "@/lib/ui/dismiss/useDismissLayer.js";
 import { MediaRadioOption } from '../shared/MediaRadioOption.jsx';
@@ -70,7 +72,13 @@ function FlingControl({ fleet, outcomes, position: placement = 'top-end', size =
   useDismissLayer(open, close, { managed: true });
 
   const item = snapshot?.currentItem ?? null;
-  const targets = moveDestinations(fleet.devices ?? [], null);
+  // Only screens that can play this; the usual one first (habits/).
+  const { destinationFor, recordPlay } = usePlayDestination();
+  const usual = item ? destinationFor(item) : null;
+  const targets = moveDestinations(fleet.devices ?? [], null, {
+    kind: itemKind(item),
+    preferredIds: usual && usual.source !== 'here' ? usual.targetIds : [],
+  });
   const available = !!item && ACTIVE_STATES.has(snapshot?.state)
     && typeof controller?.portability?.capture === 'function'
     && targets.length > 0;
@@ -134,6 +142,8 @@ function FlingControl({ fleet, outcomes, position: placement = 'top-end', size =
       result = { ok: false, status: 'uncertain', error: err?.message ?? 'fling-failed' };
     }
     if (result?.ok) {
+      // Sending what plays here to a screen is a choice of where it is watched.
+      recordPlay(item, [device.id]);
       mediaLog.flingDispatched({ targetId: device.id, contentId, startMode: effectiveMode, startAt: Math.round(startAt) });
       mediaLog.flingLocalStopped({ targetId: device.id, contentId, sourceStopped: result.sourceStopped === true });
       outcomes.resolveLocal?.(attemptId, { phase: 'confirmed' });
