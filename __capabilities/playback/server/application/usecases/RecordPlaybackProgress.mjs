@@ -38,6 +38,10 @@ export class RecordPlaybackProgress {
     completionRules = null,
     createMediaProgress = (props) => props,
     nowTimestamp,
+    // (epochMs) => the same timestamp format as nowTimestamp: what lastPlayed is
+    // stamped with when a report says when it was heard (observedAt). Absent =
+    // observedAt is ignored and every report is stamped on arrival (as before).
+    timestampAt = null,
     nowEpoch = () => Date.now(),
     nowIso = () => new Date().toISOString(),
     logger = console,
@@ -55,6 +59,7 @@ export class RecordPlaybackProgress {
     this.completionRules = completionRules;
     this.createMediaProgress = createMediaProgress;
     this.nowTimestamp = nowTimestamp;
+    this.timestampAt = typeof timestampAt === 'function' ? timestampAt : null;
     this.nowEpoch = nowEpoch;
     this.nowIso = nowIso;
     this.logger = logger;
@@ -90,6 +95,18 @@ export class RecordPlaybackProgress {
     }
   }
 
+  /**
+   * observedAt (epoch ms) as a stored timestamp, or null when absent, unusable or the
+   * use case has no formatter. A time in the future (a phone clock ahead) is now: it
+   * must not lock every later report out.
+   */
+  #observedStamp(observedAt) {
+    if (!this.timestampAt || observedAt === null || observedAt === undefined) return null;
+    const ms = Number(observedAt);
+    if (!Number.isFinite(ms) || ms < Date.UTC(2020, 0, 1)) return null;
+    return this.timestampAt(Math.min(ms, this.nowEpoch()));
+  }
+
   async execute({
     type, assetId, percent, seconds, title, watched_duration, listId, userId, engaged,
     // The piano kiosk's lesson-practice report; opaque here, judged by the store.
@@ -105,6 +122,11 @@ export class RecordPlaybackProgress {
     // {kind:'device'|'routine', id, name} or legacy free text. The ledger
     // normalizes it (see #domains/media/playLedger normalizeLedgerOrigin).
     origin = null,
+    // When the client heard this position (epoch ms): a phone sends progress it
+    // kept while offline later. Such a report must never move the place backwards
+    // or call itself the newest play (ops:docs/superpowers/plans/
+    // 2026-11-26-phone-downloads-hardening.md §E).
+    observedAt = null,
   }) {
     let progressNamespace = type;
     let itemMetadata = null;
@@ -139,6 +161,31 @@ export class RecordPlaybackProgress {
     const existingState = this.mediaProgressMemory
       ? await this.mediaProgressMemory.findProgress(compoundId, progressNamespace)
       : null;
+    // A report heard before the stored last play is history, not the place: it is
+    // not applied (logged), and the stored state answers.
+    const observed = this.#observedStamp(observedAt);
+    if (observed && existingState?.lastPlayed && compareStamps(observed, existingState.lastPlayed) < 0) {
+      this.logger.info?.('play.log.stale_report', {
+        assetId: compoundId, namespace: progressNamespace, observedAt: observed,
+        storedLastPlayed: String(existingState.lastPlayed), playhead: parseInt(seconds, 10),
+        storedPlayhead: existingState.playhead ?? null,
+      });
+      return {
+        response: {
+          type,
+          library: progressNamespace,
+          title: itemMetadata?.title || title,
+          contentId: compoundId,
+          playhead: existingState.playhead,
+          duration: existingState.duration,
+          percent: existingState.percent,
+          playCount: existingState.playCount,
+          lastPlayed: existingState.lastPlayed,
+          watchTime: existingState.watchTime,
+          stale: true,
+        },
+      };
+    }
     const normalizedSeconds = parseInt(seconds, 10);
     const normalizedPercent = parseFloat(percent);
     const estimatedDuration = normalizedPercent > 0
@@ -184,7 +231,7 @@ export class RecordPlaybackProgress {
     }
     const completedAt = existingState?.completedAt
       || (watchComplete ? this.nowTimestamp() : null);
-    const lastPlayed = this.nowTimestamp();
+    const lastPlayed = observed ?? this.nowTimestamp();
     const spotFields = spotDevice
       ? {
         spots: retireLegacySpot(recordSpot(seedLegacySpot(existingState), spotDevice, {
@@ -377,6 +424,13 @@ export class RecordPlaybackProgress {
       },
     };
   }
+}
+
+/** "YYYY-MM-DD HH:mm:ss" (or ISO with T) compared as text: same zone, same order. */
+function compareStamps(a, b) {
+  const norm = (v) => String(v).replace('T', ' ').slice(0, 19);
+  const x = norm(a); const y = norm(b);
+  return x < y ? -1 : x > y ? 1 : 0;
 }
 
 export default RecordPlaybackProgress;

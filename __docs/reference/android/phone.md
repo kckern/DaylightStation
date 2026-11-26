@@ -673,6 +673,18 @@ for every device.
   (build 81); the digest comes from `apksigner verify --print-certs` on the installed
   Google app, and matches the `refused media controller` line it used to log.
 
+### The backend inbox: auth, installs, Keep from the web
+
+The phone collects its commands (Play on from the web, Keep on Phone) by long-polling
+`GET /api/v1/device/<id>/commands`. Each poll, ack and keep report carries
+`Authorization: Bearer <the control token this build holds>` and names the install
+(`installId`, made once per install; `model`). A command is addressed to one install, so
+the emulator or a reinstall polling as the same device never takes the phone's commands.
+Keep and unkeep commands from the web are durable on the backend until the phone acks
+them; the phone sends its whole kept list (`POST /api/v1/device/<id>/keeps`, states
+`queued|downloading|ready|failed|refused|removed`) so the web shows what it says. Contract:
+`__docs/reference/media/media-app-technical.md` §4.12.
+
 ### Choosing playlists on the phone
 
 - **Drive is the one curated list.** A playlist is on Drive or it is not: "Add to Drive" and

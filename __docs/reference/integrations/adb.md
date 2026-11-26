@@ -316,8 +316,12 @@ phone:
     provider: phone-inbox
 ```
 
-No host, port or token: the app reaches the backend, never the other way round. Other
-keys of the phone's entry (`quick_input`, …) are unaffected.
+No host or port: the app reaches the backend, never the other way round. Its polls,
+acks and keep reports carry the device's own token (`Authorization: Bearer`), checked
+against the household auth file `daylight-android` (`<deviceId>.token`, the same file the
+build reads), or the file `content_control.auth_ref` names. Each install names itself
+(`installId`, `model`) and receives only its own commands. Other keys of the phone's
+entry (`quick_input`, …) are unaffected.
 
 ## Backend Files
 

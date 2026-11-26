@@ -101,7 +101,7 @@ import { createConfiguredLibbyRuntime } from "../../__capabilities/content-catal
 // Logging system
 import { getDispatcher } from "./0_system/logging/dispatcher.mjs";
 import { createLogger } from "./0_system/logging/logger.mjs";
-import { getPhoneInboxService } from '#composition/modules/phoneInbox.mjs';
+import { getPhoneInboxService, createDeviceTokenCheck } from '#composition/modules/phoneInbox.mjs';
 import { ingestFrontendLogs } from '#adapters/logging/FrontendLogIngestion.mjs';
 import { createClientLogRouter } from './4_api/v1/routers/clientLog.mjs';
 import { registerClientIngress } from '#composition/modules/clientIngress.mjs';
@@ -874,6 +874,19 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   getPhoneInboxService({ logger: rootLogger.child?.({ module: 'phone-inbox' }) ?? rootLogger }).connect({
     serves: (deviceId) => configService.getDeviceConfig?.(deviceId)?.content_control?.provider === 'phone-inbox',
     publish: (message) => eventBus.publishAsClient?.(`phone-inbox:${message.deviceId}`, message),
+    // A poll, ack or keep report must carry the device's own token (the one its build
+    // holds: the household auth file `daylight-android`, or content_control.auth_ref).
+    authorize: createDeviceTokenCheck({
+      tokenFor: (deviceId) => {
+        const ref = configService.getDeviceConfig?.(deviceId)?.content_control?.auth_ref || 'daylight-android';
+        return configService.getHouseholdAuth?.(ref)?.[deviceId]?.token || '';
+      },
+    }),
+    // "Keep on this phone" commands and what the phone says it keeps survive a restart.
+    store: {
+      load: (deviceId) => dataService.household.read(`history/devices/${deviceId}/inbox`),
+      save: (deviceId, data) => { if (!dataService.household.writeAtomic(`history/devices/${deviceId}/inbox`, data)) throw new Error("inbox store write failed"); },
+    },
   });
 
   // DeviceLivenessService — caches last-known device-state snapshots and

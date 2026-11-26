@@ -11,6 +11,12 @@ let backDestination = 'Browse';
 let contentState;
 const apiMock = vi.fn(() => Promise.resolve({ items: [] }));
 vi.mock("../../../../../frontend/src/lib/api.mjs", () => ({ DaylightAPI: (...args) => apiMock(...args) }));
+// "Keep on Phone": a phone in the roster only when a test puts one there.
+let devicesOverride = null;
+vi.mock("../fleet/useDevices.js", async (importOriginal) => {
+  const real = await importOriginal();
+  return { ...real, useDevices: () => (devicesOverride ? { devices: devicesOverride, loading: false, error: null, refresh: () => {} } : real.useDevices()) };
+});
 vi.mock("./useContentInfo.js", () => ({
   useContentInfo: () => contentState,
 }));
@@ -51,6 +57,7 @@ beforeEach(() => {
   backDestination = 'Browse';
   apiMock.mockReset();
   apiMock.mockImplementation(() => Promise.resolve({ items: [] }));
+  devicesOverride = null;
 });
 
 describe('DetailView facts (FIND.8a/AC2)', () => {
@@ -458,5 +465,47 @@ describe('DetailView: row 1 and More ⋯', () => {
     } finally {
       document.removeEventListener('keydown', seen);
     }
+  });
+});
+
+describe('DetailView Keep on Phone (downloads hardening §H)', () => {
+  const phone = { id: 'phone', name: 'Phone', type: 'phone', content_control: { provider: 'phone-inbox' } };
+  const A = 'install-aaaa-1111';
+  const view = (items = [], waiting = []) => ({
+    ok: true, deviceId: 'phone', waiting,
+    installs: [{ installId: A, model: 'SM-S921U', current: true, live: true }],
+    kept: { [A]: { items } },
+  });
+
+  it('offers Keep on Phone for an album and sends a durable keep to the phone in use', async () => {
+    devicesOverride = [phone];
+    contentState.info = { title: 'An album', type: 'album', itemType: 'container' };
+    apiMock.mockImplementation((url, data, method) => Promise.resolve(String(url).includes('/keeps') ? view() : { items: [], ok: true }));
+    render(<MantineProvider><DetailView contentId="plex:500" /></MantineProvider>);
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('api/v1/device/phone/keeps'));
+    await waitFor(() => { openMore(); expect(screen.getByTestId('detail-keep-on')).toHaveTextContent('Keep on Phone'); });
+    fireEvent.click(screen.getByTestId('detail-keep-on'));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('api/v1/device/phone/keep',
+      expect.objectContaining({ contentId: 'plex:500', title: 'An album', installId: A }), 'POST'));
+  });
+
+  it('says what the phone says about it, and offers Remove when kept', async () => {
+    devicesOverride = [phone];
+    contentState.info = { title: 'A book', type: 'album', itemType: 'container' };
+    apiMock.mockImplementation((url) => Promise.resolve(String(url).includes('/keeps')
+      ? view([{ contentId: 'plex:501', state: 'downloading', done: 3, total: 12 }]) : { items: [] }));
+    render(<MantineProvider><DetailView contentId="plex:501" /></MantineProvider>);
+    await waitFor(() => expect(screen.getByTestId('detail-kept')).toHaveTextContent('Downloading 3 of 12 on Phone'));
+    openMore();
+    expect(screen.getByTestId('detail-unkeep-on')).toHaveTextContent('Remove from Phone');
+  });
+
+  it('offers nothing for video', async () => {
+    devicesOverride = [phone];
+    contentState.info = { title: 'Arrival', type: 'movie' };
+    apiMock.mockImplementation((url) => Promise.resolve(String(url).includes('/keeps') ? view() : { items: [] }));
+    render(<MantineProvider><DetailView contentId="plex:55854" /></MantineProvider>);
+    openMore();
+    expect(screen.queryByTestId('detail-keep-on')).toBeNull();
   });
 });
