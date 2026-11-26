@@ -58,6 +58,8 @@ public final class FreematicsActivity extends Activity {
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
+        // Never a dead end: the title bar has a back arrow (the system gesture is not always known).
+        if (getActionBar() != null) getActionBar().setDisplayHomeAsUpEnabled(true);
         net.kckern.daylight.shellkit.UiTelemetry.install(this);
         preferences = getSharedPreferences("daylight_freematics", MODE_PRIVATE);
         companion = getSystemService(CompanionDeviceManager.class);
@@ -387,5 +389,10 @@ public final class FreematicsActivity extends Activity {
         bondRequested = false;
         readings.setText("");
         show("Device forgotten. Pair Freematics to connect again.");
+    }
+
+    @Override public boolean onOptionsItemSelected(android.view.MenuItem item) {
+        if (item.getItemId() == android.R.id.home) { finish(); return true; }
+        return super.onOptionsItemSelected(item);
     }
 }
