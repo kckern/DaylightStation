@@ -16,6 +16,13 @@ export class DeviceSessionApiService {
     return this.#sessions.sendCommand({ targetDevice: deviceId, command: 'transport', commandId,
       params: { action, ...(value !== undefined ? { value } : {}), ...(keepMusic !== undefined ? { keepMusic } : {}) }, ...(origin ? { origin } : {}) });
   }
+  /** A remote-control press (the phone's D-pad). Logged at debug: a held direction repeats. */
+  input(deviceId, { action, direction, commandId, origin }) {
+    this.#logger.debug?.('device.router.input', { deviceId, action, direction: direction ?? null, commandId, originKind: origin?.kind ?? null });
+    if (typeof this.#sessions.input === 'function') return this.#sessions.input(deviceId, { action, direction, commandId, origin });
+    return this.#sessions.sendCommand({ targetDevice: deviceId, command: 'input', commandId,
+      params: { action, ...(action === 'navigate' ? { direction } : {}) }, ...(origin ? { origin } : {}) });
+  }
   queue(deviceId, commandId, params, origin) {
     this.#logger.info?.('device.router.session.queue', { deviceId, op: params.op, commandId, originKind: origin?.kind ?? null });
     if (typeof this.#sessions.queue === 'function') return this.#sessions.queue(deviceId, commandId, params, origin);
