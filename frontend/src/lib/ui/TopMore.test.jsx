@@ -87,3 +87,12 @@ describe('TopMoreList stability', () => {
     expect(screen.getByTestId('row-i5')).toBeInTheDocument();
   });
 });
+
+describe('TopMoreList stable={false} (streamed, re-ranked lists such as search)', () => {
+  it('shows exactly the current top n after the list re-ranks', () => {
+    const { rerender } = wrap(<List stable={false} />);
+    const reranked = [...items].reverse();
+    rerender(<MantineProvider><DismissStackProvider><List stable={false} items={reranked} /></DismissStackProvider></MantineProvider>);
+    expect(screen.getAllByRole('button', { name: /^Item/ }).map((el) => el.textContent)).toEqual(['Item 6', 'Item 5', 'Item 4']);
+  });
+});

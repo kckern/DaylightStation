@@ -438,6 +438,8 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
         <TopMoreList
           items={results}
           n={SEARCH_RESULTS_SHOWN}
+          // Results stream in and re-rank: the first eight are the first eight.
+          stable={false}
           moreAs="li"
           testId="search-mode-results"
           moreClassName="search-mode-show-all"

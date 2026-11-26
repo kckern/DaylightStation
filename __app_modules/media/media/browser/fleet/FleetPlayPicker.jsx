@@ -157,6 +157,8 @@ export function FleetPlayPicker({ deviceId, onClose, openerRef }) {
           <TopMoreList
             items={playableResults}
             n={SEARCH_RESULTS_SHOWN}
+          // Results stream in and re-rank: the first eight are the first eight.
+          stable={false}
             getId={(row) => row.id ?? row.itemId}
             moreAs="li"
             testId={`fleet-play-results-${deviceId}`}
