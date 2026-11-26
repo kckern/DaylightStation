@@ -1,16 +1,21 @@
 // cast/usePrepareStart.js
 // Prepare on look: while the info view is open on an item, ask the server to
-// warm the start on the screen PLAY would go to, so PLAY starts faster.
+// warm what it can for the screen PLAY would go to.
 //
 // Recon (2026-11-26, Task 4 of search-to-screen): WakeAndLoadService runs its
-// `prewarm` step through TranscodePrewarmService — resolve the queue, make the
-// Plex playback decision, fetch the MPD so the transcoder spins up. That work
-// is pure server-side: it powers, wakes, loads and commands nothing, and it
-// records no history, progress or session (it only READS resume positions).
-// It is exposed as `POST api/v1/device/:id/prepare { contentId }`
-// (DevicePlaybackPrepareService), which refuses an unknown screen id and never
-// reaches a device. The token it mints expires unredeemed; PLAY's own load
-// prewarms again and finds the transcode warm.
+// `prewarm` step through TranscodePrewarmService — resolve the queue, ask Plex
+// for the playback decision, then fetch the MPD so the transcoder spins up.
+// None of it powers, wakes, loads or commands a screen, or records history,
+// progress or a session. It is exposed as `POST api/v1/device/:id/prepare
+// { contentId }` (DevicePlaybackPrepareService), which refuses an unknown
+// screen id and never reaches a device.
+//
+// What it warms is the queue resolution and Plex's playback decision ONLY.
+// It passes `startTranscoder: false`, so no MPD is fetched and no transcoder
+// starts: every playback URL carries its own Plex session, so a transcoder
+// started on look could never be the one PLAY uses — it would run for nobody.
+// The server also holds at most one prepare in flight per screen (`busy`
+// otherwise). PLAY's own load starts the transcoder as before.
 //
 // What this hook therefore never does: call `device/:id/on`, `/load`, or
 // anything else that touches a screen — those stay behind PLAY. A destination
@@ -21,7 +26,9 @@
 // item + destination per page (module-level, for 5 minutes — re-opening the
 // item does not ask again). The warm-up is screen-independent, so one request
 // to the first target covers a multi-screen destination. A build without the
-// route (404 without DEVICE_NOT_FOUND, or 501) logs `play.prepare-unavailable` once and is not asked again.
+// route (404 without DEVICE_NOT_FOUND, or 501) logs `play.prepare-unavailable`
+// once and is not asked again; an unknown screen is skipped silently; a busy
+// screen or any other error lets a later look try again.
 import { useEffect } from 'react';
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import mediaLog from "../logging/mediaLog.js";
@@ -58,6 +65,8 @@ export function usePrepareStart(item, targetIds) {
       const started = Date.now();
       DaylightAPI(`api/v1/device/${encodeURIComponent(ids[0])}/prepare`, { contentId }, 'POST')
         .then((res) => {
+          // The screen was preparing something else: let a later look ask.
+          if (res?.status === 'busy') prepared.delete(key);
           mediaLog.playPrepared({ contentId, targetIds: ids, ms: Date.now() - started, status: res?.status ?? null });
         })
         .catch((err) => {

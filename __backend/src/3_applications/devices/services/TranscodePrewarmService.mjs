@@ -77,6 +77,15 @@ export class TranscodePrewarmService {
       }
       const dashUrl = prepared.url;
 
+      // `startTranscoder: false` (info-view prepare): the queue and the
+      // playback decision are warm, but no transcoder is started and no token
+      // is minted — the URL carries a session of its own, so a transcoder
+      // started here would be one nobody plays.
+      if (opts.startTranscoder === false) {
+        this.#logger.info?.('prewarm.decided', { contentRef, contentId: first.id });
+        return { status: 'ok', token: null, contentId: first.id, queueContentIds, transcoder: false };
+      }
+
       this.#fetchMpd(dashUrl).catch(err => {
         this.#logger.debug?.('prewarm.mpd-fetch-failed', { error: err.message });
       });

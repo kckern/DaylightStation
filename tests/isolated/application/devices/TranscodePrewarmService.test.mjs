@@ -248,3 +248,37 @@ describe('TranscodePrewarmService — resolved queue ids for the playback watchd
     expect(result.queueContentIds).toEqual(['plex:1']);
   });
 });
+
+describe('TranscodePrewarmService startTranscoder (info-view prepare)', () => {
+  function makeSvc(get) {
+    const playable = makePlexPlayable();
+    return new TranscodePrewarmService({
+      contentIdResolver: {
+        resolve: () => ({
+          source: 'plex', localId: '1',
+          adapter: { resolvePlayables: vi.fn().mockResolvedValue([playable]), loadMediaUrl: vi.fn().mockResolvedValue({ url: 'https://example/mpd' }) },
+        }),
+      },
+      queueService: { resolveQueue: vi.fn().mockResolvedValue([playable]) },
+      httpClient: { get },
+      logger: makeLogger(),
+    });
+  }
+
+  it('startTranscoder: false decides but never fetches the MPD, and mints no token', async () => {
+    const get = vi.fn().mockResolvedValue({});
+    const svc = makeSvc(get);
+    const result = await svc.prewarm('plex:1', { startTranscoder: false });
+    expect(result).toEqual(expect.objectContaining({ status: 'ok', token: null, contentId: 'plex:1', queueContentIds: ['plex:1'] }));
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it('by default (WakeAndLoad) still fetches the MPD so the transcoder starts', async () => {
+    const get = vi.fn().mockResolvedValue({});
+    const svc = makeSvc(get);
+    const result = await svc.prewarm('plex:1');
+    expect(result.token).toEqual(expect.any(String));
+    expect(get).toHaveBeenCalledWith('https://example/mpd');
+  });
+});
+

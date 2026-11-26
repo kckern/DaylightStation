@@ -411,22 +411,28 @@ explicit `screen_path`.
 ```
 
 #### `POST /api/v1/device/:id/prepare`
-Warms a start while a person is only **looking** at an item (the info view,
-`cast/usePrepareStart.js`). Body `{ "contentId": "<id>" }`. It runs the same
-transcode prewarm as the `load` dispatch's `prewarm` step (resolve the queue,
-make the playback decision, fetch the MPD) through
-`DevicePlaybackPrepareService`, and nothing else: it never powers, wakes, loads
-or commands the screen, and records no history, progress or session. The id is
-checked against device configuration only (404 `DEVICE_NOT_FOUND` for an
-unknown one); 400 without `contentId`; 501 when prewarm is not wired.
-Best-effort: a failed or skipped warm-up is still 200, with
-`{ ok: false, status: "failed" | "skipped" }`. The minted prewarm token expires
-unredeemed; the later `load` prewarms again and finds the transcode warm.
+Warms what can be warmed while a person is only **looking** at an item (the
+info view, `cast/usePrepareStart.js`). Body `{ "contentId": "<id>" }`. Through
+`DevicePlaybackPrepareService` it runs the transcode prewarm with
+`startTranscoder: false`: it resolves the queue and asks Plex for the playback
+decision, and it stops there. It fetches no MPD, starts no transcoder and mints
+no prewarm token, because every playback URL carries its own Plex session, so
+a transcoder started on look could never be the one PLAY uses. PLAY's `load`
+prewarms (and starts the transcoder) as before. It never powers, wakes, loads
+or commands the screen, and records no history, progress or session.
+
+At most one prepare is in flight per screen. A call for the same item joins
+it; a call for another item answers `status: "busy"` instead of stacking
+requests on Plex. The id is checked against device configuration only (404
+`DEVICE_NOT_FOUND` for an unknown one); 400 without `contentId`; 501 when
+prewarm is not wired. Best-effort: a failed, skipped or busy warm-up is still
+200, with `{ ok: false, status }`.
 
 The client sends it 400 ms after the info view opens, once per item and
-destination for five minutes, and only when PLAY names a screen (never for
-"here"). Logs `play.prepared {contentId, targetIds, ms}`; a build without the
-route logs `play.prepare-unavailable` once.
+destination for five minutes (a busy or failed answer lets a later look ask
+again), and only when PLAY names a screen (never for "here"). Logs
+`play.prepared {contentId, targetIds, ms}`; a build without the route logs
+`play.prepare-unavailable` once.
 
 #### `GET /api/v1/device/:id/volume/:level` *(deprecated)*
 Live volume on a remote surface without re-dispatch. **Deprecated** — use
