@@ -31,15 +31,12 @@ import { usePlayDestination } from "../habits/usePlayDestination.js";
 // `focusPlay`: opened from search — PLAY takes focus once it can be pressed,
 // so a second Enter plays by that button's own activation (no key handler
 // here: a stray Enter elsewhere plays nothing). The Enter that opened the
-// page may still be held when PLAY takes focus, so until a keyup is seen on
-// PLAY its Enter keydowns are default-prevented (no activation), and an
-// auto-repeat never activates it: one long press is not two.
+// page may still be held when PLAY takes focus: its auto-repeat keydowns
+// (repeat: true) are default-prevented, so one long press is not two.
 export function DetailView({ contentId, focusPlay = false }) {
   const [oneShot, setOneShot] = useState(null);
   const playRef = useRef(null);
   const playFocusedRef = useRef(false);
-  // False from the focusPlay focus until a keyup on PLAY.
-  const playArmedRef = useRef(true);
   const { info, loading, error, reload } = useContentInfo(contentId);
   const { regionProps, retry } = useRetryRegion(reload, loading);
   const { dispatchLeafVerb } = useContentDispatch();
@@ -58,7 +55,6 @@ export function DetailView({ contentId, focusPlay = false }) {
     const el = playRef.current;
     if (!el || el.disabled) return;
     playFocusedRef.current = true;
-    playArmedRef.current = false;
     el.focus({ preventScroll: true });
   }, [focusPlay, playReady, pendingResume]);
   const back = (
@@ -115,11 +111,7 @@ export function DetailView({ contentId, focusPlay = false }) {
           <Button
             data-testid="detail-play-now"
             ref={playRef}
-            onKeyDown={(e) => {
-              if (e.key !== 'Enter' && e.key !== ' ') return;
-              if (e.repeat || !playArmedRef.current) e.preventDefault();
-            }}
-            onKeyUp={() => { playArmedRef.current = true; }}
+            onKeyDown={(e) => { if (e.key === 'Enter' && e.repeat) e.preventDefault(); }}
             leftSection={elsewhere ? <IconCast size={18} /> : <IconPlayerPlayFilled size={18} />}
             loading={!collection && pendingResume}
             onClick={() => {

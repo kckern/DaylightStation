@@ -121,16 +121,15 @@ describe('DetailView Play Now', () => {
     expect(dispatchLeafVerb).toHaveBeenCalledWith('playNow', 'plex:685088', expect.any(Object));
   });
 
-  it('a held Enter never plays: repeats and any Enter before a keyup are swallowed; a fresh press plays', async () => {
+  it('a held Enter never plays: an auto-repeat Enter on PLAY is ignored, a first press is not', async () => {
     render(<MantineProvider><DetailView contentId="plex:685088" focusPlay /></MantineProvider>);
     const play = screen.getByTestId('detail-play-now');
     await waitFor(() => expect(document.activeElement).toBe(play));
     // The Enter that opened the page is still held: auto-repeat lands on PLAY.
     expect(enterDown(play, { repeat: true })).toBe(true);
-    expect(enterDown(play)).toBe(true); // no keyup seen yet
-    fireEvent.keyUp(play, { key: 'Enter' });
-    expect(enterDown(play, { repeat: true })).toBe(true); // a repeat is never a press
-    expect(enterDown(play)).toBe(false); // a fresh press after the keyup activates
+    // The person released it in the search box (no keyup here): their first
+    // deliberate Enter on PLAY is let through.
+    expect(enterDown(play)).toBe(false);
     expect(dispatchLeafVerb).not.toHaveBeenCalled();
   });
 
