@@ -243,6 +243,16 @@ Results concatenate in array order. Title card IDs are deterministic: `titlecard
 
 `ImmichAdapter` creates `PlayableItem` instances for each asset, including face bounding box data in `metadata.people`. This face data drives the Ken Burns smart zoom on the frontend.
 
+Face boxes: older Immich servers embed `faces` in each of an asset's `people`;
+newer ones return people without them and serve the boxes from
+`GET /api/faces?id=<asset>`. On the single-asset paths (`getItem`, which backs
+`/api/v1/info/{contentId}`, `getViewable`, and single-asset `resolvePlayables`)
+the adapter makes that extra call when the asset has people but no faces, and
+attaches each box to its person. Search results, and therefore the queue, do not
+carry boxes (one extra call per photo is too many for a 600-photo queue); the
+player fetches `/api/v1/info` for each slide and zooms once the boxes arrive.
+A failed face lookup leaves `faces: []` and the photo still shows.
+
 **Location:** `__capabilities/content-catalog/server/adapters/providers/gallery/immich/ImmichAdapter.mjs`
 
 ### Additional Immich servers
