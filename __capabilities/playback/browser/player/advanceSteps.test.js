@@ -17,13 +17,43 @@ describe('advanceSteps', () => {
     expect(f.advance.mock.calls).toEqual([[], [], []]);
   });
 
+  it('batches a step that lands on the last entry (step === queueLength - 1)', () => {
+    const f = fns();
+    advanceSteps(4, { isQueue: true, hasOnDeck: false, queueLength: 5, ...f });
+    expect(f.advance.mock.calls).toEqual([[4]]);
+  });
+
+  it('steps one at a time when the move goes past the end of the queue', () => {
+    const f = fns();
+    advanceSteps(4, { isQueue: true, hasOnDeck: false, queueLength: 3, ...f });
+    expect(f.advance.mock.calls).toEqual([[], [], [], []]);
+  });
+
+  it('reads a numeric string count', () => {
+    const f = fns();
+    advanceSteps('3', { isQueue: true, hasOnDeck: false, queueLength: 5, ...f });
+    expect(f.advance.mock.calls).toEqual([[3]]);
+  });
+
+  it('truncates a fractional count', () => {
+    const f = fns();
+    advanceSteps(2.7, { isQueue: true, hasOnDeck: false, queueLength: 5, ...f });
+    expect(f.advance.mock.calls).toEqual([[2]]);
+  });
+
+  it('advances a single item once for a negative count (it has no backtrack)', () => {
+    const f = fns();
+    advanceSteps(-2, { isQueue: false, hasOnDeck: false, ...f });
+    expect(f.singleAdvance.mock.calls).toEqual([[]]);
+  });
+
   it('steps one at a time when the queue length is unknown', () => {
     const f = fns();
     advanceSteps(2, { isQueue: true, hasOnDeck: false, ...f });
     expect(f.advance.mock.calls).toEqual([[], []]);
   });
 
-  it('steps one at a time while an on-deck item is waiting (it takes the first step)', () => {
+  it('keeps single steps while an on-deck item is waiting (existing behaviour)', () => {
     const f = fns();
     advanceSteps(2, { isQueue: true, hasOnDeck: true, queueLength: 5, ...f });
     expect(f.advance.mock.calls).toEqual([[], []]);
