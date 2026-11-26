@@ -13,6 +13,7 @@ import { DeviceSessionApiService } from '#apps/devices/services/DeviceSessionApi
 import { DeviceScreenControlService } from '#apps/devices/services/DeviceScreenControlService.mjs';
 import { DeviceContentDispatchService } from '#apps/devices/services/DeviceContentDispatchService.mjs';
 import { DeviceRecoveryService } from '#apps/devices/services/DeviceRecoveryService.mjs';
+import { DevicePlaybackPrepareService } from '#apps/devices/services/DevicePlaybackPrepareService.mjs';
 import { AndroidExcursionGuard } from '#apps/devices/services/AndroidExcursionGuard.mjs';
 import { AdbAdapter } from '#adapters/devices/AdbAdapter.mjs';
 import { AndroidForegroundProbe } from '#adapters/devices/AndroidForegroundProbe.mjs';
@@ -91,6 +92,7 @@ export function createDeviceApiRouter(config) {
     kioskFrictionTracker,
     callControl,
     startStatusService = null,
+    prewarmService = null,
     httpClient = null,
     logger = console
   } = config;
@@ -137,6 +139,7 @@ export function createDeviceApiRouter(config) {
     }),
     kioskFrictionTracker,
     startStatusService,
+    prepareService: new DevicePlaybackPrepareService({ prewarm: prewarmService, configuration, logger }),
     excursionGuard: new AndroidExcursionGuard({
       probeFor: createExcursionProbes({ configService, httpClient, logger }),
       policies: EXCURSION_POLICIES,

@@ -2907,6 +2907,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     pianoMidiWakeService,
     kioskFrictionTracker,
     startStatusService: deviceStartStatusService,
+    // Info-view warm-up (POST /device/:id/prepare): prewarm only, no screen effect.
+    prewarmService,
     // For the excursion guard's probe on devices running the Android kiosk app.
     httpClient: axios,
     logger: rootLogger.child({ module: 'device-api' })

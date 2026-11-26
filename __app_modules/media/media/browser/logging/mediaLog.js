@@ -210,6 +210,11 @@ export const mediaLog = {
   // (surface 'dock' = the box refocused, 'sheet' = the phone search reopened).
   searchReturned:         info('search.returned'),
   playSent:               info('play.sent'),
+  // Info view warm-up (cast/usePrepareStart.js): the server prepared the
+  // stream for the destination PLAY names, without touching the screen.
+  playPrepared:           info('play.prepared'),
+  playPrepareUnavailable: info('play.prepare-unavailable'),
+  playPrepareFailed:      debug('play.prepare-failed'),
 };
 
 export default mediaLog;

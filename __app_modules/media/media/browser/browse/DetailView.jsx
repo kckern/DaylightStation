@@ -4,7 +4,9 @@ import { ItemQualityButton } from "../quality/PlaybackQualityButtons.jsx";
 // that names where it goes ("▶ Play on Office Screen" — the aim, else the
 // screen this browser learned for this kind of thing, else "here"), with
 // Play here / Play on… beside it for the other places, then the queue verbs.
-// Opening this page never plays anything: it is where a look lands.
+// Opening this page never plays anything: it is where a look lands. It does
+// ask the server to prepare the start on that screen (cast/usePrepareStart.js),
+// which touches no screen.
 import React, { useEffect, useRef, useState } from 'react';
 import { Stack, Title, Text, Button, Group, Image } from '@mantine/core';
 import { IconPlayerPlayFilled, IconPlayerTrackNext, IconRowInsertTop, IconPlaylistAdd, IconCast } from '@tabler/icons-react';
@@ -27,6 +29,7 @@ import { usePressHoldOffer } from "../../../../../frontend/src/lib/ui/usePressHo
 import mediaLog from "../logging/mediaLog.js";
 import { resultSubtitle } from "../search/resultPresentation.js";
 import { usePlayDestination } from "../habits/usePlayDestination.js";
+import { usePrepareStart } from "../cast/usePrepareStart.js";
 
 // `focusPlay`: opened from search — PLAY takes focus once it can be pressed,
 // so a second Enter plays by that button's own activation (no key handler
@@ -50,6 +53,10 @@ export function DetailView({ contentId, focusPlay = false }) {
   const startingOn = startingOnFor(contentId);
   const playNextHold = usePressHoldOffer({ onOffered: () => mediaLog.playNextHoldOffered({ surface: 'detail' }) });
   const playReady = !!info && !loading && !error;
+  // Prepare on look: warm the start on the screen PLAY names (server-side
+  // only — nothing reaches that screen until PLAY).
+  const lookedAt = playReady ? { id: contentId, ...info } : null;
+  usePrepareStart(lookedAt, lookedAt ? destinationFor(lookedAt).targetIds : []);
   useEffect(() => {
     if (!focusPlay || playFocusedRef.current || !playReady) return;
     const el = playRef.current;

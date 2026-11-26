@@ -25,6 +25,7 @@ import { DetailView } from "./DetailView.jsx";
 import { FleetContext } from "../fleet/FleetProvider.jsx";
 import { habitsStore } from "../habits/mediaHabits.js";
 import { habitsStore as seedHabits } from "../habits/mediaHabits.js";
+import { resetPreparedStarts } from "../cast/usePrepareStart.js";
 
 // These tests describe a browser that has chosen to watch here: with nothing
 // chosen, a film's ▶ asks where (Play on…) instead — see habits/playDestination.js.
@@ -33,6 +34,7 @@ beforeEach(() => { seedHabits().recordScreen('video', []); });
 beforeEach(() => {
   vi.clearAllMocks();
   resetApiResourceCache();
+  resetPreparedStarts();
   contentState = { info: { title: 'Episode 3', type: 'episode', thumbnail: 'episode.jpg' }, loading: false, error: null };
   backDestination = 'Browse';
   apiMock.mockReset();
@@ -224,5 +226,53 @@ describe('DetailView household verbs (FIND.12a, FIND.10a/AC6)', () => {
     render(<MantineProvider><DetailView contentId="plex:album" /></MantineProvider>);
     expect(screen.getByTestId('detail-favourite')).toBeInTheDocument();
     expect(screen.queryByTestId('detail-watched')).toBeNull();
+  });
+});
+
+describe('DetailView prepares on look, touches no screen before PLAY (Task 4)', () => {
+  const officeFleet = { devices: [{ id: 'office-tv', name: 'Office Screen', type: 'linux-pc', content_control: { type: 'websocket' } }], identity: { deviceId: 'browser:me' } };
+  const renderOnOffice = () => render(
+    <MantineProvider><FleetContext.Provider value={officeFleet}><DetailView contentId="plex:685088" focusPlay /></FleetContext.Provider></MantineProvider>,
+  );
+  const prepareCalls = () => apiMock.mock.calls.filter(([path]) => String(path).endsWith('/prepare'));
+  const screenCalls = () => apiMock.mock.calls.filter(([path]) => /api\/v1\/device\/[^/]+\/(?!prepare$)/.test(String(path)));
+
+  it('asks the server to prepare the stream once for the destination PLAY names', async () => {
+    habitsStore().recordScreen('video', ['office-tv']);
+    const view = renderOnOffice();
+    expect(screen.getByTestId('detail-play-now')).toHaveTextContent('Play on Office Screen');
+    // Debounced: nothing on the first frame of the look.
+    expect(prepareCalls()).toHaveLength(0);
+    await waitFor(() => expect(prepareCalls()).toHaveLength(1), { timeout: 1500 });
+    expect(prepareCalls()[0]).toEqual(['api/v1/device/office-tv/prepare', { contentId: 'plex:685088' }, 'POST']);
+    // Re-rendering (and re-opening) the same item for the same screen does not prepare again.
+    view.unmount();
+    renderOnOffice();
+    await new Promise((resolve) => { setTimeout(resolve, 600); });
+    expect(prepareCalls()).toHaveLength(1);
+  });
+
+  it('never powers, wakes or loads a screen before PLAY', async () => {
+    habitsStore().recordScreen('video', ['office-tv']);
+    renderOnOffice();
+    await waitFor(() => expect(prepareCalls()).toHaveLength(1), { timeout: 1500 });
+    expect(screenCalls()).toEqual([]);
+    expect(apiMock.mock.calls.some(([path]) => /\/(on|load|off|toggle|volume)(\?|$|\/)/.test(String(path)))).toBe(false);
+    // Nothing recorded either: no history, progress or session write.
+    expect(apiMock.mock.calls.some(([path]) => /play\/log|progress|session/.test(String(path)))).toBe(false);
+  });
+
+  it('a look whose PLAY plays here prepares nothing on any screen', async () => {
+    render(<MantineProvider><DetailView contentId="plex:685088" /></MantineProvider>);
+    await new Promise((resolve) => { setTimeout(resolve, 600); });
+    expect(prepareCalls()).toEqual([]);
+  });
+
+  it('a look that leaves within the debounce prepares nothing', async () => {
+    habitsStore().recordScreen('video', ['office-tv']);
+    const view = renderOnOffice();
+    view.unmount();
+    await new Promise((resolve) => { setTimeout(resolve, 600); });
+    expect(prepareCalls()).toEqual([]);
   });
 });

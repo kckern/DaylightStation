@@ -410,6 +410,24 @@ explicit `screen_path`.
 }
 ```
 
+#### `POST /api/v1/device/:id/prepare`
+Warms a start while a person is only **looking** at an item (the info view,
+`cast/usePrepareStart.js`). Body `{ "contentId": "<id>" }`. It runs the same
+transcode prewarm as the `load` dispatch's `prewarm` step (resolve the queue,
+make the playback decision, fetch the MPD) through
+`DevicePlaybackPrepareService`, and nothing else: it never powers, wakes, loads
+or commands the screen, and records no history, progress or session. The id is
+checked against device configuration only (404 `DEVICE_NOT_FOUND` for an
+unknown one); 400 without `contentId`; 501 when prewarm is not wired.
+Best-effort: a failed or skipped warm-up is still 200, with
+`{ ok: false, status: "failed" | "skipped" }`. The minted prewarm token expires
+unredeemed; the later `load` prewarms again and finds the transcode warm.
+
+The client sends it 400 ms after the info view opens, once per item and
+destination for five minutes, and only when PLAY names a screen (never for
+"here"). Logs `play.prepared {contentId, targetIds, ms}`; a build without the
+route logs `play.prepare-unavailable` once.
+
 #### `GET /api/v1/device/:id/volume/:level` *(deprecated)*
 Live volume on a remote surface without re-dispatch. **Deprecated** — use
 §4.5 `PUT /api/v1/device/:id/session/volume` instead. The handler is

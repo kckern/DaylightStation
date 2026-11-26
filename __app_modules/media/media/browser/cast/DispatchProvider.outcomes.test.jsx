@@ -25,6 +25,7 @@ import { useDispatch } from "./useDispatch.js";
 import { FleetContext } from "../fleet/FleetProvider.jsx";
 import { createFleetStore } from "../fleet/fleetStore.js";
 import { PeekContext } from "../peek/PeekContext.js";
+import { useStartingOn } from "./useStartingOn.js";
 
 const arrival = { contentId: 'plex:55854', title: 'Arrival' };
 const disclosure = { contentId: 'plex:697368', title: 'Disclosure Day' };
@@ -191,5 +192,28 @@ describe('DispatchProvider outcomes', () => {
     DaylightAPI.mockClear();
     await act(async () => { await result.current.retry(first); });
     expect(DaylightAPI).not.toHaveBeenCalled();
+  });
+
+  it('Task 4: PLAY reads "Starting on <screen>" synchronously, before the start request answers', () => {
+    let answer;
+    DaylightAPI.mockReturnValue(new Promise((resolve) => { answer = resolve; }));
+    const store = createFleetStore();
+    const devices = [{ id: 'office-tv', name: 'Office Screen', type: 'linux-pc' }];
+    const wrapper = ({ children }) => (
+      <FleetContext.Provider value={{ store, devices }}>
+        <PeekContext.Provider value={peekValue}>
+          <DispatchProvider>{children}</DispatchProvider>
+        </PeekContext.Provider>
+      </FleetContext.Provider>
+    );
+    const { result } = renderHook(() => ({ ...useDispatch(), ...useStartingOn() }), { wrapper });
+    let pending;
+    act(() => { pending = result.current.dispatchToTarget({ targetIds: ['office-tv'], play: arrival.contentId, mode: 'fork', title: arrival.title }); });
+    // The promise has not resolved and the server has not answered.
+    expect(answer).toBeTypeOf('function');
+    const [record] = [...result.current.outcomes.values()];
+    expect(record).toEqual(expect.objectContaining({ targetId: 'office-tv', phase: 'running' }));
+    expect(result.current.startingOnFor(arrival.contentId)).toBe('Starting on Office Screen…');
+    expect(pending).toBeInstanceOf(Promise);
   });
 });

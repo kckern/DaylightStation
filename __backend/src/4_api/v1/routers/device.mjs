@@ -98,7 +98,7 @@ function requireSessions(service, res) {
 }
 
 export function createDeviceRouter({ fleetService, presenceService, sessionService, screenService,
-  dispatchService, recoveryService, kioskFrictionTracker, excursionGuard, startStatusService } = {}) {
+  dispatchService, recoveryService, kioskFrictionTracker, excursionGuard, startStatusService, prepareService } = {}) {
   const router = express.Router();
 
   router.get('/config', (req, res) => res.json(fleetService.configuration(req.query.householdId)));
@@ -475,6 +475,19 @@ export function createDeviceRouter({ fleetService, presenceService, sessionServi
 
   router.post('/:deviceId/screen/suppress-wake', asyncHandler(async (req, res) => {
     return res.json(screenService.suppressWake(req.params.deviceId, parseRequestedMinutes(req.body?.minutes)));
+  }));
+
+  // Warm the start while the item is only being LOOKED at (Media info view).
+  // Server-side only: no power, wake, load or command reaches the screen —
+  // those stay behind PLAY (`/on`, `/load`). Best-effort: a failed warm-up is
+  // still 200 so the caller never treats it as a failed start.
+  router.post('/:deviceId/prepare', asyncHandler(async (req, res) => {
+    if (!prepareService?.configured?.()) return res.status(501).json(buildErrorBody({ error: 'Preparation not configured' }));
+    const contentId = req.body?.contentId;
+    if (!nonEmpty(contentId)) return badRequest(res, 'contentId required (non-empty string)');
+    const result = await prepareService.prepare(req.params.deviceId, contentId);
+    if (result.kind === 'not_found') return notFound(res);
+    return res.json({ ok: result.status === 'ok', deviceId: req.params.deviceId, status: result.status, contentId: result.contentId, ms: result.ms });
   }));
 
   router.get('/:deviceId/load', asyncHandler(async (req, res) => {
