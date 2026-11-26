@@ -1,10 +1,12 @@
 /**
- * `share:<jobId>` content source — a video shared from the phone, once its
- * fetch has finished, as a playable item served from the share temp folder.
+ * `share:<jobId>` content source — a video shared from the phone, as a
+ * playable item served from the share temp folder.
  *
- * Before the file is in there is nothing to play: getItem answers null. The
- * screen's intro holds the play request until the job is ready, so the Player
- * only asks once it is (see PlaySharedVideo).
+ * The item exists from the moment of the share, while the file is still being
+ * fetched: the screen resolves the id into a queue before its Player mounts, and
+ * an empty queue would end the play there. The screen's intro then holds the
+ * play request until the job is ready (see PlaySharedVideo), so the media URL is
+ * only used once the file is in. A failed or unknown job is no item.
  *
  * The item is `ephemeral`: no playhead, completion or media-server session is
  * kept for it (RecordPlaybackProgress).
@@ -33,7 +35,7 @@ export class ShareContentSource {
   async getItem(id) {
     const jobId = String(id ?? '').replace(/^share:/, '').trim();
     const job = this.#jobs.get(jobId);
-    if (!job || job.state !== 'ready') return null;
+    if (!job || job.state === 'failed') return null;
     return new PlayableItem({
       id: `share:${job.id}`,
       source: 'share',
@@ -43,7 +45,7 @@ export class ShareContentSource {
       mediaUrl: `${this.#streamPrefix}/${encodeURIComponent(this.#relativePathFor(job.id))}`,
       duration: job.duration ?? null,
       resumable: false,
-      metadata: { contentFormat: 'video', ephemeral: true, provider: job.provider },
+      metadata: { contentFormat: 'video', ephemeral: true, provider: job.provider, shareState: job.state },
     });
   }
 

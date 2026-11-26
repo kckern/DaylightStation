@@ -96,7 +96,7 @@ parsers stay off them.
 | Application | `media/media/server/application/share/ShareJobs.mjs` | Jobs in memory (ephemeral; a restart forgets them) |
 | Adapter | `__backend/src/1_adapters/content/media/youtube/YouTubeSharedVideoSource.mjs` | YouTube links (`watch?v=`, `youtu.be/`, `/shorts/`, `/live/`, `/embed/`) → video id; fetch through yt-dlp from the watch URL rebuilt from the id |
 | Adapter | `media/media/server/adapters/YtDlpAdapter.mjs` `downloadOne` | One video to an exact `.mp4` with a progress template; argv array, never a shell |
-| Adapter | `__backend/src/1_adapters/content/media/share/ShareContentSource.mjs` | `share:<job>`: a ready job as a playable item at `/api/v1/proxy/media/stream/tmp/share/<job>.mp4`, `metadata.ephemeral` |
+| Adapter | `__backend/src/1_adapters/content/media/share/ShareContentSource.mjs` | `share:<job>`: a playable item from the moment of the share (the screen queues it before its Player mounts; the intro holds the play request until the file is in), at `/api/v1/proxy/media/stream/tmp/share/<job>.mp4`, `metadata.ephemeral`. A failed job is no item |
 | Adapter | `__backend/src/1_adapters/content/media/share/ShareTempStore.mjs` | `<media>/tmp/share/`, swept hourly (files older than 6 h whose job is gone) |
 | Composition | `media/media/server/composition/share.mjs`, `household/share/server/composition/share.mjs` | Wiring. The only place that names the YouTube source |
 | Browser | `media/media/browser/share/useShareIntro.jsx` | The intro for `share:` ids: polls the job (700 ms), holds the play request, draws the scene |
