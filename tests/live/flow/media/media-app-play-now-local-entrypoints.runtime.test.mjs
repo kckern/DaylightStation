@@ -25,7 +25,10 @@ const entries = [
     await page.getByTestId('browse-open-plex:library/sections/6/all').click();
     const content = await revealBrowseRow(page, 'browse-row-plex:55854');
     await expect(content).toBeVisible({ timeout: 30000 });
-    return { content, action: page.getByTestId('result-play-all-plex:55854') };
+    // Arrival is on the receiver, so its row reads "On Acceptance receiver"
+    // (pause/resume) instead of ▶; Play Now is in the row's ⋯ menu.
+    await page.getByTestId('result-more-plex:55854').click();
+    return { content, action: page.getByTestId('result-action-playNow-plex:55854') };
   }],
   ['Detail', async (page, nav) => {
     await page.getByTestId(nav('browse')).click();
@@ -35,7 +38,8 @@ const entries = [
     await page.getByTestId('browse-open-plex:55854').click();
     const content = page.getByTestId('detail-view');
     await expect(content).toBeVisible({ timeout: 30000 });
-    return { content, action: page.getByTestId('detail-play-now') };
+    // On a screen already: PLAY is "Start over on <screen>"; Play here plays it here.
+    return { content, action: page.getByTestId('detail-play-here') };
   }],
   ['Home Recents', async (page, nav) => {
     // Home's Recent is the household's list (GET /api/v1/media/household/recent),
@@ -46,8 +50,10 @@ const entries = [
     await page.getByTestId(nav('home')).click();
     const content = page.getByTestId('home-tile-recent-plex:55854');
     await expect(content).toBeVisible({ timeout: 10000 });
-    // The tile's ▶ plays; a tap on its picture only opens the info view.
-    return { content, action: page.getByTestId('home-tile-recent-plex:55854-play') };
+    // Arrival is on the receiver, so the tile's disc pauses it there; a fresh
+    // start is the tile's ⋯ Play Now (a tap on its picture opens the info view).
+    await content.getByRole('button', { name: /More actions for/ }).click();
+    return { content, action: page.getByTestId('home-tile-recent-plex:55854-verb-playNow') };
   }],
 ];
 
@@ -176,8 +182,9 @@ for (const [name, viewport, phone] of viewports) {
       await sender.setViewportSize(viewport);
       const { receiver, loads, transports, localPlays, localVideo } = await prepare({ context, sender, phone });
       try {
-        const { action, content } = await open(sender, area => `${phone ? 'app-tab' : 'app-nav'}-${area}`);
+        // This device first: an entry may leave its ⋯ menu open on the verb.
         await setLocalAim(sender, phone);
+        const { action, content } = await open(sender, area => `${phone ? 'app-tab' : 'app-nav'}-${area}`);
         await expect(content).toBeVisible();
         const route = sender.url();
         const before = receiverSnapshot(await receiverState(sender));

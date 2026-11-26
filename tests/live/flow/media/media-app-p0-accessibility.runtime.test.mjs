@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { SIZES, smallTargets, offscreenControls, noHorizontalScroll, contrastOf, layoutShiftDuring } from './lib/a11yProbe.mjs';
 import { freshPage, isPhone, playArrivalHere, searchFor, skipFirstUse } from './lib/mediaDriver.mjs';
 import { resetHouseholdAt } from './lib/household.mjs';
+import { showAllRows } from './lib/search.mjs';
 
 // Task 8 — accessibility and size parity (RELY.11a, RELY.12a, RELY.13a, NF-A11Y,
 // NF-DEV). Everything is measured from the live page with ordinary pointer and
@@ -100,6 +101,9 @@ for (const [size, viewport] of SIZES) {
       // Fleet: every device states its condition in words, never by a coloured dot alone.
       await page.getByTestId(isPhone(page) ? 'app-tab-fleet' : 'app-nav-fleet').click();
       await expect(page.getByTestId('fleet-view')).toBeVisible({ timeout: 20000 });
+      // Devices leads with what is on now; the rest sit behind "Off or not heard from (k)".
+      await expect(page.locator('[data-testid^="fleet-card-"]').first()).toBeVisible({ timeout: 20000 });
+      await showAllRows(page, 'fleet');
       const cards = page.locator('[data-testid^="fleet-card-"]');
       await expect.poll(() => cards.count(), { timeout: 20000 }).toBeGreaterThan(1);
       const states = await page.locator('[data-testid^="fleet-state-"]').allTextContents();

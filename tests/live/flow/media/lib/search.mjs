@@ -140,3 +140,36 @@ export async function detailVerb(page, testId) {
   await openDetailMore(page);
   await page.getByTestId(testId).click();
 }
+
+/**
+ * Open a result row's ⋯ menu with every verb showing. The menu leads with four
+ * verbs (Play/Continue, Play on…, Play Next, Add to Queue); the rest (Play
+ * First, Play here, Shuffle, Add on…, Details, favourites…) sit behind its
+ * More (k), which expands in place (smart long lists).
+ */
+export async function openRowMenuAll(page, id) {
+  await page.getByTestId(`result-more-${id}`).click();
+  await page.getByTestId(`result-action-more-${id}-more`).click();
+}
+
+/** The same for a home tile's ⋯ menu (`<tile>-verb-more-more`). */
+export async function openTileMenuAll(page, tileTestId) {
+  const tile = page.getByTestId(tileTestId);
+  await tile.scrollIntoViewIfNeeded();
+  await tile.getByRole('button', { name: /More actions for/ }).click();
+  await page.getByTestId(`${tileTestId}-verb-more-more`).click();
+  return page.getByTestId(`${tileTestId}-menu`);
+}
+
+/**
+ * Show every row of a "top few, then More (k)" list (TopMoreList: the aim
+ * popover `cast-target`, the Play on… picker `picker`, Devices `fleet`). How
+ * many rows lead depends on habits and on what is on now, so More (k) is
+ * there only when something is hidden; this expands it when it is. Setup, not
+ * an assertion: the journey still asserts on the rows it then reads.
+ */
+export async function showAllRows(page, testId) {
+  const more = page.getByTestId(`${testId}-more`);
+  if (await more.isVisible().catch(() => false)) await more.click();
+  await expect(more).toHaveCount(0);
+}

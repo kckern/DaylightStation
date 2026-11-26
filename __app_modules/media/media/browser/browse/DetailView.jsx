@@ -256,7 +256,9 @@ export function DetailView({ contentId, focusPlay = false }) {
           >
             {on ? `Start over on ${on.name}` : labelsFor(detailItem).sentence}
           </Button>
-          {elsewhere && (
+          {/* Play here whenever ▶ goes to a screen: the aim's, or the one the
+              item is already on (where PLAY is Start over). */}
+          {(elsewhere || on) && (
             <Button
               data-testid="detail-play-here"
               variant="default"

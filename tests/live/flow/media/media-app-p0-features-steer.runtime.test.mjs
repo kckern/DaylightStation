@@ -81,8 +81,9 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
     await goTo(page, 'browse');
     const handle = page.getByTestId('screen-handle');
     await expect(handle).toBeVisible({ timeout: 30000 });
-    await expect(handle.getByTestId('screen-handle-name')).toContainText('Acceptance receiver');
-    await expect(handle).toContainText('Hospital');
+    // The handle reads "▶ <title> · <screen>", its state on the line below.
+    await expect(handle.getByTestId('screen-handle-title')).toContainText('Acceptance receiver');
+    await expect(handle.getByTestId('screen-handle-title')).toContainText('Hospital');
     const toggle = handle.getByTestId('screen-handle-toggle');
     const box = await toggle.boundingBox();
     expect(box.height, '44 px target').toBeGreaterThanOrEqual(44);
@@ -91,7 +92,7 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
     // "Pausing the TV when the phone rings is one tap."
     await toggle.click();
     await expect.poll(async () => (await state(request))?.state, { timeout: 30000 }).toBe('paused');
-    await expect(handle.getByTestId('screen-handle-name')).toContainText('Paused');
+    await expect(handle.getByTestId('screen-handle-state')).toHaveText(/^Paused/);
     await expect(toggle).toHaveAccessibleName('Resume Acceptance receiver');
     await toggle.click();
     await expect.poll(async () => (await state(request))?.state, { timeout: 30000 }).toBe('playing');

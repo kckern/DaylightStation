@@ -338,6 +338,16 @@ describe('DetailView: already playing is shown; only PLAY spins (addendum 5, 6)'
     expect(dispatchLeafVerb).not.toHaveBeenCalled();
   });
 
+  it('an item on a screen, with nothing aimed: PLAY starts over there and Play here plays it on this device', async () => {
+    entries['office-tv'] = { snapshot: { state: 'playing', currentItem: { contentId: 'plex:266151', title: 'Hospital' } } };
+    mount();
+    expect(screen.getByTestId('detail-play-now')).toHaveTextContent('Start over on Office Screen');
+    // ▶ goes to a screen, so the row offers Play here (spec: row 1 is PLAY, Play here, Play on…).
+    fireEvent.click(screen.getByTestId('detail-play-here'));
+    expect(dispatchLeafVerb).toHaveBeenLastCalledWith('playNow', 'plex:266151', expect.objectContaining({ id: 'plex:266151' }), { targetIds: [] });
+    expect(transport.restartCurrent).not.toHaveBeenCalled();
+  });
+
   it('a paused item offers Resume', () => {
     entries['office-tv'] = { snapshot: { state: 'paused', currentItem: { contentId: 'plex:266151' } } };
     mount();

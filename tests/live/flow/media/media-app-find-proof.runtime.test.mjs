@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { resetHouseholdAt } from './lib/household.mjs';
 import { A, A_NAME, startOutcome, ITEM, VIEWPORTS, newAppPage, gotoMedia, warmMedia, openReceiver, stopReceiver, receiverState } from './lib/receivers.mjs';
-import { isPhone, goArea, openSearch, closeSearch, resultRows, resultRow, rowPicture, searchSurface, waitForSearchSettled, whereAmI, playResultHere, openDetailMore } from './lib/search.mjs';
+import { isPhone, goArea, openSearch, closeSearch, resultRows, resultRow, rowPicture, searchSurface, waitForSearchSettled, whereAmI, playResultHere, openDetailMore, openRowMenuAll, openTileMenuAll } from './lib/search.mjs';
 import { startSseServer, streamItem } from './lib/sseServer.mjs';
 import { aimAt } from './lib/aim.mjs';
 
@@ -325,12 +325,8 @@ test('[FIND.5a/AC1] every kind of content (video, music, hymns, books, photos, Y
 });
 
 // FIND.8a — details.
-async function openTileMenuIn(page, testId) {
-  const tile = page.getByTestId(testId);
-  await tile.scrollIntoViewIfNeeded();
-  await tile.getByRole('button', { name: /More actions for/ }).click();
-  return page.getByTestId(`${testId}-menu`);
-}
+// A tile's ⋯ with every verb showing (Details sits behind its More (k)).
+const openTileMenuIn = (page, testId) => openTileMenuAll(page, testId);
 
 test('[FIND.8a/AC1] details open in one step from search, browsing, suggestions and recent', async ({ browser }) => {
   const vp = VIEWPORTS.laptop;
@@ -345,7 +341,15 @@ test('[FIND.8a/AC1] details open in one step from search, browsing, suggestions 
   const input = await openSearch(page, vp);
   await input.fill('Arrival');
   await expect(resultRow(page, vp, ARRIVAL)).toBeVisible({ timeout: 30000 });
-  await page.getByTestId(`result-more-${ARRIVAL}`).click();
+  // Selecting the row is the one step (it opens the info view); the row's ⋯
+  // offers Details too, behind its More (k).
+  await resultRow(page, vp, ARRIVAL).click();
+  await detailOpen(ARRIVAL);
+  const again = await openSearch(page, vp);
+  await again.fill('');
+  await again.fill('Arrival');
+  await expect(resultRow(page, vp, ARRIVAL)).toBeVisible({ timeout: 30000 });
+  await openRowMenuAll(page, ARRIVAL);
   await page.getByTestId(`result-action-detail-${ARRIVAL}`).click();
   await detailOpen(ARRIVAL);
   // Recent (the seeded household's recents) and a suggestion ("Usually at this time").
@@ -488,12 +492,12 @@ for (const [label, vp] of Object.entries(VIEWPORTS)) {
     expect(ids.length).toBeGreaterThan(2);
     for (const id of ids) {
       await page.getByTestId(`result-more-${id}`).scrollIntoViewIfNeeded();
-      await page.getByTestId(`result-more-${id}`).click();
+      await openRowMenuAll(page, id); // Details sits behind the menu's More (k)
       await expect(page.getByTestId(`result-action-detail-${id}`), `result ${id} offers details`).toBeVisible();
       await page.keyboard.press('Escape');
     }
     // And it opens.
-    await page.getByTestId(`result-more-${ids[0]}`).click();
+    await openRowMenuAll(page, ids[0]);
     await page.getByTestId(`result-action-detail-${ids[0]}`).click();
     await expect(page.getByTestId('detail-view')).toBeVisible({ timeout: 30000 });
     await context.close();
