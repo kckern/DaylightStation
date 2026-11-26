@@ -107,6 +107,8 @@ public class KeptIndexTest {
     /** S1, S2, 3.7: room visible; the limit never above free space minus 2 GB. */
     @Test public void roomIsShownAndTheLimitRespectsFreeSpace() {
         assertEquals("1.2 GB kept · 4.1 GB limit · 15.0 GB free on phone", KeptIndex.roomLine(1_200_000_000L, 4096, 15_000_000_000L));
+        assertEquals("the limit shown is the one that applies", "4 MB kept · 3.1 GB limit · 5.1 GB free on phone",
+                KeptIndex.roomLine(4_000_000L, 4096, 5_100_000_000L));
         // The owner's phone: 15 GB free, a 4 GB setting: the setting applies.
         assertEquals(4_096_000_000L, KeptIndex.effectiveLimitBytes(4096, 15_000_000_000L, 1_000_000_000L));
         // 3 GB free: what is kept plus 1 GB.

@@ -188,7 +188,9 @@ public final class KeptIndex {
 
     /** "1.2 GB kept · 4 GB limit · 15 GB free on phone". */
     public static String roomLine(long keptBytes, long capMb, long freeBytes) {
-        return size(keptBytes) + " kept" + (capMb > 0 ? " · " + size(capMb * 1_000_000L) + " limit" : "")
+        // The limit shown is the one that applies: the setting or free space minus 2 GB.
+        long limit = effectiveLimitBytes(capMb, freeBytes, keptBytes);
+        return size(keptBytes) + " kept" + (limit < Long.MAX_VALUE ? " · " + size(limit) + " limit" : "")
                 + " · " + size(freeBytes) + " free on phone";
     }
 

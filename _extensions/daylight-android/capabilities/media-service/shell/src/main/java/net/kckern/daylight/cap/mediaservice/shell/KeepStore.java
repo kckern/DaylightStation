@@ -750,6 +750,11 @@ final class KeepStore {
         if (prefs.getLong("verified." + key, -1) == len && !prefs.getBoolean("damaged." + key, false)) return true;
         try {
             if (cache.getCachedBytes(key, 0, len) < len) return false;
+            // The cache's index says the spans are there; the files must be too, at full length
+            // (a file cut short on disk is not whole, whatever the index says).
+            for (androidx.media3.datasource.cache.CacheSpan span : cache.getCachedSpans(key)) {
+                if (span.file == null || !span.file.isFile() || span.file.length() < span.length) return false;
+            }
             byte[] head = new byte[12];
             CacheDataSource src = new CacheDataSource(cache, null);
             int got;
