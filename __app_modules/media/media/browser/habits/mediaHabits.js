@@ -5,8 +5,10 @@
 //   picks   — which result was chosen for which words. Typing "sonic" again
 //             puts the film picked last time above the album, the track and
 //             the show that outrank it on text alone.
-//   screens — which screen a deliberate play of each kind of thing went to.
-//             It names the one-tap ▶ ("▶ Office Screen") when nothing is aimed.
+//   screens — which screen deliberate plays of each kind of thing go to,
+//             counted and fading like picks, so one "Play here" does not undo
+//             a habit. The strongest names the one-tap ▶ ("▶ Office Screen")
+//             when nothing is aimed.
 //
 // Only deliberate acts are recorded: a pick when a row is opened or played,
 // a screen when something is played on purpose. Typing, scrolling and looking
@@ -21,6 +23,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // A pick fades by half every 30 days: last week's Sonic beats a show picked
 // once in the spring, and nothing learned is permanent.
 const HALF_LIFE_MS = 30 * DAY_MS;
+const MAX_SCREEN_CHOICES = 6;
 
 const VIDEO_TYPES = new Set(['movie', 'episode', 'show', 'season', 'series', 'clip', 'video', 'trailer', 'film', 'channel']);
 const AUDIO_TYPES = new Set(['track', 'album', 'artist', 'song', 'audiobook', 'book', 'podcast', 'audio', 'music']);
@@ -123,6 +126,8 @@ export function createHabitsStore({ getStorage = () => localStorage, now = () =>
       const remembered = {
         id,
         title: item.title ?? found?.title ?? null,
+        // Enough to draw the row before the search answers (rankByHabits).
+        item: snapshotOf(item, id) ?? found?.item ?? null,
         count: (found?.count ?? 0) + 1,
         at,
       };
@@ -163,24 +168,41 @@ export function createHabitsStore({ getStorage = () => localStorage, now = () =>
       return scores;
     },
 
+    /** Words → the remembered items picked for them (for drawing rows early). */
+    rememberedFor(text) {
+      const query = normalizeQuery(text);
+      const found = new Map();
+      if (query.length < 2) return found;
+      for (const [stored, entry] of Object.entries(current().picks)) {
+        if (!(stored === query || (stored.startsWith(query) && query.length >= 3) || (query.startsWith(stored) && stored.length >= 3))) continue;
+        for (const item of entry.items ?? []) if (item.item && !found.has(item.id)) found.set(item.id, item.item);
+      }
+      return found;
+    },
+
     /** A deliberate play of a `kind` item went to `targetIds` ([] = this device). */
     recordScreen(kind, targetIds) {
       if (kind !== 'video' && kind !== 'audio') return false;
       current();
-      const ids = Array.isArray(targetIds) ? [...new Set(targetIds.filter(id => typeof id === 'string' && id))] : [];
-      const previous = state.screens[kind];
-      if (previous && JSON.stringify(previous.targetIds) === JSON.stringify(ids)) {
-        save({ ...state, screens: { ...state.screens, [kind]: { ...previous, at: now() } } });
-        return true;
-      }
-      save({ ...state, screens: { ...state.screens, [kind]: { targetIds: ids, at: now() } } });
+      const ids = Array.isArray(targetIds) ? [...new Set(targetIds.filter(id => typeof id === 'string' && id))].sort() : [];
+      const key = ids.join(',');
+      const at = now();
+      const choices = screenChoices(state.screens[kind]);
+      const found = choices.find(choice => choice.targetIds.join(',') === key);
+      const next = [
+        { targetIds: ids, count: (found?.count ?? 0) + 1, at },
+        ...choices.filter(choice => choice !== found),
+      ].sort((a, b) => weight(b, at) - weight(a, at)).slice(0, MAX_SCREEN_CHOICES);
+      save({ ...state, screens: { ...state.screens, [kind]: { choices: next } } });
       return true;
     },
 
-    /** Where the last deliberate play of a `kind` item went, or null if never. */
+    /** Where deliberate plays of a `kind` item usually go, or null if never. */
     screenFor(kind) {
-      const entry = current().screens[kind];
-      return entry && Array.isArray(entry.targetIds) ? entry.targetIds : null;
+      const choices = screenChoices(current().screens[kind]);
+      if (choices.length === 0) return null;
+      const at = now();
+      return [...choices].sort((a, b) => weight(b, at) - weight(a, at))[0].targetIds;
     },
 
     /** For tests and the debug surface only. */
@@ -188,22 +210,55 @@ export function createHabitsStore({ getStorage = () => localStorage, now = () =>
   };
 }
 
+// Screen choices, read from either shape (the first release stored only the
+// last choice: { targetIds, at }).
+function screenChoices(entry) {
+  if (!entry) return [];
+  if (Array.isArray(entry.choices)) return entry.choices.filter(choice => Array.isArray(choice?.targetIds));
+  if (Array.isArray(entry.targetIds)) return [{ targetIds: entry.targetIds, count: 1, at: entry.at ?? 0 }];
+  return [];
+}
+
+// What a remembered pick keeps of its row: enough to draw it (title, art,
+// kind) before the search answers — never the whole result.
+function snapshotOf(item, id) {
+  if (!item) return null;
+  const type = item.type ?? item.metadata?.type ?? null;
+  return {
+    id,
+    title: item.title ?? null,
+    thumbnail: item.thumbnail ?? null,
+    source: item.source ?? String(id).split(':')[0],
+    type,
+    mediaType: item.mediaType ?? null,
+    itemType: item.itemType ?? null,
+    metadata: type ? { type } : {},
+  };
+}
+
 /**
  * Results in the order this person wants them: items they picked for these
  * words first (strongest first), everything else in the order it came.
- * Returns the input array itself when nothing applies, so callers can tell.
+ *
+ * `remembered` (Map id → stored row) lets a picked item hold row 1 from the
+ * first keystroke, drawn from what was kept of it, and be swapped for the
+ * real row in place when the search answers — so the list never shifts under
+ * a pointer or a highlighted index while sources stream in. Without it, only
+ * rows that arrived are lifted. Returns the input array itself when nothing
+ * applies, so callers can tell.
  */
-export function rankByHabits(results, scores) {
+export function rankByHabits(results, scores, remembered = null) {
   if (!Array.isArray(results) || !scores || scores.size === 0) return results;
-  const boosted = [];
+  const arrived = new Map();
   const rest = [];
   for (const item of results) {
-    if (scores.has(item?.id)) boosted.push(item);
+    if (scores.has(item?.id)) arrived.set(item.id, item);
     else rest.push(item);
   }
-  if (boosted.length === 0) return results;
-  boosted.sort((a, b) => scores.get(b.id) - scores.get(a.id));
-  return [...boosted, ...rest];
+  const ids = [...scores.keys()].filter(id => arrived.has(id) || remembered?.has(id));
+  if (ids.length === 0) return results;
+  ids.sort((a, b) => scores.get(b) - scores.get(a));
+  return [...ids.map(id => arrived.get(id) ?? { ...remembered.get(id), remembered: true }), ...rest];
 }
 
 let shared = null;

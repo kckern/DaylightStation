@@ -223,3 +223,11 @@
     .mantine-Button-section { margin: 0; }
   }
 }
+
+// "Films and shows play on Office Screen" — under the destination line on the
+// phone search, when a ▶ follows a learned screen rather than the aim.
+.search-mode-learned {
+  padding: 0 var(--mantine-spacing-md) var(--mantine-spacing-xs);
+  font-size: 0.875rem;
+  color: var(--mantine-color-dark-1);
+}

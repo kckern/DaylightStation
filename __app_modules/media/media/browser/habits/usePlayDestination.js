@@ -63,10 +63,13 @@ export function usePlayDestination({ aimIds: aimOverride } = {}) {
   const scoresFor = useCallback((text) => store.scoresFor(text),
   // eslint-disable-next-line react-hooks/exhaustive-deps
     [store, snapshot]);
+  const rememberedFor = useCallback((text) => store.rememberedFor(text),
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+    [store, snapshot]);
 
   return useMemo(
-    () => ({ destinationFor, labelsFor, recordPlay, recordPick, scoresFor }),
-    [destinationFor, labelsFor, recordPlay, recordPick, scoresFor],
+    () => ({ destinationFor, labelsFor, recordPlay, recordPick, scoresFor, rememberedFor }),
+    [destinationFor, labelsFor, recordPlay, recordPick, scoresFor, rememberedFor],
   );
 }
 

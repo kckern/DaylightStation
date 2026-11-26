@@ -66,6 +66,9 @@ export function useItemVerbs() {
         return 'detail';
       case 'playNow':
         return collection ? playContainerAsQueue(item.id, item) : playLeaf(item, ctx.entry);
+      case 'playHere':
+        return dispatchLeafVerb('playNow', item.id, collection ? { ...item, itemType: 'container' } : item,
+          collection ? { targetIds: [], collection: true } : { targetIds: [] });
       case 'shuffle':
         return playContainerAsQueue(item.id, item, { shuffle: true });
       case 'add':

@@ -1,3 +1,4 @@
+import React from 'react';
 // RELY.1a — every play/add confirms through the one outcome system, the same
 // way whichever control started it; Mantine toasts are not a second voice.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -28,6 +29,8 @@ vi.mock("../logging/mediaLog.js", () => {
 
 import { createLocalSessionController } from "../session/LocalSessionController.js";
 import { useContentDispatch } from "./useContentDispatch.js";
+import { FleetContext } from "../fleet/FleetProvider.jsx";
+import { habitsStore } from "../habits/mediaHabits.js";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -93,5 +96,45 @@ describe('selected quality dispatch', () => {
     const { result } = renderHook(() => useContentDispatch());
     await act(async () => { result.current.dispatchLeafVerb('playNow', 'plex:42', { title: 'Movie', format: 'video' }); });
     expect(dispatchToTarget).toHaveBeenCalledWith(expect.objectContaining({ itemAction: expect.objectContaining({ item: expect.objectContaining(selectedOverrides['plex:42']) }) }));
+  });
+});
+
+// The headline routing, with a real session controller (production's path):
+// where a ▶ goes when nothing is aimed, and that Play here stays here.
+describe('useContentDispatch — the ▶ goes where it says (controller-backed)', () => {
+  const office = { id: 'office-tv', name: 'Office Screen', type: 'linux-pc', content_control: { type: 'websocket' } };
+  const wrapper = ({ children }) => (
+    <FleetContext.Provider value={{ devices: [office], identity: { deviceId: 'browser:me' } }}>{children}</FleetContext.Provider>
+  );
+  const film = { title: 'Sonic the Hedgehog', type: 'movie' };
+
+  it('with nothing aimed, a film plays on the screen this browser usually watches films on', async () => {
+    habitsStore().recordScreen('video', ['office-tv']);
+    const { result } = renderHook(() => useContentDispatch(), { wrapper });
+    await act(async () => { result.current.dispatchLeafVerb('playNow', 'plex:775444', film); await Promise.resolve(); });
+    expect(dispatchToTarget).toHaveBeenCalledWith(expect.objectContaining({ targetIds: ['office-tv'], play: 'plex:775444', mode: 'fork' }));
+    expect(controller.getSnapshot().currentItem).toBeNull();
+  });
+
+  it('Play next follows it there too', async () => {
+    habitsStore().recordScreen('video', ['office-tv']);
+    const { result } = renderHook(() => useContentDispatch(), { wrapper });
+    await act(async () => { result.current.dispatchLeafVerb('playNext', 'plex:775473', film); await Promise.resolve(); });
+    expect(dispatchToTarget).toHaveBeenCalledWith(expect.objectContaining({ targetIds: ['office-tv'], queue: 'plex:775473' }));
+  });
+
+  it('Play here stays here even with a screen aimed, and teaches "here"', async () => {
+    aim = { targetIds: ['office-tv'], mode: 'fork' };
+    const { result } = renderHook(() => useContentDispatch(), { wrapper });
+    await act(async () => { result.current.dispatchLeafVerb('playNow', 'plex:775444', film, { targetIds: [] }); await Promise.resolve(); });
+    expect(dispatchToTarget).not.toHaveBeenCalled();
+    expect(controller.getSnapshot().currentItem).toMatchObject({ contentId: 'plex:775444' });
+    expect(habitsStore().screenFor('video')).toEqual([]);
+  });
+
+  it('showing a camera here teaches nothing about where films play', async () => {
+    const { result } = renderHook(() => useContentDispatch(), { wrapper });
+    await act(async () => { result.current.dispatch('camera:driveway', { id: 'camera:driveway', title: 'Driveway', type: 'camera', mediaType: 'video' }); await Promise.resolve(); });
+    expect(habitsStore().screenFor('video')).toBeNull();
   });
 });

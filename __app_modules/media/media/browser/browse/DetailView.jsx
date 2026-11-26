@@ -7,7 +7,7 @@ import { ItemQualityButton } from "../quality/PlaybackQualityButtons.jsx";
 // Opening this page never plays anything: it is where a look lands.
 import React, { useState } from 'react';
 import { Stack, Title, Text, Button, Group, Image } from '@mantine/core';
-import { IconPlayerPlayFilled, IconPlayerTrackNext, IconRowInsertTop, IconPlaylistAdd } from '@tabler/icons-react';
+import { IconPlayerPlayFilled, IconPlayerTrackNext, IconRowInsertTop, IconPlaylistAdd, IconCast } from '@tabler/icons-react';
 import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import { EmptyState } from '@/lib/ui/states.jsx';
 import { useRetryRegion } from '@/lib/ui/useRetryRegion.js';
@@ -76,6 +76,11 @@ export function DetailView({ contentId }) {
     // FIND.8a/AC2: what kind of thing it is and how long, in words ("Movie · 1 hr 56 min").
     const facts = resultSubtitle(detailItem);
     const description = info.description || info.metadata?.summary || null;
+    // Where Play, Shuffle and the queue verbs go (the aim, else the usual
+    // screen for this kind of thing, else here) — named on the page.
+    const where = destinationFor(detailItem);
+    const elsewhere = where.targetIds.length > 0;
+    const whereName = elsewhere ? labelsFor(detailItem).short : null;
 
     body = (
       <>
@@ -90,13 +95,13 @@ export function DetailView({ contentId }) {
         <Group className="detail-actions" gap="sm">
           <Button
             data-testid="detail-play-now"
-            leftSection={<IconPlayerPlayFilled size={18} />}
+            leftSection={elsewhere ? <IconCast size={18} /> : <IconPlayerPlayFilled size={18} />}
             loading={!collection && pendingResume}
             onClick={() => (collection ? dispatchLeafVerb('playNow', contentId, detailItem) : run('playNow', detailItem, { entry }))}
           >
             {labelsFor(detailItem).sentence}
           </Button>
-          {destinationFor(detailItem).targetIds.length > 0 && (
+          {elsewhere && (
             <Button
               data-testid="detail-play-here"
               variant="default"
@@ -107,7 +112,7 @@ export function DetailView({ contentId }) {
           )}
           <Button variant="default" data-testid="detail-play-on" onClick={() => setOneShot({ kind: 'playOn', item: detailItem })}>Play on…</Button>
           <ItemQualityButton item={detailItem} />
-          {isContainer(detailItem) && <Button variant="default" onClick={() => dispatchLeafVerb('shuffle', contentId, detailItem)}>Shuffle</Button>}
+          {isContainer(detailItem) && <Button variant="default" onClick={() => dispatchLeafVerb('shuffle', contentId, detailItem)}>{elsewhere ? `Shuffle on ${whereName}` : 'Shuffle'}</Button>}
           <Button data-testid="detail-play-next" variant="default" leftSection={<IconPlayerTrackNext size={16} />}
                   {...playNextHold.bind}
                   onClick={playNextHold.guardClick(() => dispatchLeafVerb('playNext', contentId, detailItem))}>
@@ -130,6 +135,11 @@ export function DetailView({ contentId }) {
           <Button variant="default" onClick={() => setOneShot({ kind: 'addOn', item: detailItem })}>Add on…</Button>
           <Button variant="default" data-testid="detail-show-briefly" onClick={() => setOneShot({ kind: 'showBrieflyOn', item: detailItem })}>Show briefly on…</Button>
         </Group>
+        {elsewhere && (
+          <Text size="sm" c="dimmed" data-testid="detail-queue-where">
+            Play Next, Play First and Add to Queue go to {whereName}.
+          </Text>
+        )}
         <Group className="detail-actions" gap="sm">
           <Button
             data-testid="detail-favourite"

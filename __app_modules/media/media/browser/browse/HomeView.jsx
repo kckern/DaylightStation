@@ -260,7 +260,7 @@ export function HomeView() {
   useRetryDegradedResource(recent, deviceId);
   const favourites = useFavourites();
   const { run, overlays, nameFor } = useItemVerbs();
-  const { labelsFor } = usePlayDestination();
+  const { labelsFor, destinationFor } = usePlayDestination();
   // The tile's ▶ names its screen, the same words the detail page's Play uses.
   const playLabelFor = (item, title) => labelsFor(item, { verb: `Play ${title}` }).sentence;
   const { startingOnFor } = useStartingOn();
@@ -318,6 +318,7 @@ export function HomeView() {
         pictureLabel={`Open ${title}`}
         onPlay={() => run('playNow', item, { entry })}
         playLabel={playLabelFor(item, title)}
+        playElsewhere={destinationFor(item).targetIds.length > 0}
         onVerb={kind => (kind === 'continue' && cont ? run('playNow', cont) : run(kind, item, { entry }))}
         favourite={favourite}
         watched={entry ? entry.finished === true : null}
@@ -390,6 +391,7 @@ export function HomeView() {
                 pictureLabel={`Open ${title}`}
                 onPlay={() => run('playNow', item, { entry })}
                 playLabel={playLabelFor(item, title)}
+                playElsewhere={destinationFor(item).targetIds.length > 0}
                 onVerb={kind => run(kind, item, { entry })}
                 favourite={favourites.has(item.id)}
                 watched={entry.finished === true}

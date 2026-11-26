@@ -9,7 +9,7 @@
 // Screen"). No Play bar, no slab: a disc on the thumbnail.
 import React, { useState } from 'react';
 import { UnstyledButton } from '@mantine/core';
-import { IconPlayerPlayFilled } from '@tabler/icons-react';
+import { IconPlayerPlayFilled, IconCast } from '@tabler/icons-react';
 import { ItemMenu } from "../household/ItemMenu.jsx";
 import { tileKind } from "./tilePresentation.js";
 
@@ -22,7 +22,7 @@ export function HomeTile({
   item, title: titleOverride = null, meta = null, size = 'normal', onPicture, pictureLabel,
   onVerb, favourite, watched = null, removable = false, testId, progress = null,
   editions = null, onEdition = null, continueLabel = null, kind: kindOverride = null,
-  onPlay = null, playLabel = null,
+  onPlay = null, playLabel = null, playElsewhere = false,
 }) {
   const title = titleOverride ?? item?.title ?? 'Untitled';
   const pictureName = pictureLabel ?? title;
@@ -75,7 +75,7 @@ export function HomeTile({
             title={playLabel ?? `Play ${title}`}
             onClick={(event) => { event.stopPropagation(); onPlay(); }}
           >
-            <IconPlayerPlayFilled size={16} aria-hidden />
+            {playElsewhere ? <IconCast size={18} aria-hidden /> : <IconPlayerPlayFilled size={16} aria-hidden />}
           </UnstyledButton>
         )}
       </div>

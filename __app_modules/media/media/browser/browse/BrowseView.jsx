@@ -110,11 +110,13 @@ export function BrowseView({
   // A row's ▶ and its ⋯ Play say where they play, the same words as search.
   const rowLabelsFor = (row) => {
     const { short, sentence } = labelsFor(row);
+    const elsewhere = destinationFor(row).targetIds.length > 0;
     return {
+      playElsewhere: elsewhere,
       play: short,
       playTitle: row.title ? sentence.replace(/^Play/, `Play ${row.title}`) : sentence,
       playNow: sentence,
-      playHere: destinationFor(row).targetIds.length > 0 ? 'Play here' : null,
+      playHere: elsewhere ? 'Play here' : null,
     };
   };
   const log = useMemo(() => getLogger().child({ component: 'browse-view' }), []);
@@ -255,7 +257,7 @@ export function BrowseView({
               className="browse-dispatch-btn"
               onClick={() => runHeaderVerb('shuffle', (id, item) => playContainerAsQueue(id, item, { shuffle: true }))}
             >
-              <IconArrowsShuffle size={16} aria-hidden="true" /> Shuffle
+              <IconArrowsShuffle size={16} aria-hidden="true" /> {destinationFor(containerItem).targetIds.length > 0 ? `Shuffle on ${labelsFor(containerItem).short}` : 'Shuffle'}
             </button>
             <button
               type="button"
@@ -263,7 +265,7 @@ export function BrowseView({
               className="browse-dispatch-btn"
               onClick={() => runHeaderVerb('queue', addContainerToQueue)}
             >
-              <IconPlus size={16} aria-hidden="true" /> Queue
+              <IconPlus size={16} aria-hidden="true" /> {destinationFor(containerItem).targetIds.length > 0 ? `Queue on ${labelsFor(containerItem).short}` : 'Queue'}
             </button>
           </div>
         </div>

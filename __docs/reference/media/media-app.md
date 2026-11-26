@@ -504,8 +504,13 @@ shows something — on this device, as before.
 
 **The ▶ is the act, and it says where.** Every playable row carries a labelled
 ▶ ("▶ Office Screen", or "▶ Play" when it plays here); a tile carries a small
-amber ▶ disc on its art; the detail page's primary button reads "▶ Play on
-Office Screen" or "▶ Play here". Where it goes (`habits/playDestination.js`):
+amber disc on its art; the detail page's primary button reads "Play on Office
+Screen" or "Play here". A play that leaves this device wears the cast mark
+instead of the triangle, so even where the ▶ is icon-only (phone search rows,
+below 480 px, where the title needs the room) it says "to a screen" vs "here";
+the phone search also says, under the destination line, "Films and shows play
+on Office Screen" when that comes from learning. Where it goes
+(`habits/playDestination.js`):
 
 1. the aim, when something is aimed in the header;
 2. otherwise the screen this browser last played that kind of thing on (films
@@ -513,29 +518,37 @@ Office Screen" or "▶ Play here". Where it goes (`habits/playDestination.js`):
    still in the house and can play it;
 3. otherwise this device.
 
-The ⋯ menu's Play Now carries the same words, and offers **Play here** when the
+The ⋯ menus' Play Now carry the same words, and offer **Play here** when the
 ▶ goes elsewhere; the detail page has **Play here** and **Play on…** beside
-its primary Play. Queue edits (Play next, Add to queue) still follow the aim
-alone: they change a queue that is already playing somewhere.
+its primary Play. Shuffle and the queue verbs (Play next, Play first, Add to
+queue) follow the same destination — after "Play on Office Screen", Play next
+belongs in that screen's queue — and say so where they are not in a menu
+headed by it ("Shuffle on Office Screen", the detail page's "Play Next, Play
+First and Add to Queue go to Office Screen").
 
 **What the app learns** (`habits/mediaHabits.js`, localStorage
 `media-app.habits`, this browser only). Two things, both from deliberate acts
 only — typing, scrolling and looking at a detail page write nothing:
 
-- *Picks.* Opening or playing a result remembers it against the words in the
-  box. The next search for those words (or while they are still being typed,
-  from three letters; or words that extend them) lists that item first, then
-  everything else in the order it came. Picks fade by half every 30 days; the
-  more often and more lately an item was picked, the higher it sits. Enter
-  picks from the list as shown, not the order underneath.
-- *Screens.* A play of a film on the Office Screen — from its ▶, from Play
-  on…, or a move of local playback — makes the Office Screen the ▶ for the
-  next film. Play here makes it here again. The last deliberate choice wins.
+- *Picks.* Opening or playing a result remembers it (and enough of its row to
+  draw it) against the words in the box. The next search for those words (or
+  while they are still being typed, from three letters; or words that extend
+  them) shows that item in row 1 at once — before any source answers, in the
+  catalog-wide scope — and swaps in the real row in place when it arrives, so
+  nothing shifts under the pointer; everything else follows in the order it
+  came. Picks fade by half every 30 days; the more often and more lately an
+  item was picked, the higher it sits. Enter picks from the list as shown.
+- *Screens.* Each deliberate play of a film — its ▶, Play on…, Play here, a
+  move of local playback — counts for the screen it went to, and the counts
+  fade like picks. The strongest names the ▶, so one "Play here" does not
+  undo a habit, while a new habit takes over within a few plays. Showing a
+  camera here teaches nothing.
 
 **Play on… only offers what can play it.** A film never lists a speaker or
 headset; a display listed for the house view only (`fleet: true` with no
 `content_control`, e.g. a gym screen whose page has no receiver) is never
-listed at all. The list is in a stable order — the screen used last for that
+listed at all. A learned screen is not checked for being awake: sending wakes
+it, as a send to the aim always has. The list is in a stable order — the screen used last for that
 kind of thing first, then by name — and its send button stays on screen at
 the bottom of the sheet however long the list.
 
@@ -548,8 +561,9 @@ whether the aim, learning or a one-off choice decided it), `habit.pick-recorded`
 - **Collections carry an inline play** (FIND.8b/AC2). A collection result (show,
   season, album, playlist) shows **Play**, or **Continue S2E7** when the
   household has that show under way (an unfinished episode, or the episode
-  after the last finished one). Continue plays that episode at the aim; Play
-  plays the whole collection as a queue. A collection tap still opens it.
+  after the last finished one). Continue plays that episode, Play plays the
+  whole collection as a queue — both where the row's ▶ says (Looking and
+  watching). A collection tap still opens it.
 - **Cameras and single photos** (FIND.8b/AC3) are the one tap that shows
   something: a tap shows them on this device, and the second action reads
   **Show on…** (instead of Play on…) to send them to another screen.

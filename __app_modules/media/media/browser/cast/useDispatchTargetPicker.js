@@ -177,6 +177,8 @@ export function useDispatchTargetPicker({ source, onComplete, intent = 'dispatch
         return outcome ?? { ok: false, error: 'move-unconfirmed' };
       }
       setDispatchError(null);
+      // Moving what plays here to a screen is a choice of where it is watched.
+      recordPlay(sourceItem ?? snapshot?.currentItem ?? null, targetIds);
       onComplete?.({ targetIds, mode });
       return outcome;
     }

@@ -62,6 +62,17 @@ describe('habits: picks (search words → what was chosen)', () => {
     expect(ranked.slice(0, 2).map(r => r.id)).toEqual(['plex:775444', 'plex:68196']);
   });
 
+  it('a remembered pick holds row 1 before the search answers, and the real row replaces it in place', () => {
+    store.recordPick('sonic', { ...SONIC[5], type: 'movie', thumbnail: '/t.jpg' });
+    const early = rankByHabits([SONIC[0]], store.scoresFor('sonic'), store.rememberedFor('sonic'));
+    expect(early.map(r => r.id)).toEqual(['plex:775444', 'plex:675543']);
+    expect(early[0]).toMatchObject({ title: 'Sonic the Hedgehog', type: 'movie', thumbnail: '/t.jpg', remembered: true });
+    const late = rankByHabits(SONIC, store.scoresFor('sonic'), store.rememberedFor('sonic'));
+    expect(late[0]).toBe(SONIC[5]);
+    // Row 1 never moved: only what is drawn in it was replaced.
+    expect(late[0].id).toBe(early[0].id);
+  });
+
   it('returns the very same list when nothing was learned (callers can tell)', () => {
     expect(rankByHabits(SONIC, store.scoresFor('sonic'))).toBe(SONIC);
   });
@@ -84,6 +95,23 @@ describe('habits: picks (search words → what was chosen)', () => {
 });
 
 describe('habits: screens (what kind of thing → where it was played)', () => {
+  it('one "Play here" does not undo a habit; a new habit takes over within a few plays', () => {
+    const storage = memoryStorage();
+    let clock = 1_800_000_000_000;
+    const store = createHabitsStore({ getStorage: () => storage, now: () => clock });
+    for (let i = 0; i < 3; i++) { store.recordScreen('video', ['office-tv']); clock += DAY; }
+    store.recordScreen('video', []);
+    expect(store.screenFor('video')).toEqual(['office-tv']);
+    for (let i = 0; i < 4; i++) { clock += DAY; store.recordScreen('video', ['livingroom-tv']); }
+    expect(store.screenFor('video')).toEqual(['livingroom-tv']);
+  });
+
+  it('reads the first release\'s stored shape (last screen only)', () => {
+    const storage = memoryStorage();
+    storage.setItem(HABITS_KEY, JSON.stringify({ v: 1, picks: {}, screens: { video: { targetIds: ['office-tv'], at: 1 } } }));
+    expect(createHabitsStore({ getStorage: () => storage }).screenFor('video')).toEqual(['office-tv']);
+  });
+
   it('remembers the last deliberate screen per kind', () => {
     const storage = memoryStorage();
     const store = createHabitsStore({ getStorage: () => storage });

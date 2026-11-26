@@ -32,6 +32,7 @@ export function useRowLabels() {
       playTitle: title,
       playNow: sentence,
       playHere: elsewhere ? 'Play here' : null,
+      playElsewhere: elsewhere,
       subtitle,
     };
     if (isContainer(item)) {

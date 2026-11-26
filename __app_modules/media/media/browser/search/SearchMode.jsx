@@ -76,7 +76,7 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
   const { extraActions, runHousehold } = useHouseholdResultActions();
   const { queue } = useSessionController('local');
   const { push } = useNav();
-  const { scoresFor, recordPick } = usePlayDestination();
+  const { scoresFor, rememberedFor, recordPick, destinationFor, labelsFor } = usePlayDestination();
   const log = useMemo(() => getLogger().child({ component: 'search-mode' }), []);
   // The words on screen when a row is opened or played (set below, read by
   // the handlers, which are defined before the combobox that owns the text).
@@ -247,9 +247,17 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
   const searchText = state.search ?? '';
   searchTextRef.current = searchText;
   // What this person picked for these words before comes first.
+  // A remembered pick holds row 1 from the first keystroke, in the
+  // catalog-wide scope only (see MediaContentSearch).
+  const wholeCatalog = currentScopeKey == null || currentScopeKey === scopes[0]?.key;
+  const learnedWhere = [
+    ['Films and shows play', { type: 'movie' }],
+    ['Music plays', { type: 'track' }],
+  ].map(([kind, probe]) => (destinationFor(probe).source === 'learned' ? `${kind} on ${labelsFor(probe).short}` : null))
+    .filter(Boolean).join(' · ') || null;
   const results = useMemo(
-    () => rankByHabits(collapseResultEditions(state.results), scoresFor(searchText)),
-    [state.results, scoresFor, searchText],
+    () => rankByHabits(collapseResultEditions(state.results), scoresFor(searchText), wholeCatalog ? rememberedFor(searchText) : null),
+    [state.results, scoresFor, rememberedFor, searchText, wholeCatalog],
   );
 
   // Every open resets scope to catalog-wide (spec D1: scope never carries
@@ -334,7 +342,17 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
         <div className="search-mode-add-to" data-testid="search-add-to-banner" role="status">
           Adding to the queue on <strong>{addTo.name ?? 'this screen'}</strong> — just this once; your aim doesn&apos;t change.
         </div>
-      ) : <DestinationLine surface="search-mode" />}
+      ) : (
+        <>
+          <DestinationLine surface="search-mode" />
+          {learnedWhere && (
+            // The header names the aim; with nothing aimed, a ▶ follows where
+            // this browser usually plays that kind of thing. Say so here, where
+            // the rows' ▶ are icon-only on a phone.
+            <div className="search-mode-learned" data-testid="search-learned-where" role="note">{learnedWhere}</div>
+          )}
+        </>
+      )}
 
       <div className="search-mode-scope">
         <ScopeChips />

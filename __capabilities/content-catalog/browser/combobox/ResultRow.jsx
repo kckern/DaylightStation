@@ -29,7 +29,7 @@
 // Media/search/resultRowVerbs.js).
 import React from 'react';
 import { ActionIcon, Button, Menu } from '@mantine/core';
-import { IconPlayerPlay, IconDotsVertical } from '@tabler/icons-react';
+import { IconPlayerPlay, IconCast, IconDotsVertical } from '@tabler/icons-react';
 import { isContainer } from "./comboboxMachine.js";
 import { usePressHoldOffer } from "../../../../frontend/src/lib/ui/usePressHoldOffer.js";
 
@@ -52,7 +52,7 @@ function CatalogMoreMenu({ trigger, dropdownProps, children, ...menuProps }) {
  */
 export function ResultRowActions({
   item, isContainerItem, onPlayAll, onDetails, detailsTestId, onMore, onAction, testId, extraActions = null,
-  playLabel = null, playTitle = null, playOnLabel = null, playNowLabel = null, playHereLabel = null,
+  playLabel = null, playTitle = null, playElsewhere = false, playOnLabel = null, playNowLabel = null, playHereLabel = null,
   MoreMenu = CatalogMoreMenu, moreTriggerRef: suppliedMoreTriggerRef,
   onMoreMenuPointerDown, onMoreMenuChange, onMoreMenuAction, onMoreMenuTriggerFocus, onMoreBoundaryBlur,
 }) {
@@ -73,7 +73,10 @@ export function ResultRowActions({
       data-testid={`result-play-all-${idPart}`}
       onMouseDown={(e) => e.preventDefault()}
       onClick={(e) => { e.preventDefault(); e.stopPropagation(); onPlayAll(); }}
-      leftSection={<IconPlayerPlay size={14} aria-hidden />}
+      // A play that leaves this device shows the cast mark, so even an
+      // icon-only ▶ (phones) says "to a screen" vs "here".
+      leftSection={playElsewhere ? <IconCast size={14} aria-hidden /> : <IconPlayerPlay size={14} aria-hidden />}
+      data-plays-elsewhere={playElsewhere ? 'true' : undefined}
       title={playTitle ?? undefined}
       aria-label={playTitle ?? undefined}
       {...extra}
@@ -268,7 +271,7 @@ export function ResultRow({ item, title, subtitle, thumbnail, leading = null, on
         <ResultRowActions
           item={item} isContainerItem={container} onPlayAll={onPlayAll} onDetails={onDetails} detailsTestId={detailsTestId}
           onMore={onMore} onAction={onAction} testId={idPart} extraActions={extraActions}
-          playLabel={rowLabels?.play ?? null} playTitle={rowLabels?.playTitle ?? null} playOnLabel={rowLabels?.playOn ?? null}
+          playLabel={rowLabels?.play ?? null} playTitle={rowLabels?.playTitle ?? null} playElsewhere={!!rowLabels?.playElsewhere} playOnLabel={rowLabels?.playOn ?? null}
           playNowLabel={rowLabels?.playNow ?? null} playHereLabel={rowLabels?.playHere ?? null}
           MoreMenu={MoreMenu} moreTriggerRef={moreTriggerRef} onMoreMenuChange={onMenuOpenChange}
         />

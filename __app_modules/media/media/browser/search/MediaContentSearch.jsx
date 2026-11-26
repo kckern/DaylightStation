@@ -51,19 +51,27 @@ export function MediaContentSearch({ inputRef }) {
   const { extraActions, runHousehold } = useHouseholdResultActions();
   const { queue } = useSessionController('local');
   const { push } = useNav();
-  const { scoresFor, recordPick } = usePlayDestination();
+  const { scoresFor, rememberedFor, recordPick } = usePlayDestination();
+  const lastRankedRef = useRef(null);
   const log = useMemo(() => getLogger().child({ component: 'media-content-search' }), []);
   // The words the list on screen was ranked for: a pick is remembered
   // against them (a row opened or played is what those words meant).
   const queryRef = useRef('');
+  // A remembered pick holds row 1 from the first keystroke (drawn from what
+  // was kept of it) in the catalog-wide scope only — a narrowed scope shows
+  // only what the search returns for it.
+  const wholeCatalog = currentScopeKey == null || currentScopeKey === scopes[0]?.key;
   const transformResults = useCallback((results, { query = '' } = {}) => {
     queryRef.current = query;
     const collapsed = collapseResultEditions(results);
     const scores = scoresFor(query);
-    const ranked = rankByHabits(collapsed, scores);
-    if (ranked !== collapsed) mediaLog.habitResultsRanked({ textLength: query.trim().length, boosted: scores.size });
+    const ranked = rankByHabits(collapsed, scores, wholeCatalog ? rememberedFor(query) : null);
+    if (ranked !== collapsed && lastRankedRef.current !== query) {
+      lastRankedRef.current = query;
+      mediaLog.habitResultsRanked({ textLength: query.trim().length, boosted: scores.size });
+    }
     return ranked;
-  }, [scoresFor]);
+  }, [scoresFor, rememberedFor, wholeCatalog]);
   // The header's destination control is in use: keep this search open (FIND.1b).
   const { active: destinationInteractionActive } = useDestinationInteraction();
 

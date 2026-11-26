@@ -2621,7 +2621,7 @@ Two related traps, both fixed and both worth not re-introducing:
 | `media-app.url-command-token` | Dedup token for URL-command processing. | string. |
 | `media-scope-recents` | Last 5 scope keys that produced results. | `string[]`. |
 | `media-scope-favorites` | Starred scope keys. | `string[]`. |
-| `media-app.habits` | What this browser learned from deliberate acts (media-app.md "Looking and watching"): which result was picked for which words, which screen the last play of each kind went to. Read by search ranking and every ▶ label. | `{ v: 1, picks: { "<normalized words>": { at, items: [{ id, title, count, at }] } }, screens: { video\|audio: { targetIds: string[], at } } }` — at most 200 word sets × 6 items; picks fade by half every 30 days. Unreadable or other-version values are ignored. |
+| `media-app.habits` | What this browser learned from deliberate acts (media-app.md "Looking and watching"): which result was picked for which words, which screen the last play of each kind went to. Read by search ranking and every ▶ label. | `{ v: 1, picks: { "<normalized words>": { at, items: [{ id, title, item: { id, title, thumbnail, source, type, mediaType, itemType, metadata: { type } }, count, at }] } }, screens: { video\|audio: { choices: [{ targetIds: string[], count, at }] } } }` — at most 200 word sets × 6 items and 6 screen choices per kind; both fade by half every 30 days; the strongest choice names the ▶ (the first release's `{ targetIds, at }` reads as one choice). Unreadable or other-version values are ignored. |
 
 ### 11.2 `PersistedSession` shape
 

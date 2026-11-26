@@ -14,6 +14,7 @@ import { isCollection } from "./useItemVerbs.jsx";
 import { isShowItem } from "../search/showOn.js";
 import { usePressHoldOffer } from "../../../../../frontend/src/lib/ui/usePressHoldOffer.js";
 import mediaLog from "../logging/mediaLog.js";
+import { usePlayDestination } from "../habits/usePlayDestination.js";
 
 // PLAY.5a/AC3: Play next, and — on press and hold — "At the very front".
 function PlayNextItems({ testId, fire }) {
@@ -48,6 +49,9 @@ export function ItemMenu({
   const quality = usePlaybackQuality();
   const triggerRef = useRef(null);
   const collection = isCollection(item);
+  // The menu's plays and queue verbs go where the tile's ▶ goes; say so.
+  const { labelsFor, destinationFor } = usePlayDestination();
+  const elsewhere = destinationFor(item).targetIds.length > 0;
   const fire = (kind) => (event) => { event?.stopPropagation?.(); onVerb(kind); };
   const openQuality = event => {
     event.stopPropagation();
@@ -77,7 +81,8 @@ export function ItemMenu({
       {continueLabel && (
         <Menu.Item data-testid={`${testId}-verb-continue`} onClick={fire('continue')}>{continueLabel}</Menu.Item>
       )}
-      <Menu.Item data-testid={`${testId}-verb-playNow`} onClick={fire('playNow')}>Play now</Menu.Item>
+      <Menu.Item data-testid={`${testId}-verb-playNow`} onClick={fire('playNow')}>{elsewhere ? labelsFor(item).sentence : 'Play now'}</Menu.Item>
+      {elsewhere && <Menu.Item data-testid={`${testId}-verb-playHere`} onClick={fire('playHere')}>Play here</Menu.Item>}
       {collection && <Menu.Item data-testid={`${testId}-verb-shuffle`} onClick={fire('shuffle')}>Shuffle</Menu.Item>}
       <PlayNextItems testId={testId} fire={fire} />
       <Menu.Item data-testid={`${testId}-verb-playFirst`} onClick={fire('playFirst')}>Play first</Menu.Item>

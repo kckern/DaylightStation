@@ -76,10 +76,11 @@ function honoursStartPosition(targetId, devices) {
   return device?.content_control?.type === 'websocket';
 }
 
-// Plays that START something: these go where the ▶ says (the aim, else the
-// screen this browser learned for that kind of thing, else here). Queue edits
-// (Play Next, Add) keep following the aim alone — they change a queue that is
-// already playing somewhere, which learning knows nothing about.
+// Every verb without a one-off destination goes where the ▶ says: the aim,
+// else the screen this browser usually plays that kind of thing on, else
+// here. Queue edits follow it too — after "Play on Office Screen", Play Next
+// belongs in the Office Screen's queue, not this device's idle one. Only
+// plays that START something teach where things are watched.
 const PLAY_KINDS = new Set(['playNow', 'shuffle']);
 
 const LOCAL_KIND = { playNow: 'play', shuffle: 'shuffle', add: 'add', playNext: 'playNext', playFirst: 'playFirst' };
@@ -140,14 +141,14 @@ export function useContentDispatch() {
     // this queue, STEER.1b/AC7; Play here) — the aim itself is never read or
     // changed. A play with no one-off destination goes where its ▶ said.
     const explicit = Array.isArray(opts.targetIds);
-    const played = !explicit && PLAY_KINDS.has(kind) ? destinationFor(item) : null;
+    const played = !explicit ? destinationFor(item) : null;
     const actionTargets = explicit ? opts.targetIds : (played ? played.targetIds : targetIds);
     const oneOff = explicit || played?.source === 'learned';
     const remote = actionTargets.length > 0;
     const honoured = actionTargets.every(target => honoursStartPosition(target, fleetDevices));
     const resume = resumedFrom != null && honoured ? { startOver: true, resumedFrom } : {};
     if (PLAY_KINDS.has(kind)) {
-      recordPlay(item, actionTargets);
+      if (!opts.noLearn) recordPlay(item, actionTargets);
       mediaLog.playSent({
         contentId: id, kind, targetIds: actionTargets,
         source: explicit ? 'chosen' : (played?.source ?? 'aim'),
@@ -236,7 +237,8 @@ export function useContentDispatch() {
     // whatever is aimed; "Show on…" is how it goes to another screen.
     if (item && isShowItem(item)) {
       mediaLog.shownHere({ contentId: id, aimed: targetIds.length });
-      if (controller) return runAction('playNow', id, item, { targetIds: [] });
+      // Showing a camera here is looking, not a choice of where films play.
+      if (controller) return runAction('playNow', id, item, { targetIds: [], noLearn: true });
       const input = resultToQueueInput({ ...item, id }) ?? { contentId: id, title, thumbnail: item?.thumbnail ?? null };
       queue.playNow(input, { clearRest: true });
       confirmLocal('playNow', input);
@@ -260,8 +262,9 @@ export function useContentDispatch() {
     if (!['playNow', 'add', 'playNext', 'playFirst', 'shuffle'].includes(kind)) return undefined;
     if (controller || Object.keys(quality?.getOverrides(id) ?? {}).length || !['playNow', 'add'].includes(kind)) return runAction(kind, id, item, opts);
     const title = item?.title ?? null;
-    if (targetIds.length > 0) {
-      castTo(targetIds, mode, id, title, { verb: verb === 'add' ? 'queue' : 'play' });
+    const dest = Array.isArray(opts.targetIds) ? { targetIds: opts.targetIds, source: 'chosen' } : destinationFor(item);
+    if (dest.targetIds.length > 0) {
+      castTo(dest.targetIds, dest.source === 'aim' ? mode : 'fork', id, title, { verb: verb === 'add' ? 'queue' : 'play' });
       return 'cast';
     }
     const input = (item && resultToQueueInput({ ...item, id: item.id ?? id }))
@@ -270,7 +273,7 @@ export function useContentDispatch() {
     else queue.add(input);
     confirmLocal(verb === 'playNow' ? 'playNow' : 'add', input);
     return 'local';
-  }, [targetIds, mode, queue, castTo, controller, runAction, confirmLocal, quality]);
+  }, [mode, queue, castTo, controller, runAction, confirmLocal, quality, destinationFor]);
 
   // The ▶ verb on a container row: explicitly send the WHOLE container to
   // the current destination, replacing the queue. Same destination
@@ -283,8 +286,9 @@ export function useContentDispatch() {
     const { shuffle = false } = opts;
     if (controller || Object.keys(quality?.getOverrides(id) ?? {}).length) return runAction(shuffle ? 'shuffle' : 'playNow', id, { ...item, itemType: 'container' }, { collection: true });
     const title = item?.title ?? null;
-    if (targetIds.length > 0) {
-      castTo(targetIds, mode, id, title, { shuffle });
+    const dest = destinationFor(item);
+    if (dest.targetIds.length > 0) {
+      castTo(dest.targetIds, dest.source === 'aim' ? mode : 'fork', id, title, { shuffle });
       return 'cast';
     }
     const input = (item && resultToQueueInput({ ...item, id: item.id ?? id }))
@@ -297,7 +301,7 @@ export function useContentDispatch() {
     queue.playNow(input, { clearRest: true });
     confirmLocal(shuffle ? 'shuffle' : 'playNow', input);
     return 'local';
-  }, [targetIds, mode, queue, config, castTo, controller, runAction, confirmLocal, quality]);
+  }, [mode, queue, config, castTo, controller, runAction, confirmLocal, quality, destinationFor]);
 
   // The + verb on a container row (Task 15): append the WHOLE container to
   // the current destination's queue instead of replacing it. Same
@@ -307,8 +311,9 @@ export function useContentDispatch() {
   const addContainerToQueue = useCallback((id, item) => {
     if (controller || Object.keys(quality?.getOverrides(id) ?? {}).length) return runAction('add', id, { ...item, itemType: 'container' });
     const title = item?.title ?? null;
-    if (targetIds.length > 0) {
-      castTo(targetIds, mode, id, title, { verb: 'queue' });
+    const dest = destinationFor(item);
+    if (dest.targetIds.length > 0) {
+      castTo(dest.targetIds, dest.source === 'aim' ? mode : 'fork', id, title, { verb: 'queue' });
       return 'cast';
     }
     const input = (item && resultToQueueInput({ ...item, id: item.id ?? id }))
@@ -316,7 +321,7 @@ export function useContentDispatch() {
     queue.add(input);
     confirmLocal('add', input);
     return 'local';
-  }, [targetIds, mode, queue, castTo, controller, runAction, confirmLocal, quality]);
+  }, [mode, queue, castTo, controller, runAction, confirmLocal, quality, destinationFor]);
 
   // Add to this queue (STEER.1b/AC7, RQ-STEER-22): one addition to one
   // screen's queue — a leaf or a whole container — without touching the aim.

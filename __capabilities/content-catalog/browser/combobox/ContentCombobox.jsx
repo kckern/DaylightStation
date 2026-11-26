@@ -401,7 +401,9 @@ export function ContentCombobox({
     }
     if (e.key === 'Enter') {
       e.preventDefault();
-      commit('enter', items);   // decideCommit owns pick/render/literal/open; may keep the dropdown open
+      // Search results may be reordered/collapsed for display: Enter picks from
+      // the list as shown. Browse levels keep their own path (unchanged).
+      commit('enter', isBrowse ? null : items);   // decideCommit owns pick/render/literal/open; may keep the dropdown open
       return;
     }
     if (e.key === 'Escape' && isEditing) {
@@ -658,6 +660,7 @@ export function ContentCombobox({
               extraActions={resultExtraActions}
               playLabel={resultRowLabels?.(item)?.play ?? null}
               playTitle={resultRowLabels?.(item)?.playTitle ?? null}
+              playElsewhere={!!resultRowLabels?.(item)?.playElsewhere}
               playOnLabel={resultRowLabels?.(item)?.playOn ?? null}
               playNowLabel={resultRowLabels?.(item)?.playNow ?? null}
               playHereLabel={resultRowLabels?.(item)?.playHere ?? null}
