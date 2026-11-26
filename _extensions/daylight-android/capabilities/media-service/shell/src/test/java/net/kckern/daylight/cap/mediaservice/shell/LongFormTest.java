@@ -75,4 +75,18 @@ public class LongFormTest {
         assertEquals(1f, LongForm.levelFor(Double.NaN), 0);
         assertEquals(0.1f, LongForm.levelFor(-60), 0);
     }
+
+    @Test public void fineScrubZoomsLongItemsToAWindowAroundTheFinger() {
+        long book = 5 * 3_600_000L;
+        assertEquals(FineScrub.MAX_WINDOW_MS, FineScrub.windowMs(book));
+        assertEquals("a song is not zoomed", 0, FineScrub.windowMs(4 * 60_000));
+        float[] w = FineScrub.window(book, 0.5f);
+        assertEquals(10 * 60_000f / book, w[1] - w[0], 1e-6);
+        assertEquals(0.5f, (w[0] + w[1]) / 2, 1e-6);
+        assertEquals("the left edge of the bar is the window's start", w[0], FineScrub.map(0f, w), 1e-6);
+        float[] start = FineScrub.window(book, 0.001f);
+        assertEquals("kept inside the item", 0f, start[0], 0);
+        float[] end = FineScrub.window(book, 0.999f);
+        assertEquals(1f, end[1], 1e-6);
+    }
 }

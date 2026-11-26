@@ -315,8 +315,22 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
         }
         int selected = startIndex >= 0 && startIndex < ids.size() ? startIndex : C.INDEX_UNSET;
         boolean explicitPosition = startPositionMs >= 0 && (startIndex == C.INDEX_UNSET || selected >= 0);
-        return TrackAnswer.parse(media.resolve(ids, selected, explicitPosition, PLAY_WAIT_MS));
+        // Off the main thread (the io executor). A backend restarting (a deploy) answers
+        // nothing for a few seconds: one more try after RETRY_MS rather than a failed play.
+        try {
+            return TrackAnswer.parse(media.resolve(ids, selected, explicitPosition, PLAY_WAIT_MS));
+        } catch (BrowseAnswer.Failed failed) {
+            if (!RETRYABLE.contains(failed.getMessage())) throw failed;
+            Log.i(TAG, "play request: " + failed.getMessage() + ", trying once more");
+            Thread.sleep(RETRY_MS);
+            return TrackAnswer.parse(media.resolve(ids, selected, explicitPosition, PLAY_WAIT_MS));
+        }
     }
+
+    private static final long RETRY_MS = 2_000;
+    /** Payload answers that mean "the backend was not there", not "this cannot play". */
+    private static final java.util.Set<String> RETRYABLE = new java.util.HashSet<>(
+            java.util.Arrays.asList("backend_refused", "unreachable"));
 
     // ── voice search ──────────────────────────────────────────────────────────
     //

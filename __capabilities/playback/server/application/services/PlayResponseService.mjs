@@ -107,9 +107,13 @@ export class PlayResponseService {
         response.resume_position = progress.playhead;
         response.resume_percent = progress.percent;
 
-        // For Plex DASH streams, append offset so Plex starts transcoding at
+        // For Plex DASH (video) streams, append offset so Plex starts transcoding at
         // the resume position — avoids client-side seeking which corrupts buffers.
-        if (response.mediaUrl && response.mediaUrl.includes('/proxy/plex/stream/')) {
+        // Never for audio: an audio stream is the file itself (byte ranges), the
+        // player seeks in it, and a server-side start would make the player's clock
+        // (and so every progress report) count from 0 instead of the real place.
+        if (response.mediaUrl && response.mediaUrl.includes('/proxy/plex/stream/')
+            && !AUDIO_TYPES.has(String(response.mediaType || '').toLowerCase())) {
           const sep = response.mediaUrl.includes('?') ? '&' : '?';
           response.mediaUrl = `${response.mediaUrl}${sep}offset=${Math.floor(progress.playhead)}`;
         }

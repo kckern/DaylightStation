@@ -603,6 +603,7 @@ public class NowPlayingActivity extends Activity {
         long position = clock.at(now);
         if (known) position = Math.min(position, duration);
         wave.setEnabled(known && can(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM));
+        wave.setDurationMs(known ? duration : 0);
         wave.setVisibility(any ? View.VISIBLE : View.INVISIBLE);
         if (!wave.scrubbing()) {
             wave.setFraction(known ? position / (float) duration : 0f, clock(position) + (known ? " of " + clock(duration) : ""));

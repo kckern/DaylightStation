@@ -32,6 +32,12 @@ final class WaveformBar extends View {
     private float[] samples = new float[0];
     private float fraction;
     private boolean scrubbing;
+    /** Fine scrubbing: a press held still zooms the bar to FineScrub's window around it. */
+    private long durationMs;
+    private float[] zoom;
+    private float downX;
+    private static final long HOLD_MS = 400;
+    private final Runnable zoomIn = this::zoomIn;
     private Listener listener;
     private String spoken = "";
 
@@ -58,6 +64,20 @@ final class WaveformBar extends View {
 
     boolean scrubbing() { return scrubbing; }
 
+    /** The item's length, for fine scrubbing (0 or unknown: never zoomed). */
+    void setDurationMs(long d) { durationMs = Math.max(0, d); }
+
+    private void zoomIn() {
+        if (!scrubbing || FineScrub.windowMs(durationMs) == 0) return;
+        zoom = FineScrub.window(durationMs, fraction);
+        performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);
+        announceForAccessibility("Fine scrubbing");
+        invalidate();
+    }
+
+    /** Fraction of the item at bar position {@code x} (0..1), zoomed or not. */
+    private float at(float x) { return zoom == null ? x : FineScrub.map(x, zoom); }
+
     /** Where the playhead is, 0..1; ignored while a finger holds it. */
     void setFraction(float f, String spokenPosition) {
         spoken = spokenPosition == null ? "" : spokenPosition;
@@ -76,16 +96,31 @@ final class WaveformBar extends View {
         float w = getWidth() - getPaddingLeft() - getPaddingRight();
         float h = getHeight() - getPaddingTop() - getPaddingBottom();
         float left = getPaddingLeft(), mid = getPaddingTop() + h / 2f;
-        float x = left + w * fraction;
+        float[] view = zoom == null ? new float[] { 0f, 1f } : zoom;
+        float x = left + w * Math.max(0f, Math.min(1f, (fraction - view[0]) / (view[1] - view[0])));
+        if (zoom != null) {
+            // Fine scrubbing says so: a soft band of the accent behind the bar, ticks at its ends.
+            int band = played.getColor();
+            Paint soft = new Paint(Paint.ANTI_ALIAS_FLAG);
+            soft.setColor((band & 0x00ffffff) | 0x2e000000);
+            float r6 = 6 * density;
+            c.drawRoundRect(left - 4 * density, getPaddingTop(), left + w + 4 * density, getPaddingTop() + h, r6, r6, soft);
+            float t = 1.5f * density;
+            c.drawRect(left - t, getPaddingTop(), left + t, getPaddingTop() + h, head);
+            c.drawRect(left + w - t, getPaddingTop(), left + w + t, getPaddingTop() + h, head);
+        }
         if (samples.length == 0) {
             float t = 1.5f * density;
             c.drawRoundRect(left, mid - t, left + w, mid + t, t, t, rest);
             c.drawRoundRect(left, mid - t, x, mid + t, t, t, played);
         } else {
-            int n = samples.length;
+            // Zoomed: the same number of bars across the window, each the nearest sample.
+            int n = zoom == null ? samples.length : Math.max(24, Math.min(samples.length, 72));
             float step = w / n, bw = Math.max(1f, step * 0.62f), r = bw / 2f, min = 1.5f * density;
             for (int i = 0; i < n; i++) {
-                float half = Math.max(min, samples[i] * h / 2f);
+                float g = view[0] + (view[1] - view[0]) * (i + 0.5f) / n;
+                int k = Math.max(0, Math.min(samples.length - 1, (int) (g * samples.length)));
+                float half = Math.max(min, samples[k] * h / 2f);
                 float bx = left + i * step + (step - bw) / 2f;
                 bar.set(bx, mid - half, bx + bw, mid + half);
                 c.drawRoundRect(bar, r, r, bx + bw / 2f <= x ? played : rest);
@@ -98,25 +133,40 @@ final class WaveformBar extends View {
     @Override public boolean onTouchEvent(MotionEvent e) {
         if (!isEnabled() || listener == null) return false;
         float w = getWidth() - getPaddingLeft() - getPaddingRight();
-        float f = w <= 0 ? 0 : Math.max(0, Math.min(1, (e.getX() - getPaddingLeft()) / w));
+        float x = w <= 0 ? 0 : Math.max(0, Math.min(1, (e.getX() - getPaddingLeft()) / w));
         switch (e.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
                 scrubbing = true;
+                zoom = null;
+                downX = e.getX();
                 getParent().requestDisallowInterceptTouchEvent(true);
-                // fall through
-            case MotionEvent.ACTION_MOVE:
-                fraction = f;
+                removeCallbacks(zoomIn);
+                postDelayed(zoomIn, HOLD_MS);
+                fraction = x;
                 invalidate();
-                listener.onScrub(f, false);
+                listener.onScrub(fraction, false);
+                return true;
+            case MotionEvent.ACTION_MOVE:
+                // A drag before the hold completes is an ordinary scrub.
+                if (zoom == null && Math.abs(e.getX() - downX) > 8 * density) removeCallbacks(zoomIn);
+                fraction = at(x);
+                invalidate();
+                listener.onScrub(fraction, false);
                 return true;
             case MotionEvent.ACTION_UP:
-                fraction = f;
+                removeCallbacks(zoomIn);
+                fraction = at(x);
                 scrubbing = false;
-                listener.onScrub(f, true);
+                zoom = null;
+                invalidate();
+                listener.onScrub(fraction, true);
                 performClick();
                 return true;
             case MotionEvent.ACTION_CANCEL:
+                removeCallbacks(zoomIn);
                 scrubbing = false;
+                zoom = null;
+                invalidate();
                 listener.onScrub(fraction, false);
                 return true;
             default:

@@ -25,11 +25,30 @@ const httpLogger = createLogger({
  * @param {Error} error - Axios error object
  * @returns {string} Formatted error message
  */
+/** Query parameters whose values are credentials: never written to a log. */
+const SECRET_PARAMS = /^(password|passwd|pass|pw|token|access_token|refresh_token|x-plex-token|api_?key|apikey|key|secret|client_secret|signature|sig|auth|authorization)$/i;
+
+/** {@code url} with the values of credential parameters replaced by ***; unchanged otherwise. */
+export function redactUrl(url) {
+  if (typeof url !== 'string' || !url.includes('?')) return url;
+  const q = url.indexOf('?');
+  const [query, hash = null] = url.slice(q + 1).split('#');
+  const kept = query.split('&').map((pair) => {
+    const eq = pair.indexOf('=');
+    if (eq < 0) return pair;
+    let name = pair.slice(0, eq);
+    try { name = decodeURIComponent(name); } catch { /* keep as written */ }
+    return SECRET_PARAMS.test(name) ? `${pair.slice(0, eq)}=***` : pair;
+  });
+  return `${url.slice(0, q)}?${kept.join('&')}${hash === null ? '' : `#${hash}`}`;
+}
+
 export function formatAxiosError(error) {
   try {
     const cfg = error?.config || {};
     const method = (cfg.method || 'GET').toUpperCase();
-    const url = (cfg.baseURL ? cfg.baseURL.replace(/\/$/, '') : '') + (cfg.url || '');
+    // Credentials in a query string (a kiosk's password, a token) never reach the log store.
+    const url = redactUrl((cfg.baseURL ? cfg.baseURL.replace(/\/$/, '') : '') + (cfg.url || ''));
 
     const res = error?.response;
     const status = res?.status;

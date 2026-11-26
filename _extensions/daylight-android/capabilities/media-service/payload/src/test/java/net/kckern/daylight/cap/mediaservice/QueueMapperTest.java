@@ -88,8 +88,12 @@ public class QueueMapperTest {
                 QueueMapper.resumeMs(new JSONObject("{\"mediaUrl\":\"/s/7\",\"duration\":3600,\"resumable\":true,\"resumePosition\":90}")));
         assertEquals("a queue item that is not resumable starts at the beginning", 0,
                 QueueMapper.resumeMs(new JSONObject("{\"mediaUrl\":\"/s/7\",\"duration\":3600,\"resumable\":false,\"resumePosition\":90}")));
-        assertEquals("a stream URL that already starts at the offset is not sought again", 0,
+        assertEquals("a Plex stream is sought by the player, offset= or not: its clock stays true", 120_000,
                 QueueMapper.resumeMs(new JSONObject("{\"mediaUrl\":\"/api/v1/proxy/plex/stream/7?offset=120\",\"duration\":3600,\"resume_position\":120}")));
+        assertEquals("another stream that starts at its offset is not sought again", 0,
+                QueueMapper.resumeMs(new JSONObject("{\"mediaUrl\":\"/s/7?offset=120\",\"duration\":3600,\"resume_position\":120}")));
+        assertEquals("/api/v1/proxy/plex/stream/7?session=a", QueueMapper.withoutParam("/api/v1/proxy/plex/stream/7?offset=120&session=a", "offset"));
+        assertEquals("/api/v1/proxy/plex/stream/7", QueueMapper.withoutParam("/api/v1/proxy/plex/stream/7?offset=120", "offset"));
         assertEquals("a position at or past the end is not one to resume at", 0,
                 QueueMapper.resumeMs(new JSONObject("{\"mediaUrl\":\"/s/7\",\"duration\":100,\"resume_position\":100}")));
         assertEquals(0, QueueMapper.resumeMs(new JSONObject("{\"mediaUrl\":\"/s/7\",\"resume_position\":\"soon\"}")));
