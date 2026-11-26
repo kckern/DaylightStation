@@ -32,16 +32,19 @@ public class PlayInboxTest {
         });
     }
 
-    @Test public void aListQueuesAndAnItemPlays() throws Exception {
-        assertEquals("c:plex:352336", PlayInbox.mediaIdOf(new JSONObject().put("op", "queue").put("contentId", "plex:352336")));
-        assertEquals("p:plex:727120", PlayInbox.mediaIdOf(new JSONObject().put("op", "play").put("contentId", "plex:727120")));
-        assertEquals("c:plex:1", PlayInbox.mediaIdOf(new JSONObject().put("queue", "plex:1")));
-        assertNull(PlayInbox.mediaIdOf(new JSONObject().put("op", "play").put("contentId", "../etc")));
+    @Test public void theWebsQueueEnvelopeStartsThroughTheQueueRoute() throws Exception {
+        // As the backend's phone-inbox hands it over: the screen's queue envelope.
+        JSONObject envelope = new JSONObject().put("commandId", "d-9").put("command", "queue").put("targetDevice", "phone")
+                .put("params", new JSONObject().put("op", "play-now").put("contentId", "plex:352336"));
+        assertEquals("c:plex:352336", PlayInbox.mediaIdOf(envelope));
+        assertEquals("c:plex:727120", PlayInbox.mediaIdOf(new JSONObject().put("contentId", "plex:727120")));
+        assertNull(PlayInbox.mediaIdOf(new JSONObject().put("params", new JSONObject().put("contentId", "../etc"))));
     }
 
     @Test public void aCommandPlaysHereAndIsAcknowledged() throws Exception {
-        inbox(true).handle(new JSONObject().put("commandId", "d-1").put("op", "play").put("contentId", "plex:727120").put("title", "A book"));
-        assertEquals(List.of("p:plex:727120"), played);
+        inbox(true).handle(new JSONObject().put("commandId", "d-1").put("command", "queue")
+                .put("params", new JSONObject().put("op", "play-now").put("contentId", "plex:727120")));
+        assertEquals(List.of("c:plex:727120"), played);
         assertTrue(posts.get(0).startsWith("https://home.example/api/v1/device/phone/ack {"));
         JSONObject ack = new JSONObject(posts.get(0).substring(posts.get(0).indexOf('{')));
         assertEquals("d-1", ack.getString("commandId"));

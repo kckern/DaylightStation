@@ -96,16 +96,14 @@ final class PlayInbox {
     }
 
     /**
-     * The media id a command asks for: a list (queue / play of a container) plays as
-     * "c:<id>" (resuming is the backend's call), a single item as "p:<id>". Null for
-     * anything that is not a valid content id.
+     * The media id a command asks for: "c:<content id>", through the backend's queue route,
+     * which plays a list as the list and a single item as a queue of one (and resumes what
+     * is resumable). The web's play-now, play-next and add all start it here: a phone has
+     * one queue and nobody to merge with. Null for anything that is not a valid content id.
      */
     static String mediaIdOf(JSONObject command) {
         String id = contentIdOf(command);
-        if (!ContentId.valid(id)) return null;
-        String op = command.optString("op", command.has("queue") ? "queue" : "play");
-        boolean list = "queue".equals(op) || command.optBoolean("container", false) || command.has("queue");
-        return (list ? "c:" : "p:") + id;
+        return ContentId.valid(id) ? "c:" + id : null;
     }
 
     static String contentIdOf(JSONObject command) {
