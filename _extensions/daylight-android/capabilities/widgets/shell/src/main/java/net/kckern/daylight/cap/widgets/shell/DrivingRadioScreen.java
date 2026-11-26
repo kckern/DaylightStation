@@ -2,7 +2,6 @@ package net.kckern.daylight.cap.widgets.shell;
 
 import android.app.Activity;
 import android.app.Dialog;
-import android.graphics.Color;
 import android.graphics.Outline;
 import android.view.Gravity;
 import android.view.View;
@@ -14,6 +13,9 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import net.kckern.daylight.shellkit.DaylightTheme;
+import net.kckern.daylight.shellkit.DaylightTheme.Radius;
+import net.kckern.daylight.shellkit.DaylightTheme.Type;
 import net.kckern.daylight.shellkit.DrivingRadioSettings;
 
 /**
@@ -26,25 +28,25 @@ final class DrivingRadioScreen {
 
     static void show(Activity activity) {
         DrivingRadioSettings radio = new DrivingRadioSettings(activity);
-        Dialog dialog = new Dialog(activity, android.R.style.Theme_Material_Light_NoActionBar);
+        DaylightTheme t = DaylightTheme.of(activity);
+        Dialog dialog = new Dialog(activity, net.kckern.daylight.shellkit.R.style.Theme_Daylight);
         LinearLayout root = new LinearLayout(activity);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(PlaylistPicker.COLOR_PAPER);
+        root.setBackgroundColor(t.background);
 
         LinearLayout bar = new LinearLayout(activity);
         bar.setGravity(Gravity.CENTER_VERTICAL);
-        TextView back = PlaylistPicker.text(activity, "‹", 30, PlaylistPicker.COLOR_INK, true);
+        TextView back = PlaylistPicker.glyph(activity, "‹", 30, t.ink);
         back.setGravity(Gravity.CENTER);
         back.setContentDescription("Back");
         back.setOnClickListener(v -> dialog.dismiss());
         bar.addView(back, PlaylistPicker.dp(activity, 56), PlaylistPicker.dp(activity, 56));
-        bar.addView(PlaylistPicker.text(activity, "Driving Radio", 22, PlaylistPicker.COLOR_INK, true));
+        bar.addView(PlaylistPicker.text(activity, "Driving Radio", Type.HEADLINE, t.ink, true));
         root.addView(bar, new LinearLayout.LayoutParams(-1, -2));
 
         TextView explain = PlaylistPicker.text(activity,
                 "Starts by itself when Android Auto connects. Pick a playlist for the default, "
-                        + "and a different one for any day.", 14, PlaylistPicker.COLOR_INK, false);
-        explain.setAlpha(0.75f);
+                        + "and a different one for any day.", Type.LABEL, t.inkMuted, false);
         explain.setPadding(PlaylistPicker.dp(activity, 20), 0, PlaylistPicker.dp(activity, 20), PlaylistPicker.dp(activity, 12));
         root.addView(explain);
 
@@ -81,25 +83,26 @@ final class DrivingRadioScreen {
             if (staple.id.equals(id)) { title = staple.title; art = staple.art; }
         }
         boolean none = id.isEmpty();
+        DaylightTheme t = DaylightTheme.of(activity);
 
         LinearLayout card = new LinearLayout(activity);
         card.setGravity(Gravity.CENTER_VERTICAL);
         card.setPadding(PlaylistPicker.dp(activity, 14), PlaylistPicker.dp(activity, 10), PlaylistPicker.dp(activity, 14), PlaylistPicker.dp(activity, 10));
-        card.setBackground(PlaylistPicker.round(Color.WHITE, 16, activity));
+        card.setBackground(t.round(t.surface, Radius.MEDIUM));
         card.setContentDescription(days[day] + ": " + (none ? (day == 0 ? "off" : "uses the default") : title));
 
-        TextView name = PlaylistPicker.text(activity, days[day], 15, PlaylistPicker.COLOR_INK, true);
+        TextView name = PlaylistPicker.text(activity, days[day], Type.BODY, t.ink, true);
         card.addView(name, new LinearLayout.LayoutParams(PlaylistPicker.dp(activity, 96), -2));
 
         FrameLayout frame = new FrameLayout(activity);
         ImageView cover = new ImageView(activity);
         cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        cover.setBackgroundColor(PlaylistPicker.COLOR_TILE);
+        cover.setBackgroundColor(t.tile);
         frame.addView(cover, new FrameLayout.LayoutParams(-1, -1));
-        TextView note = PlaylistPicker.text(activity, none ? "–" : "♪", 20, 0x88125b47, false);
+        TextView note = PlaylistPicker.glyph(activity, none ? "–" : "♪", 20, DaylightTheme.withAlpha(t.primary, 0x88));
         note.setGravity(Gravity.CENTER);
         frame.addView(note, new FrameLayout.LayoutParams(-1, -1));
-        float radius = PlaylistPicker.dp(activity, 10);
+        float radius = t.radius(Radius.SMALL);
         frame.setOutlineProvider(new ViewOutlineProvider() {
             @Override public void getOutline(View view, Outline outline) {
                 outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), radius);
@@ -110,13 +113,13 @@ final class DrivingRadioScreen {
         if (!none) PlaylistPicker.bindCover(cover, note, id, art);
 
         TextView value = PlaylistPicker.text(activity,
-                none ? (day == 0 ? "Off" : "Same as default") : title, 16,
-                none ? 0x99000000 : PlaylistPicker.COLOR_INK, !none);
+                none ? (day == 0 ? "Off" : "Same as default") : title, Type.BODY,
+                none ? t.inkMuted : t.ink, !none);
         value.setPadding(PlaylistPicker.dp(activity, 14), 0, 0, 0);
         value.setMaxLines(2);
         value.setEllipsize(android.text.TextUtils.TruncateAt.END);
         card.addView(value, new LinearLayout.LayoutParams(0, -2, 1));
-        card.addView(PlaylistPicker.text(activity, "›", 24, PlaylistPicker.COLOR_GREEN, true));
+        card.addView(PlaylistPicker.glyph(activity, "›", 24, t.primary));
 
         card.setOnClickListener(v -> {
             String previous = radio.get(day);

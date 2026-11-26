@@ -6,7 +6,6 @@ import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.Outline;
 import android.graphics.Typeface;
-import android.graphics.drawable.GradientDrawable;
 import android.text.Editable;
 import android.text.TextUtils;
 import android.text.TextWatcher;
@@ -26,6 +25,9 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import net.kckern.daylight.api.PayloadPort;
+import net.kckern.daylight.shellkit.DaylightTheme;
+import net.kckern.daylight.shellkit.DaylightTheme.Radius;
+import net.kckern.daylight.shellkit.DaylightTheme.Type;
 import net.kckern.daylight.shellkit.DrivingRadioSettings;
 import net.kckern.daylight.shellkit.PlaylistArtwork;
 import net.kckern.daylight.shellkit.PlaylistEntry;
@@ -48,12 +50,6 @@ import java.util.concurrent.Executors;
  */
 final class PlaylistPicker {
     interface OnPick { void picked(PlaylistEntry entry); }
-
-    private static final int PAPER = 0xfff4f7f4;
-    private static final int INK = 0xff14382f;
-    private static final int GREEN = 0xff125b47;
-    private static final int CHIP = 0xffe2ebe6;
-    private static final int TILE = 0xffdcebe4;
 
     private static final ExecutorService WORKER = Executors.newSingleThreadExecutor(r -> daemon(r, "Daylight-playlist-catalog"));
     private static final ExecutorService IMAGES = Executors.newFixedThreadPool(3, r -> daemon(r, "Daylight-playlist-cover"));
@@ -93,23 +89,24 @@ final class PlaylistPicker {
      * "nothing": a day of Driving Radio going back to the default, for example.
      */
     static void show(Activity activity, String title, String clearLabel, Runnable onClear, OnPick onPick) {
-        Dialog dialog = new Dialog(activity, android.R.style.Theme_Material_Light_NoActionBar);
+        DaylightTheme t = DaylightTheme.of(activity);
+        Dialog dialog = new Dialog(activity, net.kckern.daylight.shellkit.R.style.Theme_Daylight);
         LinearLayout root = new LinearLayout(activity);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(PAPER);
+        root.setBackgroundColor(t.background);
         LinearLayout bar = new LinearLayout(activity);
         bar.setGravity(Gravity.CENTER_VERTICAL);
-        TextView back = text(activity, "‹", 30, INK, true);
+        TextView back = glyph(activity, "‹", 30, t.ink);
         back.setGravity(Gravity.CENTER);
         back.setContentDescription("Back");
         back.setOnClickListener(v -> dialog.dismiss());
         bar.addView(back, dp(activity, 56), dp(activity, 56));
-        bar.addView(text(activity, title, 22, INK, true));
+        bar.addView(text(activity, title, Type.HEADLINE, t.ink, true));
         root.addView(bar, new LinearLayout.LayoutParams(-1, -2));
         if (clearLabel != null && onClear != null) {
-            TextView clear = text(activity, clearLabel, 15, GREEN, true);
+            TextView clear = text(activity, clearLabel, Type.BODY, t.primary, true);
             clear.setGravity(Gravity.CENTER);
-            clear.setBackground(round(CHIP, 20, activity));
+            clear.setBackground(t.round(t.surfaceVariant, Radius.LARGE));
             clear.setOnClickListener(v -> {
                 dialog.dismiss();
                 onClear.run();
@@ -135,19 +132,20 @@ final class PlaylistPicker {
         List<PlaylistEntry> catalog = new ArrayList<>(PlaylistCatalog.cached());
         List<PlaylistEntry> shown = new ArrayList<>();
 
+        DaylightTheme t = DaylightTheme.of(activity);
         LinearLayout layout = new LinearLayout(activity);
         layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setBackgroundColor(PAPER);
+        layout.setBackgroundColor(t.background);
         int side = dp(activity, 16);
         layout.setPadding(side, 0, side, 0);
 
         EditText search = new EditText(activity);
         search.setHint("Search playlists");
         search.setSingleLine(true);
-        search.setTextSize(16);
-        search.setTextColor(INK);
+        t.style(search, Type.BODY, t.ink, false);
+        search.setHintTextColor(t.inkMuted);
         search.setPadding(dp(activity, 16), 0, dp(activity, 16), 0);
-        search.setBackground(round(Color.WHITE, 28, activity));
+        search.setBackground(t.round(t.surface, Radius.LARGE));
         search.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH);
         layout.addView(search, new LinearLayout.LayoutParams(-1, dp(activity, 52)));
 
@@ -161,10 +159,9 @@ final class PlaylistPicker {
 
         LinearLayout meta = new LinearLayout(activity);
         meta.setGravity(Gravity.CENTER_VERTICAL);
-        TextView count = text(activity, "", 13, INK, false);
-        count.setAlpha(0.7f);
+        TextView count = text(activity, "", Type.LABEL, t.inkMuted, false);
         meta.addView(count, new LinearLayout.LayoutParams(0, -2, 1));
-        TextView sort = text(activity, "", 13, GREEN, true);
+        TextView sort = text(activity, "", Type.LABEL, t.primary, true);
         sort.setPadding(dp(activity, 12), dp(activity, 10), 0, dp(activity, 10));
         meta.addView(sort);
         layout.addView(meta, new LinearLayout.LayoutParams(-1, -2));
@@ -183,10 +180,10 @@ final class PlaylistPicker {
         LinearLayout empty = new LinearLayout(activity);
         empty.setOrientation(LinearLayout.VERTICAL);
         empty.setGravity(Gravity.CENTER);
-        TextView emptyText = text(activity, "", 16, INK, false);
+        TextView emptyText = text(activity, "", Type.BODY, t.ink, false);
         emptyText.setGravity(Gravity.CENTER);
         empty.addView(emptyText);
-        TextView emptyAction = text(activity, "", 15, GREEN, true);
+        TextView emptyAction = text(activity, "", Type.BODY, t.primary, true);
         emptyAction.setGravity(Gravity.CENTER);
         emptyAction.setPadding(dp(activity, 16), dp(activity, 14), dp(activity, 16), dp(activity, 14));
         empty.addView(emptyAction);
@@ -209,10 +206,10 @@ final class PlaylistPicker {
             labels.addAll(PlaylistSearch.sources(merged(settings, catalog)));
             for (int i = 0; i < labels.size(); i++) {
                 int index = i;
-                TextView chip = text(activity, labels.get(i), 14, index == state.filter ? Color.WHITE : INK, true);
+                TextView chip = text(activity, labels.get(i), Type.LABEL, index == state.filter ? t.onPrimary : t.ink, true);
                 chip.setPadding(dp(activity, 16), 0, dp(activity, 16), 0);
                 chip.setGravity(Gravity.CENTER);
-                chip.setBackground(round(index == state.filter ? GREEN : CHIP, 20, activity));
+                chip.setBackground(t.round(index == state.filter ? t.primary : t.surfaceVariant, Radius.LARGE));
                 chip.setOnClickListener(v -> {
                     state.filter = index;
                     state.filterName = index < 2 ? "" : labels.get(index);
@@ -393,16 +390,20 @@ final class PlaylistPicker {
         private final TextView badge;
         private final TextView title;
 
+        private final int usedColor;
+
         Tile(Activity activity) {
             super(activity);
+            DaylightTheme t = DaylightTheme.of(activity);
+            usedColor = t.primary;
             setOrientation(VERTICAL);
             frame = new Square(activity);
             cover = new ImageView(activity);
             cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            cover.setBackgroundColor(TILE);
+            cover.setBackgroundColor(t.tile);
             cover.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
             frame.addView(cover, new FrameLayout.LayoutParams(-1, -1));
-            placeholder = text(activity, "♪", 34, 0x88125b47, false);
+            placeholder = glyph(activity, "♪", 34, DaylightTheme.withAlpha(t.primary, 0x88));
             placeholder.setGravity(Gravity.CENTER);
             placeholder.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
             frame.addView(placeholder, new FrameLayout.LayoutParams(-1, -1));
@@ -413,9 +414,9 @@ final class PlaylistPicker {
                 }
             });
             frame.setClipToOutline(true);
-            badge = text(activity, "✓", 14, Color.WHITE, true);
+            badge = text(activity, "✓", Type.LABEL, t.onPrimary, true);
             badge.setGravity(Gravity.CENTER);
-            badge.setBackground(round(GREEN, 12, activity));
+            badge.setBackground(DaylightTheme.round(t.primary, dp(activity, 12)));
             FrameLayout.LayoutParams badgeParams = new FrameLayout.LayoutParams(dp(activity, 24), dp(activity, 24), Gravity.TOP | Gravity.END);
             badgeParams.setMargins(0, dp(activity, 6), dp(activity, 6), 0);
             frame.addView(badge, badgeParams);
@@ -423,7 +424,7 @@ final class PlaylistPicker {
             // One block of text: the title, then where it is used right under it. Three lines
             // always, so every tile is the same height: a grid sizes its rows from one tile, and
             // a shorter tile would be overlapped by the row below.
-            title = text(activity, "", 13, INK, false);
+            title = text(activity, "", Type.LABEL, t.ink, false);
             title.setMinLines(3);
             title.setMaxLines(3);
             title.setEllipsize(TextUtils.TruncateAt.END);
@@ -438,7 +439,7 @@ final class PlaylistPicker {
             if (!used.isEmpty()) {
                 int from = label.length();
                 label.append('\n').append(used);
-                label.setSpan(new android.text.style.ForegroundColorSpan(GREEN), from, label.length(), 0);
+                label.setSpan(new android.text.style.ForegroundColorSpan(usedColor), from, label.length(), 0);
                 label.setSpan(new android.text.style.AbsoluteSizeSpan(11, true), from, label.length(), 0);
             }
             title.setText(label);
@@ -485,22 +486,18 @@ final class PlaylistPicker {
         }
     }
 
-    static final int COLOR_PAPER = PAPER, COLOR_INK = INK, COLOR_GREEN = GREEN, COLOR_CHIP = CHIP, COLOR_TILE = TILE;
+    /** Text in a theme role: the widgets screens' one way to make a label. */
+    static TextView text(android.content.Context context, String value, Type type, int color, boolean bold) {
+        return DaylightTheme.of(context).text(context, value, type, color, bold);
+    }
 
-    static TextView text(android.content.Context context, String value, int sp, int color, boolean bold) {
+    /** A symbol drawn as text (a back arrow, a note) at its own size: not a type role. */
+    static TextView glyph(android.content.Context context, String value, int sp, int color) {
         TextView view = new TextView(context);
         view.setText(value);
         view.setTextSize(sp);
         view.setTextColor(color);
-        if (bold) view.setTypeface(Typeface.DEFAULT_BOLD);
         return view;
-    }
-
-    static GradientDrawable round(int color, int radiusDp, android.content.Context context) {
-        GradientDrawable shape = new GradientDrawable();
-        shape.setColor(color);
-        shape.setCornerRadius(dp(context, radiusDp));
-        return shape;
     }
 
     static int dp(android.content.Context context, int value) {

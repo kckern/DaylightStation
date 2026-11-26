@@ -9,9 +9,9 @@
     <application>
         <activity android:name="net.kckern.daylight.cap.widgets.shell.FreematicsActivity"
             android:exported="false" android:label="Freematics"
-            android:theme="@android:style/Theme.Material.Light" />
+            android:theme="@style/Theme.Daylight.WithTitle" />
         <activity android:name="net.kckern.daylight.cap.widgets.shell.PhoneHomeActivity"
-            android:exported="true" android:theme="@android:style/Theme.Material.Light.NoActionBar">
+            android:exported="true" android:theme="@style/Theme.Daylight">
             <intent-filter>
                 <action android:name="android.intent.action.CREATE_SHORTCUT" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -37,7 +37,7 @@
             android:excludeFromRecents="true"
             android:taskAffinity=""
             android:label="@string/daylight_widget_button"
-            android:theme="@android:style/Theme.DeviceDefault.Dialog">
+            android:theme="@style/Theme.Daylight.Dialog">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
             </intent-filter>

@@ -1,5 +1,8 @@
 package net.kckern.daylight.cap.quickinput.shell;
 
+import net.kckern.daylight.shellkit.DaylightTheme;
+import net.kckern.daylight.shellkit.DaylightTheme.Radius;
+import net.kckern.daylight.shellkit.DaylightTheme.Type;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
@@ -59,6 +62,10 @@ public class PhotoCaptureActivity extends Activity {
     private boolean completed;
     private boolean launchCamera;
     private boolean resumed;
+
+    @Override protected void attachBaseContext(android.content.Context base) {
+        super.attachBaseContext(DaylightTheme.wrap(base));
+    }
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -394,9 +401,8 @@ public class PhotoCaptureActivity extends Activity {
         layout.setOrientation(LinearLayout.VERTICAL);
         int pad = Math.round(20 * getResources().getDisplayMetrics().density);
         layout.setPadding(pad, pad, pad, pad);
-        TextView destination = new TextView(this);
-        destination.setText(label);
-        destination.setTextSize(22);
+        DaylightTheme t = DaylightTheme.of(this);
+        TextView destination = t.text(this, label, Type.HEADLINE, t.ink, false);
         layout.addView(destination);
         File source = null;
         if (draft != null && (rawName == null || cameraApproved)) {
@@ -470,7 +476,7 @@ public class PhotoCaptureActivity extends Activity {
         }
         invalidateDiscard();
         DraftDiscard.Request selected = confirmation.ask(draft.id);
-        discardDialog = new AlertDialog.Builder(this)
+        discardDialog = new AlertDialog.Builder(this, DaylightTheme.alert())
                 .setTitle("Discard this photo draft?")
                 .setNegativeButton("Keep draft", null)
                 .setPositiveButton("Discard draft", (dialog, which) -> {

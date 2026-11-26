@@ -52,6 +52,10 @@ public final class FreematicsActivity extends Activity {
     private TextView status, readings;
     private Button primary, forget;
 
+    @Override protected void attachBaseContext(android.content.Context base) {
+        super.attachBaseContext(net.kckern.daylight.shellkit.DaylightTheme.wrap(base));
+    }
+
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         preferences = getSharedPreferences("daylight_freematics", MODE_PRIVATE);
@@ -68,12 +72,11 @@ public final class FreematicsActivity extends Activity {
         int padding = (int) (20 * getResources().getDisplayMetrics().density);
         content.setPadding(padding, padding, padding, padding);
         scroll.addView(content);
-        status = new TextView(this);
-        status.setTextSize(18);
+        net.kckern.daylight.shellkit.DaylightTheme t = net.kckern.daylight.shellkit.DaylightTheme.of(this);
+        status = t.style(new TextView(this), net.kckern.daylight.shellkit.DaylightTheme.Type.TITLE, t.ink, false);
         status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         content.addView(status);
-        readings = new TextView(this);
-        readings.setTextSize(16);
+        readings = t.style(new TextView(this), net.kckern.daylight.shellkit.DaylightTheme.Type.BODY, t.ink, false);
         readings.setPadding(0, padding, 0, padding);
         content.addView(readings);
         primary = new Button(this);

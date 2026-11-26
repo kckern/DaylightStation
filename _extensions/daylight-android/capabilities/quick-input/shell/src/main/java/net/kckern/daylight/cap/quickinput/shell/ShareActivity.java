@@ -1,5 +1,8 @@
 package net.kckern.daylight.cap.quickinput.shell;
 
+import net.kckern.daylight.shellkit.DaylightTheme;
+import net.kckern.daylight.shellkit.DaylightTheme.Radius;
+import net.kckern.daylight.shellkit.DaylightTheme.Type;
 import android.app.Activity;
 import android.content.Intent;
 import android.os.Build;
@@ -89,6 +92,10 @@ public class ShareActivity extends Activity {
         return out;
     }
 
+    @Override protected void attachBaseContext(android.content.Context base) {
+        super.attachBaseContext(DaylightTheme.wrap(base));
+    }
+
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         if (Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false);
@@ -116,12 +123,12 @@ public class ShareActivity extends Activity {
         layout.setOrientation(LinearLayout.VERTICAL);
         int pad = CaptureUi.dp(this, 20);
         layout.setPadding(pad, pad, pad, pad / 2);
-        layout.setBackgroundColor(CaptureUi.PAPER);
-        TextView heading = CaptureUi.text(this, "Share to Daylight", 22, CaptureUi.INK, true);
+        DaylightTheme t = DaylightTheme.of(this);
+        layout.setBackgroundColor(t.background);
+        TextView heading = CaptureUi.text(this, "Share to Daylight", Type.HEADLINE, t.ink, true);
         if (android.os.Build.VERSION.SDK_INT >= 28) heading.setAccessibilityHeading(true); // API 28; the phone floor is 26
         layout.addView(heading);
-        status = CaptureUi.text(this, "Getting ready…", 16, CaptureUi.INK, false);
-        status.setAlpha(0.75f);
+        status = CaptureUi.text(this, "Getting ready…", Type.BODY, t.inkMuted, false);
         layout.addView(status);
         setContentView(layout);
         getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);

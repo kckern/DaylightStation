@@ -1,5 +1,8 @@
 package net.kckern.daylight.cap.quickinput.shell;
 
+import net.kckern.daylight.shellkit.DaylightTheme;
+import net.kckern.daylight.shellkit.DaylightTheme.Radius;
+import net.kckern.daylight.shellkit.DaylightTheme.Type;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
@@ -30,6 +33,7 @@ public final class CaptureStatusActivity extends Activity {
     private LinearLayout content;
     private TextView summary;
     private String owner;
+    private DaylightTheme t;
     private String rendered = "";
     private boolean active;
     private boolean loading;
@@ -41,25 +45,29 @@ public final class CaptureStatusActivity extends Activity {
         context.startActivity(intent);
     }
 
+    @Override protected void attachBaseContext(android.content.Context base) {
+        super.attachBaseContext(DaylightTheme.wrap(base));
+    }
+
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         owner = state == null ? getIntent().getStringExtra(CaptureScope.EXTRA)
                 : state.getString(CaptureScope.EXTRA);
+        t = DaylightTheme.of(this);
         ScrollView scroll = new ScrollView(this);
-        scroll.setBackgroundColor(CaptureUi.PAPER);
+        scroll.setBackgroundColor(t.background);
         scroll.setFillViewport(true);
-        getWindow().setStatusBarColor(CaptureUi.PAPER);
-        getWindow().setNavigationBarColor(CaptureUi.PAPER);
-        getWindow().getDecorView().setSystemUiVisibility(android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+        getWindow().setStatusBarColor(t.background);
+        getWindow().setNavigationBarColor(t.background);
+        getWindow().getDecorView().setSystemUiVisibility(t.dark ? 0 : android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
                 | android.view.View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
         LinearLayout layout = column();
         int padding = CaptureUi.dp(this, 20);
         layout.setPadding(padding, padding, padding, padding);
-        TextView heading = CaptureUi.text(this, "Captures", 28, CaptureUi.INK, true);
+        TextView heading = CaptureUi.text(this, "Captures", Type.DISPLAY, t.ink, true);
         if (android.os.Build.VERSION.SDK_INT >= 28) heading.setAccessibilityHeading(true); // API 28; the phone floor is 26
         layout.addView(heading);
-        summary = CaptureUi.text(this, "Loading captures…", 16, CaptureUi.INK, false);
-        summary.setAlpha(0.75f);
+        summary = CaptureUi.text(this, "Loading captures…", Type.BODY, t.inkMuted, false);
         layout.addView(summary);
         content = column();
         layout.addView(content);
@@ -186,20 +194,19 @@ public final class CaptureStatusActivity extends Activity {
         LinearLayout card = column();
         int pad = CaptureUi.dp(this, 16);
         card.setPadding(pad, pad, pad, pad);
-        card.setBackground(CaptureUi.round(this, android.graphics.Color.WHITE, 16));
-        card.addView(CaptureUi.text(this, row.optString("destination"), 18, CaptureUi.INK, true));
+        card.setBackground(t.round(t.surface, Radius.MEDIUM));
+        card.addView(CaptureUi.text(this, row.optString("destination"), Type.TITLE, t.ink, true));
         long capturedAt = row.optLong("recordedAtMs");
         if (capturedAt > 0) {
             TextView when = CaptureUi.text(this, java.text.DateFormat.getDateTimeInstance(
                     java.text.DateFormat.SHORT, java.text.DateFormat.SHORT).format(new java.util.Date(capturedAt)),
-                    13, CaptureUi.INK, false);
-            when.setAlpha(0.6f);
+                    Type.LABEL, t.inkMuted, false);
             card.addView(when);
         }
         String message = row.optString("message");
         String action = row.optString("action");
         boolean attention = "Replace capture".equals(action) || "Retry".equals(action);
-        TextView state = CaptureUi.text(this, message, 15, attention ? 0xff9a4a00 : CaptureUi.GREEN, true);
+        TextView state = CaptureUi.text(this, message, Type.BODY, attention ? t.attention : t.primary, true);
         state.setPadding(0, CaptureUi.dp(this, 6), 0, 0);
         card.addView(state);
         // The payload's action names are what it understands; the words on the button are plain.
@@ -225,19 +232,4 @@ public final class CaptureStatusActivity extends Activity {
         return layout;
     }
 
-    private TextView text(LinearLayout column, String message, int size) {
-        TextView view = new TextView(this);
-        view.setText(message);
-        view.setTextSize(size);
-        column.addView(view);
-        return view;
-    }
-
-    private void button(LinearLayout column, String label, Runnable action) {
-        Button button = new Button(this);
-        button.setText(label);
-        button.setAllCaps(false);
-        button.setOnClickListener(view -> action.run());
-        column.addView(button);
-    }
 }
