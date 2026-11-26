@@ -17,6 +17,7 @@ import { FleetProvider } from "./fleet/FleetProvider.jsx";
 import { PeekProvider } from "./peek/PeekProvider.jsx";
 import { CastTargetProvider } from "./cast/CastTargetProvider.jsx";
 import { DispatchProvider } from "./cast/DispatchProvider.jsx";
+import { PhoneKeepsProvider } from "./cast/usePhoneKeeps.jsx";
 import { PlaybackQualityProvider } from "./quality/PlaybackQualityProvider.jsx";
 import mediaLog from "./logging/mediaLog.js";
 import { wsService } from "../../../../frontend/src/services/WebSocketService.js";
@@ -73,11 +74,13 @@ export default function MediaApp() {
             <PeekProvider>
               <CastTargetProvider>
                 <DispatchProvider>
-                  <SearchProvider>
-                    <div className="media-app">
-                      <MediaAppShell />
-                    </div>
-                  </SearchProvider>
+                  <PhoneKeepsProvider>
+                    <SearchProvider>
+                      <div className="media-app">
+                        <MediaAppShell />
+                      </div>
+                    </SearchProvider>
+                  </PhoneKeepsProvider>
                 </DispatchProvider>
               </CastTargetProvider>
             </PeekProvider>

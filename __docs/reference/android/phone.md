@@ -684,6 +684,29 @@ for every device.
   (build 81); the digest comes from `apksigner verify --print-certs` on the installed
   Google app, and matches the `refused media controller` line it used to log.
 
+### The backend inbox: auth, installs, Keep from the web
+
+The phone collects its commands (Play on from the web, Keep on Phone) by long-polling
+`GET /api/v1/device/<id>/commands`. Each poll, ack and keep report carries
+`Authorization: Bearer <the control token this build holds>` (a backend still lets a
+tokenless request in while the device's `content_control.allow_unauthenticated` is not
+`false`) and names the install (`installId`, made once per install; `model`). A command
+is addressed to one install, so the emulator or a reinstall polling as the same device
+never takes the phone's commands. Keep and unkeep commands from the web are stored on the
+backend until the phone acks them; the keep's title is `params.title`, its content
+`params.contentId`. The phone sends its whole kept list with its free space and limit
+(`POST /api/v1/device/<id>/keeps`, lifecycle states such as `checking`, `waiting-wifi`,
+`downloading`, `partly-ready`, `ready`, `damaged`), and the web shows what it says.
+Progress kept offline is sent with `observedAt` (when it was heard): a report older than
+the stored last play never moves the place. Each Plex audio item in the play answer
+(`GET /api/v1/play/plex/<id>`, top level) and the queue answer
+(`GET /api/v1/queue/plex/<id>`, each `items[]` entry, top level) carries `fileVersion`,
+`"<partId>:<updatedAt>"` from the part its stream resolves to
+(`/library/parts/<partId>/<updatedAt>/file.*`), read from metadata already fetched (no
+extra Plex call); it is absent when unknown. A kept track whose `fileVersion` changed at
+home is a new file (lifecycle spec §3.5). Contract:
+`__docs/reference/media/media-app-technical.md` §4.12.
+
 ### Choosing playlists on the phone
 
 - **Drive is the one curated list.** A playlist is on Drive or it is not: "Add to Drive" and

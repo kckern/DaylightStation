@@ -23,6 +23,8 @@ export const AREA_FOR_VIEW = Object.freeze({
   // House admin (RQ-HOUSE-08) and routine history (RQ-AUTO-05).
   screens: 'fleet',
   routines: 'fleet',
+  // What is on a phone (Keep on Phone, lifecycle spec §3.2).
+  'phone-keeps': 'fleet',
 });
 
 const AREA_LABEL = Object.freeze({ home: 'Home', browse: 'Browse', fleet: 'Devices' });

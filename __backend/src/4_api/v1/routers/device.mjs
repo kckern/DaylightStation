@@ -28,6 +28,16 @@ const parseLoadQuery = (query = {}) => {
 const parseRequestedMinutes = value => Number(value) > 0 ? Number(value) : undefined;
 /** The id a browser acting as a screen is addressed by (frontend/src/lib/deviceIdentity.js). */
 const BROWSER_SCREEN_ID = /^browser:[A-Za-z0-9_-]{4,64}$/;
+/**
+ * The phone's own requests (poll, ack, keep report) must carry its token. 401 names the
+ * reason (never the token). A device the inbox does not serve: 404 first.
+ */
+function inboxAuthorized(phoneInbox, req, res) {
+  const verdict = phoneInbox.authorize(req.params.deviceId, req.get?.('authorization') ?? req.headers?.authorization);
+  if (verdict.ok) return true;
+  res.status(401).json(buildErrorBody({ error: 'This device must send its token', code: 'UNAUTHORIZED', details: [verdict.reason] }));
+  return false;
+}
 const notFound = res => res.status(404).json(buildErrorBody({ error: 'Device not found', code: ERROR_CODES.DEVICE_NOT_FOUND }));
 
 /**
@@ -123,11 +133,17 @@ export function createDeviceRouter({ fleetService, presenceService, sessionServi
    * 204 when none came. Each poll keeps the device online in the fleet and the Play-on
    * picker; an optional `state` (idle|playing|paused) with `contentId` and `title`
    * reports what it plays. A poll whose caller left before the answer puts its commands
-   * back. Any other device: 404.
+   * back. Any other device: 404. The poll must carry `Authorization: Bearer <device
+   * token>` (401 otherwise) and names its install: `installId` (8–64 of [A-Za-z0-9_-],
+   * new on each install) and `model`; it only ever receives its own install's commands.
    */
   router.get('/:deviceId/commands', asyncHandler(async (req, res) => {
     const { deviceId } = req.params;
     if (!phoneInbox?.serves(deviceId)) return notFound(res);
+    if (!inboxAuthorized(phoneInbox, req, res)) return undefined;
+    const installId = typeof req.query.installId === 'string' ? req.query.installId : null;
+    if (installId !== null && !phoneInbox.constructor.installIdOf?.(installId)) return badRequest(res, 'installId must be 8-64 of A-Z a-z 0-9 _ -');
+    const model = typeof req.query.model === 'string' ? req.query.model.slice(0, 80) : null;
     const waitRaw = req.query.wait === undefined ? 25 : Number(req.query.wait);
     const wait = Number.isFinite(waitRaw) ? Math.max(0, Math.min(30, waitRaw)) : 25;
     const state = typeof req.query.state === 'string' ? req.query.state : null;
@@ -141,9 +157,9 @@ export function createDeviceRouter({ fleetService, presenceService, sessionServi
     }
     let gone = false;
     req.on('close', () => { if (!res.writableEnded) gone = true; });
-    const commands = await phoneInbox.poll(deviceId, wait);
+    const commands = await phoneInbox.poll(deviceId, wait, { installId, model });
     if (gone) {
-      for (const envelope of commands) phoneInbox.enqueue(deviceId, envelope);
+      phoneInbox.putBack(deviceId, commands);
       return undefined;
     }
     if (!commands.length) return res.status(204).end();
@@ -159,6 +175,7 @@ export function createDeviceRouter({ fleetService, presenceService, sessionServi
   router.post('/:deviceId/ack', (req, res) => {
     const { deviceId } = req.params;
     if (!phoneInbox?.serves(deviceId)) return notFound(res);
+    if (!inboxAuthorized(phoneInbox, req, res)) return undefined;
     const body = isRecord(req.body) ? req.body : {};
     if (!nonEmpty(body.commandId) || body.commandId.length > 200) return badRequest(res, 'commandId is required');
     if (typeof body.ok !== 'boolean') return badRequest(res, 'ok must be true or false');
@@ -172,6 +189,104 @@ export function createDeviceRouter({ fleetService, presenceService, sessionServi
     });
     return res.status(204).end();
   });
+
+  /**
+   * "Keep on this phone", asked from another device (the web's Media app): a durable
+   * command for the phone, kept until it acks. Body {contentId, title?, installId?};
+   * without installId it is for the install seen last. 202 {queued:{…}}. `/unkeep` the
+   * same with {contentId, installId?}. Any device the inbox does not serve: 404.
+   */
+  /** An inbox error as HTTP: the store unavailable is 503 (try again), two phones 409. */
+  const inboxError = (res, err) => {
+    if (err?.code === 'STORE_UNAVAILABLE') {
+      res.set('Retry-After', '30');
+      return res.status(503).json(buildErrorBody({ error: err.message, code: 'STORE_UNAVAILABLE', retryable: true }));
+    }
+    if (err?.code === 'CHOOSE_PHONE') {
+      return res.status(409).json({ ...buildErrorBody({ error: err.message, code: 'CHOOSE_PHONE' }), installs: err.installs ?? [] });
+    }
+    if (err instanceof TypeError) return badRequest(res, err.message);
+    throw err;
+  };
+
+  /**
+   * "Keep on this phone", asked from another device (the web's Media app): a durable
+   * command for the phone, stored before it is answered and kept until the phone acks.
+   * Body {contentId, title?, installId?}: without installId it is for the only live
+   * install, or waits for the first to poll; two live and none named: 409 CHOOSE_PHONE
+   * with {installs}. 202 {queued:{…}}; 503 STORE_UNAVAILABLE (Retry-After) when it could
+   * not be stored. `/unkeep` the same with {contentId, installId?}.
+   *
+   * Trust: like every Media-app route (Play on, the household lists), these take no
+   * credential: the backend is reachable only from the household network and its
+   * perimeter, and a keep only asks the household's own phone to download household
+   * media it would stream anyway. The phone's own requests (poll, ack, report) are the
+   * ones that carry its token.
+   */
+  for (const command of ['keep', 'unkeep']) {
+    router.post(`/:deviceId/${command}`, asyncHandler(async (req, res) => {
+      const { deviceId } = req.params;
+      if (!phoneInbox?.serves(deviceId)) return notFound(res);
+      const body = isRecord(req.body) ? req.body : {};
+      if (!nonEmpty(body.contentId) || body.contentId.length > 200) return badRequest(res, 'contentId is required');
+      if (body.installId !== undefined && !phoneInbox.constructor.installIdOf?.(body.installId)) return badRequest(res, 'installId is not one');
+      const origin = req.deviceIdSource === 'header' && nonEmpty(req.deviceId) ? { kind: 'device', id: req.deviceId } : undefined;
+      try {
+        const envelope = await phoneInbox.queueKeep(deviceId, {
+          command, contentId: body.contentId, installId: body.installId,
+          title: typeof body.title === 'string' ? body.title : undefined, origin,
+        });
+        return res.status(202).json({ ok: true, queued: { command, commandId: envelope.commandId, contentId: body.contentId, installId: envelope.installId ?? null, queuedAt: envelope.ts } });
+      } catch (err) { return inboxError(res, err); }
+    }));
+  }
+
+  /**
+   * Cancel a keep still waiting for the phone: removed when it was not yet handed
+   * over (200 {cancelled:true}); already handed over, it is answered by a removal
+   * (200 {cancelled:false, removing:true}). Unknown commandId: 404.
+   */
+  router.post('/:deviceId/keep/cancel', asyncHandler(async (req, res) => {
+    const { deviceId } = req.params;
+    if (!phoneInbox?.serves(deviceId)) return notFound(res);
+    const body = isRecord(req.body) ? req.body : {};
+    if (!nonEmpty(body.commandId) || body.commandId.length > 200) return badRequest(res, 'commandId is required');
+    try {
+      const result = await phoneInbox.cancelKeep(deviceId, body.commandId);
+      if (!result) return res.status(404).json(buildErrorBody({ error: 'No such waiting keep', code: 'NOT_FOUND' }));
+      return res.json({ ok: true, ...result });
+    } catch (err) { return inboxError(res, err); }
+  }));
+
+  /**
+   * What the phone keeps, as it last said (per install, with its free space and
+   * limit), the installs seen (the one in use first; `live` within 2 min, `gone` after
+   * 30 days), the keep commands still waiting (every install), received ones not yet
+   * reported, and refusals. Read by the web; any device the inbox does not serve: 404.
+   */
+  router.get('/:deviceId/keeps', (req, res) => {
+    const { deviceId } = req.params;
+    if (!phoneInbox?.serves(deviceId)) return notFound(res);
+    return res.json({ ok: true, ...phoneInbox.keeps(deviceId) });
+  });
+
+  /**
+   * The phone's own list of what it keeps (its truth, the whole list each time):
+   * {installId, freeBytes?, limitBytes?, items:[{contentId, state, title?, done, total,
+   * bytes, totalBytes?, neededBytes?, failed?, reason?, finished?, trackIds?}]}, state one
+   * of the lifecycle states (KEEP_STATES). Device token (or the unauthenticated
+   * transition). 204; 503 when it could not be stored.
+   */
+  router.post('/:deviceId/keeps', asyncHandler(async (req, res) => {
+    const { deviceId } = req.params;
+    if (!phoneInbox?.serves(deviceId)) return notFound(res);
+    if (!inboxAuthorized(phoneInbox, req, res)) return undefined;
+    const body = isRecord(req.body) ? req.body : {};
+    try {
+      await phoneInbox.reportKeeps(deviceId, { installId: body.installId, items: body.items, freeBytes: body.freeBytes, limitBytes: body.limitBytes });
+    } catch (err) { return inboxError(res, err); }
+    return res.status(204).end();
+  }));
 
   /**
    * What input hardware the ASKING device is declared to have.

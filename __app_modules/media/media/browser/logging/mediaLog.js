@@ -43,6 +43,12 @@ function sampled(event, opts = SAMPLED) {
 // Per __docs/reference/media/media-app-technical.md §10.1
 export const mediaLog = {
   mounted:                info('media-app.mounted'),
+  // "Keep on Phone" (ops:docs/superpowers/plans/2026-11-26-phone-downloads-hardening.md §H)
+  phoneKeepAsked:         info('phone-keep.asked'),
+  phoneKeepFailed:        warn('phone-keep.failed'),
+  phoneKeepsRead:         debug('phone-keep.read'),
+  phoneKeepsReadFailed:   sampled('phone-keep.read-failed'),
+  phoneKeepsPageShown:    info('phone-keep.page-shown'),
   unmounted:              info('media-app.unmounted'),
   sessionCreated:         info('session.created'),
   sessionReset:           info('session.reset'),

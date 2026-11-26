@@ -96,7 +96,9 @@ export class PlayResponseService {
       resumable: item.resumable ?? false,
       thumbnail: item.thumbnail,
       image: item.thumbnail,
-      metadata: item.metadata
+      metadata: item.metadata,
+      // Which file the audio is (a kept copy on the phone re-downloads when it changes).
+      ...(item.fileVersion ? { fileVersion: item.fileVersion } : {}),
     };
 
     // Add resume position if in progress (use domain entity)

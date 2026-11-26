@@ -261,7 +261,7 @@ export function reduceDispatch(state, action) {
       return { ...state, byId: next };
     }
     case 'LOCAL_RESOLVED': {
-      const { attemptId, phase, reason, ordinal, count } = action;
+      const { attemptId, phase, reason, ordinal, count, retryAction } = action;
       const prev = state.byId.get(attemptId);
       if (!prev || prev.distance === 'far') return state;
       const next = new Map(state.byId);
@@ -271,6 +271,8 @@ export function reduceDispatch(state, action) {
         reason: reason ?? prev.reason,
         ordinal: ordinal ?? prev.ordinal,
         count: count ?? prev.count ?? null,
+        // A local action that failed and can be asked again (Keep on Phone): the tray's Retry.
+        ...(typeof retryAction === 'function' ? { retryAction } : {}),
         updatedAt: now(),
       });
       if (phase === 'confirmed') {

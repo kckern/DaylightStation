@@ -9,6 +9,7 @@ import { FleetView } from "./FleetView.jsx";
 import { PeekPanel } from "./PeekPanel.jsx";
 import { ScreenAdminView } from "../house/ScreenAdminView.jsx";
 import { RoutineHistoryView } from "../house/RoutineHistoryView.jsx";
+import { PhoneKeepsView } from "../house/PhoneKeepsView.jsx";
 
 function renderView(view, params, destinationControlRef) {
   switch (view) {
@@ -22,6 +23,7 @@ function renderView(view, params, destinationControlRef) {
     case 'peek': return <PeekPanel deviceId={params.deviceId} />;
     case 'screens': return <ScreenAdminView />;
     case 'routines': return <RoutineHistoryView />;
+    case 'phone-keeps': return <PhoneKeepsView key={params.deviceId} deviceId={params.deviceId} />;
     default: return <HomeView />;
   }
 }

@@ -748,6 +748,17 @@ export class WakeAndLoadService {
             this.#logger.warn?.('wake-and-load.load.url-ack-missing', {
               deviceId, dispatchId, error: ack?.error,
             });
+            // A queued command no one collected in time (the phone): take it back and
+            // say not delivered, so it never starts late and no retry sends it twice.
+            if (typeof device.cancelPendingContent === 'function' && device.cancelPendingContent(dispatchId)) {
+              this.#emitProgress(topic, dispatchId, 'load', 'failed', { error: 'Not picked up' });
+              this.#logger.warn?.('wake-and-load.load.not-picked-up', { deviceId, dispatchId });
+              result.error = ack?.ok === false && ack?.error && !/timeout/i.test(ack.error) ? ack.error : 'Not picked up';
+              result.failedStep = 'load';
+              result.notDelivered = true;
+              result.totalElapsedMs = this.#clock.now() - startTime;
+              return result;
+            }
           }
         }
         const isFkbFallback = !!wsSkipReason;
@@ -757,6 +768,17 @@ export class WakeAndLoadService {
           ...(wsSkipReason === 'ws-error' ? { wsError: 'ack-timeout' } : {}),
         };
         this.#emitProgress(topic, dispatchId, 'load', 'done');
+      } else if (loadResult.final === true) {
+        // The adapter says nothing else can reach this device (two phones live and
+        // none picked): no page load or socket fallback, the person must choose.
+        this.#emitProgress(topic, dispatchId, 'load', 'failed', { error: loadResult.error, code: loadResult.code ?? null });
+        this.#logger.warn?.('wake-and-load.load.final-refusal', { deviceId, dispatchId, code: loadResult.code ?? null });
+        result.error = loadResult.error;
+        if (loadResult.code) result.code = loadResult.code;
+        if (Array.isArray(loadResult.installs)) result.installs = loadResult.installs;
+        result.failedStep = 'load';
+        result.totalElapsedMs = this.#clock.now() - startTime;
+        return result;
       } else if (hasContentQuery && /not connected/i.test(String(loadResult.error ?? ''))) {
         // The content adapter itself says no receiver is subscribed (a
         // WebSocket-only screen has no page it could load first): a fallback

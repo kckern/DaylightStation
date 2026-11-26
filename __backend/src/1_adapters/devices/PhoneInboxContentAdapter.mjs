@@ -67,16 +67,40 @@ export class PhoneInboxContentAdapter extends IContentControl {
     delete options[resolvedKey];
     delete options.op;
     delete options.dispatchId;
+    delete options.installId;
     const commandId = typeof query.dispatchId === 'string' && query.dispatchId ? query.dispatchId : randomUUID();
-    const envelope = buildCommandEnvelope({
-      targetDevice: this.#deviceId,
-      command: 'queue',
-      commandId,
-      params: decodeItemAction(query.itemAction) ?? { ...options, op, contentId },
-    });
-    this.#inbox.enqueue(this.#deviceId, envelope);
-    this.#logger.info?.('phone-inbox.load', { deviceId: this.#deviceId, commandId, contentId, op });
-    return { ok: true, method: 'phone-inbox', commandId };
+    // The install the person picked (two phones live), when the web knows it.
+    const installId = typeof query.installId === 'string' && /^[A-Za-z0-9_-]{8,64}$/.test(query.installId) ? query.installId : null;
+    const envelope = {
+      ...buildCommandEnvelope({
+        targetDevice: this.#deviceId,
+        command: 'queue',
+        commandId,
+        params: decodeItemAction(query.itemAction) ?? { ...options, op, contentId },
+      }),
+      ...(installId ? { installId } : {}),
+    };
+    let queued;
+    try {
+      queued = this.#inbox.enqueue(this.#deviceId, envelope);
+    } catch (err) {
+      if (err?.code !== 'CHOOSE_PHONE') throw err;
+      this.#errors++;
+      this.#logger.warn?.('phone-inbox.load.choose-phone', { deviceId: this.#deviceId, commandId });
+      // final: nothing else (a page load, a socket fallback) can reach a phone.
+      return { ok: false, final: true, code: 'CHOOSE_PHONE', error: err.message, installs: err.installs ?? [] };
+    }
+    this.#logger.info?.('phone-inbox.load', { deviceId: this.#deviceId, commandId, contentId, op, installId: queued?.installId ?? null });
+    return { ok: true, method: 'phone-inbox', commandId, ...(queued?.installId ? { installId: queued.installId } : {}) };
+  }
+
+  /**
+   * The dispatch's ack wait ran out: take the queued command back so a phone that
+   * polls later never starts a play nobody is waiting for. True when it was still
+   * queued (not delivered); false when an install already took it.
+   */
+  cancelPending(commandId) {
+    return typeof this.#inbox.cancel === 'function' ? this.#inbox.cancel(this.#deviceId, commandId) : false;
   }
 
   /** The phone streams from the backend itself: a transcode prewarm would go unused. */

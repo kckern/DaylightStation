@@ -17,6 +17,7 @@ import mediaLog from "../logging/mediaLog.js";
 import { usePlayDestination } from "../habits/usePlayDestination.js";
 import { itemMenuEntries, menuItemKind, MENU_LABELS, splitItemMenu } from "../actions/itemMenuTable.js";
 import { TopMoreMenu } from '@/lib/ui/TopMore.jsx';
+import { usePhoneKeeps } from "../cast/usePhoneKeeps.jsx";
 
 // PLAY.5a/AC3: Play next, and — on press and hold — "At the very front".
 function PlayNextItems({ testId, fire, label }) {
@@ -49,6 +50,12 @@ const TEST_ID_KIND = { unfavourite: 'favourite' };
  * @param {{ name: string }|null} [props.playingOn] the screen it is on right now:
  *   offers "Open <screen>" (onVerb('openScreen'), addendum item 5)
  */
+/** Keep on Phone entries carry their target in the kind; the test id names only the verb. */
+function keepTestKind(kind) {
+  const m = /^(keepOn|unkeepOn|cancelKeepOn):/.exec(kind ?? '');
+  return m ? { keepOn: 'keep-on', unkeepOn: 'unkeep-on', cancelKeepOn: 'cancel-keep-on' }[m[1]] : null;
+}
+
 export function ItemMenu({
   item, onVerb, favourite = false, watched = null, removable = false, testId,
   editions = null, onEdition = null, continueLabel = null, playingOn = null,
@@ -56,6 +63,7 @@ export function ItemMenu({
   const quality = usePlaybackQuality();
   const triggerRef = useRef(null);
   const collection = isCollection(item);
+  const phoneKeeps = usePhoneKeeps();
   // The menu's plays and queue verbs go where the tile's ▶ goes; say so.
   const { labelsFor, destinationFor } = usePlayDestination();
   const elsewhere = destinationFor(item).targetIds.length > 0;
@@ -75,6 +83,7 @@ export function ItemMenu({
     where: { elsewhere, short: named.short, sentence: named.sentence },
     playingOn, continueLabel, favourite, watched, removable,
     quality: !!quality && supportsQualityOverrides(item),
+    keep: phoneKeeps.forItem(item).entries,
   }));
   const topEntries = entries.filter((entry) => !entry.more);
   const moreEntries = entries.filter((entry) => entry.more)
@@ -118,7 +127,7 @@ export function ItemMenu({
     if (entry.divider) return <Menu.Divider key={entry.key ?? `divider-${index}`} />;
     if (entry.kind === 'playNext') return <PlayNextItems key="playNext" testId={testId} fire={fire} label={entry.label} />;
     const item_ = (
-      <Menu.Item key={entry.kind} data-testid={`${testId}-verb-${TEST_ID_KIND[entry.kind] ?? entry.kind}`}
+      <Menu.Item key={entry.kind} data-testid={`${testId}-verb-${TEST_ID_KIND[entry.kind] ?? keepTestKind(entry.kind) ?? entry.kind}`}
         onClick={entry.kind === 'quality' ? openQuality : fire(entry.kind)}>
         {entry.label}
       </Menu.Item>

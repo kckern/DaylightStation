@@ -57,6 +57,9 @@ export function toQueueItem(item) {
 
     // List identity for server-side progress namespace resolution
     listId: item.metadata?.listId || null,
+
+    // Which file the audio is (a kept copy on the phone re-downloads when it changes).
+    ...(item.fileVersion ? { fileVersion: item.fileVersion } : {}),
   };
 
   // Readalong content (scripture, poetry, talks) — text body + style for ContentScroller

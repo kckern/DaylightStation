@@ -23,6 +23,9 @@ import { canPlayOn } from "../habits/playDestination.js";
 import { usePlayDestination } from "../habits/usePlayDestination.js";
 import { executeItemAction } from "../actions/itemAction.js";
 import { rankScreens, screenCanTop } from "../fleet/screenRanking.js";
+import { usePhoneKeeps, useWatchPhoneKeeps } from "./usePhoneKeeps.jsx";
+import { expandPhoneInstalls } from "./phoneKeeps.js";
+import { deviceKind } from "./castCopy.js";
 
 /** The `pendingId` of this device's own row while it asks before replacing. */
 export const HERE_ID = '__here__';
@@ -106,7 +109,14 @@ export function useDispatchTargetPicker({ source, onComplete, intent = 'dispatch
   const isLocalDevice = (device) => device?.isLocal === true || (!!localId && device?.id === localId);
   const playable = (fleet.devices ?? []).filter(device => canPlayOn(device, kind));
   const weights = screenWeightsFor(sourceItem);
-  const devices = rankScreens(playable.filter(device => !isLocalDevice(device)), { preferredIds, weights });
+  // Two live installs of a phone are two rows, by model; a play from one names it.
+  const { views: phoneViews } = usePhoneKeeps();
+  const isPhone = (device) => deviceKind(device) === 'phone';
+  useWatchPhoneKeeps(null, { always: playable.some(isPhone) });
+  const devices = expandPhoneInstalls(
+    rankScreens(playable.filter(device => !isLocalDevice(device)), { preferredIds, weights }),
+    phoneViews, isPhone,
+  );
   const canTop = screenCanTop({ preferredIds, weights });
   // "Usual" is only ever a learned habit, never the current aim.
   const usualIds = learnedFirst?.source === 'learned' ? learnedFirst.targetIds : [];

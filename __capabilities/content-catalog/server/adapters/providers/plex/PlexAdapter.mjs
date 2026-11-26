@@ -1,4 +1,5 @@
 // __backend/src/2_adapters/content/media/plex/PlexAdapter.mjs
+import { plexFileVersion } from './plexFileVersion.mjs';
 import { ListableItem } from "../../../domain/capabilities/Listable.mjs";
 import { PlayableItem } from "../../../domain/capabilities/Playable.mjs";
 import { ContentCategory } from "../../../domain/value-objects/ContentCategory.mjs";
@@ -1261,7 +1262,10 @@ export class PlexAdapter {
       resumable: isVideo || isLongAudio(item),
       resumePosition: item.viewOffset ? Math.floor(item.viewOffset / 1000) : null,
       thumbnail,
-      metadata
+      metadata,
+      // Audio only: which file this is, from the metadata already in hand (no Plex call).
+      ...(!directPart && this._determineMediaType(item.type) === 'audio' && plexFileVersion(item)
+        ? { fileVersion: plexFileVersion(item) } : {}),
     });
   }
 
