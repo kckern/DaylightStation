@@ -138,7 +138,9 @@ for (const { kind, query, id, title } of [
   expect((await state(request))?.currentItem?.contentId ?? null).not.toBe(id);
 
   // Show on… : the picker is named for showing, and the screen shows it.
+  // (Retype: the box kept these words, so the same words would not search again.)
   await search.click({ position: { x: 48, y: 12 } });
+  await search.fill('');
   await search.fill(query);
   await page.getByTestId(`result-more-${id}`).click();
   await page.getByTestId(`result-action-playOn-${id}`).click();

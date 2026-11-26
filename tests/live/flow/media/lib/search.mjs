@@ -100,7 +100,9 @@ const playEvidence = (page) => page.evaluate(() => [
  * `until` ends the wait early once the play has visibly started instead.
  */
 export async function answerSpotChooser(page, { spot = 'beginning', until = null, waitMs = until ? 10000 : 2500 } = {}) {
-  const chooser = page.getByTestId('spot-chooser');
+  // The modal's own test id sits on a wrapper that is never "visible"; its
+  // From the beginning choice is the dependable sign that it is asking.
+  const chooser = page.getByTestId('spot-choice-beginning');
   const deadline = Date.now() + waitMs;
   let asked = false;
   while (Date.now() < deadline) {

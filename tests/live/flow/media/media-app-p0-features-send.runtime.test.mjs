@@ -156,6 +156,7 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
     await expect(attempt).not.toContainText(/Playing on Acceptance guest room TV/);
     await expect(page.getByTestId('screen-handle').filter({ hasText: 'Acceptance guest room TV' }).getByTestId('screen-handle-state')).not.toHaveText(/^Playing/);
     expect((await media(page))?.paused, 'this device keeps playing when the screen never confirmed').toBe(false);
+    await closeSearchIfOpen(page); // the phone's search sheet covers the handle
     await expect(page.getByTestId('mini-toggle')).toHaveAccessibleName('Pause');
     await receiver.close();
   });

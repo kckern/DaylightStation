@@ -343,6 +343,10 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
         await usable(page, 'fixer dialog');
         await page.getByRole('dialog').getByRole('button', { name: 'Start fresh', exact: true }).click();
         await expect(page.getByTestId('mini-player-open-nowplaying')).toHaveCount(0, { timeout: 30000 });
+        // The Room Hopper left the film on the screen, where a result reads "On <screen>"
+        // (pause/resume, no ▶): stop it there first, so the row plays it here.
+        expect((await call(request, 'POST', `${base}/session/transport`, { action: 'stop' })).status).toBe(200);
+        await expect.poll(async () => (await receiverState(request))?.state, { timeout: 30000 }).not.toBe('playing');
         await aimHere(page);
         await typeQuery(d);
         await playRow(d);

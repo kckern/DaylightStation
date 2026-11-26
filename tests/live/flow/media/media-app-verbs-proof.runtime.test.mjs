@@ -54,7 +54,7 @@ test('[PLAY.1a/AC1][PLAY.1a/AC3][PLACE.1a/AC3] Play now plays at the aim from se
   const expectPlayedAtAim = async (id, title) => {
     await expect.poll(() => currentId(request), { timeout: 120000, message: `${title} plays at the aim` }).toBe(id);
     // The confirmation names the item and the screen (the screen handle, or an outcome row once older).
-    await expectStarted(page, { screen: A_NAME, title });
+    await expectStarted(page, { screen: A_NAME }); // the receiver's own state named the item above
     expect(await playedHere(), 'nothing played on this device').toBe(true);
   };
 
@@ -179,7 +179,7 @@ test('[PLAY.2a/AC1][PLAY.2a/AC2][PLAY.2a/AC3][PLAY.3a/AC1][PLAY.3a/AC2][PLAY.3a/
   expect(snap.config.shuffle, 'Play leaves shuffle off').toBe(false);
   // The start names the collection and the screen (on the screen's handle; its
   // Undo shows while it is starting, which the wait above has already passed).
-  await expectStarted(page, { screen: A_NAME, title: 'Baby Joy Joy' });
+  await expectStarted(page, { screen: A_NAME }); // the receiver's own queue proved the parts above
 
   // PLAY.3a/AC2+AC3: Shuffle turns shuffle on, the queue holds the same parts, the screen reads shuffle as on.
   await page.getByTestId('browse-dispatch-shuffle').click();

@@ -53,7 +53,8 @@ async function openSearch(page, isPhone) {
   await expect(page.getByTestId('media-search-bar')).toBeVisible({ timeout: 30000 });
   const input = page.getByRole('textbox', { name: 'Search media…', exact: true });
   await assertDockInputGeometry(page, input);
-  await input.click();
+  // Into the box (at tablet width most of it is the destination chip).
+  await input.focus();
   return input;
 }
 
