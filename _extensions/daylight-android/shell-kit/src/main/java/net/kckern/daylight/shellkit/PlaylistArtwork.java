@@ -30,21 +30,83 @@ public final class PlaylistArtwork {
         return encoded == null ? null : decode(encoded, maxSide);
     }
 
-    /** Saves the cover at {@code thumbnail} for offline use. False when it could not be fetched. */
+    /** Covers that failed: the next try waits a minute, doubling to a day, so a dead link is not fetched forever. */
+    private static final java.util.Map<String, long[]> FAILED = new java.util.concurrent.ConcurrentHashMap<>();
+    static final long RETRY_MIN_MS = 60_000L, RETRY_MAX_MS = 86_400_000L;
+
+    /** When a cover that failed {@code failures} times (last at {@code at}) may be tried again. */
+    static long nextTry(int failures, long at) {
+        long wait = RETRY_MIN_MS << Math.min(20, Math.max(0, failures - 1));
+        return at + Math.min(RETRY_MAX_MS, wait);
+    }
+
+    /**
+     * Saves the cover at {@code thumbnail} for offline use (https only, following https
+     * redirects, written beside and renamed). False when it could not be fetched; a failed
+     * cover is not tried again until its backoff passes.
+     */
     public static boolean keep(String thumbnail) {
         File dir = keptDir;
         if (dir == null || thumbnail == null || !thumbnail.startsWith("https://")) return false;
-        if (new File(dir, name(thumbnail)).isFile()) return true;
-        byte[] encoded = fetch(thumbnail);
-        if (encoded == null) return false;
+        File target = new File(dir, name(thumbnail));
+        if (target.isFile()) return true;
+        long now = System.currentTimeMillis();
+        long[] f = FAILED.get(thumbnail);
+        if (f != null && now < nextTry((int) f[0], Math.min(f[1], now))) return false;
+        byte[] encoded = fetchFollowing(thumbnail, 3);
+        if (encoded == null) {
+            FAILED.put(thumbnail, new long[] { f == null ? 1 : f[0] + 1, now });
+            return false;
+        }
+        FAILED.remove(thumbnail);
         try {
             //noinspection ResultOfMethodCallIgnored
             dir.mkdirs();
-            Files.write(new File(dir, name(thumbnail)).toPath(), encoded);
+            File tmp = new File(dir, target.getName() + ".tmp");
+            Files.write(tmp.toPath(), encoded);
+            if (!tmp.renameTo(target)) Files.write(target.toPath(), encoded);
             return true;
         } catch (java.io.IOException notSaved) {
             return false;
         }
+    }
+
+    /** A cover fetch that follows up to {@code hops} https redirects (a CDN's), never to http. */
+    private static byte[] fetchFollowing(String url, int hops) {
+        String at = url;
+        for (int i = 0; i <= hops; i++) {
+            javax.net.ssl.HttpsURLConnection c = null;
+            try {
+                c = (javax.net.ssl.HttpsURLConnection) new java.net.URL(at).openConnection();
+                c.setConnectTimeout(4000);
+                c.setReadTimeout(4000);
+                c.setInstanceFollowRedirects(false);
+                int code = c.getResponseCode();
+                if (code >= 300 && code < 400) {
+                    String next = c.getHeaderField("Location");
+                    if (next == null) return null;
+                    next = new java.net.URL(new java.net.URL(at), next).toString();
+                    if (!next.startsWith("https://")) return null;
+                    at = next;
+                    continue;
+                }
+                if (code != 200) return null;
+                try (java.io.InputStream input = c.getInputStream();
+                        java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream()) {
+                    byte[] buffer = new byte[8192];
+                    for (int count; (count = input.read(buffer)) != -1;) {
+                        if (bytes.size() + count > MAX_BYTES) return null;
+                        bytes.write(buffer, 0, count);
+                    }
+                    return bytes.toByteArray();
+                }
+            } catch (java.io.IOException | ClassCastException failed) {
+                return null;
+            } finally {
+                if (c != null) c.disconnect();
+            }
+        }
+        return null;
     }
 
     /** Deletes saved covers other than {@code wanted} (covers of collections no longer kept). */

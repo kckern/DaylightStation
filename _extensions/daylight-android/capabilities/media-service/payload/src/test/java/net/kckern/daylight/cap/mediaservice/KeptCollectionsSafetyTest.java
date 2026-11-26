@@ -119,4 +119,79 @@ public class KeptCollectionsSafetyTest {
         assertFalse(MediaServiceCapability.stale(new JSONObject().put("response", new JSONObject().put("ok", true))));
         assertEquals(-1, MediaServiceCapability.serverSeconds(new JSONObject()));
     }
+
+    /** Audit 3: a long book's place is never pushed out by songs, and an earlier report never replaces a later one. */
+    @Test public void positionsKeepTheBookAndTheNewest() throws Exception {
+        File f = new File(tmp.newFolder("pp"), "positions.json");
+        PendingProgress p = new PendingProgress(f, id -> id.equals("plex:book"));
+        p.keep(new JSONObject().put("assetId", "plex:book").put("seconds", 3000).put("observedAt", 1));
+        for (int i = 0; i < PendingProgress.MAX + 5; i++) {
+            p.keep(new JSONObject().put("assetId", "plex:song" + i).put("seconds", 10).put("observedAt", 100 + i));
+        }
+        assertEquals("the kept book is never pushed out", 3000, p.get("plex:book").getLong("seconds"));
+        assertEquals("the oldest song goes first", null, p.get("plex:song0"));
+        p.keep(new JSONObject().put("assetId", "plex:book").put("seconds", 3600).put("observedAt", 500));
+        p.keep(new JSONObject().put("assetId", "plex:book").put("seconds", 10).put("observedAt", 400));
+        assertEquals("a report heard earlier never replaces a later one", 3600, p.get("plex:book").getLong("seconds"));
+        assertFalse(new File(f.getParentFile(), "positions.json.tmp").exists());
+    }
+
+    /** Audit 3: an unreadable positions file is set aside, never overwritten with one entry. */
+    @Test public void anUnreadablePositionsFileIsSetAside() throws Exception {
+        File dir = tmp.newFolder("pu");
+        File f = new File(dir, "positions.json");
+        Files.write(f.toPath(), "{trunc".getBytes(StandardCharsets.UTF_8));
+        PendingProgress p = new PendingProgress(f);
+        p.keep(new JSONObject().put("assetId", "plex:1").put("seconds", 5).put("observedAt", 1));
+        boolean aside = false;
+        for (String n : dir.list()) if (n.startsWith("positions.json.unreadable-")) aside = true;
+        assertTrue(aside);
+    }
+
+    /** Audit 4: a re-sync never brings back a collection removed meanwhile. */
+    @Test public void aRefreshNeverRevivesARemovedCollection() throws Exception {
+        KeptCollections kept = new KeptCollections(tmp.newFolder("kr"));
+        kept.save("plex:60", "List", null, tracks("plex:61"), 1);
+        kept.remove("plex:60", 2);
+        assertFalse(kept.refreshIfKept("plex:60", "List", null, tracks("plex:61", "plex:62"), 3, "playlist"));
+        assertEquals(null, kept.get("plex:60"));
+        assertTrue(kept.tombstoned("plex:60"));
+    }
+
+    /** Audit 5: a quarantined collection comes back from the mirror, and its bad copy goes. */
+    @Test public void aQuarantinedCollectionIsRestoredFromTheMirror() throws Exception {
+        File dir = tmp.newFolder("kq");
+        KeptCollections kept = new KeptCollections(dir);
+        kept.save("plex:70", "Album", null, tracks("plex:71"), 1);
+        Files.write(new File(dir, "plex_70.json").toPath(), "{bad".getBytes(StandardCharsets.UTF_8));
+        assertTrue(kept.list().isEmpty());
+        assertEquals(1, kept.quarantined().size());
+        JSONArray mirror = new JSONArray().put(new JSONObject().put("contentId", "plex:70").put("title", "Album")
+                .put("tracks", tracks("plex:71")).put("keptAt", 1));
+        assertEquals(1, kept.restore(mirror));
+        assertEquals(0, kept.quarantined().size());
+        assertEquals(1, kept.list().size());
+    }
+
+    @Test public void aCollectionIsABookAnAlbumOrAPlaylist() {
+        assertEquals("book", MediaServiceCapability.kindOf(true, 1, ""));
+        assertEquals("book", MediaServiceCapability.kindOf(false, 1, "audiobook"));
+        assertEquals("playlist", MediaServiceCapability.kindOf(false, 7, ""));
+        assertEquals("playlist", MediaServiceCapability.kindOf(false, 1, "playlist"));
+        assertEquals("album", MediaServiceCapability.kindOf(false, 1, "album"));
+    }
+
+    @Test public void aBookIsFinishedWhenItsLastPartIsAndAnAlbumNever() throws Exception {
+        KeptCollections kept = new KeptCollections(tmp.newFolder("kf"));
+        kept.save("plex:80", "Book", null, tracks("plex:81", "plex:82"), 1, "book");
+        kept.save("plex:90", "Album", null, tracks("plex:91"), 1, "album");
+        JSONObject recent = new JSONObject().put("items", new JSONArray()
+                .put(new JSONObject().put("contentId", "plex:82").put("playhead", 980).put("duration", 1000))
+                .put(new JSONObject().put("contentId", "plex:91").put("finished", true)));
+        JSONArray done = MediaServiceCapability.finishedBooks(kept.list(), recent);
+        assertEquals(1, done.length());
+        assertEquals("plex:80", done.getString(0));
+        recent.getJSONArray("items").getJSONObject(0).put("playhead", 500);
+        assertEquals(0, MediaServiceCapability.finishedBooks(kept.list(), recent).length());
+    }
 }

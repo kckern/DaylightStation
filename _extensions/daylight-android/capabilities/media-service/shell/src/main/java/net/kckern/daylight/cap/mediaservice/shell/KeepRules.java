@@ -104,4 +104,88 @@ final class KeepRules {
     static boolean askFirst(long needBytes, long capMb) {
         return capMb > 0 && needBytes > capMb * 1_000_000L / 4;
     }
+
+    // ── clocks ───────────────────────────────────────────────────────────────
+
+    /**
+     * A time stored from the wall clock, never later than now: a clock set back (or a wrong
+     * one corrected) makes a stored future time "now", so nothing waits forever on it.
+     */
+    static long notAfterNow(long stored, long now) { return stored > now ? now : stored; }
+
+    /** Whether a track that failed {@code attempts} times is due again, robust to clock changes. */
+    static boolean retryDue(int attempts, long failedAt, long now) {
+        return now >= retryAt(attempts, notAfterNow(failedAt, now));
+    }
+
+    /**
+     * A 404 is permanent only once a fresh URL (the list resolved again) also got one: a stale
+     * part URL is fixed by re-resolving, the library having lost the file is not.
+     */
+    static boolean permanentAfter(int httpStatus, boolean reresolved) { return permanent(httpStatus) && reresolved; }
+
+    /** A finished book is removed (media.removeFinished) a day after it was first seen finished. */
+    static boolean removeFinishedDue(long finishedAt, long now) {
+        return finishedAt > 0 && now - notAfterNow(finishedAt, now) >= DAY_MS;
+    }
+
+    static final String NOT_ON_MOBILE = "Not allowed on mobile data";
+    static final String CARD_REMOVED = "Card removed";
+
+    // ── what a file is ───────────────────────────────────────────────────────
+
+    /**
+     * Whether the first bytes of a kept file are audio (MP3 with ID3 or a frame sync, FLAC,
+     * Ogg/Opus, MP4/M4A/M4B, WAV, AAC ADTS). A page or a JSON error stored as a track is not.
+     */
+    static boolean looksLikeAudio(byte[] head) {
+        if (head == null || head.length < 4) return false;
+        if (head[0] == 'I' && head[1] == 'D' && head[2] == '3') return true;
+        if (head[0] == 'f' && head[1] == 'L' && head[2] == 'a' && head[3] == 'C') return true;
+        if (head[0] == 'O' && head[1] == 'g' && head[2] == 'g' && head[3] == 'S') return true;
+        if (head[0] == 'R' && head[1] == 'I' && head[2] == 'F' && head[3] == 'F') return true;
+        if (head.length >= 8 && head[4] == 'f' && head[5] == 't' && head[6] == 'y' && head[7] == 'p') return true;
+        // MPEG audio frame sync (11 bits set) or AAC ADTS (12 bits set).
+        return (head[0] & 0xFF) == 0xFF && (head[1] & 0xE0) == 0xE0;
+    }
+
+    // ── where downloads live ─────────────────────────────────────────────────
+
+    static final String INTERNAL = "internal", SD = "sd", SD_MISSING = "sd-missing";
+
+    /**
+     * The location downloads use: the SD card when it is asked for and there; "sd-missing"
+     * when it is asked for (or holds the downloads) and is not inserted: never treated as
+     * deleted, nothing reconciled against it; internal otherwise.
+     */
+    static String location(String setting, boolean cardPresent, String activeBefore) {
+        boolean wantSd = SD.equals(setting);
+        boolean wasSd = SD.equals(activeBefore);
+        if ((wantSd || wasSd) && !cardPresent) return SD_MISSING;
+        return wantSd && cardPresent ? SD : INTERNAL;
+    }
+
+    // ── words ────────────────────────────────────────────────────────────────
+
+    /** What Keep keeps, said before anything downloads: "Keep the book · 14 parts". */
+    static String keepWords(String kind, int count) {
+        if ("book".equals(kind)) return "Keep the book · " + count + (count == 1 ? " part" : " parts");
+        if ("playlist".equals(kind)) return "Keep the playlist · " + count + (count == 1 ? " track" : " tracks") + " (updates when it changes)";
+        return "Keep the album · " + count + (count == 1 ? " track" : " tracks");
+    }
+
+    /** "1.2 GB · 13.8 GB left · on Wi-Fi" (size unknown until Wi-Fi: "size shown on Wi-Fi"). */
+    static String roomWords(long needBytes, long leftAfterBytes, boolean wifiOnly) {
+        String net = wifiOnly ? " · on Wi-Fi" : "";
+        if (needBytes < 0) return "Size shown on Wi-Fi" + net;
+        return net.isEmpty() ? sizeWords(needBytes) + " · " + sizeWords(Math.max(0, leftAfterBytes)) + " left"
+                : sizeWords(needBytes) + " · " + sizeWords(Math.max(0, leftAfterBytes)) + " left" + net;
+    }
+
+    static String sizeWords(long bytes) { return net.kckern.daylight.shellkit.KeptIndex.size(bytes); }
+
+    /** One confirmation above a quarter of the limit or of the free space. */
+    static boolean askFirst(long needBytes, long limitBytes, long freeBytes) {
+        return needBytes > 0 && (needBytes > limitBytes / 4 || needBytes > freeBytes / 4);
+    }
 }

@@ -192,6 +192,7 @@ test('playing with no window adds one service of media-service, not exported, an
     'android.permission.FOREGROUND_SERVICE_DATA_SYNC', 'android.permission.ACCESS_NETWORK_STATE']);
   const own = Object.entries(EXPECTED_COMPONENTS).filter(([key]) => key.includes('.cap.mediaservice.'));
   assert.deepEqual(own.map(([key, row]) => `${key} exported=${row.exported} permission=${row.permission}`).sort(), [
+    'activity net.kckern.daylight.cap.mediaservice.shell.DownloadsActivity exported=false permission=null',
     'activity net.kckern.daylight.cap.mediaservice.shell.NowPlayingActivity exported=false permission=null',
     'activity net.kckern.daylight.cap.mediaservice.shell.PlayActivity exported=false permission=null',
     'service net.kckern.daylight.cap.mediaservice.shell.DaylightMediaService exported=true permission=null',
@@ -206,9 +207,8 @@ test('playing with no window adds one service of media-service, not exported, an
     ['mediaPlayback']);
   assert.deepEqual(EXPECTED_COMPONENTS['service net.kckern.daylight.cap.mediaservice.shell.KeepService'].foregroundServiceType,
     ['dataSync']);
-  // Media3's download scheduler: bound only by the job scheduler, never exported.
-  assert.deepEqual(EXPECTED_COMPONENTS['service androidx.media3.exoplayer.scheduler.PlatformScheduler$PlatformSchedulerService'],
-    { exported: false, permission: 'android.permission.BIND_JOB_SERVICE' });
+  // Media3's PlatformScheduler is not used (its job starts a foreground service from the background).
+  assert.equal(EXPECTED_COMPONENTS['service androidx.media3.exoplayer.scheduler.PlatformScheduler$PlatformSchedulerService'], undefined);
 });
 
 test('the setup screen has direct destinations for Home and Lifelog', () => {

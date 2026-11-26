@@ -34,6 +34,7 @@ public final class BackendHttp implements Http {
     private final DeviceHeader device;
     private final int connectMs;
     private final int uploadReadMs;
+    private final int readMs;
 
     public BackendHttp(DeviceHeader device) { this(device, CONNECT_MS, UPLOAD_READ_MS); }
 
@@ -42,14 +43,27 @@ public final class BackendHttp implements Http {
      * captive or in-flight Wi-Fi learns it is offline in seconds, not after five.
      */
     public static BackendHttp fastConnect(DeviceHeader device, int connectMs) {
-        return new BackendHttp(device, connectMs, UPLOAD_READ_MS);
+        return new BackendHttp(device, connectMs, UPLOAD_READ_MS, READ_MS);
+    }
+
+    /**
+     * Short connect and read timeouts: a media call that decides "play from the phone"
+     * gives up in seconds when home connects and then answers nothing.
+     */
+    public static BackendHttp fast(DeviceHeader device, int connectMs, int readMs) {
+        return new BackendHttp(device, connectMs, UPLOAD_READ_MS, readMs);
     }
 
     /** With its own timeouts, for a test. */
     BackendHttp(DeviceHeader device, int connectMs, int uploadReadMs) {
+        this(device, connectMs, uploadReadMs, READ_MS);
+    }
+
+    BackendHttp(DeviceHeader device, int connectMs, int uploadReadMs, int readMs) {
         this.device = device;
         this.connectMs = connectMs;
         this.uploadReadMs = uploadReadMs;
+        this.readMs = readMs;
     }
 
     /**
@@ -62,7 +76,7 @@ public final class BackendHttp implements Http {
     }
 
     @Override public Reply get(String url) throws IOException {
-        return finish(open(url, "GET", READ_MS));
+        return finish(open(url, "GET", readMs));
     }
 
     @Override public Reply postJson(String url, String json) throws IOException {
@@ -70,7 +84,7 @@ public final class BackendHttp implements Http {
     }
 
     @Override public Reply get(String url, Map<String, String> headers) throws IOException {
-        HttpURLConnection c = open(url, "GET", READ_MS);
+        HttpURLConnection c = open(url, "GET", readMs);
         if (headers != null) for (Map.Entry<String, String> h : headers.entrySet()) c.setRequestProperty(h.getKey(), h.getValue());
         return finish(c);
     }
@@ -92,7 +106,7 @@ public final class BackendHttp implements Http {
         byte[] bytes = (json == null ? "{}" : json).getBytes(StandardCharsets.UTF_8);
         HttpURLConnection c;
         try {
-            c = open(url, method, READ_MS);
+            c = open(url, method, readMs);
             c.setDoOutput(true);
             c.setRequestProperty("Content-Type", "application/json");
             if (headers != null) for (Map.Entry<String, String> h : headers.entrySet()) c.setRequestProperty(h.getKey(), h.getValue());

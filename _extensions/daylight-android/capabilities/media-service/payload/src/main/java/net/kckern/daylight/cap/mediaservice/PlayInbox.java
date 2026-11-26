@@ -276,7 +276,9 @@ final class PlayInbox {
             else if (keeper == null) error = "unsupported";
             else {
                 try {
-                    if ("keep".equals(kind)) keeper.keep(contentId, command.optString("title", ""));
+                    JSONObject params = command.optJSONObject("params");
+                    String title = Json.first(command.optString("title", ""), params == null ? "" : params.optString("title", ""));
+                    if ("keep".equals(kind)) keeper.keep(contentId, title);
                     else keeper.unkeep(contentId);
                     ok = true;
                     appliedAs = kind;

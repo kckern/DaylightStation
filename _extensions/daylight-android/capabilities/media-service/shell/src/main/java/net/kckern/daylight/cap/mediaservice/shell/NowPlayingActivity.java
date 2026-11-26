@@ -498,6 +498,8 @@ public class NowPlayingActivity extends Activity {
         else if (remote()) line = remoteStatus;
         else line = c.getPlayerError() != null ? "Could not play this" : "";
         if (line.isEmpty() && !remote()) line = SleepTimer.describeNow();
+        // A kept track says where it plays from (the spec's offline mark).
+        if (line.isEmpty() && !remote() && hasItem) line = fromPhone(c.getCurrentMediaItem()) ? "Playing from this phone" : "";
         status.setText(line);
         // One line, always reserved; a long message shrinks to fit rather than adding a line.
         status.setVisibility(line.isEmpty() ? View.INVISIBLE : View.VISIBLE);
@@ -886,7 +888,8 @@ public class NowPlayingActivity extends Activity {
             if (kept == null) menu.getMenu().add(0, 6, 0, "Keep on this phone");
             else {
                 menu.getMenu().add(0, 8, 0, net.kckern.daylight.shellkit.KeptIndex.describe(kept)).setEnabled(false);
-                if (net.kckern.daylight.shellkit.KeptIndex.retryable(kept)) menu.getMenu().add(0, 9, 0, "Retry now");
+                if (net.kckern.daylight.shellkit.KeptIndex.retryable(kept)) menu.getMenu().add(0, 9, 0, "Retry");
+                menu.getMenu().add(0, 10, 0, "On this phone…");
                 menu.getMenu().add(0, 7, 0, "Remove from this phone");
             }
         }
@@ -905,6 +908,7 @@ public class NowPlayingActivity extends Activity {
                         KeepStore.get(this).remove(keptNow.optString("contentId"), this::say);
                     }
                     break;
+                case 10: DownloadsActivity.open(this); break;
                 case 9: if (keptNow != null) {
                         note("download.retry.tap");
                         KeepStore.get(this).retry(keptNow.optString("contentId"), this::say);
@@ -923,23 +927,9 @@ public class NowPlayingActivity extends Activity {
         String list = NodeItems.listId(item);
         String id = list.contains(":") ? "c:" + list : "p:" + item.mediaId;
         note("download.keep.tap", "fromList", !list.isEmpty());
-        say("Getting it ready to keep…");
-        KeepStore.get(this).keep(id, this::askBigKeep, this::say);
+        KeepFlow.start(this, id);
     }
 
-    /** A keep over a quarter of the space set for downloads is asked about once, with its size. */
-    private void askBigKeep(String title, long needBytes, long capMb, Runnable yes, Runnable no) {
-        if (isFinishing() || isDestroyed()) { no.run(); return; }
-        note("download.ask", "mb", needBytes / 1_000_000);
-        String size = net.kckern.daylight.shellkit.KeptIndex.size(needBytes);
-        new android.app.AlertDialog.Builder(this, DaylightTheme.alert())
-                .setTitle("Keep " + (title == null || title.isEmpty() ? "this" : title) + "?")
-                .setMessage(size + " of the " + capMb + " MB set for downloads.")
-                .setPositiveButton("Keep", (d, w) -> { note("download.ask.yes"); yes.run(); })
-                .setNegativeButton("Cancel", (d, w) -> { note("download.ask.no"); no.run(); })
-                .setOnCancelListener(d -> no.run())
-                .show();
-    }
 
     private void say(String line) {
         if (isFinishing() || isDestroyed()) return;
@@ -1654,5 +1644,24 @@ public class NowPlayingActivity extends Activity {
             int height = Math.round(width * ratio);
             super.onMeasure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY));
         }
+    }
+
+    private String fromPhoneFor = "";
+    private boolean fromPhone;
+
+    /** Whether the current track plays from its kept copy; looked up once per track, off the main thread. */
+    private boolean fromPhone(MediaItem item) {
+        String id = item == null ? "" : item.mediaId;
+        if (!id.equals(fromPhoneFor)) {
+            fromPhoneFor = id;
+            fromPhone = false;
+            if (!id.isEmpty() && io != null) io.execute(() -> {
+                boolean here;
+                try { here = KeepStore.get(this).playsFromPhone(id); } catch (RuntimeException e) { here = false; }
+                boolean answer = here;
+                main.post(() -> { if (id.equals(fromPhoneFor) && answer != fromPhone) { fromPhone = answer; render(); } });
+            });
+        }
+        return fromPhone;
     }
 }

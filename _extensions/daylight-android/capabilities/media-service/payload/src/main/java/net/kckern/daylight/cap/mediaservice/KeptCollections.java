@@ -34,16 +34,46 @@ final class KeptCollections {
     KeptCollections(File dir) { this.dir = dir; }
 
     synchronized void save(String contentId, String title, String art, JSONArray tracks, long now) throws Exception {
+        save(contentId, title, art, tracks, now, "");
+    }
+
+    synchronized void save(String contentId, String title, String art, JSONArray tracks, long now, String kind) throws Exception {
         if (!ContentId.valid(contentId)) throw new IllegalArgumentException("not a content id");
         //noinspection ResultOfMethodCallIgnored
         dir.mkdirs();
-        JSONObject o = new JSONObject().put("contentId", contentId).put("title", title == null ? "" : title)
-                .put("tracks", tracks).put("keptAt", now);
-        if (art != null && !art.isEmpty()) o.put("art", art);
-        write(new File(dir, fileName(contentId)), o.toString());
+        write(new File(dir, fileName(contentId)), record(contentId, title, art, tracks, now, kind).toString());
+        clearQuarantine(contentId);
         // Kept again: its old removal no longer deletes anything.
         JSONObject tombs = tombstones();
         if (tombs.remove(contentId) != null) writeTombstones(tombs);
+    }
+
+    /**
+     * A re-sync's fresh tracks for a collection that is still kept: written only if it is kept
+     * and was not removed meanwhile (a web Remove racing a re-sync wins). Its keptAt stays.
+     */
+    synchronized boolean refreshIfKept(String contentId, String title, String art, JSONArray tracks, long now, String kind) throws Exception {
+        JSONObject before = get(contentId);
+        if (before == null || tombstoned(contentId)) return false;
+        JSONObject o = record(contentId, title, art, tracks, before.optLong("keptAt", now), kind);
+        o.put("refreshedAt", now);
+        write(new File(dir, fileName(contentId)), o.toString());
+        return true;
+    }
+
+    private static JSONObject record(String contentId, String title, String art, JSONArray tracks, long keptAt, String kind) throws Exception {
+        JSONObject o = new JSONObject().put("contentId", contentId).put("title", title == null ? "" : title)
+                .put("tracks", tracks).put("keptAt", keptAt);
+        if (art != null && !art.isEmpty()) o.put("art", art);
+        if (kind != null && !kind.isEmpty()) o.put("kind", kind);
+        return o;
+    }
+
+    /** A collection written again: its unreadable copy (quarantined) is no longer needed. */
+    private void clearQuarantine(String contentId) {
+        File bad = new File(new File(dir, "_bad"), fileName(contentId));
+        //noinspection ResultOfMethodCallIgnored
+        bad.delete();
     }
 
     synchronized JSONObject get(String contentId) {
@@ -157,10 +187,9 @@ final class KeptCollections {
             try {
                 //noinspection ResultOfMethodCallIgnored
                 dir.mkdirs();
-                JSONObject o = new JSONObject().put("contentId", cid).put("title", k.optString("title"))
-                        .put("tracks", tracks).put("keptAt", k.optLong("keptAt"));
-                if (k.has("art")) o.put("art", k.optString("art"));
+                JSONObject o = record(cid, k.optString("title"), k.optString("art", ""), tracks, k.optLong("keptAt"), k.optString("kind", ""));
                 write(new File(dir, fileName(cid)), o.toString());
+                clearQuarantine(cid);
                 n++;
             } catch (Exception skipped) { /* the next restore tries again */ }
         }

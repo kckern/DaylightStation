@@ -45,8 +45,14 @@ public class KeepOfflineTest {
         assertEquals(3, r.tracks.size());
         assertEquals(1, r.startIndex);
         assertEquals("resumes where this phone last was", 404_000, r.startPositionMs);
+        // The whole book resumes where it was last heard (audit 2): not chapter 1.
         Resolver.Resolved whole = Offline.resolve("c:plex:10", kept, positions);
-        assertEquals(0, whole.startIndex);
+        assertEquals(1, whole.startIndex);
+        assertEquals(404_000, whole.startPositionMs);
+        // The newest heard wins, whatever the order of the parts.
+        positions.keep(new JSONObject().put("assetId", "plex:11").put("seconds", 50).put("observedAt", 10));
+        positions.keep(new JSONObject().put("assetId", "plex:13").put("seconds", 70).put("observedAt", 20));
+        assertEquals(2, Offline.resolve("c:plex:10", kept, positions).startIndex);
         assertNull("nothing kept answers a stranger", Offline.resolve("p:plex:99", kept, positions));
     }
 

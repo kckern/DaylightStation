@@ -112,6 +112,16 @@ final class PayloadMedia {
         return port.call(new JSONObject().put("op", "keep").put("id", mediaId).toString(), waitMs);
     }
 
+    /** keep with a mode: preview (nothing saved), keep, refresh (an existing keep, never revived). */
+    String keepMode(String mediaId, String mode, long waitMs) throws Exception {
+        return port.call(new JSONObject().put("op", "keep").put("id", mediaId).put("mode", mode).toString(), waitMs);
+    }
+
+    /** The kept books home says are finished: {ok, finished:[contentId]}. */
+    String keptFinished(long waitMs) throws Exception {
+        return port.call(new JSONObject().put("op", "kept-finished").toString(), waitMs);
+    }
+
     /** media.downloadCapMb and media.downloadOnCellular, as the payload holds them. */
     String downloadRules(long waitMs) throws Exception {
         return port.call(new JSONObject().put("op", "downloadRules").toString(), waitMs);

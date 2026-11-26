@@ -11,7 +11,9 @@
         <package android:name="com.google.android.projection.gearhead" />
     </queries>
 
-    <application>
+    <!-- Android Settings → this app → Storage → "Manage space" opens On this phone, so Clear
+         storage is not the only way to free room. -->
+    <application android:manageSpaceActivity="net.kckern.daylight.cap.mediaservice.shell.DownloadsActivity">
         <!-- Exported: a car (Android Auto), the system's media controls and Bluetooth reach
              it by binding it, and no permission exists that only they hold. So any app can
              try: who is accepted is decided per connection (ControllerPolicy: this app, the
@@ -57,12 +59,17 @@
 
         <!-- Not exported: only the system's job scheduler binds these. KeepJob keeps the
              phone's downloads in line with what is kept, app closed (a keep from the web, a
-             retry that is due, a daily re-sync of kept playlists on Wi-Fi). Media3's
-             scheduler starts KeepService when downloads waiting on Wi-Fi or storage can go on. -->
-        <service android:name="net.kckern.daylight.cap.mediaservice.shell.KeepJob"
+             retry that is due, a daily re-sync of kept playlists on Wi-Fi, a weekly check of
+             every kept file, and the downloads themselves while Wi-Fi and storage allow:
+             KeepScheduler, never Media3's PlatformScheduler, which starts a foreground service
+             from the background). -->
+        <!-- Not exported: On this phone (kept items, room, Remove), opened by this app, the
+             download notification and Android Settings' Manage space (the system). -->
+        <activity android:name="net.kckern.daylight.cap.mediaservice.shell.DownloadsActivity"
             android:exported="false"
-            android:permission="android.permission.BIND_JOB_SERVICE" />
-        <service android:name="androidx.media3.exoplayer.scheduler.PlatformScheduler$PlatformSchedulerService"
+            android:label="On this phone"
+            android:theme="@style/Theme.Daylight.WithTitle" />
+        <service android:name="net.kckern.daylight.cap.mediaservice.shell.KeepJob"
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
 

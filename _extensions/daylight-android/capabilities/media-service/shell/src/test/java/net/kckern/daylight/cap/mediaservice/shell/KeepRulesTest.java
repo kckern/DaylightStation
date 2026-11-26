@@ -59,4 +59,47 @@ public class KeepRulesTest {
         assertFalse(KeepRules.askFirst(900_000_000L, 4096));
         assertFalse("no cap, nothing to weigh", KeepRules.askFirst(9_000_000_000L, 0));
     }
+
+    @Test public void aClockSetBackNeverMakesSomethingWaitForever() {
+        assertEquals(500, KeepRules.notAfterNow(9_000, 500));
+        // Failed "in the future" (the clock was set back): the wait counts from now, not from then.
+        long now = 61_000;
+        assertFalse(KeepRules.retryDue(1, 10_000_000, now));
+        assertEquals(now + 60_000, KeepRules.retryAt(1, KeepRules.notAfterNow(10_000_000, now)));
+        assertFalse(KeepRules.retryDue(1, 1_000, 1_000 + 59_999));
+        assertTrue(KeepRules.removeFinishedDue(1_000, 1_000 + KeepRules.DAY_MS));
+        assertFalse(KeepRules.removeFinishedDue(99 * KeepRules.DAY_MS, 1_000));
+    }
+
+    @Test public void a404IsPermanentOnlyAfterAFreshUrlAlsoFails() {
+        assertFalse(KeepRules.permanentAfter(404, false));
+        assertTrue(KeepRules.permanentAfter(404, true));
+        assertFalse(KeepRules.permanentAfter(503, true));
+    }
+
+    @Test public void onlyAudioIsStoredAsATrack() {
+        assertTrue(KeepRules.looksLikeAudio("ID3\u0004xxxx".getBytes()));
+        assertTrue(KeepRules.looksLikeAudio(new byte[] { (byte) 0xFF, (byte) 0xFB, 0x50, 0x00 }));
+        assertTrue(KeepRules.looksLikeAudio("fLaC....".getBytes()));
+        assertTrue(KeepRules.looksLikeAudio(new byte[] { 0, 0, 0, 0x20, 'f', 't', 'y', 'p', 'M', '4', 'A' }));
+        assertFalse(KeepRules.looksLikeAudio("<!DOCTYPE html>".getBytes()));
+        assertFalse(KeepRules.looksLikeAudio("{\"error\":1}".getBytes()));
+    }
+
+    @Test public void aMissingCardIsNotAvailableNeverDeleted() {
+        assertEquals(KeepRules.SD, KeepRules.location("sd", true, "internal"));
+        assertEquals(KeepRules.SD_MISSING, KeepRules.location("sd", false, "sd"));
+        assertEquals("downloads on a card that is out stay there", KeepRules.SD_MISSING, KeepRules.location("internal", false, "sd"));
+        assertEquals(KeepRules.INTERNAL, KeepRules.location("internal", false, "internal"));
+    }
+
+    @Test public void keepSaysWhatItKeepsAndTheRoom() {
+        assertEquals("Keep the book · 14 parts", KeepRules.keepWords("book", 14));
+        assertEquals("Keep the album · 12 tracks", KeepRules.keepWords("album", 12));
+        assertEquals("Keep the playlist · 230 tracks (updates when it changes)", KeepRules.keepWords("playlist", 230));
+        assertEquals("1.2 GB · 13.8 GB left · on Wi-Fi", KeepRules.roomWords(1_200_000_000L, 13_800_000_000L, true));
+        assertTrue(KeepRules.askFirst(1_100_000_000L, 4_000_000_000L, 15_000_000_000L));
+        assertTrue("a quarter of the free space asks too", KeepRules.askFirst(600_000_000L, 40_000_000_000L, 2_000_000_000L));
+        assertFalse(KeepRules.askFirst(100_000_000L, 4_000_000_000L, 15_000_000_000L));
+    }
 }

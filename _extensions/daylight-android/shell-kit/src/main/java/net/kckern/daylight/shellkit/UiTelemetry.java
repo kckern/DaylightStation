@@ -301,11 +301,15 @@ public final class UiTelemetry {
             // While a screen is open, or from the job, the payload may be started for this.
             if (started > 0 || mayStartPayload) { try { ShellStart.ensure(app); } catch (RuntimeException refused) { /* sent later */ } }
             for (TelemetryStore.Batch b = store.next(); b != null; b = store.next()) {
-                if (!send(b.events, mayStartPayload ? 15_000 : 4000)) {
+                int answer = send(b.events, mayStartPayload ? 15_000 : 4000);
+                if (answer == LATER) {
                     backoffMs = Math.min(MAX_BACKOFF_MS, backoffMs * 2);
                     Log.i(TAG, "telemetry kept for later: " + store.waiting() + " batch(es) waiting");
                     return true;
                 }
+                // Refused for good (a 4xx the backend will always give this batch): dropped,
+                // so one bad batch never holds back the ones after it.
+                if (answer == REFUSED) Log.w(TAG, "telemetry batch refused by home; dropped");
                 store.ack(b);
                 sent++;
             }
@@ -318,14 +322,24 @@ public final class UiTelemetry {
         }
     }
 
-    private boolean send(JSONArray events, long waitMs) {
+    static final int SENT = 0, LATER = 1, REFUSED = 2;
+
+    /** What a relay answer means for a batch: sent, try later (no network, home down, busy), or refused for good. */
+    static int outcome(JSONObject reply) {
+        if (reply.optBoolean("ok", false)) return SENT;
+        int status = reply.optInt("status", 0);
+        boolean forGood = status >= 400 && status < 500 && status != 408 && status != 429;
+        return forGood ? REFUSED : LATER;
+    }
+
+    private int send(JSONArray events, long waitMs) {
         try {
             String reply = PayloadPort.named(PORT).call(new JSONObject().put("source", "android").put("events", events).toString(), waitMs);
-            return new JSONObject(reply).optBoolean("ok", false);
+            return outcome(new JSONObject(reply));
         } catch (PayloadPort.NotReadyException notYet) {
-            return false;
+            return LATER;
         } catch (Exception failed) {
-            return false;
+            return LATER;
         }
     }
 

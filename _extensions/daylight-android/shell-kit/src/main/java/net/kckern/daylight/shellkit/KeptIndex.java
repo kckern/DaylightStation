@@ -62,7 +62,10 @@ public final class KeptIndex {
     /** Whether {@code contentId} is a track of a fully kept collection (plays without a network). */
     public static boolean onPhone(List<JSONObject> index, String contentId) {
         for (JSONObject k : index) {
-            if (k.optInt("done") < k.optInt("total") || k.optInt("total") == 0) continue;
+            // With a state, only Ready plays offline (a damaged file is not); without one (an
+            // older index), every track done.
+            if (!k.optString("state", "").isEmpty() ? !READY.equals(k.optString("state"))
+                    : k.optInt("done") < k.optInt("total") || k.optInt("total") == 0) continue;
             JSONArray ids = k.optJSONArray("trackIds");
             for (int i = 0; ids != null && i < ids.length(); i++) if (contentId.equals(ids.optString(i))) return true;
             if (contentId.equals(k.optString("contentId"))) return true;
@@ -70,56 +73,134 @@ public final class KeptIndex {
         return false;
     }
 
-    // One state per kept collection, as every screen shows it (the Play tab, Now playing's
-    // menu, the notification, the web through the inbox report).
-    public static final String READY = "ready", DOWNLOADING = "downloading", WAITING_WIFI = "waiting-wifi",
-            WAITING_STORAGE = "waiting-storage", WAITING_HOME = "waiting-home", FAILED = "failed", REFUSED = "refused";
+    // One state machine for a kept item, the same words everywhere (the Play tab, On this
+    // phone, Now playing, the notification, the web through the inbox report). The words are
+    // the spec's (ops:docs/superpowers/specs/2026-11-26-phone-downloads-lifecycle.md §2).
+    public static final String CHECKING = "checking", NEEDS_ROOM = "needs-room", QUEUED = "queued",
+            WAITING_WIFI = "waiting-wifi", WAITING_HOME = "waiting-home", WAITING_STORAGE = "waiting-storage",
+            DOWNLOADING = "downloading", PAUSED = "paused", PARTLY_READY = "partly-ready", READY = "ready",
+            UPDATING = "updating", REMOVING = "removing", NOT_AVAILABLE = "not-available", DAMAGED = "damaged";
 
-    /**
-     * The one state of a collection: ready when every track is on the phone (and checked
-     * whole); waiting for home (kept while away), Wi-Fi or storage; failed when some tracks
-     * failed and nothing else is moving; otherwise downloading.
-     */
+    /** What is known about one kept item; {@link #state()} picks its one state. */
+    public static final class Facts {
+        public int done, total, failed, damaged, moving;
+        public boolean checking, needsRoom, removing, notAvailable, paused, waitingHome, waitingNetwork,
+                waitingStorage, wasReady;
+
+        public String state() {
+            if (removing) return REMOVING;
+            if (checking) return CHECKING;
+            if (needsRoom) return NEEDS_ROOM;
+            if (notAvailable) return NOT_AVAILABLE;
+            if (paused) return PAUSED;
+            if (waitingHome) return WAITING_HOME;
+            if (total > 0 && done >= total && damaged == 0) return READY;
+            if (failed > 0 && done + failed >= total) return PARTLY_READY;
+            if (damaged > 0) return DAMAGED;
+            if (waitingStorage) return WAITING_STORAGE;
+            if (waitingNetwork) return WAITING_WIFI;
+            if (wasReady && done < total) return UPDATING;
+            if (moving > 0) return DOWNLOADING;
+            return QUEUED;
+        }
+    }
+
+    /** Kept for older callers: the state from the counts alone. */
     public static String stateOf(int done, int total, int failed, boolean waitingNetwork, boolean waitingStorage,
                                  boolean waitingHome) {
-        if (waitingHome) return WAITING_HOME;
-        if (total > 0 && done >= total) return READY;
-        if (failed > 0 && done + failed >= total) return FAILED;
-        if (waitingNetwork) return WAITING_WIFI;
-        if (waitingStorage) return WAITING_STORAGE;
-        return DOWNLOADING;
+        Facts f = new Facts();
+        f.done = done; f.total = total; f.failed = failed; f.waitingNetwork = waitingNetwork;
+        f.waitingStorage = waitingStorage; f.waitingHome = waitingHome; f.moving = 1;
+        return f.state();
     }
 
-    /** The inbox report's state for the web: queued | downloading | ready | failed | refused. */
+    /** The inbox report's state for the web: queued | downloading | ready | failed | refused | removed. */
     public static String reportState(String state) {
-        if (WAITING_WIFI.equals(state) || WAITING_STORAGE.equals(state) || WAITING_HOME.equals(state)) return "queued";
-        return state == null || state.isEmpty() ? DOWNLOADING : state;
+        if (state == null) return DOWNLOADING;
+        switch (state) {
+            case READY: return "ready";
+            case NEEDS_ROOM: return "refused";
+            case PARTLY_READY: return "failed";
+            case REMOVING: return "removed";
+            case DOWNLOADING: case UPDATING: case DAMAGED: return "downloading";
+            default: return "queued";
+        }
     }
 
-    /** "On this phone · 12 tracks · 230 MB", "Downloading 3 of 12", "2 of 12 failed: Home not reachable". */
+    /** The state's words, exactly as every surface shows them. */
     public static String describe(JSONObject k) {
-        int done = k.optInt("done"), total = k.optInt("total"), failed = k.optInt("failed");
-        String state = k.optString("state", "");
+        int done = k.optInt("done"), total = k.optInt("total"), failed = k.optInt("failed"), damaged = k.optInt("damaged");
         String reason = k.optString("reason", "");
-        switch (state) {
-            case READY: return "On this phone · " + total + (total == 1 ? " track" : " tracks") + " · " + size(k.optLong("bytes"));
+        long bytes = k.optLong("bytes"), expected = k.optLong("expectedBytes");
+        switch (k.optString("state", "")) {
+            case CHECKING: return "Checking size…";
+            case NEEDS_ROOM: return "Needs " + size(Math.max(1, k.optLong("needBytes"))) + " more room";
+            case QUEUED: return "Queued";
+            case WAITING_WIFI: return "Waiting for Wi-Fi";
             case WAITING_HOME: return "Waiting for home";
-            case WAITING_WIFI: return "Waiting for Wi-Fi · " + done + " of " + total;
-            case WAITING_STORAGE: return "Waiting for storage · " + done + " of " + total;
-            case FAILED: return failed + " of " + total + " failed" + (reason.isEmpty() ? "" : ": " + reason);
-            case REFUSED: return "No room" + (k.optLong("needBytes") > 0 ? ": needs " + size(k.optLong("needBytes")) + " more" : "");
-            case DOWNLOADING: return "Downloading " + done + " of " + total + (k.optLong("bytes") > 0 ? " · " + size(k.optLong("bytes")) : "");
+            case WAITING_STORAGE: return "Phone storage is full";
+            case DOWNLOADING:
+                return "Downloading " + done + " of " + total + " · " + size(bytes)
+                        + (expected > bytes ? " of " + size(expected) : "");
+            case PAUSED: return "Paused";
+            case PARTLY_READY:
+                return done + " of " + total + " ready · " + failed + " couldn't download" + (reason.isEmpty() ? "" : ": " + reason);
+            case READY: return (k.optBoolean("finished") ? "Finished · " : "On this phone · ") + size(bytes);
+            case UPDATING: return "Updating: " + Math.max(1, total - done) + " new";
+            case REMOVING: return "Removing…";
+            case NOT_AVAILABLE: return "On the SD card — not inserted";
+            case DAMAGED: return damaged + (damaged == 1 ? " track needs" : " tracks need") + " downloading again";
             default: break;
         }
         // An index written before states (an older build).
         if (failed > 0) return failed + " of " + total + " did not download";
-        if (done < total) return k.optBoolean("waiting") ? "Waiting for Wi-Fi · " + done + " of " + total : "Downloading " + done + " of " + total;
-        return total + (total == 1 ? " track" : " tracks") + " · " + size(k.optLong("bytes"));
+        if (done < total) return k.optBoolean("waiting") ? "Waiting for Wi-Fi" : "Downloading " + done + " of " + total;
+        return "On this phone · " + size(bytes);
     }
 
-    /** Whether a row offers Retry now. */
-    public static boolean retryable(JSONObject k) {
-        return FAILED.equals(k.optString("state")) || k.optInt("failed") > 0;
+    /** The action a row offers beside Remove: Retry, Resume, Manage space, Use mobile data once, or none. */
+    public static String action(JSONObject k) {
+        switch (k.optString("state", "")) {
+            case PARTLY_READY: return "Retry";
+            case PAUSED: return "Resume";
+            case NEEDS_ROOM: case WAITING_STORAGE: return "Manage space";
+            case WAITING_WIFI: return "Use mobile data once";
+            default: return k.optInt("failed") > 0 && k.optString("state", "").isEmpty() ? "Retry" : "";
+        }
+    }
+
+    /** Whether a row offers Retry. */
+    public static boolean retryable(JSONObject k) { return "Retry".equals(action(k)); }
+
+    /** Whether the item plays from the phone with no network (every track whole). */
+    public static boolean ready(JSONObject k) { return READY.equals(k.optString("state")); }
+
+    /**
+     * The limit that applies: the setting, but never more than the phone's free space minus
+     * a 2 GB reserve (the phone's own room is respected). Bytes; 0 cap means no setting.
+     */
+    public static long effectiveLimitBytes(long capMb, long freeBytes, long keptBytes) {
+        long reserve = 2_000_000_000L;
+        long byFree = Math.max(0, keptBytes + freeBytes - reserve);
+        long bySetting = capMb <= 0 ? Long.MAX_VALUE : capMb * 1_000_000L;
+        return Math.min(bySetting, byFree);
+    }
+
+    /** "1.2 GB kept · 4 GB limit · 15 GB free on phone". */
+    public static String roomLine(long keptBytes, long capMb, long freeBytes) {
+        return size(keptBytes) + " kept" + (capMb > 0 ? " · " + size(capMb * 1_000_000L) + " limit" : "")
+                + " · " + size(freeBytes) + " free on phone";
+    }
+
+    /** "Over the limit by 600 MB: new keeps wait until there is room", or "" when within it. */
+    public static String overLine(long limitBytes, long keptBytes) {
+        long over = keptBytes - limitBytes;
+        return over > 0 ? "Over the limit by " + size(over) + ": new keeps wait until there is room" : "";
+    }
+
+    /** Items largest first (what to remove to make room is at the top). */
+    public static void largestFirst(List<JSONObject> items) {
+        items.sort((a, b) -> Long.compare(b.optLong("bytes"), a.optLong("bytes")));
     }
 
     /** How far past the cap what is kept now is (bytes, 0 when within): a lowered cap deletes nothing. */
