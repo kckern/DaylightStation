@@ -28,7 +28,7 @@ test('the phone is a personal build that lists quick-input and car-actions', () 
     'media-service', 'android-auto', 'quick-input', 'car-actions']);
 });
 
-test('the phone asks for exactly these fifteen permissions', () => {
+test('the phone asks for exactly these sixteen permissions', () => {
   const names = new Set([...BASE.map((p) => `android.permission.${p}`), ...permissionsFor(phone, capabilities).map((p) => p.name),
     ...(phone.permissions || [])]);
   assert.deepEqual([...names].sort(), [
@@ -38,6 +38,7 @@ test('the phone asks for exactly these fifteen permissions', () => {
     'android.permission.BLUETOOTH_CONNECT',
     'android.permission.CAMERA',
     'android.permission.FOREGROUND_SERVICE',
+    'android.permission.FOREGROUND_SERVICE_DATA_SYNC',
     'android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK',
     'android.permission.FOREGROUND_SERVICE_MICROPHONE',
     'android.permission.INTERNET',
@@ -188,12 +189,15 @@ test('playing with no window adds one service of media-service, not exported, an
   assert.deepEqual(capabilities['media-service'].exported, ['net.kckern.daylight.cap.mediaservice.shell.DaylightMediaService',
     'androidx.media3.session.MediaButtonReceiver']);
   assert.deepEqual(capabilities['media-service'].permissions, ['android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK',
-    'android.permission.ACCESS_NETWORK_STATE']);
+    'android.permission.FOREGROUND_SERVICE_DATA_SYNC', 'android.permission.ACCESS_NETWORK_STATE']);
   const own = Object.entries(EXPECTED_COMPONENTS).filter(([key]) => key.includes('.cap.mediaservice.'));
   assert.deepEqual(own.map(([key, row]) => `${key} exported=${row.exported} permission=${row.permission}`).sort(), [
+    'activity net.kckern.daylight.cap.mediaservice.shell.DownloadsActivity exported=false permission=null',
     'activity net.kckern.daylight.cap.mediaservice.shell.NowPlayingActivity exported=false permission=null',
     'activity net.kckern.daylight.cap.mediaservice.shell.PlayActivity exported=false permission=null',
     'service net.kckern.daylight.cap.mediaservice.shell.DaylightMediaService exported=true permission=null',
+    'service net.kckern.daylight.cap.mediaservice.shell.KeepJob exported=false permission=android.permission.BIND_JOB_SERVICE',
+    'service net.kckern.daylight.cap.mediaservice.shell.KeepService exported=false permission=null',
     'service net.kckern.daylight.cap.mediaservice.shell.PlayActionService exported=false permission=null',
     'service net.kckern.daylight.cap.mediaservice.shell.RemoteControlService exported=false permission=null',
   ]);
@@ -201,6 +205,10 @@ test('playing with no window adds one service of media-service, not exported, an
     ['mediaPlayback']);
   assert.deepEqual(EXPECTED_COMPONENTS['service net.kckern.daylight.cap.mediaservice.shell.PlayActionService'].foregroundServiceType,
     ['mediaPlayback']);
+  assert.deepEqual(EXPECTED_COMPONENTS['service net.kckern.daylight.cap.mediaservice.shell.KeepService'].foregroundServiceType,
+    ['dataSync']);
+  // Media3's PlatformScheduler is not used (its job starts a foreground service from the background).
+  assert.equal(EXPECTED_COMPONENTS['service androidx.media3.exoplayer.scheduler.PlatformScheduler$PlatformSchedulerService'], undefined);
 });
 
 test('the setup screen has direct destinations for Home and Lifelog', () => {

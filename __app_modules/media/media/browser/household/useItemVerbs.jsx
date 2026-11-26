@@ -19,6 +19,7 @@ import { HOUSEHOLD_PATHS } from "./householdApi.js";
 import { resolveHouseholdEntry, resumePlan } from "./householdModel.js";
 import { useHouseholdActions, useScreenNamer } from "./useHousehold.js";
 import { SpotChooser } from "./SpotChooser.jsx";
+import { usePhoneKeeps } from "../cast/usePhoneKeeps.jsx";
 
 /** The household entry (spots) for an item, from whatever the start page already loaded. */
 function householdEntryFor(contentId) {
@@ -35,6 +36,7 @@ export function useItemVerbs() {
   const { push } = useNav();
   const household = useHouseholdActions();
   const nameFor = useScreenNamer();
+  const phoneKeeps = usePhoneKeeps();
   const [oneShot, setOneShot] = useState(null);
   const [choice, setChoice] = useState(null);
 
@@ -54,6 +56,8 @@ export function useItemVerbs() {
 
   const run = useCallback((kind, item, ctx = {}) => {
     if (!item?.id) return undefined;
+    // Keep on Phone / Remove / Cancel (lifecycle spec §3.2).
+    if (phoneKeeps.run(kind, item)) return 'keep';
     const collection = isCollection(item);
     switch (kind) {
       // A tap is a look: a collection opens its list, an item opens its
@@ -98,7 +102,7 @@ export function useItemVerbs() {
       default:
         return undefined;
     }
-  }, [dispatch, playLeaf, push, playContainerAsQueue, addContainerToQueue, dispatchLeafVerb, household]);
+  }, [dispatch, playLeaf, push, playContainerAsQueue, addContainerToQueue, dispatchLeafVerb, household, phoneKeeps]);
 
   const choose = useCallback((startAt, spot) => {
     const current = choice;

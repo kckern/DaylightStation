@@ -37,6 +37,15 @@ android {
                 // A device that listens nowhere (control.bind none) gets no token compiled in:
                 // an APK can be read by every app on the device it is installed on.
                 buildConfigField 'String', 'CONTROL_TOKEN', "\"${d.controlBind == 'none' ? '' : tokens.tokenFor(d.id)}\""
+                // The inbox token (the backend's command inbox, polled by a phone): the same
+                // per-device token, compiled in only for a device without a control API. It is
+                // readable by apps on the device itself and grants only this device's inbox:
+                // its Play-on and Keep commands, never a control API.
+                // -PemulatorInbox: a build for an emulator carries the '<id>-emulator' token
+                // (its own entry in the tokens file), never the device's own.
+                def inboxId = project.hasProperty('emulatorInbox') ? "${d.id}-emulator" : d.id
+                buildConfigField 'String', 'INBOX_TOKEN', "\"${d.controlBind == 'none' && tokens.has(inboxId) ? tokens.tokenFor(inboxId) : ''}\""
+                buildConfigField 'boolean', 'INBOX_EMULATOR', "${project.hasProperty('emulatorInbox')}"
                 if (!d.abis.isEmpty()) ndk { abiFilters(*d.abis) }
             }
         }

@@ -62,13 +62,19 @@ final class BackendMediaApi implements MediaApi {
         return get("search", "/api/v1/content/query/search?text=" + URLEncoder.encode(text, "UTF-8") + "&take=" + take);
     }
 
-    @Override public void log(JSONObject body) throws Exception {
+    @Override public JSONObject log(JSONObject body) throws Exception {
         Http.Reply r = http.postJson(backend.url("/api/v1/play/log"), body.toString());
         if (!r.ok()) throw new Refused("play/log", r.status);
+        try { return r.body.isEmpty() ? new JSONObject() : new JSONObject(r.body); }
+        catch (org.json.JSONException notJson) { return new JSONObject(); }
     }
 
     @Override public JSONObject levels(String contentId, int samples) throws Exception {
         return getOrNone("levels", ContentPath.of("track/levels", contentId) + "?samples=" + samples);
+    }
+
+    @Override public JSONObject info(String contentId) throws Exception {
+        return get("info", ContentPath.of("info", contentId));
     }
 
     @Override public JSONObject lyrics(String contentId) throws Exception {

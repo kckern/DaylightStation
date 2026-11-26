@@ -7,6 +7,8 @@ import java.util.List;
 /** Immutable selection and outcome for one launcher handoff. Widget IDs are supplied by Android. */
 final class LauncherPlacement {
     static final long TIMEOUT_MS = 10_000;
+    /** A banner older than this (a day) is no longer shown. */
+    static final long STALE_MS = 24L * 60 * 60 * 1000;
     private static final int RECENT_LIMIT = 5;
 
     enum Status { CONFIRM, UNCONFIRMED, REFUSED, ADDED, EXTRA_WIDGET }
@@ -61,6 +63,8 @@ final class LauncherPlacement {
         List<LauncherPlacement> visible = new ArrayList<>();
         for (int index = 0; index < sorted.size(); index++) {
             LauncherPlacement request = sorted.get(index);
+            // A problem that is a day old is not news: it stops showing on its own.
+            if (request.status(now) != Status.CONFIRM && now - Math.max(request.updatedAt, request.startedAt) > STALE_MS) continue;
             if (index < RECENT_LIMIT || request.status(now) == Status.CONFIRM || request.hasExtraWidget(requests)) {
                 visible.add(request);
             }

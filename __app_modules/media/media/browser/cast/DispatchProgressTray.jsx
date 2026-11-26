@@ -108,6 +108,11 @@ const HOUSEHOLD_COPY = {
   unwatched: { running: t => `Marking ${t} unwatched…`, done: t => `Marked ${t} unwatched`, failed: t => `Couldn't mark ${t} unwatched` },
   moveHere: { running: t => `Moving ${t} here…`, done: (t, _at, d) => `Moved ${t} here${d?.command?.sourceName ? ` from ${d.command.sourceName}` : ''}`, failed: t => `Couldn't move ${t} here` },
   startOver: { done: (t, at) => `Started ${t} over ${at}`, failed: (t, at) => `Couldn't start ${t} over ${at}` },
+  // Keep on Phone (lifecycle spec §3.2): the request, not the download — the item
+  // itself then shows the phone's word on it. A failed request offers Retry.
+  keepOnPhone: { running: (t, _at, d) => `Asking ${d?.targetName ?? 'the phone'} to keep ${t}…`, done: (t, _at, d) => `Asked ${d?.targetName ?? 'the phone'} to keep ${t}`, failed: (t, _at, d) => `Couldn't ask ${d?.targetName ?? 'the phone'} to keep ${t}` },
+  unkeepOnPhone: { running: (t, _at, d) => `Asking ${d?.targetName ?? 'the phone'} to remove ${t}…`, done: (t, _at, d) => `Asked ${d?.targetName ?? 'the phone'} to remove ${t}`, failed: (t, _at, d) => `Couldn't ask ${d?.targetName ?? 'the phone'} to remove ${t}` },
+  cancelKeepOnPhone: { running: (t) => `Cancelling keep of ${t}…`, done: (t) => `Cancelled keep of ${t}`, failed: (t) => `Couldn't cancel keep of ${t}` },
 };
 export const HOUSEHOLD_KINDS = new Set(Object.keys(HOUSEHOLD_COPY));
 
@@ -130,8 +135,8 @@ function localCopy(d, phase, name) {
   const at = d.distance === 'here' ? 'here' : `on ${d.targetName ?? name}`;
   if (HOUSEHOLD_COPY[d.kind]) {
     const copy = HOUSEHOLD_COPY[d.kind];
-    if (phase === 'failed') return { primary: copy.failed(title, at), secondary: d.reason ?? null };
-    if (phase === 'running' && copy.running) return { primary: copy.running(title, at), secondary: null };
+    if (phase === 'failed') return { primary: copy.failed(title, at, d), secondary: d.reason ?? null };
+    if (phase === 'running' && copy.running) return { primary: copy.running(title, at, d), secondary: null };
     return { primary: copy.done(title, at, d), secondary: null };
   }
   if (d.kind === 'playback') {
@@ -439,6 +444,11 @@ function TrayRow({ d, retry, removeDispatch, sendElsewhere, recordLocal, stopAtt
         {d.distance === 'here' && SKIPPABLE_PHASES.has(phase) && typeof skipLocal === 'function' && (
           <UnstyledButton data-testid={`dispatch-skip-${attemptId}`} onClick={() => skipLocal(attemptId)} className="cast-tray-action">
             <IconPlayerSkipForwardFilled size={14} aria-hidden /> Skip now
+          </UnstyledButton>
+        )}
+        {phase === 'failed' && typeof d.retryAction === 'function' && (
+          <UnstyledButton data-testid={`dispatch-retry-${attemptId}`} onClick={() => d.retryAction()} className="cast-tray-action">
+            <IconRefresh size={14} aria-hidden /> Retry
           </UnstyledButton>
         )}
         {showRetry && (

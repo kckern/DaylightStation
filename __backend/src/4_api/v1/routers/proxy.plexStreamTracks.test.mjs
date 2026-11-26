@@ -48,3 +48,17 @@ describe('RegistryPlaybackStreamGateway — track choice', () => {
     expect(adapter.getMediaUrl).toHaveBeenLastCalledWith('1', { startOffset: 0, session: null, tracks: { subtitleStreamId: '0' } });
   });
 });
+
+describe('GET /proxy/plex/stream/:ratingKey — a miss that may pass', () => {
+  it('answers a transient failure 503 with Retry-After, not 404', async () => {
+    const mint = vi.fn(async () => ({ kind: 'not_found', reason: 'transient' }));
+    const res = await request(app(mint)).get('/proxy/plex/stream/665638').expect(503);
+    expect(res.headers['retry-after']).toBe('10');
+    expect(res.body).toMatchObject({ reason: 'transient', retryable: true });
+  });
+
+  it('keeps 404 for an item that is not there', async () => {
+    const mint = vi.fn(async () => ({ kind: 'not_found', reason: 'metadata-missing' }));
+    await request(app(mint)).get('/proxy/plex/stream/665638').expect(404);
+  });
+});

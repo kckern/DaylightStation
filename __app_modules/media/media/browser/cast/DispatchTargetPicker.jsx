@@ -181,9 +181,11 @@ function PickerRow({
 }
 
 function DeviceRow({ device, pressed, showCheck, usual, pending, verb, onSelect, onConfirm, autoFocus, sourceContentId, aimed, chooseOnly = false }) {
-  const { entry } = useDevice(device.id);
+  // One install of a phone (`phone#<installId>`) reads its phone's own status.
+  const fleetId = device.fleetId ?? device.id;
+  const { entry } = useDevice(fleetId);
   const outcomes = React.useContext(DispatchContext)?.outcomes ?? null;
-  const starting = startingOn(outcomes, device.id);
+  const starting = startingOn(outcomes, fleetId);
   const status = pickerRowState({ entry, device, starting, sourceContentId });
   const busy = describeBusy(entry);
   const snap = entry?.offline ? null : entry?.snapshot;

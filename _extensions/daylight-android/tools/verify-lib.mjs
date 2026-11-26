@@ -320,6 +320,12 @@ export const EXPECTED_COMPONENTS = {
   // Started by this app only: a widget button's immutable PendingIntent and a tile, with
   // one action id that the payload resolves against the configured and pinned actions.
   'service net.kckern.daylight.cap.mediaservice.shell.PlayActionService': { exported: false, permission: null, foregroundServiceType: ['mediaPlayback'] },
+  'service net.kckern.daylight.cap.mediaservice.shell.KeepService': { exported: false, permission: null, foregroundServiceType: ['dataSync'] },
+  // Bound only by the job scheduler: downloads kept in line with the app closed, and run
+  // while Wi-Fi and storage allow (KeepScheduler, in place of Media3's PlatformScheduler).
+  'service net.kckern.daylight.cap.mediaservice.shell.KeepJob': { exported: false, permission: 'android.permission.BIND_JOB_SERVICE' },
+  // On this phone: opened by this app, its notification, and Settings' Manage space (the system).
+  'activity net.kckern.daylight.cap.mediaservice.shell.DownloadsActivity': { exported: false, permission: null },
   // Opening the record screen starts a recording, so only this app can: the payload on a
   // keyed memo link, and the recording's own notification.
   'activity net.kckern.daylight.cap.quickinput.shell.RecordActivity': { exported: false, permission: null },

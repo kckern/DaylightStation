@@ -101,7 +101,11 @@ import { createConfiguredLibbyRuntime } from "../../__capabilities/content-catal
 // Logging system
 import { getDispatcher } from "./0_system/logging/dispatcher.mjs";
 import { createLogger } from "./0_system/logging/logger.mjs";
-import { getPhoneInboxService } from '#composition/modules/phoneInbox.mjs';
+import { formatLocalTimestamp as formatLocalTimestampWithOffset } from '#system/logging/localTimestamp.mjs';
+import { DEFAULT_TIMEZONE } from '#domains/core/utils/timezone.mjs';
+import { getPhoneInboxService, createDeviceTokenCheck } from '#composition/modules/phoneInbox.mjs';
+import { YamlPhoneInboxStore } from '#adapters/persistence/yaml/YamlPhoneInboxStore.mjs';
+import { YamlHouseholdAuthReader } from '#adapters/persistence/yaml/YamlHouseholdAuthReader.mjs';
 import { ingestFrontendLogs } from '#adapters/logging/FrontendLogIngestion.mjs';
 import { createClientLogRouter } from './4_api/v1/routers/clientLog.mjs';
 import { registerClientIngress } from '#composition/modules/clientIngress.mjs';
@@ -871,9 +875,31 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // what it reports over HTTP reaches the bus as if sent on one (device-state for the
   // fleet and the picker, device-ack for the dispatch). Only devices whose
   // content_control.provider is phone-inbox are served.
+  const householdAuthReader = new YamlHouseholdAuthReader({ resolvePath: (rel) => dataService.household.resolvePath(rel) });
   getPhoneInboxService({ logger: rootLogger.child?.({ module: 'phone-inbox' }) ?? rootLogger }).connect({
     serves: (deviceId) => configService.getDeviceConfig?.(deviceId)?.content_control?.provider === 'phone-inbox',
     publish: (message) => eventBus.publishAsClient?.(`phone-inbox:${message.deviceId}`, message),
+    // A poll, ack or keep report speaks for the phone with its own token (the one its
+    // build holds: household auth `daylight-android`, or content_control.auth_ref). The
+    // file is re-read on a miss, at most once a minute, so a rotated token needs no
+    // restart. A request with NO token is let in while
+    // content_control.allow_unauthenticated is not false (default true: the transition
+    // to phone builds that send one; logged). A token that is present and wrong: 401.
+    authorize: createDeviceTokenCheck({
+      tokenFor: (deviceId, { fresh = false } = {}) => {
+        const ref = configService.getDeviceConfig?.(deviceId)?.content_control?.auth_ref || 'daylight-android';
+        if (fresh) {
+          const reread = householdAuthReader.read(ref);
+          if (reread) return reread?.[deviceId]?.token || '';
+        }
+        return configService.getHouseholdAuth?.(ref)?.[deviceId]?.token || '';
+      },
+      logger: rootLogger.child?.({ module: 'phone-inbox' }) ?? rootLogger,
+    }),
+    allowUnauthenticated: (deviceId) => configService.getDeviceConfig?.(deviceId)?.content_control?.allow_unauthenticated !== false,
+    // "Keep on this phone" commands, installs and what the phone says it keeps
+    // survive a restart. An unreadable file leaves the inbox read-only, never empty.
+    store: new YamlPhoneInboxStore({ resolvePath: (rel) => dataService.household.resolvePath(rel) }),
   });
 
   // DeviceLivenessService — caches last-known device-state snapshots and
@@ -1098,6 +1124,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       mediaProgressMemory,
       progressWriteRuntime: new ProgressWriteRuntime(),
       clock: { now: () => new Date(), epoch: () => Date.now() },
+      // Local wall clock with its offset, household zone: never bare UTC beside the
+      // household-local stamps play/log writes.
+      stamp: (date) => formatLocalTimestampWithOffset(date, DEFAULT_TIMEZONE),
       logger: rootLogger.child({ module: 'progress-sync' })
     });
   }

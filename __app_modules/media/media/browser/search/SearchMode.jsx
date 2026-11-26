@@ -24,6 +24,8 @@
 // rest (Play here, Play Next, Up Next, Add to Queue, Open detail). Results
 // this person picked for these words before come first (habits/). Tapping a row dispatches via the
 // same useContentDispatch path MediaContentSearch already uses.
+import { useWatchPhoneKeeps } from "../cast/usePhoneKeeps.jsx";
+import { isKeepable } from "../cast/phoneKeeps.js";
 import { LoadErrorLine } from "../shared/LoadErrorLine.jsx";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@mantine/core';
@@ -289,6 +291,8 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus, keepScop
     () => rankByHabits(collapseResultEditions(state.results), scoresFor(searchText), wholeCatalog && isSearching ? rememberedFor(searchText) : null),
     [state.results, scoresFor, rememberedFor, searchText, wholeCatalog, isSearching],
   );
+  // Keep on Phone states stay fresh only while keepable rows are shown.
+  useWatchPhoneKeeps(null, { always: results.some(isKeepable) });
 
   // Every open resets scope to catalog-wide (spec D1: scope never carries
   // over from a prior search session). This is a

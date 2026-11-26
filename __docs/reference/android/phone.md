@@ -90,9 +90,20 @@ not need remote control: its installed components (the link activity, the tiles,
 the widget) reach the payload in-process, through a `PayloadPort`, or read what
 the payload last wrote.
 
-A `none` build has no control token compiled in, and needs no token entry in the
-private file. The payload's router is handed a random token made up for that
-process, which nothing can present. A value of `control.bind` the app does not
+A `none` build has no control token compiled in. The payload's router is handed a
+random token made up for that process, which nothing can present.
+
+It does compile one other token: the **inbox token** (`BuildConfig.INBOX_TOKEN`), the
+device's entry in the private tokens file, which the payload sends as a bearer token
+when it polls the backend's command inbox (Play on Phone, Keep on Phone). Its scope is
+only this device's inbox: its own commands, acks and keeps report, never a control API
+and never another device. It is readable by other apps on the phone, the same as any
+compiled value; that is the accepted risk for what it guards. Rotating it means a new
+value in the tokens file and a rebuild and install (the backend reloads its copy). A
+build for an emulator (`-PemulatorInbox`) carries the `<id>-emulator` entry instead,
+never the device's own, and a device build that finds itself on an emulator sends no
+token at all. A phone build without an entry for its id polls with no token, which the
+backend refuses once it requires one. A value of `control.bind` the app does not
 know is treated as `none`; the build accepts only `lan`, `loopback` and `none`.
 
 **Debugging a phone build is over adb.** `adb logcat` for the app's log lines
@@ -465,7 +476,7 @@ targets are Media3 sessions behind one `MediaController`:
 
 | Piece | Installed (shell half) | Payload |
 |---|---|---|
-| `NowPlayingActivity` (not exported) | Laid out after Plexamp (ops:docs/superpowers/specs/2026-11-26-phone-player-parity-design.md). Top: close, the target (its icon and name, ▾ opens **Play on** with the current one checked) and, for a screen, the D-pad. The **stage** holds the cover (square, or 16:9 for a video still; swipe it left for next, right for previous, with a haptic tick), or the **lyrics** or the **queue** in its place (Back returns to the cover). Under it the **seek bar is the track's loudness** (Plex's analysis, as bars; a plain line when there is none), elapsed on the left and remaining on the right (tap: the length; remembered). Then artist, title (bold) and album (year), centred, and the audio quality ("FLAC · 24-bit · 96 kHz", "MP3 · 256 kbps · 44.1 kHz") when the backend knows it. One transport row: previous, play/pause in a disc of the cover's color, next; an item of 20 minutes or more adds back 10 / forward 10 at its ends. One icon row: queue, lyrics (enabled only when the track has lyrics), shuffle, ⋮ (Sleep timer on this phone, Stop, Clear queue), repeat, output (opens **Play on**). The page takes its colors from the cover (`CoverColor`, `DaylightTheme.withAccent`) over a soft copy of it. With a screen as the target the volume keys set the screen's volume and show the level for a moment. The status line shows only when something is wrong, or a sleep timer is set. A control is enabled only when the target's player makes its command available | Opens it on a `media/now-playing?target=` link (a `player:` action); `track-levels` and `track-lyrics` read `GET /api/v1/track/levels/<source>/<id>?samples=N` and `GET /api/v1/track/lyrics/<source>/<id>` (none, or an older backend's 404, is "none": the strip is a line and the button is off) |
+| `NowPlayingActivity` (not exported) | Laid out after Plexamp (ops:docs/superpowers/specs/2026-11-26-phone-player-parity-design.md). Top: close, the target (its icon and name, ▾ opens **Play on** with the current one checked) and, for a screen, the D-pad. The **stage** holds the cover (square, or 16:9 for a video still; swipe it left for next, right for previous, with a haptic tick), or the **lyrics** or the **queue** in its place (Back returns to the cover). Under it the **seek bar is the track's loudness** (Plex's analysis, as bars; a plain line when there is none), elapsed on the left and remaining on the right (tap: the length; remembered). Then artist, title (bold) and album (year), centred, and the audio quality ("FLAC · 24-bit · 96 kHz", "MP3 · 256 kbps · 44.1 kHz") when the backend knows it. One transport row: previous, play/pause in a disc of the cover's color, next; an item of 20 minutes or more adds back 10 / forward 10 at its ends. One icon row: queue, lyrics (enabled only when the track has lyrics), shuffle, ⋮ (Sleep timer on this phone, Stop, Clear queue), repeat, output (opens **Play on**). The page takes its colors from the cover (`CoverColor`, `DaylightTheme.withAccent`) over a soft copy of it. With a screen as the target the volume keys set the screen's volume and show the level for a moment. The status line shows only when something is wrong, or a sleep timer is set. A control is enabled only when the target's player makes its command available. It opens as a sheet rising from the bottom, and the down chevron or Back drops it. **Play on** says what each player is doing (Off, Nothing playing, the title); an off player is greyed and can't be picked. A screen with nothing on it shows **Play something on <screen>** in the stage: Continue listening and your playlists, one tap starting it there (the payload's `screen-command` `load`, i.e. `GET /api/v1/device/<id>/load?play|queue=…&deferredRetry=0`, as the web's Play on), and Browse on the screen through the D-pad. An off screen offers this phone or another screen instead | Opens it on a `media/now-playing?target=` link (a `player:` action); `track-levels` and `track-lyrics` read `GET /api/v1/track/levels/<source>/<id>?samples=N` and `GET /api/v1/track/lyrics/<source>/<id>` (none, or an older backend's 404, is "none": the strip is a line and the button is off) |
 | `RemoteControlService`, a Media3 `MediaSessionService` (not exported, session id `screen-remote`) | A second session beside `DaylightMediaService`, holding a `ScreenPlayer`. Its notification and lock-screen card drive the screen; it reports remote playback (0–100), so the phone's volume keys set the screen's volume while it is the active session | — |
 | `ScreenPlayer`, a `SimpleBasePlayer` | The screen's snapshot as a Media3 player: its queue by `queueItemId`, its position carried forward while it plays. Every call becomes one command (`ScreenCommands`); its future completes after the session is read again, so the controls settle on what the screen did | `screens`, `screen-session`, `screen-command` (`ScreenRemote`): `GET /api/v1/device/config`, `GET /api/v1/device/<id>/session`, and the transport, queue, shuffle, repeat and volume routes of `__docs/reference/media/media-app-technical.md` §4 |
 
@@ -672,6 +683,29 @@ for every device.
   accepted through the Google app. Its certificate is pinned in `media.controllerPins`
   (build 81); the digest comes from `apksigner verify --print-certs` on the installed
   Google app, and matches the `refused media controller` line it used to log.
+
+### The backend inbox: auth, installs, Keep from the web
+
+The phone collects its commands (Play on from the web, Keep on Phone) by long-polling
+`GET /api/v1/device/<id>/commands`. Each poll, ack and keep report carries
+`Authorization: Bearer <the control token this build holds>` (a backend still lets a
+tokenless request in while the device's `content_control.allow_unauthenticated` is not
+`false`) and names the install (`installId`, made once per install; `model`). A command
+is addressed to one install, so the emulator or a reinstall polling as the same device
+never takes the phone's commands. Keep and unkeep commands from the web are stored on the
+backend until the phone acks them; the keep's title is `params.title`, its content
+`params.contentId`. The phone sends its whole kept list with its free space and limit
+(`POST /api/v1/device/<id>/keeps`, lifecycle states such as `checking`, `waiting-wifi`,
+`downloading`, `partly-ready`, `ready`, `damaged`), and the web shows what it says.
+Progress kept offline is sent with `observedAt` (when it was heard): a report older than
+the stored last play never moves the place. Each Plex audio item in the play answer
+(`GET /api/v1/play/plex/<id>`, top level) and the queue answer
+(`GET /api/v1/queue/plex/<id>`, each `items[]` entry, top level) carries `fileVersion`,
+`"<partId>:<updatedAt>"` from the part its stream resolves to
+(`/library/parts/<partId>/<updatedAt>/file.*`), read from metadata already fetched (no
+extra Plex call); it is absent when unknown. A kept track whose `fileVersion` changed at
+home is a new file (lifecycle spec §3.5). Contract:
+`__docs/reference/media/media-app-technical.md` §4.12.
 
 ### Choosing playlists on the phone
 
@@ -907,6 +941,194 @@ out of reach the last answer is served, however old; a level never loaded fails
 (an empty shelf would read as an empty library). An image is given to a browser
 only when it is an https URL on the backend; anything else is left out, in the
 payload and again in the installed service.
+
+### Downloads: Keep on this phone
+
+A whole collection (a book, an album, a playlist, a household list) can be kept on the
+phone and played with no network: on a plane, in the car out of coverage, on a Wi-Fi that
+reaches nothing. The rule above everything else: **nothing kept is deleted unless the
+person asks** (Remove, Remove finished, Remove all, Cancel, a kept list's own re-sync, or
+uninstalling). No failure, update, rollback, full disk, missing card, server answer or
+lowered limit deletes kept audio.
+
+**States.** Each kept item has one state, the same words on every surface (the Play tab,
+On this phone, Now playing's ⋮, the notification, the web through the inbox report). They
+come from shell-kit's `KeptIndex` (`files/kept-index.json`), written by `KeepStore`:
+
+| State | Words | Next |
+|---|---|---|
+| Checking | "Checking size…" | fits: Queued; does not: Needs room |
+| Needs room | "Needs 1.2 GB more room" (+ Manage space) | room freed: Queued; or Remove |
+| Queued | "Queued" | Downloading |
+| Waiting for Wi-Fi | "Waiting for Wi-Fi" (+ Use mobile data once) | Wi-Fi: Downloading, app closed too |
+| Waiting for home | "Waiting for home" | home reachable: Checking |
+| Waiting for storage | "Phone storage is full" (+ Manage space) | room: Downloading |
+| Downloading | "Downloading 3 of 12 · 84 MB of 230 MB" | Ready, or a problem state |
+| Paused | "Paused" (+ Resume) | Resume |
+| Partly ready | "11 of 12 ready · 1 couldn't download: Gone from the library" (+ Retry) | Retry, or play what is there |
+| Ready | "On this phone · 230 MB" ("Finished · 230 MB" for a finished book) | plays offline |
+| Updating | "Updating: 2 new" | Ready |
+| Removing | "Removing…" | gone, space shown |
+| Not available | "On the SD card — not inserted" | card back: as before |
+| Damaged | "1 track needs downloading again" | re-downloaded on an allowed network |
+
+Failure reasons, one set everywhere: Gone from the library (404, permanent only after a
+fresh URL also got one), Home refused it (401/403), Home had a problem (5xx, retried), Home
+not reachable (network), Phone full, Incomplete file, Not allowed on mobile data, Card
+removed.
+
+- **Keep it.** Keep appears in Now playing's ⋮ (the collection playing: the household list
+  it came from, or else the track's album), and on a long press of a Continue listening
+  card or a playlist tile on the Play tab (not in the car, not on widgets). Every entry
+  goes through one flow (`KeepFlow`): the payload's `keep` op in `preview` mode says what it
+  is ("Keep the book · 14 parts", "Keep the album · 12 tracks", "Keep the playlist · 230
+  tracks (updates when it changes)"; a book is a collection with a part of 20 minutes or
+  more), the shell reads each missing track's size (a HEAD, only on an allowed network) and
+  shows "1.2 GB · 13.8 GB left · on Wi-Fi". Above a quarter of the limit or of the free
+  space, one confirmation; over the limit, "Needs 1.2 GB more room" with Manage space; with
+  home out of reach, the keep waits ("Waiting for home") and is made when home answers.
+- **Kept from the web.** A `keep` command from the inbox (see "The phone's inbox" below)
+  is recorded by the payload and then goes through the same rules on the phone: it is
+  Checking until its size is known on an allowed network, then Queued or Needs room. The
+  phone acks a keep once it is recorded, not when it finishes downloading; a repeated keep
+  is harmless.
+- **The audio.** Media3's download stack in the installed code (`KeepStore`, `KeepService`):
+  one `SimpleCache` in `files/media-cache` ("Clear cache" never touches it), a
+  `DownloadManager` on a `StandaloneDatabaseProvider`, at most two at a time, in play order
+  (a partly kept book plays from its start). Every track is cached under its content id
+  (`track:plex:123`), not its URL: any play path finds it, and a track two collections hold
+  is stored once. The stream route `/api/v1/proxy/plex/stream/<id>` redirects to the file
+  and serves ranges, so a broken download resumes from the byte it stopped at.
+- **A file changed at home.** The backend's queue and play answers carry an optional
+  `fileVersion` per track (`<partId>:<updatedAt>`). A kept track whose version changed is
+  fetched under a new download key beside the old copy, which keeps playing
+  (`KeepStore.playKey`); the player moves to the new copy when it is whole, and the old one
+  is deleted then (`keep.replaced`). A version seen for the first time on a track already
+  kept is recorded, not fetched again; no field means no change.
+- **Background restricted.** When Android restricts the app in the background (battery
+  "Restricted"), downloads only run while it is open: a one-time "Allow background use"
+  before a keep, and a standing line with the button on On this phone, open the app's
+  settings page.
+- **Running with the app closed.** `KeepService` runs in the foreground (`dataSync`) with one
+  grouped notification, "Keeping 2 items · 3 of 26", Pause and Cancel, a tap opens On this
+  phone. Waiting downloads are scheduled by `KeepScheduler`, this app's own job
+  (`KeepJob`, id 7206) with the network and storage constraints: not Media3's
+  PlatformScheduler, whose job starts a foreground service from the background, which
+  Android 12 and later refuse. The job runs the downloads in the app's process and starts
+  the foreground service only where Android allows it. Every `KeepJob` starts the shell first
+  and waits for the payload; without one it is rescheduled, not dropped. Its other jobs: sync
+  now (7204, the payload schedules it on a web keep), a retry when a network comes (7207),
+  daily re-sync on Wi-Fi (7205), a weekly check of every kept file (7209), and screen actions
+  (7300–7399, one id per action and item).
+- **Never stuck.** A failed track is tried again after 1 min, 10 min, 1 h, then daily, each
+  time with a fresh URL from the payload's `keep` op in `refresh` mode; a 404 gets one fresh
+  URL at once and is permanent only if that fails too. Bytes that have not moved for 30
+  minutes while allowed restart the download once (`keep.stalled`). Times are wall-clock but
+  never trusted when they lie in the future (a clock set back); stalls are measured on the
+  uptime clock.
+- **Whole, or not ready.** A track is ready only when its length is known, every byte of it
+  is cached and its first bytes are audio (ID3/MP3 frame, FLAC, Ogg, MP4, WAV, ADTS): a page
+  or an error stored as a track is not. A failure from a full phone, a short file or a file
+  that will not play is fetched again from scratch, never resumed onto. A kept track that
+  fails to play (a parse or decode error) is marked Damaged and the player skips to the next
+  part at once. The weekly check verifies every kept file and logs `keep.verify{ok, damaged}`.
+- **Never lost.** The payload records each removal as a tombstone; the shell deletes audio
+  only for tracks a tombstone released and nothing kept still holds (two keys). A kept-list
+  file that cannot be read is moved to `kept/_bad/` and put back from the shell's mirror
+  (`files/kept-mirror.json`); a payload whose list is empty while the mirror is not is given
+  the mirror. A removed collection is never put back, and a re-sync never revives one
+  removed meanwhile. A re-sync that would release more than half of a list in one pass keeps
+  it all (`release_refused`).
+- **Keeping it current.** Kept playlists and household lists are resolved again daily on
+  Wi-Fi and when the Play tab opens online (at most hourly): new tracks are added under the
+  same rules, tracks the list itself dropped are removed. Books and albums do not change. A
+  changed file at home is not detected (the stream URL names the item, not its file).
+- **Room.** On this phone shows "1.2 GB kept · 4.1 GB limit · 15.0 GB free on phone". The
+  limit that applies is the smaller of `media.downloadCapMb` and the free space minus 2 GB.
+  A limit lowered below what is kept deletes nothing: "Over the limit by 600 MB: new keeps
+  wait until there is room".
+- **On this phone** (`DownloadsActivity`): the room line, items largest first with size and
+  state, and every action where it is shown (Retry, Resume, Pause, Use mobile data once,
+  Remove), Remove finished, Remove all (confirmed with the total). It is the app's
+  `android:manageSpaceActivity`: Android Settings → the app → Storage → **Manage space**
+  opens it, so clearing storage is not the only way to free room. The Play tab shows the
+  room line, the three largest kept items and **Manage downloads ›**.
+- **Finished books.** A kept book whose last part home calls finished (marked finished, or
+  heard to 97 %) shows "Finished". With `media.removeFinished` it is removed a day later
+  with a notification "Removed <title> from this phone (finished)" and **Undo** for a day.
+- **A kept item plays from the phone first, always** (online too): the payload answers
+  from the kept collection at once, gives home half a second to say where the item was
+  (taken when the phone has nothing unsent for it, as home then knows the newer place,
+  heard on another screen), and otherwise keeps home's answer for the next play. A cold
+  start with home unreachable plays in about 1.3 s on the emulator. Each play logs
+  `play answered from the phone in N ms` (or `by home`).
+- **Playing.** The player reads through a `CacheDataSource` over its HTTP source; if the
+  download store cannot open, it streams. Now playing says "Playing from this phone" for a
+  kept track. Media calls give up connecting after 3 s and reading after 10 s; a call that
+  failed marks home down for a minute, during which a kept item plays from the phone at once
+  (a Wi-Fi that reaches nothing behaves like airplane mode). Offline, a kept collection
+  resumes at the part heard most recently, a track of one plays on from itself, and the car
+  has an **On phone** tab (`media.roots` target `kept`) answered from the phone; offline,
+  every other car level shows "Offline: showing what is on this phone".
+- **Where you were.** Every progress report carries `observedAt` (when it was heard) and
+  `sentAt`; the backend never lets an older report move a place back and answers
+  `stale:true`, after which the phone drops it and takes home's position. Reports kept on
+  the phone (`positions.json`, `pending-progress.json`) are written beside and renamed, the
+  oldest heard goes first past 200, never one still kept. A play sends waiting reports after
+  it starts, one flush at a time, and resumes from an unsent place on this phone.
+- **Location.** `media.downloadLocation: sd` keeps downloads on a removable card when the
+  phone has one (takes effect on the next start; the kept items download again there). A
+  card that is out makes every item Not available: nothing is reconciled, nothing deleted,
+  downloads paused until it is back. The owner's phone has no card slot.
+- **Not in the backup.** The app has `allowBackup="false"` and its extraction rules exclude
+  every domain: a new or restored phone starts with nothing kept.
+- **Notifications.** The grouped download notification and the Undo notification need the
+  notification permission (`POST_NOTIFICATIONS`, asked by the app's own prompt); without it
+  downloads still run, unseen.
+- **Telemetry.** `Downloads` events, no titles: `keep.tap`, `keep.replaced`, `keep.background_restricted`, `keep.asked`, `keep.received`,
+  `keep.ready{tracks, bytes, seconds}`, `keep.failed{reason}`, `keep.removed{reason, bytes}`,
+  `keep.damaged`, `keep.resynced{before, after, refused}`, `keep.stalled`, `keep.restored`,
+  `keep.verify{ok, damaged}`, `keep.mobile_once`, `keep.screen`; sent offline-first with the
+  tap telemetry (a batch the backend refuses for good is dropped, not retried forever).
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `media.downloadCapMb` | 4096 | The most downloads may take, in MB (0 for no cap). The limit that applies is never more than the free space minus 2 GB |
+| `media.downloadOnCellular` | false | Whether downloads may use mobile data. Off: they wait for Wi-Fi (Use mobile data once lets what is waiting go now) |
+| `media.removeFinished` | false | Remove a kept book a day after it is finished, with Undo for a day |
+| `media.removeFinishedAfterMin` | 1440 | Minutes from finished to removed (at least 1); shortened only to check the Undo notification |
+| `media.downloadLocation` | internal | `internal` or `sd` (a removable card, when the phone has one) |
+
+### The phone's inbox: Play on Phone and Keep from the web
+
+With `media.playOnTarget` the payload long-polls the backend for commands addressed to this
+install (`PlayInbox`): `GET /api/v1/device/<id>/commands?wait=20&installId=&model=` with
+`Authorization: Bearer <device token>`. The full contract and the backend side are in
+`__docs/reference/media/media-app-technical.md`.
+
+- **Which install.** Each install makes an install id once (random, in the payload state's
+  `install-id`; a reinstall or a cleared app is a new install) and sends it with
+  `Build.MODEL` on every poll, ack and report. A command addressed to another install is
+  refused (`wrong_install`), never applied. An Android emulator (by its `Build` fingerprint
+  and hardware) polls as `<device id>-emulator`, never as the phone, so a web "Play on
+  Phone" can only reach the real phone. The start note in logcat says which:
+  `MEDIA: inbox: polling as phone, token present` (never the token).
+- **The token.** The build compiles the device's token from the private tokens file as
+  `BuildConfig.INBOX_TOKEN`, only for a device with no control API (`control.bind: none`):
+  it is readable by apps on the phone itself and grants only this device's inbox (its Play
+  on and Keep commands), never a control API. The payload reads it through
+  `ShellServices.inboxToken()` (empty on an older shell). A refused token (401) records the
+  backend's reason (`no_token`, `wrong_token`, …) and polls again after 5 minutes; a 4xx
+  other than that means home has no inbox for this id and is not "home down".
+- **Commands.** A play command starts the content here (`c:<content id>`, the queue
+  route). `keep` and `unkeep` (`params.contentId`, `params.title`) keep or remove a
+  collection (see Downloads above); the ack (`appliedAs: keep|unkeep`) goes once it is
+  recorded, and a repeated command is harmless.
+- **What is kept, for the web.** The whole kept list with each item's state and the phone's
+  own words goes to `POST /api/v1/device/<id>/keeps` (`{installId, items:[{contentId,
+  state: queued|downloading|ready|failed|refused|removed, title, done, total, bytes,
+  reason}]}`, at most 500): 5 s after a change, and again at most once a minute with the
+  polls so the web heals after a lost report.
 
 ## Page bridge on the phone: pinning media
 
@@ -1663,6 +1885,7 @@ Twelve:
 | `CAMERA` | `webview-host`, `quick-input` | Video calls, and the meal photo camera (asked in the camera screen; refused means the phone's camera app is used) |
 | `MODIFY_AUDIO_SETTINGS` | `webview-host` | Page audio |
 | `FOREGROUND_SERVICE_MEDIA_PLAYBACK` | `media-service` | The media library service |
+| `FOREGROUND_SERVICE_DATA_SYNC` | `media-service` | The downloads kept on this phone (`KeepService`, type `dataSync`; needed from target 34) |
 | `FOREGROUND_SERVICE_MICROPHONE` | `quick-input` | The recorder service |
 
 The phone keeps meal photos in its own files and requires no media-library,

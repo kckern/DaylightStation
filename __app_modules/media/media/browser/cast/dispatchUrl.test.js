@@ -35,3 +35,10 @@ describe('buildDispatchUrl', () => {
     expect(() => buildDispatchUrl({ deviceId: 'lr', dispatchId: 'd1' })).toThrow(/play|queue/i);
   });
 });
+
+describe('buildDispatchUrl installId (phone inbox)', () => {
+  it('names the picked phone install; drops a malformed one', () => {
+    expect(buildDispatchUrl({ deviceId: 'phone', play: 'plex:1', dispatchId: 'd', installId: 'install-aaaa-1111' })).toContain('installId=install-aaaa-1111');
+    expect(buildDispatchUrl({ deviceId: 'phone', play: 'plex:1', dispatchId: 'd', installId: 'x y' })).not.toContain('installId');
+  });
+});

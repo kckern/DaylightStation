@@ -1470,7 +1470,32 @@ send is unchanged (`GET /api/v1/device/:id/load`, WakeAndLoad, the dispatch tray
   `wantsPrewarm()` is false). Load queues the same `queue` CommandEnvelope a screen gets,
   `commandId` = the dispatch id. A phone that has not polled within 35 s answers "not
   connected": the row reads not delivered, never sent.
-- **`GET /api/v1/device/:id/commands?wait=<s>`** (wait default 25, 0..30). 200
+- **Who may poll.** The poll, the ack and the keep report speak for the phone with
+  `Authorization: Bearer <device token>`: the token its build holds for its device id,
+  from the household auth file `daylight-android` (or `content_control.auth_ref`). A
+  token that is present and wrong is always 401 `{code: UNAUTHORIZED, details:[reason]}`
+  (reasons `wrong_token`, `no_token_configured`, never the token). A request with **no**
+  token is let in while `content_control.allow_unauthenticated` is not `false` (the
+  default, for the transition to phone builds that send one) and logged
+  `phone-inbox.unauthenticated` (sampled); set it to `false` once every phone sends its
+  token. A miss re-reads the auth file from disk (at most once a minute per device), so a
+  rotated token needs no restart.
+- **Which install.** Every poll names its install: `installId` (8–64 of
+  `[A-Za-z0-9_-]`, made once per install, new on a reinstall) and `model`. The inbox
+  remembers the installs (household data `history/devices/<id>/inbox.yml`; `lastPollAt`
+  lives in memory and is written at most every 6 hours). A Play-on send is addressed to
+  one install: the one named (`installId` on the load query; the Play-on picker shows a
+  phone with two live installs as one row per install, "Phone · SM-S921U", whose target
+  id `phone#<installId>` the dispatch splits into the device and its `installId`), else
+  the only live install
+  (polled within 2 minutes), else the install seen last; with **two live installs and
+  none named** the load fails at once with `code: CHOOSE_PHONE` and the live
+  `installs` (no page load or socket fallback is tried). A poll from another install
+  never receives it. A new poll from an install answers its own older held poll empty, so
+  a half-open connection cannot swallow a play. When the dispatch's 15 s ack wait runs
+  out and the play is still queued, it is taken back (`cancel`) and the dispatch reports
+  not delivered (`notDelivered: true`, "Not picked up"): never a late play, no retry.
+- **`GET /api/v1/device/:id/commands?wait=<s>&installId=&model=`** (wait default 25, 0..30). 200
   `{commands:[CommandEnvelope]}` as soon as any are queued (handed over once; put back
   if the caller left), 204 when none came. Each poll is presence: the device is online
   while a poll is held or one ended within 35 s, and its heartbeat (`device-state`,
@@ -1482,7 +1507,60 @@ send is unchanged (`GET /api/v1/device/:id/load`, WakeAndLoad, the dispatch tray
   load step waits for) and, with a state, a `device-state` snapshot (a session per
   command, an owner `phone-inbox:<id>` with a rising revision) so the dispatch confirms
   "playing". 204; 400 for a missing commandId or a non-boolean ok.
-- Both routes are 404 for any device whose provider is not `phone-inbox`.
+- **Keep on Phone** (ops:docs/superpowers/specs/2026-11-26-phone-downloads-lifecycle.md §2, §3.2, §3.8).
+  - `POST /api/v1/device/:id/keep {contentId, title?, installId?}` (and `/unkeep
+    {contentId, installId?}`) queues a durable command, **stored before it is answered**:
+    202 `{queued:{command, commandId, contentId, installId, queuedAt}}`; 503
+    `STORE_UNAVAILABLE` with `Retry-After` when it could not be stored (never a 202 for
+    something not kept); 409 `CHOOSE_PHONE` `{installs}` with two live installs and none
+    named. With no live install it waits unaddressed and the first install to poll
+    claims it; a **new** install takes over what waited for installs no longer live; an
+    install evicted from the list (more than 8) takes its keeps with it.
+  - It goes to the phone as `{type:'command', command:'keep'|'unkeep', commandId,
+    installId, params:{contentId, title?}}` (inbox-only kinds, not screen
+    `COMMAND_KINDS`; the title is `params.title`). No TTL; handed over again if not
+    acked within 5 minutes; removed when the phone acks it, either way. An ok ack reads
+    **received** until the phone's next report; a refusal (`ok:false`) stays as
+    `refused[]` with the phone's reason until the item is asked again. A newer ask for
+    the same content and install replaces a waiting one.
+  - `POST /api/v1/device/:id/keep/cancel {commandId}`: a keep not yet handed over is
+    removed (`{cancelled:true}`); one already handed over is answered by a removal
+    (`{cancelled:false, removing:true}`); unknown 404.
+  - The phone reports what it keeps with `POST /api/v1/device/:id/keeps {installId,
+    freeBytes?, limitBytes?, items:[{contentId, state, title?, done, total, bytes,
+    totalBytes?, neededBytes?, failed?, reason?, finished?, trackIds?}]}`: the whole list
+    each time, token required, 204 (an unchanged report is not written again). `state`
+    is a lifecycle state: `asked checking needs-room queued waiting-wifi waiting-home
+    waiting-storage downloading paused partly-ready ready updating removing
+    not-available damaged` (and the older `failed refused removed`).
+  - `GET /api/v1/device/:id/keeps` answers `{installs:[{installId, model, firstSeenAt,
+    lastPollAt, current, live, gone}], kept:{<installId>:{items, freeBytes, limitBytes,
+    at}}, waiting:[{command, commandId, contentId, title?, installId, queuedAt,
+    handedOver}], received:[…], refused:[…], storeUnavailable?}`. An install not seen for
+    30 days is `gone`.
+  - **The store is never read as empty.** `inbox.yml` is read with "no file" told apart
+    from everything else; a file that cannot be read (a cloud placeholder, half-synced,
+    EACCES) leaves that device's inbox read-only (no saves, keeps refused 503) and is
+    tried again a minute later; a damaged one is also copied to `_bad/` beside it.
+    Writes are asynchronous and atomic (`YamlPhoneInboxStore`).
+  - **The web.** Every audio item's menu (a search row's ⋯, a tile's ⋯, the info
+    view's More) offers Keep on / Remove from / Cancel keep on each phone (two live
+    installs: one entry each, by model). The info view shows the phone's word on the item
+    in the lifecycle's words ("Waiting for Phone · asked 12:04", "Received by Phone",
+    "Downloading 3 of 12 · 84 MB of 230 MB on Phone", "On Phone · 230 MB", "Phone refused:
+    …"; a track finds its album's keep) with a link to the phone's page. **On this phone**
+    (Devices → the phone's card, view `phone-keeps`) lists per install what it keeps,
+    largest first, with size and state, the room ("910 MB kept · 4.0 GB limit · 15.0 GB
+    free on phone"), Remove, the keeps still waiting (time asked, Cancel), refusals, and
+    gone installs. States are read only while something keepable is on screen and the
+    page is visible, every 20 s, one read at a time (`PhoneKeepsProvider`). A request that
+    fails shows on the outcome tray with Retry.
+  - **Trust.** The keep / unkeep / cancel / read routes take no credential, like every
+    Media-app route (Play on, the household lists): the backend is reachable only from
+    the household network and its perimeter, and a keep only asks the household's own
+    phone to download household media it may already stream. The phone's own requests
+    (poll, ack, report) are the ones that must carry its token.
+- All these routes are 404 for any device whose provider is not `phone-inbox`.
 - **Picker.** A phone (`type: phone`, or the provider) is listed for sound only, like a
   speaker (`canPlayOn`), with a phone icon; offline while it is not polling.
 - **Bus.** HTTP-originated device messages enter through
@@ -1492,7 +1570,9 @@ send is unchanged (`GET /api/v1/device/:id/load`, WakeAndLoad, the dispatch tray
 
 **Verified by:** `PhoneInboxService.test.mjs`, `PhoneInboxContentAdapter.test.mjs`,
 `device.phoneInbox.test.mjs`, `WebSocketEventBus.publishAsClient.test.mjs`,
-`playDestination.phone.test.js`.
+`playDestination.phone.test.js`, `PhoneInboxService.installs.test.mjs`,
+`phoneInbox.tokenCheck.test.mjs`, `phoneKeeps.test.js`, `usePhoneKeeps.test.jsx`, `itemMenuTable.keep.test.js`,
+`DetailView.test.jsx` (Keep on Phone), `WakeAndLoadService.phoneInbox.test.mjs`.
 
 ### 4.11 Client side of the session controls, moves and several screens (batch B)
 

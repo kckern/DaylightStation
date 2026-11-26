@@ -140,6 +140,8 @@ public class DaylightMediaService extends MediaLibraryService {
                 .setWakeMode(C.WAKE_MODE_NETWORK)
                 .setSeekBackIncrementMs(CarControls.SEEK_STEP_MS)
                 .setSeekForwardIncrementMs(CarControls.SEEK_STEP_MS)
+                // Tracks kept on this phone play from the download cache, with no network.
+                .setMediaSourceFactory(new androidx.media3.exoplayer.source.DefaultMediaSourceFactory(playbackSource()))
                 .build();
 
         // Long items: the listener's speed (music stays 1x) and a short step back on resume.
@@ -180,6 +182,7 @@ public class DaylightMediaService extends MediaLibraryService {
 
             @Override public void onPlayerError(PlaybackException error) {
                 MediaItem failed = player.getCurrentMediaItem();
+                if (skipDamagedKept(failed, error)) return;
                 if (failed == null || failed.localConfiguration == null
                         || !"audio".equals(failed.localConfiguration.uri.getQueryParameter("stream"))) return;
                 widgetUpdates.post(() -> {
@@ -524,5 +527,46 @@ public class DaylightMediaService extends MediaLibraryService {
         foreground = false;
         Log.i(TAG, "media service destroyed");
         super.onDestroy();
+    }
+
+    /**
+     * The kept copy first; if the download store cannot open (a broken cache, a full disk), the
+     * player still streams: a keep failure never stops playback.
+     */
+    private androidx.media3.datasource.DataSource.Factory playbackSource() {
+        try {
+            return KeepStore.get(this).playback();
+        } catch (RuntimeException broken) {
+            android.util.Log.w("Daylight-Media", "keep: the download store did not open; streaming only ("
+                    + broken.getClass().getSimpleName() + ")");
+            return new androidx.media3.datasource.DefaultDataSource.Factory(this);
+        }
+    }
+
+    /**
+     * A kept track that fails to play (a parse error, a source error on a file read from the
+     * phone) is marked Damaged and fetched again; playback skips to the next part at once,
+     * never looping on it.
+     */
+    private boolean skipDamagedKept(MediaItem failed, PlaybackException error) {
+        if (failed == null || failed.mediaId == null || failed.mediaId.isEmpty()) return false;
+        int code = error.errorCode;
+        boolean fileProblem = (code >= PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED
+                && code <= PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED)
+                || code == PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE
+                || code == PlaybackException.ERROR_CODE_DECODING_FAILED;
+        KeepStore store;
+        try { store = KeepStore.get(this); } catch (RuntimeException broken) { return false; }
+        if (!fileProblem || !store.isKept(failed.mediaId)) return false;
+        store.markDamaged(failed.mediaId);
+        widgetUpdates.post(() -> {
+            if (current != DaylightMediaService.this || player.getCurrentMediaItem() != failed) return;
+            if (player.hasNextMediaItem()) {
+                player.seekToNextMediaItem();
+                player.prepare();
+                player.play();
+            }
+        });
+        return true;
     }
 }

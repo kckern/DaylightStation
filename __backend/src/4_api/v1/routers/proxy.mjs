@@ -252,6 +252,13 @@ export function createProxyRouter(config = {}) {
       return res.status(404).json({ error: 'Plex adapter not configured' });
     }
     if (result.kind === 'not_found') {
+      // A failure reaching Plex (its metadata could not be fetched) is not "this item
+      // does not exist": say try again, so a downloader or player retries rather than
+      // marking the track gone from the library.
+      if (result.reason === 'transient') {
+        res.set('Retry-After', '10');
+        return res.status(503).json({ error: 'Media server did not answer', ratingKey, reason: 'transient', retryable: true });
+      }
       return res.status(404).json({
         error: 'Could not generate stream URL',
         ratingKey,

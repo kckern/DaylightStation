@@ -257,4 +257,41 @@ public class ScreenRemoteTest {
         };
         assertEquals(1, new ScreenRemote(half, path -> "https://home.example" + path, () -> "Phone").screens().getJSONArray("items").length());
     }
+
+    /** An idle screen can be started from the phone: the web's load route, play or queue. */
+    @Test public void loadStartsAListOrAnItemOnAScreen() throws Exception {
+        JSONObject reply = remote.command(new JSONObject().put("device", "office-tv").put("command", "load")
+                .put("queue", "plex:440630").put("shuffle", true));
+        assertEquals("GET https://home.example/api/v1/device/office-tv/load?queue=plex%3A440630&dispatchId=cmd-1&deferredRetry=0&shuffle=1",
+                calls.get(0));
+        assertTrue(reply.getBoolean("accepted"));
+        remote.command(new JSONObject().put("device", "office-tv").put("command", "load").put("play", "plex:1"));
+        assertEquals("GET https://home.example/api/v1/device/office-tv/load?play=plex%3A1&dispatchId=cmd-1&deferredRetry=0", calls.get(1));
+    }
+
+    @Test public void aRefusedLoadSaysWhichStepFailed() throws Exception {
+        status = 503; body = "{\"ok\":false,\"failedStep\":\"input\",\"error\":\"no keyboard\"}";
+        JSONObject reply = remote.command(new JSONObject().put("device", "office-tv").put("command", "load").put("play", "plex:1"));
+        assertFalse(reply.getBoolean("accepted"));
+        assertEquals("input", reply.getString("code"));
+    }
+
+    @Test public void loadTakesOneContentIdOfTheRightShape() {
+        for (JSONObject bad : new JSONObject[] {
+                new JSONObject(java.util.Map.of("device", "office-tv", "command", "load")),
+                new JSONObject(java.util.Map.of("device", "office-tv", "command", "load", "play", "plex:1", "queue", "plex:2")),
+                new JSONObject(java.util.Map.of("device", "office-tv", "command", "load", "play", "plex:1&op=x")) }) {
+            try { remote.command(bad); fail("accepted " + bad); } catch (Exception expected) { assertTrue(expected instanceof IllegalArgumentException); }
+        }
+        assertTrue(calls.isEmpty());
+    }
+
+    /** The phone is a Play-on target for the web, never for itself. */
+    @Test public void theListLeavesOutThisDevice() throws Exception {
+        JSONObject reply = new JSONObject().put("items", new org.json.JSONArray()
+                .put(new JSONObject().put("id", "phone")).put(new JSONObject().put("id", "office-tv")));
+        org.json.JSONArray left = ScreenRemote.without(reply, "phone", "phone").getJSONArray("items");
+        assertEquals(1, left.length());
+        assertEquals("office-tv", left.getJSONObject(0).getString("id"));
+    }
 }

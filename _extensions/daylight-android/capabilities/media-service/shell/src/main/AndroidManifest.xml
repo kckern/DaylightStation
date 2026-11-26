@@ -4,12 +4,16 @@
     <!-- Needed for a media foreground service from target 34; declared now so a later
          target bump is a config change. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- The same, for the downloads service (dataSync) from target 34. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <queries>
         <package android:name="com.google.android.projection.gearhead" />
     </queries>
 
-    <application>
+    <!-- Android Settings → this app → Storage → "Manage space" opens On this phone, so Clear
+         storage is not the only way to free room. -->
+    <application android:manageSpaceActivity="net.kckern.daylight.cap.mediaservice.shell.DownloadsActivity">
         <!-- Exported: a car (Android Auto), the system's media controls and Bluetooth reach
              it by binding it, and no permission exists that only they hold. So any app can
              try: who is accepted is decided per connection (ControllerPolicy: this app, the
@@ -44,6 +48,31 @@
             android:name="net.kckern.daylight.cap.mediaservice.shell.PlayActionService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
+
+        <!-- Not exported: downloads kept on this phone ("Keep on this phone", KeepStore).
+             Started only by this app's own Now playing menu; Media3's DownloadService runs
+             in the foreground with a progress notification while it works. -->
+        <service
+            android:name="net.kckern.daylight.cap.mediaservice.shell.KeepService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <!-- Not exported: only the system's job scheduler binds these. KeepJob keeps the
+             phone's downloads in line with what is kept, app closed (a keep from the web, a
+             retry that is due, a daily re-sync of kept playlists on Wi-Fi, a weekly check of
+             every kept file, and the downloads themselves while Wi-Fi and storage allow:
+             KeepScheduler, never Media3's PlatformScheduler, which starts a foreground service
+             from the background). -->
+        <!-- Not exported: On this phone (kept items, room, Remove), opened by this app, the
+             download notification and Android Settings' Manage space (the system). -->
+        <activity android:name="net.kckern.daylight.cap.mediaservice.shell.DownloadsActivity"
+            android:exported="false"
+            android:label="On this phone"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Daylight.WithTitle" />
+        <service android:name="net.kckern.daylight.cap.mediaservice.shell.KeepJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
 
         <!-- Not exported: the phone as a remote for one screen's session (a second Media3
              session beside the one above). Bound by this app's Now playing screen; the

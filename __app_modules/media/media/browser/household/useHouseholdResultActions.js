@@ -7,12 +7,14 @@
 import { useCallback } from 'react';
 import { isCollection } from "./useItemVerbs.jsx";
 import { useFavourites, useHouseholdActions } from "./useHousehold.js";
+import { usePhoneKeeps } from "../cast/usePhoneKeeps.jsx";
 
 export const HOUSEHOLD_RESULT_KINDS = new Set(['favourite', 'unfavourite', 'watched', 'unwatched']);
 
 export function useHouseholdResultActions() {
   const favourites = useFavourites();
   const household = useHouseholdActions();
+  const phoneKeeps = usePhoneKeeps();
 
   const extraActions = useCallback((item) => {
     if (!item?.id) return [];
@@ -24,13 +26,14 @@ export function useHouseholdResultActions() {
     return actions;
   }, [favourites]);
 
-  /** Returns true when `kind` was a household verb (and has been run). */
+  /** Returns true when `kind` was a household verb or a Keep on Phone verb (and has been run). */
   const runHousehold = useCallback((kind, item) => {
+    if (phoneKeeps.run(kind, item)) return true;
     if (!HOUSEHOLD_RESULT_KINDS.has(kind) || !item?.id) return false;
     if (kind === 'favourite' || kind === 'unfavourite') household.toggleFavourite(item, kind === 'unfavourite');
     else household.markWatched(item, kind === 'watched');
     return true;
-  }, [household]);
+  }, [household, phoneKeeps]);
 
   return { extraActions, runHousehold };
 }
