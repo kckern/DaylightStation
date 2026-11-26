@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { resetHouseholdAt } from './lib/household.mjs';
 import { scriptReceiver, SCRIPTED } from './lib/scriptedReceiver.mjs';
 import { VIEWPORTS, newAppPage, gotoMedia, warmMedia, openRemote } from './lib/receivers.mjs';
-import { openSearch } from './lib/search.mjs';
+import { openSearch, openDetailMore } from './lib/search.mjs';
 
 // RELY.13a/AC1 — "text and controls keep enough contrast to read outdoors".
 // Text contrast (4.5:1) is measured in media-app-p0-accessibility; this measures
@@ -80,7 +80,11 @@ for (const [label, vp] of Object.entries(VIEWPORTS)) {
     // Details buttons.
     await gotoMedia(page, '/media?view=detail&contentId=plex%3A55854');
     await expect(page.getByTestId('detail-view')).toBeVisible({ timeout: 60000 });
-    for (const id of ['detail-play-now', 'detail-play-next', 'detail-up-next', 'detail-add', 'detail-favourite']) await check(`details: ${id}`, `[data-testid="${id}"]`);
+    for (const id of ['detail-play-now', 'detail-more']) await check(`details: ${id}`, `[data-testid="${id}"]`);
+    // The rest of the verbs are in its More ⋯ menu.
+    await openDetailMore(page);
+    for (const id of ['detail-play-next', 'detail-up-next', 'detail-add', 'detail-favourite']) await check(`details: ${id}`, `[data-testid="${id}"]`);
+    await page.keyboard.press('Escape');
     // Another screen's transport and queue controls.
     await scriptReceiver(request, { deviceId: SCRIPTED.POWER, state: 'playing', title: 'Arrival', duration: 7000, position: 100, queue: [{ title: 'Next one' }] });
     await openRemote(page, SCRIPTED.POWER, vp);

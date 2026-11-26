@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { markFirstUseDone } from './lib/firstUse.mjs';
 import { aimHere } from './lib/aim.mjs';
+import { detailVerb } from './lib/search.mjs';
 
 test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 import { randomUUID } from 'node:crypto';
@@ -361,8 +362,8 @@ test.describe('Show briefly (PLAY.8a, PLAY.8b)', () => {
 
     const loads = [];
     sender.on('request', (r) => { if (r.url().includes(`${base}/load`)) loads.push(new URL(r.url())); });
-    await openMedia(sender, `/media?view=detail&contentId=${KEEPY_UPPY}`, 'detail-show-briefly');
-    await sender.getByTestId('detail-show-briefly').click();
+    await openMedia(sender, `/media?view=detail&contentId=${KEEPY_UPPY}`, 'detail-more');
+    await detailVerb(sender, 'detail-show-briefly');
     await sender.getByTestId(`picker-device-${DEVICE}`).click();
     await shot(sender, 'play8a-show-briefly-picker');
     await sender.getByTestId('picker-submit').click();

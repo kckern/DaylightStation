@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { resetHouseholdAt } from './lib/household.mjs';
 import { A, A_NAME, ITEM, VIEWPORTS, newAppPage, gotoMedia, warmMedia, openReceiver, stopReceiver, receiverState } from './lib/receivers.mjs';
-import { isPhone, goArea, openSearch, closeSearch, resultRows, resultRow, rowPicture, searchSurface, waitForSearchSettled, whereAmI, playResultHere } from './lib/search.mjs';
+import { isPhone, goArea, openSearch, closeSearch, resultRows, resultRow, rowPicture, searchSurface, waitForSearchSettled, whereAmI, playResultHere, openDetailMore } from './lib/search.mjs';
 import { startSseServer, streamItem } from './lib/sseServer.mjs';
 import { aimAt } from './lib/aim.mjs';
 
@@ -385,11 +385,16 @@ test('[FIND.8a/AC3][FIND.8a/AC4] details offer the same play and line-up actions
   const detail = page.getByTestId('detail-view');
   await expect(detail).toBeVisible({ timeout: 60000 });
   // AC3: the same verbs as everywhere else, and the destination is stated.
-  // The verbs name the screen they act on when it is not this device.
-  for (const name of [new RegExp(`^Play on ${A_NAME}$`), /^Play Next( on .+)?$/, /^Play First( on .+)?$/, /^Add to Queue( on .+)?$/, /^Add on…$/]) {
-    await expect(detail.getByRole('button', { name }).first(), String(name)).toBeVisible();
-  }
+  // PLAY names the screen; Play on… and More ⋯ sit beside it, and More holds
+  // the line-up verbs, named for the screen they act on.
+  await expect(detail.getByTestId('detail-play-now')).toContainText(A_NAME);
   await expect(detail.getByRole('button', { name: 'Play on…', exact: true })).toBeVisible();
+  await openDetailMore(page);
+  for (const id of ['detail-play-next', 'detail-up-next', 'detail-add', 'detail-add-on']) {
+    await expect(page.getByTestId(id), id).toBeVisible();
+  }
+  await expect(page.getByTestId('detail-add')).toContainText(A_NAME);
+  await page.keyboard.press('Escape');
   await expect(page.getByTestId('search-destination-chip')).toContainText(A_NAME);
   // AC4: the receiver was neither started, stopped nor changed by looking.
   await page.waitForTimeout(4000);

@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { markFirstUseDone } from './lib/firstUse.mjs';
 import { SEED, resetHouseholdAt, recordHouseholdRequests, captureProgressLogs, pinBrowserIdentity, household } from './lib/household.mjs';
+import { openDetailMore } from './lib/search.mjs';
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -194,8 +195,11 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
       menu = await openTileMenu(other, `home-tile-favourites-${FAITH}`);
       await menu.getByTestId(`home-tile-favourites-${FAITH}-verb-details`).click();
       await expect(other.getByTestId('detail-view')).toBeVisible({ timeout: 30000 });
+      // Favourites are in the info view's More ⋯ menu.
+      await openDetailMore(other);
       await expect(other.getByTestId('detail-favourite')).toHaveText('Remove from favourites');
       await other.getByTestId('detail-favourite').click();
+      await openDetailMore(other);
       await expect(other.getByTestId('detail-favourite')).toHaveText('Add to favourites');
       expect(otherState.filter(r => r.method === 'DELETE' && r.path.endsWith('/household/favourites')).map(r => r.query.id)).toEqual([FAITH]);
       await otherContext.close();
@@ -211,8 +215,10 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
       await menu.getByTestId(`home-tile-favourites-${FAITH}-verb-details`).click();
       await expect(page.getByTestId('detail-view')).toBeVisible({ timeout: 30000 });
       const toggle = page.getByTestId('detail-favourite');
+      await openDetailMore(page);
       await expect(toggle).toHaveText('Remove from favourites');
       await toggle.click();
+      await openDetailMore(page);
       await expect(toggle).toHaveText('Add to favourites');
       expect(state.requests.filter(r => r.method === 'DELETE' && r.path.endsWith('/household/favourites')).map(r => r.query.id)).toEqual([FAITH]);
       expect((await household(page, '/household/favourites')).items.map(i => i.id)).not.toContain(FAITH);

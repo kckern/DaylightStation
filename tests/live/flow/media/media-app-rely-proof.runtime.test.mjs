@@ -4,7 +4,7 @@ import { scriptReceiver, failWake, SCRIPTED } from './lib/scriptedReceiver.mjs';
 import {
   A, A_NAME, ITEM, VIEWPORTS, call, receiverState, openReceiver, startOn, stopReceiver, newAppPage, gotoMedia, warmMedia,
 } from './lib/receivers.mjs';
-import { goArea, openSearch, resultRow, closeSearch } from './lib/search.mjs';
+import { goArea, openSearch, resultRow, closeSearch, detailVerb } from './lib/search.mjs';
 
 // RELY — confirmations (one outcome vocabulary on every size), retries on
 // another screen, wake step wording by kind of screen, and a quiet failure of
@@ -51,9 +51,9 @@ for (const [label, vp] of Object.entries(VIEWPORTS)) {
     await closeSearch(page, vp);
     await gotoMedia(page, `/media?view=detail&contentId=${encodeURIComponent(ITEM.HOSPITAL)}`);
     await expect(page.getByTestId('detail-view')).toBeVisible({ timeout: 60000 });
-    await page.getByTestId('detail-add').click();
+    await detailVerb(page, 'detail-add');
     await expect(rowWith(page, 'Added Hospital here')).toBeVisible({ timeout: 15000 });
-    await page.getByTestId('detail-play-next').click();
+    await detailVerb(page, 'detail-play-next');
     await expect(rowWith(page, 'Hospital plays next here')).toBeVisible({ timeout: 15000 });
 
     // Queue edits confirm too: remove, undo (put back), clear.

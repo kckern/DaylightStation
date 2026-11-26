@@ -8,7 +8,7 @@ import {
   A, B, A_NAME, B_NAME, ITEM, VIEWPORTS, receiverState, openReceiver, startOn, stopReceiver, pauseReceiver, resetControls,
   newAppPage, gotoMedia, warmMedia, openHouse, openRemote,
 } from './lib/receivers.mjs';
-import { isPhone, goArea, openSearch, closeSearch, resultRow, searchSurface } from './lib/search.mjs';
+import { isPhone, goArea, openSearch, closeSearch, resultRow, searchSurface, detailVerb, openDetailMore } from './lib/search.mjs';
 import { aimAt, aimHere, aimLabel } from './lib/aim.mjs';
 
 // PLACE — where things go: the aim, Play on…, the receiver picker states, and
@@ -158,7 +158,9 @@ test('[PLACE.3a/AC1][PLACE.3a/AC2][PLACE.3a/AC3] Play on… is offered on items 
   await expect(leaf).toBeVisible();
   await gotoMedia(page, `/media?view=detail&contentId=${encodeURIComponent(ITEM.ARRIVAL)}`);
   await expect(page.getByTestId('detail-view')).toBeVisible({ timeout: 60000 });
-  await expect(page.getByTestId('detail-view').getByRole('button', { name: 'Add on…' })).toBeVisible();
+  await openDetailMore(page);
+  await expect(page.getByTestId('detail-add-on')).toBeVisible();
+  await page.keyboard.press('Escape');
   await expect(page.getByTestId('detail-view').getByRole('button', { name: 'Play on…', exact: true }).first()).toBeVisible();
   await gotoMedia(page);
   await expect(page.getByTestId('home-row-recent')).toBeVisible({ timeout: 60000 });
@@ -199,7 +201,7 @@ test('[PLACE.5a/AC1][PLACE.5a/AC2] each screen choice shows name, room and wheth
   // A song, so every kind of screen is offered (a film's picker lists only screens that show video).
   await gotoMedia(page, `/media?view=detail&contentId=${encodeURIComponent(ITEM.FAITH)}`);
   await expect(page.getByTestId('detail-view')).toBeVisible({ timeout: 60000 });
-  await page.getByTestId('detail-view').getByRole('button', { name: 'Add on…' }).click();
+  await detailVerb(page, 'detail-add-on');
   await expect(page.getByTestId('dispatch-target-picker')).toBeVisible();
   const line = (id) => page.getByTestId(`picker-device-status-${id}`);
   // The calm picker's one "Room · status" line: what plays (no countdown), paused, Ready (idle) or Off.

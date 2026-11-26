@@ -118,3 +118,22 @@ export async function playResultHere(page, row) {
   await aimHere(page);
   await playResult(page, row);
 }
+
+/**
+ * The info view leads with PLAY, Play here, Play on… and More ⋯ (detail-more);
+ * every other verb (Play Next/First, Add to Queue, Add on…, Shuffle, Show
+ * briefly on…, Quality…, favourites, watched marks) is an item of that menu,
+ * which keeps its old test id (detail-play-next, detail-add, …).
+ */
+export async function openDetailMore(page) {
+  const menu = page.getByTestId('detail-more-menu');
+  if (!(await menu.isVisible().catch(() => false))) await page.getByTestId('detail-more').click();
+  await expect(menu).toBeVisible();
+  return menu;
+}
+
+/** Choose one item of the info view's More ⋯ menu by its test id. */
+export async function detailVerb(page, testId) {
+  await openDetailMore(page);
+  await page.getByTestId(testId).click();
+}

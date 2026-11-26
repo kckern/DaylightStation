@@ -6,7 +6,7 @@ import {
   A, B, A_NAME, B_NAME, ITEM, VIEWPORTS, call, receiverState, openReceiver, startOn, stopReceiver, resetControls,
   newAppPage, gotoMedia, warmMedia, openRemote,
 } from './lib/receivers.mjs';
-import { goArea, openSearch, resultRow, playResult } from './lib/search.mjs';
+import { goArea, openSearch, resultRow, playResult, detailVerb, openDetailMore } from './lib/search.mjs';
 import { aimAt, aimLabel } from './lib/aim.mjs';
 
 // The play and line-up verbs, at the aim, on every surface. Aim = a real
@@ -110,7 +110,7 @@ test('[PLAY.5a/AC1][PLAY.5a/AC2][PLAY.6a/AC1][PLACE.1a/AC3] Play next puts items
 
   await gotoMedia(page, `/media?view=detail&contentId=${encodeURIComponent(ITEM.HOSPITAL)}`);
   await expect(page.getByTestId('detail-view')).toBeVisible({ timeout: 60000 });
-  await page.getByTestId('detail-play-next').click();
+  await detailVerb(page, 'detail-play-next');
   await expectQueue([ITEM.DISCLOSURE, ITEM.ARRIVAL, ITEM.HOSPITAL], 'Play next from details');
 
   await gotoMedia(page, '/media');
@@ -124,7 +124,7 @@ test('[PLAY.5a/AC1][PLAY.5a/AC2][PLAY.6a/AC1][PLACE.1a/AC3] Play next puts items
   // Add (to the end): from details and from a browsed item.
   await gotoMedia(page, `/media?view=detail&contentId=${encodeURIComponent(ITEM.KEEPY)}`);
   await expect(page.getByTestId('detail-view')).toBeVisible({ timeout: 60000 });
-  await page.getByTestId('detail-add').click();
+  await detailVerb(page, 'detail-add');
   await expectQueue([ITEM.DISCLOSURE, ITEM.ARRIVAL, ITEM.HOSPITAL, ITEM.FAITH, ITEM.KEEPY], 'Add from details');
   await goArea(page, vp, 'browse');
   await page.getByTestId('browse-open-plex:').click();
@@ -157,7 +157,9 @@ test('[PLAY.2a/AC1][PLAY.2a/AC2][PLAY.2a/AC3][PLAY.3a/AC1][PLAY.3a/AC2][PLAY.3a/
   await gotoMedia(page, `/media?view=detail&contentId=${encodeURIComponent(ALBUM)}`);
   await expect(page.getByTestId('detail-view')).toBeVisible({ timeout: 60000 });
   await expect(page.getByTestId('detail-play-now')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Shuffle', exact: true })).toBeVisible();
+  await openDetailMore(page);
+  await expect(page.getByTestId('detail-shuffle')).toBeVisible();
+  await page.keyboard.press('Escape');
   await gotoMedia(page, '/media');
   await expect(page.getByTestId('home-row-favourites')).toBeVisible({ timeout: 60000 });
   await page.getByTestId('home-tile-favourites-plex:59493').getByRole('button', { name: /More actions for/ }).click();
@@ -211,11 +213,11 @@ test('[PLAY.7a/AC1][PLAY.7a/AC3] a whole collection can be played next or added 
   await page.keyboard.press('Escape');
   // Add: from details, to the end, in order (Hospital first so the tail is distinguishable).
   await gotoMedia(page, `/media?view=detail&contentId=${encodeURIComponent(ITEM.HOSPITAL)}`);
-  await page.getByTestId('detail-add').click();
+  await detailVerb(page, 'detail-add');
   await expect.poll(() => queueIds(request), { timeout: 60000 }).toEqual([ITEM.DISCLOSURE, ...ALBUM_TRACKS, ITEM.HOSPITAL]);
   await gotoMedia(page, `/media?view=detail&contentId=${encodeURIComponent(ALBUM)}`);
   await expect(page.getByTestId('detail-view')).toBeVisible({ timeout: 60000 });
-  await page.getByTestId('detail-add').click();
+  await detailVerb(page, 'detail-add');
   await expect.poll(() => queueIds(request), { timeout: 90000 }).toEqual([ITEM.DISCLOSURE, ...ALBUM_TRACKS, ITEM.HOSPITAL, ...ALBUM_TRACKS]);
   await done();
 });
