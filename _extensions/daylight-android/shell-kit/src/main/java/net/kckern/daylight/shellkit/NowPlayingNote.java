@@ -4,24 +4,54 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * What is playing, and where, for the app's own screens: the phone's home shows it as a
- * "Playing on …" strip that opens Now playing (JellyBox's playing-elsewhere strip). The
- * two media services write it (this phone's, and the screen remote's), each for its own
- * target; the most recent one that is playing wins, and a target that stops clears its
- * entry. In process only: nothing is stored or sent.
+ * mini player (cover, title, artist and where, a progress line, play/pause and next) that
+ * opens Now playing. The two media services write it (this phone's, and the screen
+ * remote's), each for its own target, and hand over a {@link Transport} for the buttons;
+ * the one playing wins (the newer if both are). A target that stops clears its entry. In
+ * process only: nothing is stored or sent.
  */
 public final class NowPlayingNote {
+    /** The buttons, run on the service's own player. Called on the main thread. */
+    public interface Transport {
+        void playPause();
+        void next();
+    }
+
     /** One target's state. {@code target} is "local" or a device id. */
     public static final class Entry {
-        public final String target, targetName, title;
-        public final boolean playing;
+        public final String target, targetName, title, artist, artworkUrl;
+        public final boolean playing, canNext;
+        /** The position at {@code reportedAt} (elapsedRealtime); -1 duration when unknown. */
+        public final long positionMs, durationMs, reportedAt;
+        public final Transport transport;
         final long at;
 
-        Entry(String target, String targetName, String title, boolean playing, long at) {
+        public Entry(String target, String targetName, String title, String artist, String artworkUrl,
+                     boolean playing, boolean canNext, long positionMs, long durationMs, long reportedAt,
+                     Transport transport) {
             this.target = target;
-            this.targetName = targetName;
-            this.title = title;
+            this.targetName = targetName == null ? "" : targetName;
+            this.title = title == null ? "" : title;
+            this.artist = artist == null ? "" : artist;
+            this.artworkUrl = artworkUrl == null ? "" : artworkUrl;
             this.playing = playing;
-            this.at = at;
+            this.canNext = canNext;
+            this.positionMs = positionMs;
+            this.durationMs = durationMs;
+            this.reportedAt = reportedAt;
+            this.transport = transport;
+            this.at = reportedAt;
+        }
+
+        /** Where the track is at {@code now}, carried forward while playing. */
+        public long positionAt(long now) {
+            long p = positionMs + (playing ? Math.max(0, now - reportedAt) : 0);
+            return durationMs > 0 ? Math.min(p, durationMs) : p;
+        }
+
+        /** 0..1 through the track at {@code now}, or -1 when the length is unknown. */
+        public float fractionAt(long now) {
+            return durationMs > 0 ? positionAt(now) / (float) durationMs : -1f;
         }
     }
 
@@ -32,13 +62,19 @@ public final class NowPlayingNote {
 
     private NowPlayingNote() { }
 
-    /** A service's report. An empty title means nothing is loaded there: the entry goes. */
-    public static void update(String target, String targetName, String title, boolean playing, long now) {
-        Entry e = title == null || title.isEmpty() ? null : new Entry(target, targetName, title, playing, now);
-        Entry before = "local".equals(target) ? local : remote;
-        if (same(before, e)) return;
-        if ("local".equals(target)) local = e; else remote = e;
+    /** A service's report. An entry with an empty title means nothing is loaded there: it goes. */
+    public static void report(Entry e) {
+        if (e == null) return;
+        Entry next = e.title.isEmpty() ? null : e;
+        Entry before = "local".equals(e.target) ? local : remote;
+        if (same(before, next)) return;
+        if ("local".equals(e.target)) local = next; else remote = next;
         for (Listener l : listeners) l.changed();
+    }
+
+    /** Shorthand for a report without detail (and for clearing: an empty title). */
+    public static void update(String target, String targetName, String title, boolean playing, long now) {
+        report(new Entry(target, targetName, title, "", "", playing, false, 0, -1, now, null));
     }
 
     /** What the strip shows: the one playing (the newer, if both are), else the newer paused one; null for none. */
@@ -56,9 +92,13 @@ public final class NowPlayingNote {
 
     static void clearForTests() { local = null; remote = null; listeners.clear(); }
 
+    /** Same as far as the strip is concerned. Position is carried forward, so a report that only moved it is not news. */
     private static boolean same(Entry a, Entry b) {
         if (a == null || b == null) return a == b;
-        return a.target.equals(b.target) && a.title.equals(b.title) && a.playing == b.playing
-                && a.targetName.equals(b.targetName);
+        if (!(a.target.equals(b.target) && a.title.equals(b.title) && a.playing == b.playing
+                && a.targetName.equals(b.targetName) && a.artist.equals(b.artist)
+                && a.artworkUrl.equals(b.artworkUrl) && a.canNext == b.canNext && a.durationMs == b.durationMs)) return false;
+        // Off by more than 2 s from where the strip thinks it is: a seek; worth redrawing.
+        return Math.abs(a.positionAt(b.reportedAt) - b.positionMs) < 2000;
     }
 }

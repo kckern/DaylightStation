@@ -257,6 +257,10 @@ public final class MediaServiceCapability implements Capability {
             if ("event".equals(op)) return event(request);
             if ("action".equals(op)) return action(request);
             if ("search".equals(op)) return search(request);
+            if ("continue".equals(op)) {
+                return new Outcome(200, Replies.ok().put("items",
+                        BrowseTree.continueItems(api.recent(50), backend, Math.max(1, Math.min(20, request.optInt("limit", 8))))));
+            }
             if ("track-levels".equals(op)) return trackDetail(request, true);
             if ("track-lyrics".equals(op)) return trackDetail(request, false);
             if ("screens".equals(op)) return new Outcome(200, screens.screens());

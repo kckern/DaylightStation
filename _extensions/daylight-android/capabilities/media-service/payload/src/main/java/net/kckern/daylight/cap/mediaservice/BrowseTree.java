@@ -175,6 +175,38 @@ final class BrowseTree {
         return out;
     }
 
+    /** A long item is one of this many seconds or more: the phone's long-form line (CarControls.LONG_FORM_MS). */
+    static final long CONTINUE_MIN_SECONDS = 20 * 60;
+
+    /**
+     * "Continue listening": long audio (a book, a course, a talk) started and not finished,
+     * newest first, from a GET /api/v1/media/household/recent response. Each is
+     * {id: the play node (resumes), contentId, title, subtitle, art, playhead, duration}
+     * in seconds. Songs, video and anything finished or barely begun are left out.
+     */
+    static org.json.JSONArray continueItems(JSONObject response, Backend backend, int limit) throws org.json.JSONException {
+        org.json.JSONArray out = new org.json.JSONArray();
+        JSONArray items = response == null ? null : response.optJSONArray("items");
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (int i = 0; items != null && i < items.length() && out.length() < limit; i++) {
+            JSONObject item = items.optJSONObject(i);
+            if (item == null) continue;
+            String id = Json.str(item, "contentId");
+            String title = Json.str(item, "title");
+            if (!ContentId.valid(id) || title.isEmpty() || !RECENT_AUDIO.contains(mediaType(item)) || !seen.add(id)) continue;
+            long played = item.optLong("playhead", 0), duration = item.optLong("duration", 0);
+            if (item.optBoolean("finished") || duration < CONTINUE_MIN_SECONDS || played < 30) continue;
+            if (played >= duration * 0.97) continue;
+            String art = art(backend, Json.str(item, "thumbnail"));
+            JSONObject o = new JSONObject().put("id", MediaId.leaf(id, null)).put("contentId", id).put("title", title)
+                    .put("subtitle", Json.first(Json.str(item, "grandparentTitle"), Json.str(item, "parentTitle")))
+                    .put("playhead", played).put("duration", duration);
+            if (art != null) o.put("art", art);
+            out.put(o);
+        }
+        return out;
+    }
+
     /** The longest query sent, in characters (code points). */
     static final int MAX_QUERY = 200;
     private static final java.util.Set<String> RECENT_AUDIO = new java.util.HashSet<>(java.util.Arrays.asList(

@@ -78,16 +78,52 @@ public final class UiTelemetry {
 
     /** Watch this app's activities from now on (idempotent), this one included. */
     public static void install(Activity activity) {
+        get(activity).hook(activity);
+    }
+
+    private static UiTelemetry get(Context context) {
         UiTelemetry t = instance;
-        if (t == null) {
-            synchronized (UiTelemetry.class) {
-                if (instance == null) {
-                    instance = t = new UiTelemetry(activity);
-                    t.listen(activity.getApplication());
-                } else t = instance;
+        if (t != null) return t;
+        synchronized (UiTelemetry.class) {
+            if (instance == null) {
+                instance = new UiTelemetry(context);
+                Context app = context.getApplicationContext();
+                if (app instanceof Application) instance.listen((Application) app);
             }
+            return instance;
         }
-        t.hook(activity);
+    }
+
+    /**
+     * For the background job (no screen open): send what waits, starting the payload if
+     * needed, then {@code done} with whether anything is still waiting.
+     */
+    public static void flushInBackground(Context context, java.util.function.Consumer<Boolean> done) {
+        get(context).flush(true, done);
+    }
+
+    /**
+     * The job that sends held batches once a network is there, with the app closed: a
+     * component of the phone build (widgets), looked up by name so a build without it
+     * just sends the next time a screen opens.
+     */
+    static final String JOB_CLASS = "net.kckern.daylight.cap.widgets.shell.TelemetryJob";
+    private static final int JOB_ID = 7102;
+
+    private void scheduleJob() {
+        try {
+            android.content.ComponentName job = new android.content.ComponentName(app, JOB_CLASS);
+            app.getPackageManager().getServiceInfo(job, 0);
+            android.app.job.JobScheduler scheduler = app.getSystemService(android.app.job.JobScheduler.class);
+            if (scheduler == null) return;
+            scheduler.schedule(new android.app.job.JobInfo.Builder(JOB_ID, job)
+                    .setRequiredNetworkType(android.app.job.JobInfo.NETWORK_TYPE_ANY)
+                    .setMinimumLatency(60_000L)
+                    .setBackoffCriteria(5 * 60_000L, android.app.job.JobInfo.BACKOFF_POLICY_EXPONENTIAL)
+                    .build());
+        } catch (Exception notInThisBuild) {
+            // No job: the batches go when a screen next opens or a network returns.
+        }
     }
 
     /** A named event from a screen ("now-playing", "stage", {to: "lyrics"}). Ignored before install. */
@@ -239,35 +275,49 @@ public final class UiTelemetry {
         });
     }
 
+    private void flush() { flush(false, null); }
+
     /** Seal what is open and send every waiting batch, oldest first; stop at the first refusal. */
-    private void flush() {
+    private void flush(boolean mayStartPayload, java.util.function.Consumer<Boolean> done) {
         io.execute(() -> {
-            int sent = 0;
-            try {
-                store.seal();
-                if (store.waiting() == 0) return;
-                // While a screen is open the payload may be started for this; never from the background.
-                if (started > 0) { try { ShellStart.ensure(app); } catch (RuntimeException refused) { /* sent later */ } }
-                for (TelemetryStore.Batch b = store.next(); b != null; b = store.next()) {
-                    if (!send(b.events)) {
-                        backoffMs = Math.min(MAX_BACKOFF_MS, backoffMs * 2);
-                        Log.i(TAG, "telemetry kept for later: " + store.waiting() + " batch(es) waiting");
-                        return;
-                    }
-                    store.ack(b);
-                    sent++;
-                }
-                backoffMs = FLUSH_MS;
-                if (sent > 0) Log.i(TAG, "telemetry sent: " + sent + " batch(es)");
-            } catch (Exception failed) {
-                Log.w(TAG, "telemetry flush: " + failed.getClass().getSimpleName());
+            boolean left = true;
+            try { left = flushNow(mayStartPayload); }
+            finally {
+                if (left) scheduleJob();
+                if (done != null) done.accept(left);
             }
         });
     }
 
-    private boolean send(JSONArray events) {
+    /** True when something is still waiting afterwards. On the telemetry thread. */
+    private boolean flushNow(boolean mayStartPayload) {
+        int sent = 0;
         try {
-            String reply = PayloadPort.named(PORT).call(new JSONObject().put("source", "android").put("events", events).toString(), 4000);
+            store.seal();
+            if (store.waiting() == 0) return false;
+            // While a screen is open, or from the job, the payload may be started for this.
+            if (started > 0 || mayStartPayload) { try { ShellStart.ensure(app); } catch (RuntimeException refused) { /* sent later */ } }
+            for (TelemetryStore.Batch b = store.next(); b != null; b = store.next()) {
+                if (!send(b.events, mayStartPayload ? 15_000 : 4000)) {
+                    backoffMs = Math.min(MAX_BACKOFF_MS, backoffMs * 2);
+                    Log.i(TAG, "telemetry kept for later: " + store.waiting() + " batch(es) waiting");
+                    return true;
+                }
+                store.ack(b);
+                sent++;
+            }
+            backoffMs = FLUSH_MS;
+            if (sent > 0) Log.i(TAG, "telemetry sent: " + sent + " batch(es)");
+            return false;
+        } catch (Exception failed) {
+            Log.w(TAG, "telemetry flush: " + failed.getClass().getSimpleName());
+            return true;
+        }
+    }
+
+    private boolean send(JSONArray events, long waitMs) {
+        try {
+            String reply = PayloadPort.named(PORT).call(new JSONObject().put("source", "android").put("events", events).toString(), waitMs);
             return new JSONObject(reply).optBoolean("ok", false);
         } catch (PayloadPort.NotReadyException notYet) {
             return false;

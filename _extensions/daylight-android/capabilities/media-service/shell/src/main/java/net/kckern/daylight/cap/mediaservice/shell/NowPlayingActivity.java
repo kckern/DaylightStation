@@ -150,7 +150,9 @@ public class NowPlayingActivity extends Activity {
     private ImageView backdrop;
     private View backdropFade;
     private TextView targetLabel, title, artistLine, albumLine, qualityLine, status, elapsed, remaining, queueHeading;
-    private ImageView targetIcon, targetCaret, art;
+    private ImageView targetIcon, targetCaret, art, lyricsCover;
+    /** On the cover when the track has lyrics: says so, and opens them. */
+    private TextView lyricsBadge;
     private AspectFrame artFrame;
     private LinearLayout pick, transport, bottom;
     private WaveformBar wave;
@@ -161,6 +163,8 @@ public class NowPlayingActivity extends Activity {
     private ImageButton close, playPause, prev, next, leftEdge, rightEdge, padToggle;
     private ImageButton queueButton, lyricsButton, shuffleButton, moreButton, repeatButton, outputButton;
     private TextView leftEdgeNumber, rightEdgeNumber, clearButton;
+    /** In the shuffle slot for long items: the speed ("1.2×"); music has no speed. */
+    private TextView speedButton;
     private FrameLayout leftEdgeBox, rightEdgeBox, stageBox;
     private LinearLayout player, pad;
     private TextView padStatus;
@@ -507,12 +511,24 @@ public class NowPlayingActivity extends Activity {
         boolean shuffled = c != null && c.getShuffleModeEnabled();
         int mode = c == null ? Player.REPEAT_MODE_OFF : c.getRepeatMode();
         toggle(shuffleButton, shuffled, hasItem && can(Player.COMMAND_SET_SHUFFLE_MODE), shuffled ? "Shuffle, on" : "Shuffle, off");
+        // Long items trade shuffle for speed; music never shows one (the session holds it at 1x).
+        float speed = c == null ? 1f : c.getPlaybackParameters().speed;
+        shuffleButton.setVisibility(jumps ? View.GONE : View.VISIBLE);
+        speedButton.setVisibility(jumps ? View.VISIBLE : View.GONE);
+        speedButton.setText(LongForm.speedLabel(speed));
+        speedButton.setTextColor(Math.abs(speed - 1f) > 0.001f ? theme.primary : theme.ink);
+        speedButton.setContentDescription("Speed " + LongForm.speedLabel(speed));
+        enable(speedButton, jumps && can(Player.COMMAND_SET_SPEED_AND_PITCH));
         repeatButton.setImageResource(mode == Player.REPEAT_MODE_ONE ? R.drawable.daylight_np_repeat_one : R.drawable.daylight_np_repeat);
         toggle(repeatButton, mode != Player.REPEAT_MODE_OFF, hasItem && can(Player.COMMAND_SET_REPEAT_MODE),
                 mode == Player.REPEAT_MODE_ONE ? "Repeat one" : mode == Player.REPEAT_MODE_ALL ? "Repeat all" : "Repeat, off");
         toggle(queueButton, stage == Stage.QUEUE, hasItem, stage == Stage.QUEUE ? "Hide the queue" : "Queue");
         toggle(lyricsButton, stage == Stage.LYRICS, hasItem && !lyrics.isEmpty(),
                 lyrics.isEmpty() ? "No lyrics" : stage == Stage.LYRICS ? "Hide the lyrics" : "Lyrics");
+        // Lyrics to be had read as ink, not the muted grey of a toggle that is off.
+        if (stage != Stage.LYRICS && !lyrics.isEmpty()) lyricsButton.setImageTintList(ColorStateList.valueOf(theme.ink));
+        lyricsBadge.setText(lyrics.synced ? "Lyrics" : "Lyrics (text)");
+        lyricsBadge.setVisibility(hasItem && !lyrics.isEmpty() && stage == Stage.ART ? View.VISIBLE : View.GONE);
         toggle(outputButton, remote(), true, "Play on: " + targetName);
         enable(moreButton, hasItem || (!remote() && SleepTimer.isSet()));
         if (stage == Stage.LYRICS && lyrics.isEmpty()) setStage(Stage.ART);
@@ -580,7 +596,7 @@ public class NowPlayingActivity extends Activity {
         if (!wave.scrubbing()) {
             wave.setFraction(known ? position / (float) duration : 0f, clock(position) + (known ? " of " + clock(duration) : ""));
             elapsed.setText(any ? clock(position) : "");
-            remaining.setText(known ? timeDisplay.right(position, duration) : "");
+            remaining.setText(known ? timeDisplay.right(position, duration, c.getPlaybackParameters().speed) : "");
         }
         if (stage == Stage.LYRICS) lyricsView.setPosition(position);
         if (c != null && c.isPlaying()) main.postDelayed(ticker, stage == Stage.LYRICS ? 100 : 200);
@@ -699,9 +715,11 @@ public class NowPlayingActivity extends Activity {
     private void setStage(Stage s) {
         if (stage == s) return;
         stage = s;
-        artFrame.setVisibility(s == Stage.ART ? View.VISIBLE : View.GONE);
-        lyricsView.setVisibility(s == Stage.LYRICS ? View.VISIBLE : View.GONE);
-        queueBox.setVisibility(s == Stage.QUEUE ? View.VISIBLE : View.GONE);
+        crossfade(artFrame, s == Stage.ART);
+        crossfade(lyricsView, s == Stage.LYRICS);
+        crossfade(queueBox, s == Stage.QUEUE);
+        if (s == Stage.LYRICS) lyricsCover.setImageDrawable(art.getDrawable());
+        crossfade(lyricsCover, s == Stage.LYRICS);
         if (s == Stage.QUEUE) {
             fillQueue();
             scrollQueueToCurrent();
@@ -709,6 +727,17 @@ public class NowPlayingActivity extends Activity {
         Log.i(TAG, "now playing stage " + s.name().toLowerCase(Locale.ROOT));
         note("player.stage", "to", s.name().toLowerCase(Locale.ROOT));
         render();
+    }
+
+    /** Shows or hides a stage view with a short fade, so cover and lyrics swap without a jump. */
+    private static void crossfade(View v, boolean show) {
+        v.animate().cancel();
+        if (show) {
+            if (v.getVisibility() != View.VISIBLE) { v.setAlpha(0f); v.setVisibility(View.VISIBLE); }
+            v.animate().alpha(1f).setDuration(180).start();
+        } else if (v.getVisibility() == View.VISIBLE) {
+            v.animate().alpha(0f).setDuration(120).withEndAction(() -> { v.setVisibility(View.GONE); v.setAlpha(1f); }).start();
+        }
     }
 
     private void fillQueue() {
@@ -848,6 +877,30 @@ public class NowPlayingActivity extends Activity {
             return true;
         });
         menu.show();
+    }
+
+    /**
+     * The speed for long items: the presets, the current one checked. The session keeps the
+     * choice for this collection and as the default for long items not set yet; music stays 1x.
+     */
+    private void chooseSpeed() {
+        float now = controller.getPlaybackParameters().speed;
+        String[] labels = new String[LongForm.SPEEDS.length];
+        int checked = -1;
+        for (int i = 0; i < labels.length; i++) {
+            labels[i] = LongForm.speedLabel(LongForm.SPEEDS[i]);
+            if (Math.abs(LongForm.SPEEDS[i] - now) < 0.001f) checked = i;
+        }
+        new AlertDialog.Builder(this, DaylightTheme.alert())
+                .setTitle("Speed")
+                .setSingleChoiceItems(labels, checked, (d, which) -> {
+                    d.dismiss();
+                    if (controller == null) return;
+                    controller.setPlaybackSpeed(LongForm.SPEEDS[which]);
+                    note("player.speed", "speed", LongForm.SPEEDS[which]);
+                    main.postDelayed(this::render, 150);
+                })
+                .show();
     }
 
     private static final int[] SLEEP_MINUTES = { 0, 15, 30, 45, 60, SleepTimer.END_OF_ITEM };
@@ -1138,6 +1191,18 @@ public class NowPlayingActivity extends Activity {
         art.setClipToOutline(true);
         art.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         artFrame.addView(art, new FrameLayout.LayoutParams(-1, -1));
+        lyricsBadge = new TextView(this);
+        lyricsBadge.setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.daylight_np_lyrics, 0, 0, 0);
+        lyricsBadge.setGravity(Gravity.CENTER_VERTICAL);
+        lyricsBadge.setPadding(dp(10), dp(6), dp(14), dp(6));
+        lyricsBadge.setCompoundDrawablePadding(dp(6));
+        lyricsBadge.setVisibility(View.GONE);
+        lyricsBadge.setContentDescription("Show the lyrics");
+        lyricsBadge.setOnClickListener(v -> setStage(Stage.LYRICS));
+        UiTelemetry.tag(lyricsBadge, "cover.lyrics-badge");
+        FrameLayout.LayoutParams badgeLp = new FrameLayout.LayoutParams(-2, dp(36), Gravity.BOTTOM | Gravity.END);
+        badgeLp.setMargins(0, 0, dp(10), dp(10));
+        artFrame.addView(lyricsBadge, badgeLp);
         swipeToSkip(artFrame);
         stageBox.addView(artFrame, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
         lyricsView = new LyricsView(this);
@@ -1146,6 +1211,18 @@ public class NowPlayingActivity extends Activity {
         });
         lyricsView.setVisibility(View.GONE);
         stageBox.addView(lyricsView, new FrameLayout.LayoutParams(-1, -1));
+        // In the lyrics, a small cover in the corner goes back to the cover.
+        lyricsCover = new ImageView(this);
+        lyricsCover.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        lyricsCover.setClipToOutline(true);
+        lyricsCover.setElevation(dp(4));
+        lyricsCover.setVisibility(View.GONE);
+        lyricsCover.setContentDescription("Show the cover");
+        lyricsCover.setOnClickListener(v -> setStage(Stage.ART));
+        UiTelemetry.tag(lyricsCover, "lyrics.cover");
+        FrameLayout.LayoutParams thumbLp = new FrameLayout.LayoutParams(dp(52), dp(52), Gravity.TOP | Gravity.END);
+        thumbLp.setMargins(0, dp(4), 0, 0);
+        stageBox.addView(lyricsCover, thumbLp);
         queueBox = new LinearLayout(this);
         queueBox.setOrientation(LinearLayout.VERTICAL);
         LinearLayout head = new LinearLayout(this);
@@ -1267,6 +1344,11 @@ public class NowPlayingActivity extends Activity {
         lyricsButton = icon(R.drawable.daylight_np_lyrics, "Lyrics", 0, () -> setStage(stage == Stage.LYRICS ? Stage.ART : Stage.LYRICS));
         shuffleButton = icon(R.drawable.daylight_np_shuffle, "Shuffle", 0, () -> controller.setShuffleModeEnabled(!controller.getShuffleModeEnabled()));
         moreButton = icon(R.drawable.daylight_np_more, "More", 0, this::openMore);
+        speedButton = new TextView(this);
+        speedButton.setGravity(Gravity.CENTER);
+        speedButton.setVisibility(View.GONE);
+        speedButton.setOnClickListener(v -> { if (controller != null) chooseSpeed(); });
+        UiTelemetry.tag(speedButton, "speed");
         // The sleep timer can be cancelled when nothing plays any more.
         moreButton.setOnClickListener(v -> openMore());
         repeatButton = icon(R.drawable.daylight_np_repeat, "Repeat", 0, this::cycleRepeat);
@@ -1275,6 +1357,7 @@ public class NowPlayingActivity extends Activity {
         for (ImageButton b : new ImageButton[] { queueButton, lyricsButton, shuffleButton, moreButton, repeatButton, outputButton }) {
             FrameLayout slot = new FrameLayout(this);
             slot.addView(b, new FrameLayout.LayoutParams(dp(48), dp(48), Gravity.CENTER));
+            if (b == shuffleButton) slot.addView(speedButton, new FrameLayout.LayoutParams(dp(64), dp(48), Gravity.CENTER));
             bottom.addView(slot, new LinearLayout.LayoutParams(0, dp(52), 1));
         }
         LinearLayout.LayoutParams bottomLp = new LinearLayout.LayoutParams(-1, -2);
@@ -1334,6 +1417,12 @@ public class NowPlayingActivity extends Activity {
                     boolean flick = Math.abs(moved) > dp(48) && Math.abs(moved) / ms > 0.6f;
                     boolean far = Math.abs(moved) > view.getWidth() / 4f;
                     boolean forward = moved < 0;
+                    if (e.getActionMasked() == MotionEvent.ACTION_UP && Math.abs(moved) < dp(8) && ms < 400) {
+                        view.animate().translationX(0).alpha(1f).setDuration(120).start();
+                        // A tap, not a swipe: the cover turns to the lyrics when there are some.
+                        if (!lyrics.isEmpty()) { view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY); setStage(Stage.LYRICS); }
+                        return true;
+                    }
                     boolean allowed = forward ? canSkipNext() : can(Player.COMMAND_SEEK_TO_PREVIOUS);
                     if (e.getActionMasked() == MotionEvent.ACTION_UP && (flick || far) && allowed && controller != null) {
                         view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
@@ -1353,8 +1442,9 @@ public class NowPlayingActivity extends Activity {
                     return true;
             }
         });
-        v.setContentDescription("Cover. Swipe left for next, right for previous");
+        v.setContentDescription("Cover. Tap for lyrics; swipe left for next, right for previous");
         UiTelemetry.tag(v, "cover");
+        v.setClickable(true);
     }
 
     /** Every color on the screen, from the theme (the cover's, when it has one). */
@@ -1377,6 +1467,10 @@ public class NowPlayingActivity extends Activity {
         decor.setSystemUiVisibility(flags);
 
         art.setBackground(t.round(t.tile, DaylightTheme.Radius.MEDIUM));
+        t.style(lyricsBadge, Type.LABEL, 0xffffffff, true);
+        lyricsBadge.setBackground(t.pressable(DaylightTheme.round(0xa0000000, dp(18))));
+        lyricsBadge.setCompoundDrawableTintList(ColorStateList.valueOf(0xffffffff));
+        lyricsCover.setBackground(t.round(t.tile, DaylightTheme.Radius.SMALL));
         close.setImageTintList(ColorStateList.valueOf(t.ink));
         targetIcon.setImageTintList(ColorStateList.valueOf(t.inkMuted));
         targetCaret.setImageTintList(ColorStateList.valueOf(t.inkMuted));
@@ -1409,6 +1503,8 @@ public class NowPlayingActivity extends Activity {
             b.setBackground(t.pressable(DaylightTheme.round(0x00000000, dp(24))));
         }
         t.style(queueHeading, Type.TITLE, t.ink, true);
+        t.style(speedButton, Type.BODY, t.ink, true);
+        speedButton.setBackground(t.pressable(DaylightTheme.round(0x00000000, dp(24))));
         t.style(clearButton, Type.LABEL, t.primary, true);
         lyricsView.setTheme(t);
         // The pad.

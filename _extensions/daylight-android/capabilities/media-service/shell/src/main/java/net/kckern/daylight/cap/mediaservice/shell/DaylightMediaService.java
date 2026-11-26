@@ -63,6 +63,7 @@ public class DaylightMediaService extends MediaLibraryService {
     private Uri artworkUri;
     private MediaLibrarySession session;
     private LibraryCallback callback;
+    private LongFormPolicy longFormPolicy;
     /** The layout the car was last given; null before the first. */
     private Boolean carLongForm;
     private PlaybackEvents events;
@@ -105,14 +106,20 @@ public class DaylightMediaService extends MediaLibraryService {
                 .setSeekForwardIncrementMs(CarControls.SEEK_STEP_MS)
                 .build();
 
+        // Long items: the listener's speed (music stays 1x) and a short step back on resume.
+        longFormPolicy = new LongFormPolicy(player, this::longForm, () -> {
+                    MediaItem item = player.getCurrentMediaItem();
+                    if (item == null) return "";
+                    CharSequence album = item.mediaMetadata.albumTitle;
+                    return LongForm.speedKey(NodeItems.listId(item), album == null ? null : album.toString());
+                },
+                getSharedPreferences(LongFormPolicy.PREFS, MODE_PRIVATE), SystemClock::elapsedRealtime);
+        player.addListener(longFormPolicy);
         player.addListener(new Player.Listener() {
             @Override public void onEvents(Player player, Player.Events events) {
                 publishPlaylistState();
                 refreshCarLayout();
-                CharSequence title = player.getMediaItemCount() == 0 ? null : player.getMediaMetadata().title;
-                net.kckern.daylight.shellkit.NowPlayingNote.update("local", "This phone", title == null ? "" : title.toString(),
-                        player.isPlaying() || (player.getPlayWhenReady() && player.getPlaybackState() == Player.STATE_BUFFERING),
-                        android.os.SystemClock.elapsedRealtime());
+                net.kckern.daylight.shellkit.NowPlayingNote.report(NowPlayingNotes.entry("local", "This phone", player));
             }
 
             @Override public void onTimelineChanged(androidx.media3.common.Timeline timeline, int reason) {

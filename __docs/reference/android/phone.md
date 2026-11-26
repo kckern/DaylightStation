@@ -522,10 +522,34 @@ targets are Media3 sessions behind one `MediaController`:
 - **Previous** restarts the item when more than 3 s in (or when nothing comes before),
   and otherwise goes back one: the same on this phone, in the car and on a screen
   (Media3 decides; `ScreenCommands` sends a restart as `seekAbs 0`).
+- **Cover and lyrics.** When the track has lyrics a "Lyrics" badge sits on the cover's
+  corner, and the lyrics icon in the bottom row is in full ink (faded when there are
+  none). A tap on the cover, or on the badge, turns to the lyrics; in the lyrics a small
+  cover in the corner turns back. The two cross-fade.
+- **Long items** (talks, courses, books: from a household list, or 20 minutes or
+  more) after the audiobookshelf app: the shuffle slot becomes the **speed** (0.8× to
+  3×); remaining time is counted at that speed; resuming after a pause steps back a
+  little (under 10 s none, under a minute 3 s, under 5 minutes 10 s, under 30 minutes
+  20 s, else 30 s). The speed is kept in the phone's session (`LongFormPolicy`, prefs
+  `daylight.playback`), so the notification and the car follow it: remembered per
+  collection (its household list, else its album) with the latest choice as the default
+  for a new one, and **never applied to music**, whoever asks.
 - **Sleep timer** (⋮, this phone only): off, 15, 30, 45 or 60 minutes, or at the end
   of this item. It lives in the phone's media session (`SleepTimer`, custom command
   `net.kckern.daylight.media.SLEEP` with `minutes`, -1 for the end of the item), so it
   holds with Now playing closed; stopping playback or clearing the queue cancels it.
+  Over its last minute the volume fades to 10%, then it pauses and the volume returns.
+- **The phone home's Play tab** is not a library to browse. **Continue listening**: long
+  audio started and not finished, newest first (payload op `continue` over
+  `GET /api/v1/media/household/recent`: audio, 20 minutes or more, 30 s in, under 97%),
+  each with its cover, time left and a progress bar; a tap resumes it here. **Your
+  playlists**: the playlists already chosen for Drive, a widget or Driving Radio, as cover
+  tiles; a tap plays one here. A long Plex track now resumes where it was left
+  (`PlexAdapter`: video, or a track of 20 minutes or more, is `resumable`).
+- **Mini player.** Along the bottom of the phone home while something plays here or on
+  a screen this phone drives: a progress line on its top edge, the cover, title, artist
+  and where, play/pause and next (they act on that player through `NowPlayingNote`), on
+  a tint of the cover's color. A tap opens Now playing on that target.
 - **Not here.** Adding to a screen's queue, countdowns, audio and subtitle tracks, and
   Put it back stay in the Media web app's Remote. Video still does not play natively
   on the phone.
@@ -1552,7 +1576,9 @@ Batches go oldest first through the payload's `telemetry` port (`core`
 backend accepted it, so nothing is lost to no network, a killed app or a reboot, and
 a repeat can be told by its event ids. Sending is tried when a screen goes to the
 background, every 30 s while one is shown (doubling to 5 min while it fails), and when
-a network comes back. The store holds at most 1 MB; past that the oldest batches go
+a network comes back. With the app closed, a held batch schedules `TelemetryJob` (widgets,
+a one-shot job needing a network) that starts the payload, sends, and runs again while
+anything is still held. The store holds at most 1 MB; past that the oldest batches go
 and the next batch reports how many events were lost. Logcat: `adb logcat -s
 Daylight-Telemetry` (`telemetry sent: n batch(es)`, `telemetry kept for later`).
 

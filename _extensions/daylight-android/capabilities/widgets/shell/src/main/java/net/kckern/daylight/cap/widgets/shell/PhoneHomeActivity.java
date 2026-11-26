@@ -10,6 +10,8 @@ import android.content.SharedPreferences;
 import android.content.pm.ShortcutInfo;
 import android.content.pm.ShortcutManager;
 import android.graphics.Bitmap;
+import net.kckern.daylight.shellkit.ThemeColors;
+import net.kckern.daylight.shellkit.UiTelemetry;
 import net.kckern.daylight.shellkit.NowPlayingNote;
 import net.kckern.daylight.shellkit.PlaylistArtwork;
 import android.graphics.drawable.Icon;
@@ -94,6 +96,7 @@ public class PhoneHomeActivity extends Activity {
     @Override protected void onStart() {
         super.onStart();
         NowPlayingNote.listen(nowChanged);
+        observingNow = true;
         drawNowStrip();
         if (!launcherPicker) {
             observingPlacement = true;
@@ -104,6 +107,8 @@ public class PhoneHomeActivity extends Activity {
 
     @Override protected void onStop() {
         NowPlayingNote.unlisten(nowChanged);
+        observingNow = false;
+        timer.removeCallbacks(nowTick);
         observingPlacement = false;
         placements.prefs.unregisterOnSharedPreferenceChangeListener(placementChanged);
         timer.removeCallbacks(placementTimeout);
@@ -278,6 +283,8 @@ public class PhoneHomeActivity extends Activity {
         nowStrip = null;
         if (!launcherPicker) {
             nowStrip = new LinearLayout(this);
+            nowCover = null; // a new strip: build its views again
+            nowArtUrl = "";
             root.addView(nowStrip, new LinearLayout.LayoutParams(-1, -2));
             drawNowStrip();
         }
@@ -286,44 +293,150 @@ public class PhoneHomeActivity extends Activity {
         pageHost.addView(page);
     }
 
+    private boolean observingNow;
     private LinearLayout nowStrip;
     private final NowPlayingNote.Listener nowChanged = () -> runOnUiThread(this::drawNowStrip);
+    private View nowProgress;
+    private android.widget.ImageView nowCover, nowPlay;
+    private TextView nowTitle, nowWhere;
+    private android.widget.ImageButton nowNext;
+    private String nowArtUrl = "";
+    private int nowAccent = net.kckern.daylight.shellkit.CoverColor.NONE;
+    private final Runnable nowTick = this::tickNowStrip;
 
     /**
-     * "Playing on Office · A song" along the bottom while something plays here or on a
-     * screen this phone is driving; a tap opens Now playing on that target. Gone when
-     * nothing does (JellyBox's playing-elsewhere strip).
+     * The mini player along the bottom while something plays here or on a screen this
+     * phone drives (Plexamp's and JellyBox's): a progress line on its top edge, the cover,
+     * title, artist and where, play/pause and next, on a tint of the cover's color. A tap
+     * opens Now playing on that target. Gone when nothing plays.
      */
     private void drawNowStrip() {
         if (nowStrip == null || isDestroyed()) return;
         NowPlayingNote.Entry now = NowPlayingNote.current();
         Intent open = new Intent().setClassName(this, NOW_PLAYING);
         boolean can = getPackageManager().resolveActivity(open, 0) != null;
-        nowStrip.removeAllViews();
-        nowStrip.setVisibility(now == null || !can ? View.GONE : View.VISIBLE);
-        if (now == null || !can) return;
-        nowStrip.setGravity(Gravity.CENTER_VERTICAL);
-        nowStrip.setMinimumHeight(dp(56));
-        nowStrip.setPadding(dp(16), dp(6), dp(8), dp(6));
-        nowStrip.setBackground(t.pressable(new android.graphics.drawable.ColorDrawable(t.surfaceVariant)));
-        android.widget.ImageView mark = new android.widget.ImageView(this);
-        mark.setImageResource(now.playing ? android.R.drawable.ic_media_play : android.R.drawable.ic_media_pause);
-        mark.setImageTintList(android.content.res.ColorStateList.valueOf(t.primary));
-        nowStrip.addView(mark, new LinearLayout.LayoutParams(dp(22), dp(22)));
+        if (now == null || !can) {
+            nowStrip.setVisibility(View.GONE);
+            timer.removeCallbacks(nowTick);
+            return;
+        }
+        if (nowCover == null) buildNowStrip(open);
+        nowStrip.setVisibility(View.VISIBLE);
+        nowTitle.setText(now.title);
+        String where = "local".equals(now.target) ? "" : "On " + now.targetName;
+        String line = now.artist.isEmpty() ? where : where.isEmpty() ? now.artist : now.artist + " · " + where;
+        nowWhere.setText(line);
+        nowWhere.setVisibility(line.isEmpty() ? View.GONE : View.VISIBLE);
+        nowPlay.setImageResource(now.playing ? R.drawable.daylight_mini_pause : R.drawable.daylight_mini_play);
+        nowPlay.setContentDescription(now.playing ? "Pause" : "Play");
+        nowPlay.setEnabled(now.transport != null);
+        nowNext.setVisibility(now.canNext && now.transport != null ? View.VISIBLE : View.GONE);
+        nowStrip.setContentDescription((now.playing ? "" : "Paused: ") + now.title + (where.isEmpty() ? "" : ", " + where) + ". Open Now playing");
+        final String target = now.target;
+        nowStrip.setOnClickListener(v -> startActivity(new Intent(open).putExtra("target", target)));
+        if (!now.artworkUrl.equals(nowArtUrl)) loadNowArt(now.artworkUrl);
+        tickNowStrip();
+    }
+
+    private void buildNowStrip(Intent open) {
+        nowStrip.setOrientation(LinearLayout.VERTICAL);
+        nowProgress = new View(this);
+        nowProgress.setPivotX(0);
+        nowStrip.addView(nowProgress, new LinearLayout.LayoutParams(-1, dp(2)));
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(12), dp(8), dp(4), dp(8));
+        nowCover = new android.widget.ImageView(this);
+        nowCover.setScaleType(android.widget.ImageView.ScaleType.CENTER_CROP);
+        nowCover.setClipToOutline(true);
+        nowCover.setBackground(t.round(t.tile, DaylightTheme.Radius.SMALL));
+        row.addView(nowCover, new LinearLayout.LayoutParams(dp(44), dp(44)));
         LinearLayout words = new LinearLayout(this);
         words.setOrientation(LinearLayout.VERTICAL);
         words.setPadding(dp(12), 0, dp(8), 0);
-        TextView what = t.text(this, now.title, Type.BODY, t.ink, true);
-        what.setMaxLines(1);
-        what.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        words.addView(what);
-        String where = "local".equals(now.target) ? "On this phone" : "Playing on " + now.targetName;
-        words.addView(t.text(this, now.playing ? where : where + " · paused", Type.LABEL, t.inkMuted, false));
-        nowStrip.addView(words, new LinearLayout.LayoutParams(0, -2, 1));
-        nowStrip.addView(t.text(this, "›", Type.HEADLINE, t.inkMuted, false));
-        nowStrip.setContentDescription((now.playing ? "" : "Paused: ") + now.title + ", " + where + ". Open Now playing");
-        final String target = now.target;
-        nowStrip.setOnClickListener(v -> startActivity(new Intent(open).putExtra("target", target)));
+        nowTitle = t.text(this, "", Type.BODY, t.ink, true);
+        nowTitle.setMaxLines(1);
+        nowTitle.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        words.addView(nowTitle);
+        nowWhere = t.text(this, "", Type.LABEL, t.inkMuted, false);
+        nowWhere.setMaxLines(1);
+        nowWhere.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        words.addView(nowWhere);
+        row.addView(words, new LinearLayout.LayoutParams(0, -2, 1));
+        nowPlay = new android.widget.ImageButton(this);
+        nowPlay.setBackground(t.pressable(DaylightTheme.round(0x00000000, dp(22))));
+        nowPlay.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+        nowPlay.setPadding(dp(8), dp(8), dp(8), dp(8));
+        nowPlay.setOnClickListener(v -> {
+            NowPlayingNote.Entry e = NowPlayingNote.current();
+            if (e != null && e.transport != null) { v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY); e.transport.playPause(); }
+        });
+        UiTelemetry.tag(nowPlay, "mini.play-pause");
+        row.addView(nowPlay, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        nowNext = new android.widget.ImageButton(this);
+        nowNext.setImageResource(R.drawable.daylight_mini_next);
+        nowNext.setBackground(t.pressable(DaylightTheme.round(0x00000000, dp(22))));
+        nowNext.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+        nowNext.setPadding(dp(8), dp(8), dp(8), dp(8));
+        nowNext.setContentDescription("Next");
+        nowNext.setOnClickListener(v -> {
+            NowPlayingNote.Entry e = NowPlayingNote.current();
+            if (e != null && e.transport != null) { v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY); e.transport.next(); }
+        });
+        UiTelemetry.tag(nowNext, "mini.next");
+        row.addView(nowNext, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        nowStrip.addView(row, new LinearLayout.LayoutParams(-1, -2));
+        UiTelemetry.tag(nowStrip, "mini.open");
+        paintNowStrip();
+    }
+
+    /** The strip's colors: the surface, tinted by the cover's color when there is one. */
+    private void paintNowStrip() {
+        DaylightTheme c = t.withAccent(nowAccent);
+        int fill = ThemeColors.mix(t.surfaceVariant, c.primary, nowAccent == net.kckern.daylight.shellkit.CoverColor.NONE ? 0 : 0.22);
+        nowStrip.setBackground(t.pressable(new android.graphics.drawable.ColorDrawable(fill)));
+        nowProgress.setBackgroundColor(c.primary);
+        int glyph = ThemeColors.readableOn(fill);
+        nowPlay.setImageTintList(android.content.res.ColorStateList.valueOf(glyph));
+        nowNext.setImageTintList(android.content.res.ColorStateList.valueOf(glyph));
+        nowTitle.setTextColor(glyph);
+        nowWhere.setTextColor(ThemeColors.mix(fill, glyph, 0.7));
+    }
+
+    private void loadNowArt(String url) {
+        nowArtUrl = url;
+        nowCover.setImageDrawable(null);
+        nowAccent = net.kckern.daylight.shellkit.CoverColor.NONE;
+        paintNowStrip();
+        if (url.isEmpty()) return;
+        artworkWorker.execute(() -> {
+            android.graphics.Bitmap b = net.kckern.daylight.shellkit.PlaylistArtwork.load(url, 160);
+            int accent = net.kckern.daylight.shellkit.CoverColor.NONE;
+            if (b != null) {
+                android.graphics.Bitmap small = android.graphics.Bitmap.createScaledBitmap(b, 32, 32, true);
+                int[] px = new int[32 * 32];
+                small.getPixels(px, 0, 32, 0, 0, 32, 32);
+                accent = net.kckern.daylight.shellkit.CoverColor.of(px);
+            }
+            int a = accent;
+            runOnUiThread(() -> {
+                if (isDestroyed() || !url.equals(nowArtUrl) || nowCover == null) return;
+                nowCover.setImageBitmap(b);
+                nowAccent = a;
+                paintNowStrip();
+            });
+        });
+    }
+
+    /** The progress line, carried forward between the player's reports. */
+    private void tickNowStrip() {
+        timer.removeCallbacks(nowTick);
+        NowPlayingNote.Entry e = NowPlayingNote.current();
+        if (e == null || nowProgress == null || nowStrip.getVisibility() != View.VISIBLE) return;
+        float f = e.fractionAt(android.os.SystemClock.elapsedRealtime());
+        nowProgress.setVisibility(f < 0 ? View.INVISIBLE : View.VISIBLE);
+        nowProgress.setScaleX(Math.max(0f, Math.min(1f, f)));
+        if (e.playing && observingNow) timer.postDelayed(nowTick, 500);
     }
 
     /** One page: the section the selected tab names, in its own scrolling view. */
@@ -434,11 +547,26 @@ public class PhoneHomeActivity extends Activity {
         if (!launcherPicker) addGrouped(items, action -> () -> confirmShortcut(action.optString("id"), action.optString("label")));
     }
 
+    private static final String PLAY = "net.kckern.daylight.cap.mediaservice.shell.PlayActivity";
+
     private void addPlay() {
         // The player screen is media-service's (installed code in another capability), so
         // it is named, and offered only in a build that has it.
         Intent nowPlaying = new Intent().setClassName(this, NOW_PLAYING);
-        if (getPackageManager().resolveActivity(nowPlaying, 0) != null) {
+        boolean player = getPackageManager().resolveActivity(nowPlaying, 0) != null;
+        // Not a library to browse: what this phone is in the middle of, and the playlists
+        // already chosen (Drive, widgets, Driving Radio), each one tap from playing here.
+        if (player) {
+            LinearLayout continuing = new LinearLayout(this);
+            continuing.setOrientation(LinearLayout.VERTICAL);
+            column.addView(continuing);
+            loadContinue(continuing);
+            java.util.List<DrivingRadioSettings.Staple> mine = new DrivingRadioSettings(this).staged();
+            if (!mine.isEmpty()) {
+                section("Your playlists");
+                playlistTiles(mine);
+            }
+            section("Player");
             row("Now playing", "Control this phone or a screen", "play", "›", () -> startActivity(nowPlaying));
         }
         row("Drive playlists", "The playlists on the car's Drive tab", "play", "›", this::showMediaChoices);
@@ -447,6 +575,141 @@ public class PhoneHomeActivity extends Activity {
             row("Widget on Home", "How to put a playlist on your home screen", "open", "›",
                     () -> showManualWidgetPlacement(null));
         }
+    }
+
+    /** Opens Now playing on this phone and starts {@code mediaId} there (p: resumes a track, c: plays a list). */
+    private void playHere(String mediaId) {
+        Intent now = new Intent().setClassName(this, NOW_PLAYING).putExtra("target", "local");
+        Intent play = new Intent().setClassName(this, PLAY).putExtra("id", mediaId);
+        try { startActivities(new Intent[] { now, play }); }
+        catch (RuntimeException absent) { toast("Could not start playback"); }
+    }
+
+    /**
+     * "Continue listening": long audio this household started and did not finish (books,
+     * courses, talks), newest first, from the payload's continue op. A tap resumes it here.
+     * Nothing shows when there is nothing, or the payload cannot answer.
+     */
+    private void loadContinue(LinearLayout into) {
+        String body;
+        try { body = new JSONObject().put("op", "continue").put("limit", 6).toString(); }
+        catch (Exception impossible) { return; }
+        call("media", body, reply -> {
+            org.json.JSONArray items = reply.optJSONArray("items");
+            if (items == null || items.length() == 0 || into.getParent() == null) return;
+            TextView heading = label("Continue listening", Type.TITLE, t.ink);
+            heading.setPadding(0, dp(10), 0, dp(4));
+            into.addView(heading);
+            for (int i = 0; i < items.length(); i++) {
+                JSONObject item = items.optJSONObject(i);
+                if (item != null) into.addView(continueCard(item));
+            }
+        }, failure -> { /* nothing to continue is not an error */ });
+    }
+
+    private View continueCard(JSONObject item) {
+        long played = item.optLong("playhead"), duration = item.optLong("duration");
+        String title = item.optString("title"), sub = item.optString("subtitle");
+        LinearLayout card = new LinearLayout(this);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setPadding(dp(8), dp(8), dp(12), dp(8));
+        card.setBackground(t.pressable(t.round(t.surface, Radius.SMALL)));
+        ImageView cover = new ImageView(this);
+        cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        cover.setClipToOutline(true);
+        cover.setBackground(t.round(t.tile, Radius.SMALL));
+        card.addView(cover, new LinearLayout.LayoutParams(dp(56), dp(56)));
+        loadCover(cover, item.optString("art"));
+        LinearLayout words = new LinearLayout(this);
+        words.setOrientation(LinearLayout.VERTICAL);
+        words.setPadding(dp(12), 0, 0, 0);
+        TextView name = t.text(this, title, Type.BODY, t.ink, true);
+        name.setMaxLines(2);
+        name.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        words.addView(name);
+        String left = timeLeft(Math.max(0, duration - played));
+        TextView line = label(sub.isEmpty() || sub.equals(title) ? left : sub + " · " + left, Type.LABEL, t.inkMuted);
+        line.setMaxLines(1);
+        line.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        words.addView(line);
+        // How far in: a thin bar, as every audiobook player shows it.
+        android.widget.FrameLayout bar = new android.widget.FrameLayout(this);
+        bar.setBackground(DaylightTheme.round(t.outline, dp(2)));
+        View fill = new View(this);
+        fill.setBackground(DaylightTheme.round(t.primary, dp(2)));
+        fill.setPivotX(0);
+        fill.setScaleX(duration > 0 ? Math.min(1f, played / (float) duration) : 0f);
+        bar.addView(fill, new android.widget.FrameLayout.LayoutParams(-1, -1));
+        LinearLayout.LayoutParams barLp = new LinearLayout.LayoutParams(-1, dp(3));
+        barLp.topMargin = dp(6);
+        words.addView(bar, barLp);
+        card.addView(words, new LinearLayout.LayoutParams(0, -2, 1));
+        card.setContentDescription("Continue " + title + ", " + left);
+        net.kckern.daylight.shellkit.UiTelemetry.tag(card, "play.continue");
+        String id = item.optString("id");
+        card.setOnClickListener(v -> playHere(id));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.topMargin = dp(6);
+        card.setLayoutParams(lp);
+        return card;
+    }
+
+    /** "2 h 31 min left", "18 min left", "Under a minute left". */
+    static String timeLeft(long seconds) {
+        long minutes = seconds / 60, hours = minutes / 60;
+        if (hours > 0) return hours + " h " + (minutes % 60) + " min left";
+        return minutes > 0 ? minutes + " min left" : "Under a minute left";
+    }
+
+    /** The playlists already chosen, as cover tiles two to a row; a tap plays one here. */
+    private void playlistTiles(java.util.List<DrivingRadioSettings.Staple> playlists) {
+        LinearLayout pair = null;
+        for (DrivingRadioSettings.Staple p : playlists) {
+            if (pair == null || pair.getChildCount() == 2) {
+                pair = new LinearLayout(this);
+                pair.setWeightSum(2);
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+                lp.topMargin = dp(6);
+                column.addView(pair, lp);
+            }
+            LinearLayout tile = new LinearLayout(this);
+            tile.setOrientation(LinearLayout.VERTICAL);
+            tile.setPadding(dp(6), dp(6), dp(6), dp(8));
+            tile.setBackground(t.pressable(t.round(t.surface, Radius.SMALL)));
+            AspectCover cover = new AspectCover(this);
+            cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            cover.setClipToOutline(true);
+            cover.setBackground(t.round(t.tile, Radius.SMALL));
+            tile.addView(cover, new LinearLayout.LayoutParams(-1, -2));
+            loadCover(cover, p.art);
+            TextView name = t.text(this, p.title, Type.LABEL, t.ink, true);
+            name.setMaxLines(2);
+            name.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            name.setPadding(dp(2), dp(6), dp(2), 0);
+            tile.addView(name);
+            tile.setContentDescription("Play " + p.title);
+            net.kckern.daylight.shellkit.UiTelemetry.tag(tile, "play.playlist");
+            String id = p.id;
+            tile.setOnClickListener(v -> playHere("c:" + id));
+            LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(0, -2, 1);
+            if (pair.getChildCount() == 0) tp.setMarginEnd(dp(6));
+            pair.addView(tile, tp);
+        }
+        buttonRow = null;
+    }
+
+    private void loadCover(ImageView into, String url) {
+        if (url == null || url.isEmpty()) return;
+        artworkWorker.execute(() -> {
+            android.graphics.Bitmap b = net.kckern.daylight.shellkit.PlaylistArtwork.load(url, 360);
+            if (b != null) runOnUiThread(() -> { if (!isDestroyed()) into.setImageBitmap(b); });
+        });
+    }
+
+    /** A square cover as wide as its tile. */
+    private static final class AspectCover extends ImageView {
+        AspectCover(android.content.Context c) { super(c); }
+        @Override protected void onMeasure(int w, int h) { super.onMeasure(w, w); }
     }
 
     private void addConnections() {

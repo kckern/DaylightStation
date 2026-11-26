@@ -603,4 +603,24 @@ public class MediaServiceCapabilityTest {
         cap.call(new JSONObject().put("op", "track-levels").put("id", "plex:9").put("samples", 5000));
         assertTrue(api.calls.contains("levels plex:9 400"));
     }
+
+    /** Continue listening: long audio started and not finished, newest first; songs, video and finished items stay out. */
+    @Test public void continueListsLongAudioInProgress() throws Exception {
+        api.responses.put("recent 50", "{\"items\":["
+                + "{\"contentId\":\"plex:727120\",\"title\":\"A book\",\"type\":\"track\",\"playhead\":178,\"duration\":17800,\"parentTitle\":\"The book\"},"
+                + "{\"contentId\":\"plex:352337\",\"title\":\"A song\",\"type\":\"track\",\"playhead\":24,\"duration\":64},"
+                + "{\"contentId\":\"plex:775444\",\"title\":\"A film\",\"type\":\"movie\",\"playhead\":62,\"duration\":5636},"
+                + "{\"contentId\":\"plex:377395\",\"title\":\"A lecture\",\"type\":\"track\",\"playhead\":4600,\"duration\":4636},"
+                + "{\"contentId\":\"plex:1\",\"title\":\"Barely begun\",\"type\":\"track\",\"playhead\":5,\"duration\":4000},"
+                + "{\"contentId\":\"plex:2\",\"title\":\"A talk\",\"type\":\"track\",\"playhead\":900,\"duration\":3000},"
+                + "{\"contentId\":\"plex:727120\",\"title\":\"A book\",\"type\":\"track\",\"playhead\":10,\"duration\":17800}]}");
+        JSONObject reply = cap.call(new JSONObject().put("op", "continue")).body;
+        org.json.JSONArray items = reply.getJSONArray("items");
+        assertEquals(2, items.length());
+        assertEquals("plex:727120", items.getJSONObject(0).getString("contentId"));
+        assertEquals("p:plex:727120", items.getJSONObject(0).getString("id"));
+        assertEquals(178, items.getJSONObject(0).getLong("playhead"));
+        assertEquals("The book", items.getJSONObject(0).getString("subtitle"));
+        assertEquals("plex:2", items.getJSONObject(1).getString("contentId"));
+    }
 }

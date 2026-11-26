@@ -91,6 +91,7 @@ test('the widget chooser is exported and Freematics setup is private', () => {
     'activity net.kckern.daylight.cap.widgets.shell.FreematicsActivity exported=false permission=null',
     'activity net.kckern.daylight.cap.widgets.shell.PhoneHomeActivity exported=true permission=null',
     'receiver net.kckern.daylight.cap.widgets.shell.ButtonWidgetProvider exported=false permission=null',
+    'service net.kckern.daylight.cap.widgets.shell.TelemetryJob exported=false permission=android.permission.BIND_JOB_SERVICE',
   ]);
 });
 

@@ -243,10 +243,7 @@ public class RemoteControlService extends MediaSessionService {
         if (device == null) return;
         if (noted != null && !noted.equals(device)) NowPlayingNote.update(noted, "", "", false, SystemClock.elapsedRealtime());
         noted = device;
-        CharSequence title = p.getMediaItemCount() == 0 ? null : p.getMediaMetadata().title;
-        boolean playing = p.getPlayWhenReady() && p.getPlaybackState() == Player.STATE_READY;
-        NowPlayingNote.update(device, prefs.getString(EXTRA_NAME, device), title == null ? "" : title.toString(),
-                playing, SystemClock.elapsedRealtime());
+        NowPlayingNote.report(NowPlayingNotes.entry(device, prefs.getString(EXTRA_NAME, device), p));
     }
 
     @Override

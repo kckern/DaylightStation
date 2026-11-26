@@ -111,10 +111,13 @@ final class TrackDetail {
         static TimeDisplay of(String name) { return "TOTAL".equals(name) ? TOTAL : REMAINING; }
 
         /** "−3:12" or "4:38"; "" when the length is unknown. */
-        String right(long positionMs, long durationMs) {
+        String right(long positionMs, long durationMs) { return right(positionMs, durationMs, 1f); }
+
+        /** Time left as it will be spent at {@code speed} (a 1.5x talk ends sooner). */
+        String right(long positionMs, long durationMs, float speed) {
             if (durationMs <= 0) return "";
             return this == TOTAL ? NowPlayingActivity.clock(durationMs)
-                    : "−" + NowPlayingActivity.clock(Math.max(0, durationMs - positionMs));
+                    : "−" + NowPlayingActivity.clock(LongForm.remainingAtSpeed(positionMs, durationMs, speed));
         }
     }
 }

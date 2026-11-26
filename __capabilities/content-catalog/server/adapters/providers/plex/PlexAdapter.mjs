@@ -107,6 +107,12 @@ export function plexArtPath(item) {
   return item?.thumb || item?.composite || null;
 }
 
+/** Audio long enough to be listened to in sittings: resumable, like video. 20 minutes, the phone's long-form line. */
+export const LONG_AUDIO_MS = 20 * 60 * 1000;
+export function isLongAudio(item) {
+  return item?.type === 'track' && Number(item.duration) >= LONG_AUDIO_MS;
+}
+
 /**
  * When Plex added an item, as ISO — Plex sends `addedAt` in epoch seconds
  * (number or numeric string), or nothing. Absent/unparseable → null.
@@ -1250,7 +1256,9 @@ export class PlexAdapter {
       mediaType: directPart ? 'video' : this._determineMediaType(item.type),
       mediaUrl: directPart ? `${this.proxyPath}${directPart}` : `/api/v1/proxy/plex/stream/${item.ratingKey}`,
       duration: item.duration ? Math.floor(item.duration / 1000) : null,
-      resumable: isVideo,
+      // Video resumes; so does long audio (a talk, a lecture, an audiobook chapter): the
+      // same 20-minute line the phone and the car use for long-form. Songs start over.
+      resumable: isVideo || isLongAudio(item),
       resumePosition: item.viewOffset ? Math.floor(item.viewOffset / 1000) : null,
       thumbnail,
       metadata
