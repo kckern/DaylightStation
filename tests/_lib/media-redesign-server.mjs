@@ -5,12 +5,12 @@
  * No Plex credential is loaded: the existing Plex passthrough supplies auth.
  */
 import express from 'express';
-import { build, createServer, preview } from 'vite';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync, spawn } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
+import { createRequire } from 'node:module';
 import { getAppPort } from './configHelper.mjs';
 import { PlexAdapter } from "../../__capabilities/content-catalog/server/adapters/providers/plex/PlexAdapter.mjs";
 import { HttpClient } from '../../__backend/src/0_system/services/HttpClient.mjs';
@@ -25,6 +25,14 @@ import { createAcceptancePlaybackRead } from './media-redesign-playback-read.mjs
 import { createMediaOrdinaryDeviceFixture } from './media-ordinary-device-fixture.mjs';
 import { createAllowlistedCatalog, seedAllowlist } from './media-household-fixture.mjs';
 import { RegistryContentCatalogGateway } from "../../__capabilities/content-catalog/server/adapters/RegistryContentCatalogGateway.mjs";
+
+// Vite comes from the FRONTEND's install (the version frontend/vite.config.js
+// is written for), never from whatever the root node_modules happens to hold:
+// a hoisted Vite 8 (Rolldown) there fails the dep scan on @mediapipe/pose
+// ("Pose" is not exported) where the frontend's Vite 6 builds it fine.
+const frontendRequire = createRequire(new URL('../../frontend/package.json', import.meta.url));
+const vitePackageDir = path.dirname(frontendRequire.resolve('vite/package.json'));
+const { build, createServer, preview } = await import(pathToFileURL(path.join(vitePackageDir, 'dist/node/index.js')).href);
 
 const upstream = `http://127.0.0.1:${getAppPort()}`;
 const logger = createLogger({ app: 'media-redesign-acceptance' });
@@ -442,6 +450,13 @@ export function createAcceptancePreviewPlugin({ app, allowedTitles, policy, sour
     const path = new URL(req.url, upstream).pathname;
     if (req.method === 'POST' && path === '/api/v1/media-source/check') {
       return answerMediaSourceCheck(req, res, { allowedTitles, upstream, probeFetch: sourceProbeFetch });
+    }
+    // Supervision (parental access) is off for the acceptance household: the
+    // app's SupervisionHost waits on this before it draws anything, and the
+    // allowlist below would refuse it, parking every journey on "Checking access…".
+    if (req.method === 'GET' && path === '/api/v1/supervision/bootstrap') {
+      res.setHeader('Content-Type', 'application/json');
+      return res.end(JSON.stringify({ enabled: false }));
     }
     if (req.method === 'GET' && serveSlideshowFixture(path, res)) return;
     if (req.method === 'GET' && serveLiveFixture(path, req, res)) return;
