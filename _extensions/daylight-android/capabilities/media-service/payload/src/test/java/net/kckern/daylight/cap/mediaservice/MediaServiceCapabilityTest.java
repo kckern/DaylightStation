@@ -589,4 +589,18 @@ public class MediaServiceCapabilityTest {
         assertEquals(2, written.size());
         assertEquals(cert, new JSONObject(written.get(1)).getString("com.example.car"));
     }
+
+    @Test public void trackLevelsAndLyricsPassThroughAndNoneIsNotAnError() throws Exception {
+        api.responses.put("levels plex:7 64", "{\"samples\":[0.5,1],\"quality\":{\"codec\":\"flac\"}}");
+        JSONObject levels = cap.call(new JSONObject().put("op", "track-levels").put("id", "plex:7").put("samples", 64)).body;
+        assertEquals("flac", levels.getJSONObject("levels").getJSONObject("quality").getString("codec"));
+        api.responses.put("lyrics plex:7", "none");
+        assertTrue(cap.call(new JSONObject().put("op", "track-lyrics").put("id", "plex:7")).body.getBoolean("none"));
+        // An older backend without the route answers 404: the same as none.
+        assertTrue(cap.call(new JSONObject().put("op", "track-lyrics").put("id", "plex:8")).body.getBoolean("none"));
+        assertEquals(400, cap.call(new JSONObject().put("op", "track-lyrics").put("id", "../etc")).status);
+        // samples are clamped to 16..400
+        cap.call(new JSONObject().put("op", "track-levels").put("id", "plex:9").put("samples", 5000));
+        assertTrue(api.calls.contains("levels plex:9 400"));
+    }
 }

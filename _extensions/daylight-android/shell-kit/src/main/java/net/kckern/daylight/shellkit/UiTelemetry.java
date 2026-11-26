@@ -1,0 +1,282 @@
+package net.kckern.daylight.shellkit;
+
+import android.app.Activity;
+import android.app.Application;
+import android.content.Context;
+import android.graphics.Rect;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.SystemClock;
+import android.util.Log;
+import android.view.MotionEvent;
+import android.view.View;
+import android.view.ViewConfiguration;
+import android.view.ViewGroup;
+import android.view.Window;
+
+import net.kckern.daylight.api.PayloadPort;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.io.File;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
+import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+/**
+ * What a person does on the phone's native screens, for the household log store: every
+ * tap and swipe (which screen, which control), each screen shown and for how long, and
+ * the named events a screen adds ({@link #event}). Installed once by any native screen
+ * ({@link #install}); from then on every activity of the app is watched, so a new
+ * screen is covered without a line of its own.
+ *
+ * <p>Offline first. Each event goes to disk the moment it happens (TelemetryStore) and
+ * is sent later, in order, in batches, through the payload's "telemetry" port to
+ * {@code POST /api/v1/client-log}; a batch is deleted only once the backend accepted
+ * it. Sending is tried when a screen goes to the background, every 30 s while one is
+ * shown (backing off to 5 min while it fails), and when a network comes back. Nothing
+ * waits on it and nothing fails because of it.
+ *
+ * <p>A control is named by its telemetry tag ({@link #tag}) when it has one, else by its
+ * accessibility description, else its id; a screen that shows titles in descriptions
+ * tags those controls, so titles stay out of the log.
+ */
+public final class UiTelemetry {
+    private static final String TAG = "Daylight-Telemetry";
+    public static final String PORT = "telemetry";
+    private static final long FLUSH_MS = 30_000, MAX_BACKOFF_MS = 5 * 60_000;
+    private static final int MAX_LABEL = 60;
+
+    private static volatile UiTelemetry instance;
+
+    private final Context app;
+    private final TelemetryStore store;
+    private final String session = UUID.randomUUID().toString().substring(0, 8);
+    private final ExecutorService io = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "Daylight-telemetry");
+        t.setDaemon(true);
+        return t;
+    });
+    private final Handler main = new Handler(Looper.getMainLooper());
+    private final Runnable tick = this::tick;
+    private int started;
+    private long backoffMs = FLUSH_MS;
+
+    private UiTelemetry(Context context) {
+        app = context.getApplicationContext();
+        store = new TelemetryStore(new File(app.getFilesDir(), "telemetry"));
+    }
+
+    /** Watch this app's activities from now on (idempotent), this one included. */
+    public static void install(Activity activity) {
+        UiTelemetry t = instance;
+        if (t == null) {
+            synchronized (UiTelemetry.class) {
+                if (instance == null) {
+                    instance = t = new UiTelemetry(activity);
+                    t.listen(activity.getApplication());
+                } else t = instance;
+            }
+        }
+        t.hook(activity);
+    }
+
+    /** A named event from a screen ("now-playing", "stage", {to: "lyrics"}). Ignored before install. */
+    public static void event(String screen, String name, JSONObject data) {
+        UiTelemetry t = instance;
+        if (t != null) t.record(name, screen, data);
+    }
+
+    /** Names a control for telemetry, in place of its accessibility description. */
+    public static void tag(View v, String control) { v.setTag(R.id.daylight_telemetry, control); }
+
+    // ── lifecycle ────────────────────────────────────────────────────────────
+
+    private void listen(Application application) {
+        application.registerActivityLifecycleCallbacks(new Application.ActivityLifecycleCallbacks() {
+            @Override public void onActivityCreated(Activity a, Bundle saved) { hook(a); }
+            @Override public void onActivityStarted(Activity a) {
+                a.getWindow().getDecorView().setTag(R.id.daylight_telemetry_shown, SystemClock.elapsedRealtime());
+                record("ui.screen.shown", screen(a), null);
+                if (started++ == 0) { backoffMs = FLUSH_MS; main.removeCallbacks(tick); main.postDelayed(tick, FLUSH_MS); }
+            }
+            @Override public void onActivityStopped(Activity a) {
+                Object at = a.getWindow().getDecorView().getTag(R.id.daylight_telemetry_shown);
+                JSONObject d = new JSONObject();
+                try { if (at instanceof Long) d.put("visibleMs", SystemClock.elapsedRealtime() - (Long) at); } catch (Exception ignored) { }
+                record("ui.screen.hidden", screen(a), d);
+                if (--started <= 0) { started = 0; main.removeCallbacks(tick); }
+                flush();
+            }
+            @Override public void onActivityResumed(Activity a) { }
+            @Override public void onActivityPaused(Activity a) { }
+            @Override public void onActivitySaveInstanceState(Activity a, Bundle out) { }
+            @Override public void onActivityDestroyed(Activity a) { }
+        });
+        // Back online: send what waited. The phone build holds ACCESS_NETWORK_STATE; a
+        // build without it just sends on the timer and when a screen closes.
+        try {
+            ConnectivityManager cm = app.getSystemService(ConnectivityManager.class);
+            if (cm != null) cm.registerDefaultNetworkCallback(new ConnectivityManager.NetworkCallback() {
+                @Override public void onAvailable(Network network) { backoffMs = FLUSH_MS; flush(); }
+            });
+        } catch (RuntimeException noPermission) {
+            Log.i(TAG, "no network callback: " + noPermission.getClass().getSimpleName());
+        }
+        flush();
+    }
+
+    private void tick() {
+        flush();
+        if (started > 0) main.postDelayed(tick, backoffMs);
+    }
+
+    private static String screen(Activity a) {
+        String n = a.getClass().getSimpleName();
+        return n.endsWith("Activity") ? n.substring(0, n.length() - "Activity".length()) : n;
+    }
+
+    // ── taps ─────────────────────────────────────────────────────────────────
+
+    /** Wraps the window's callback once, to see every touch before the screen does. */
+    private void hook(Activity a) {
+        Window w = a.getWindow();
+        if (w == null) return;
+        Window.Callback original = w.getCallback();
+        if (original == null || Proxy.isProxyClass(original.getClass())) return;
+        final String screen = screen(a);
+        final int slop = ViewConfiguration.get(a).getScaledTouchSlop();
+        final float[] down = new float[2];
+        final View[] target = new View[1];
+        w.setCallback((Window.Callback) Proxy.newProxyInstance(Window.Callback.class.getClassLoader(),
+                new Class<?>[] { Window.Callback.class }, (proxy, method, args) -> {
+                    if ("dispatchTouchEvent".equals(method.getName()) && args != null && args[0] instanceof MotionEvent) {
+                        try { touch(w, screen, slop, down, target, (MotionEvent) args[0]); }
+                        catch (RuntimeException never) { /* telemetry never breaks a screen */ }
+                    }
+                    try { return method.invoke(original, args); }
+                    catch (InvocationTargetException e) { throw e.getCause(); }
+                }));
+    }
+
+    private void touch(Window w, String screen, int slop, float[] down, View[] target, MotionEvent e) {
+        switch (e.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN:
+                down[0] = e.getRawX();
+                down[1] = e.getRawY();
+                target[0] = hit(w.getDecorView(), (int) e.getRawX(), (int) e.getRawY());
+                break;
+            case MotionEvent.ACTION_UP: {
+                float dx = e.getRawX() - down[0], dy = e.getRawY() - down[1];
+                boolean tap = Math.abs(dx) < slop && Math.abs(dy) < slop;
+                JSONObject d = new JSONObject();
+                try {
+                    d.put("control", label(target[0]));
+                    if (!tap) d.put("direction", Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : (dy < 0 ? "up" : "down"));
+                } catch (Exception ignored) { }
+                record(tap ? "ui.tap" : "ui.swipe", screen, d);
+                target[0] = null;
+                break;
+            }
+            default:
+                break;
+        }
+    }
+
+    /** The deepest shown, enabled view under the point that takes touches. */
+    static View hit(View v, int x, int y) {
+        if (v == null || !v.isShown()) return null;
+        Rect r = new Rect();
+        if (!v.getGlobalVisibleRect(r) || !r.contains(x, y)) return null;
+        if (v instanceof ViewGroup) {
+            ViewGroup g = (ViewGroup) v;
+            for (int i = g.getChildCount() - 1; i >= 0; i--) {
+                View found = hit(g.getChildAt(i), x, y);
+                if (found != null) return found;
+            }
+        }
+        return v.isClickable() || v.isLongClickable() || v.hasOnClickListeners() ? v : null;
+    }
+
+    static String label(View v) {
+        if (v == null) return "(none)";
+        Object tag = v.getTag(R.id.daylight_telemetry);
+        String out;
+        if (tag instanceof String) out = (String) tag;
+        else if (v.getContentDescription() != null && v.getContentDescription().length() > 0) out = v.getContentDescription().toString();
+        else if (v.getId() != View.NO_ID) {
+            try { out = v.getResources().getResourceEntryName(v.getId()); } catch (RuntimeException generated) { out = v.getClass().getSimpleName(); }
+        } else out = v.getClass().getSimpleName();
+        return out.length() > MAX_LABEL ? out.substring(0, MAX_LABEL) : out;
+    }
+
+    // ── store and forward ────────────────────────────────────────────────────
+
+    private void record(String name, String screen, JSONObject data) {
+        final long now = System.currentTimeMillis();
+        io.execute(() -> {
+            try {
+                JSONObject e = new JSONObject()
+                        .put("id", UUID.randomUUID().toString())
+                        .put("event", name)
+                        .put("level", "info")
+                        .put("ts", iso(now))
+                        .put("data", data == null ? new JSONObject() : data)
+                        .put("context", new JSONObject().put("app", "phone").put("component", screen).put("sessionId", session));
+                store.append(e);
+            } catch (Exception lost) {
+                Log.w(TAG, "event not kept: " + lost.getClass().getSimpleName());
+            }
+        });
+    }
+
+    /** Seal what is open and send every waiting batch, oldest first; stop at the first refusal. */
+    private void flush() {
+        io.execute(() -> {
+            int sent = 0;
+            try {
+                store.seal();
+                if (store.waiting() == 0) return;
+                // While a screen is open the payload may be started for this; never from the background.
+                if (started > 0) { try { ShellStart.ensure(app); } catch (RuntimeException refused) { /* sent later */ } }
+                for (TelemetryStore.Batch b = store.next(); b != null; b = store.next()) {
+                    if (!send(b.events)) {
+                        backoffMs = Math.min(MAX_BACKOFF_MS, backoffMs * 2);
+                        Log.i(TAG, "telemetry kept for later: " + store.waiting() + " batch(es) waiting");
+                        return;
+                    }
+                    store.ack(b);
+                    sent++;
+                }
+                backoffMs = FLUSH_MS;
+                if (sent > 0) Log.i(TAG, "telemetry sent: " + sent + " batch(es)");
+            } catch (Exception failed) {
+                Log.w(TAG, "telemetry flush: " + failed.getClass().getSimpleName());
+            }
+        });
+    }
+
+    private boolean send(JSONArray events) {
+        try {
+            String reply = PayloadPort.named(PORT).call(new JSONObject().put("source", "android").put("events", events).toString(), 4000);
+            return new JSONObject(reply).optBoolean("ok", false);
+        } catch (PayloadPort.NotReadyException notYet) {
+            return false;
+        } catch (Exception failed) {
+            return false;
+        }
+    }
+
+    private static String iso(long ms) {
+        return new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX", Locale.US).format(new Date(ms));
+    }
+}

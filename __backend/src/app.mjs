@@ -102,6 +102,7 @@ import { createConfiguredLibbyRuntime } from "../../__capabilities/content-catal
 import { getDispatcher } from "./0_system/logging/dispatcher.mjs";
 import { createLogger } from "./0_system/logging/logger.mjs";
 import { ingestFrontendLogs } from '#adapters/logging/FrontendLogIngestion.mjs';
+import { createClientLogRouter } from './4_api/v1/routers/clientLog.mjs';
 import { registerClientIngress } from '#composition/modules/clientIngress.mjs';
 import { loadLoggingConfig, resolveLoggerLevel } from "./0_system/logging/config.mjs";
 
@@ -1513,6 +1514,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   const v1Routers = {
+    // Client log events over HTTP, for clients with no WebSocket (the Android app's
+    // native screens): the same ingestion and rate limiter as the WS `logging` topic.
+    clientLog: createClientLogRouter({ ingest: ingestFrontendLogs, logger: rootLogger.child({ module: 'client-log' }) }),
     'pressure-mats': createPressureMatRouter({
       pressureMatOperations: new PressureMatOperations({ pressureMats: pressureMatAdapter }),
       logger: rootLogger.child({ module: 'pressure-mat-api' }),

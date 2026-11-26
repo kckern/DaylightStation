@@ -3,7 +3,6 @@ package net.kckern.daylight.cap.quickinput.shell;
 import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Canvas;
-import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.view.View;
@@ -17,7 +16,7 @@ final class RecordButton extends View {
 
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Path arrow = new Path();
-    private final int accent;
+    private final int accent, mark, disabled;
     private Mode mode = Mode.RECORD;
     private boolean pulsing;
     private float pulse;
@@ -26,6 +25,9 @@ final class RecordButton extends View {
     RecordButton(Context context, int accent) {
         super(context);
         this.accent = accent;
+        net.kckern.daylight.shellkit.DaylightTheme t = net.kckern.daylight.shellkit.DaylightTheme.of(context);
+        mark = net.kckern.daylight.shellkit.ThemeColors.readableOn(accent);
+        disabled = t.disabled;
         setClickable(true);
         setFocusable(true);
     }
@@ -73,9 +75,9 @@ final class RecordButton extends View {
             canvas.drawCircle(cx, cy, base + (w * 0.5f - base) * pulse, paint);
         }
         paint.setStyle(Paint.Style.FILL);
-        paint.setColor(isEnabled() ? accent : 0xff9aa9a2);
+        paint.setColor(isEnabled() ? accent : disabled);
         canvas.drawCircle(cx, cy, base, paint);
-        paint.setColor(Color.WHITE);
+        paint.setColor(mark);
         if (mode == Mode.RECORD) {
             canvas.drawCircle(cx, cy, base * 0.42f, paint);
         } else {

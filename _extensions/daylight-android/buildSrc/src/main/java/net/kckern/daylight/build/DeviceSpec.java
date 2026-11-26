@@ -27,6 +27,8 @@ public final class DeviceSpec {
      * (it may be a {placeholder}); empty for none.
      */
     public final String appLinksHost;
+    /** The checked theme: block (ThemeSource.parse); empty for the shell-kit defaults. */
+    public final Map<String, Object> theme;
 
     DeviceSpec(String id, String packageName, int minSdk, int targetSdk, List<String> abis,
                int controlPort, int lifelinePort, int shellVersionCode, String shellVersionName,
@@ -41,6 +43,17 @@ public final class DeviceSpec {
                List<String> capabilities, Map<String, Object> defaults,
                List<String> extraPermissions, List<String> foregroundServiceTypes,
                String controlBind, String appLinksHost) {
+        this(id, packageName, minSdk, targetSdk, abis, controlPort, lifelinePort, shellVersionCode, shellVersionName,
+                capabilities, defaults, extraPermissions, foregroundServiceTypes, controlBind, appLinksHost,
+                java.util.Collections.emptyMap());
+    }
+
+    DeviceSpec(String id, String packageName, int minSdk, int targetSdk, List<String> abis,
+               int controlPort, int lifelinePort, int shellVersionCode, String shellVersionName,
+               List<String> capabilities, Map<String, Object> defaults,
+               List<String> extraPermissions, List<String> foregroundServiceTypes,
+               String controlBind, String appLinksHost, Map<String, Object> theme) {
+        this.theme = theme;
         this.controlBind = controlBind;
         this.appLinksHost = appLinksHost;
         this.id = id;

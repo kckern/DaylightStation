@@ -35,6 +35,16 @@ final class FakeMediaApi implements MediaApi {
     @Override public JSONObject play(String contentId, boolean resume) throws Exception {
         return answer("play", "play " + contentId + (resume ? "" : "?resume=false"));
     }
+    @Override public JSONObject levels(String contentId, int samples) throws Exception {
+        String call = "levels " + contentId + " " + samples;
+        if ("none".equals(responses.get(call))) { calls.add(call); return null; }
+        return answer("levels", call);
+    }
+    @Override public JSONObject lyrics(String contentId) throws Exception {
+        String call = "lyrics " + contentId;
+        if ("none".equals(responses.get(call))) { calls.add(call); return null; }
+        return answer("lyrics", call);
+    }
     @Override public JSONObject search(String text, int take) throws Exception { return answer("search", "search " + text + " " + take); }
     @Override public void log(JSONObject body) throws Exception {
         if (down) throw new IOException("no route to host");

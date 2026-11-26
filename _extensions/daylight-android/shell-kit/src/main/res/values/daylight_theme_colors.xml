@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Daylight theme's seed colors, light (the default). values-night/ holds the dark
+     seeds. Seven seeds; every other color a screen uses (muted text, rules, chips, tiles,
+     text on a filled button, ripples, seek-bar tracks) is computed from them in
+     ThemeColors, so a changed seed never leaves a mismatched color behind. A device
+     file's `theme:` block overrides seeds for that build (generated resources outrank a
+     library's). The names are buildSrc ThemeSource.COLORS; ThemeSourceTest holds the two
+     to each other. -->
+<resources>
+    <!-- The page behind everything. -->
+    <color name="daylight_background">#F4F7F4</color>
+    <!-- Cards, sheets, fields. -->
+    <color name="daylight_surface">#FFFFFF</color>
+    <!-- Text and icons. -->
+    <color name="daylight_ink">#14382F</color>
+    <color name="daylight_primary">#125B47</color>
+    <color name="daylight_secondary">#17465A</color>
+    <color name="daylight_danger">#B3261E</color>
+    <color name="daylight_attention">#9A4A00</color>
+</resources>

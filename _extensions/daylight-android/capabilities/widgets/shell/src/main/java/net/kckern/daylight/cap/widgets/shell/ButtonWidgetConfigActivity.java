@@ -25,8 +25,13 @@ public class ButtonWidgetConfigActivity extends Activity {
     private static final String TAG = "Daylight-Widget";
     private int widgetId;
 
+    @Override protected void attachBaseContext(android.content.Context base) {
+        super.attachBaseContext(net.kckern.daylight.shellkit.DaylightTheme.wrap(base));
+    }
+
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
+        net.kckern.daylight.shellkit.UiTelemetry.install(this);
         setResult(RESULT_CANCELED);
         widgetId = state == null
                 ? getIntent().getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
@@ -82,7 +87,8 @@ public class ButtonWidgetConfigActivity extends Activity {
     }
 
     private void showMessage(String text) {
-        TextView message = new TextView(this);
+        net.kckern.daylight.shellkit.DaylightTheme t = net.kckern.daylight.shellkit.DaylightTheme.of(this);
+        TextView message = t.style(new TextView(this), net.kckern.daylight.shellkit.DaylightTheme.Type.BODY, t.ink, false);
         int padding = (int) (24 * getResources().getDisplayMetrics().density);
         message.setPadding(padding, padding, padding, padding);
         message.setText(text);

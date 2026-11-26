@@ -11,12 +11,8 @@ import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.res.ColorStateList;
-import android.content.res.Configuration;
 import android.graphics.Color;
-import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
-import android.graphics.drawable.GradientDrawable;
-import android.graphics.drawable.RippleDrawable;
 import android.media.MediaPlayer;
 import android.os.Build;
 import android.os.Bundle;
@@ -33,6 +29,10 @@ import android.widget.ImageButton;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import net.kckern.daylight.shellkit.DaylightTheme;
+import net.kckern.daylight.shellkit.DaylightTheme.Radius;
+import net.kckern.daylight.shellkit.DaylightTheme.Type;
 
 import java.io.IOException;
 
@@ -56,6 +56,7 @@ public class RecordActivity extends Activity {
     private TextView status;
     private TextView hint;
     private Chronometer clock;
+    private DaylightTheme t;
     /** The one big control: record when idle, send while recording or with a saved draft. */
     private RecordButton stop;
     private TextView resume;
@@ -87,8 +88,13 @@ public class RecordActivity extends Activity {
         }
     };
 
+    @Override protected void attachBaseContext(Context base) {
+        super.attachBaseContext(DaylightTheme.wrap(base));
+    }
+
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        net.kckern.daylight.shellkit.UiTelemetry.install(this);
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         setFinishOnTouchOutside(false);
         if (Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false);
@@ -452,7 +458,7 @@ public class RecordActivity extends Activity {
         invalidateDiscard();
         DraftDiscard.Request selected = confirmation.ask(draft.id);
         pauseCapture();
-        discardDialog = new AlertDialog.Builder(this)
+        discardDialog = new AlertDialog.Builder(this, DaylightTheme.alert())
                 .setTitle("Discard this recording?")
                 .setMessage("The audio will be lost.")
                 .setNegativeButton("Keep draft", null)
@@ -503,29 +509,28 @@ public class RecordActivity extends Activity {
     }
 
     private void build() {
-        boolean dark = (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
-                == Configuration.UI_MODE_NIGHT_YES;
-        int surface = dark ? 0xff172521 : 0xfffbfdfb;
-        int ink = dark ? 0xffedf7f1 : 0xff142c24;
-        int secondary = dark ? 0xffb5ccc0 : 0xff49655a;
-        int control = dark ? 0xff2b4038 : 0xffe7efea;
-        int accent = dark ? 0xff4fc99a : 0xff125b47;
+        // The theme follows dark mode (and a device's theme.mode) by itself.
+        t = DaylightTheme.of(this);
+        int surface = t.surface;
+        int ink = t.ink;
+        int secondary = t.inkMuted;
+        int control = t.surfaceVariant;
+        int accent = t.primary;
 
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
         layout.setGravity(Gravity.CENTER_HORIZONTAL);
         layout.setPadding(dp(24), dp(18), dp(24), dp(24));
-        layout.setBackground(rounded(surface, 24));
+        layout.setBackground(t.round(surface, Radius.LARGE));
 
         LinearLayout header = new LinearLayout(this);
         header.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = text(destinationLabel, 22, ink);
-        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        TextView title = t.text(this, destinationLabel, Type.HEADLINE, ink, true);
         header.addView(title, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
         ImageButton close = new ImageButton(this);
         close.setImageResource(R.drawable.ic_memo_close);
         close.setImageTintList(ColorStateList.valueOf(ink));
-        close.setBackground(buttonBackground(control, 24));
+        close.setBackground(t.pressable(DaylightTheme.round(control, dp(22))));
         close.setContentDescription("Close recorder, keeping the draft");
         close.setOnClickListener(v -> onBackPressed());
         header.addView(close, new LinearLayout.LayoutParams(dp(44), dp(44)));
@@ -533,9 +538,7 @@ public class RecordActivity extends Activity {
 
         // The point of the screen: how long, how loud, and one button.
         clock = new Chronometer(this);
-        clock.setTextSize(44);
-        clock.setTextColor(ink);
-        clock.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        t.style(clock, Type.NUMERAL, ink, false);
         clock.setFontFeatureSettings("tnum");
         clock.setGravity(Gravity.CENTER);
         clock.setPadding(0, dp(16), 0, 0);
@@ -551,12 +554,12 @@ public class RecordActivity extends Activity {
         buttonParams.topMargin = dp(8);
         layout.addView(stop, buttonParams);
 
-        status = text("Preparing recorder…", 15, secondary);
+        status = t.text(this, "Preparing recorder…", Type.BODY, secondary, false);
         status.setGravity(Gravity.CENTER);
         status.setPadding(0, dp(6), 0, 0);
         layout.addView(status);
 
-        hint = text("", 14, secondary);
+        hint = t.text(this, "", Type.LABEL, secondary, false);
         hint.setGravity(Gravity.CENTER);
         layout.addView(hint);
 
@@ -575,7 +578,7 @@ public class RecordActivity extends Activity {
 
         ScrollView scroll = new ScrollView(this);
         scroll.setClipToOutline(true);
-        scroll.setBackground(rounded(surface, 24));
+        scroll.setBackground(t.round(surface, Radius.LARGE));
         scroll.addView(layout);
         setContentView(scroll);
         Window window = getWindow();
@@ -591,24 +594,6 @@ public class RecordActivity extends Activity {
         if (active() || (draft != null && draft.hasContent())) send(); else start();
     }
 
-    private TextView text(String value, int size, int color) {
-        TextView view = new TextView(this);
-        view.setText(value);
-        view.setTextSize(size);
-        view.setTextColor(color);
-        return view;
-    }
-
-    private GradientDrawable rounded(int color, int radius) {
-        GradientDrawable shape = new GradientDrawable();
-        shape.setColor(color);
-        shape.setCornerRadius(dp(radius));
-        return shape;
-    }
-
-    private RippleDrawable buttonBackground(int color, int radius) {
-        return new RippleDrawable(ColorStateList.valueOf(0x24889990), rounded(color, radius), null);
-    }
 
     private int dp(int value) {
         return Math.round(value * getResources().getDisplayMetrics().density);

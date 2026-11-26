@@ -67,6 +67,26 @@ final class BackendMediaApi implements MediaApi {
         if (!r.ok()) throw new Refused("play/log", r.status);
     }
 
+    @Override public JSONObject levels(String contentId, int samples) throws Exception {
+        return getOrNone("levels", ContentPath.of("track/levels", contentId) + "?samples=" + samples);
+    }
+
+    @Override public JSONObject lyrics(String contentId) throws Exception {
+        return getOrNone("lyrics", ContentPath.of("track/lyrics", contentId));
+    }
+
+    /** get(), with "nothing to give" (204, or an empty 200) as null instead of a failure. */
+    private JSONObject getOrNone(String route, String path) throws Exception {
+        Http.Reply r = http.get(backend.url(path));
+        if (r.status == 204 || (r.ok() && (r.body == null || r.body.trim().isEmpty()))) return null;
+        if (!r.ok()) throw new Refused(route, r.status);
+        try {
+            return new JSONObject(r.body);
+        } catch (Exception notJson) {
+            throw new Refused(route, 502);
+        }
+    }
+
     private JSONObject get(String route, String path) throws Exception {
         Http.Reply r = http.get(backend.url(path));
         if (!r.ok()) throw new Refused(route, r.status);

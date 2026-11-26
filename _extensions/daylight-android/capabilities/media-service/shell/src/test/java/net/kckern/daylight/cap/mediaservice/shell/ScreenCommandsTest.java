@@ -33,7 +33,12 @@ public class ScreenCommandsTest {
         ScreenSnapshot s = snap("playing");
         assertEquals("skipNext", ScreenCommands.seek("d", ScreenCommands.ids(s), s.current, 2, 0, Player.COMMAND_SEEK_TO_NEXT).optString("action"));
         assertEquals("skipNext", ScreenCommands.seek("d", ScreenCommands.ids(s), s.current, 2, 0, Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM).optString("action"));
-        assertEquals("skipPrev", ScreenCommands.seek("d", ScreenCommands.ids(s), s.current, 1, 0, Player.COMMAND_SEEK_TO_PREVIOUS).optString("action"));
+        assertEquals("skipPrev", ScreenCommands.seek("d", ScreenCommands.ids(s), s.current, s.current - 1, 0, Player.COMMAND_SEEK_TO_PREVIOUS).optString("action"));
+        // Over 3 s in, Media3 asks for the current item from its start: a restart, as every player does.
+        JSONObject restart = ScreenCommands.seek("d", ScreenCommands.ids(s), s.current, s.current, 0, Player.COMMAND_SEEK_TO_PREVIOUS);
+        assertEquals("seekAbs", restart.optString("action"));
+        assertEquals(0.0, restart.optDouble("value"), 0);
+        assertEquals("skipPrev", ScreenCommands.seek("d", ScreenCommands.ids(s), s.current, s.current, 0, Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM).optString("action"));
         JSONObject back = ScreenCommands.seek("d", ScreenCommands.ids(s), s.current, 1, 0, Player.COMMAND_SEEK_BACK);
         assertEquals("seekRel", back.optString("action"));
         assertEquals(-10.0, back.optDouble("value"), 0);

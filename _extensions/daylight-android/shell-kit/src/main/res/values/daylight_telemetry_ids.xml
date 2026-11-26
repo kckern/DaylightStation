@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- View tags UiTelemetry reads: a control's telemetry name, and when a screen was shown. -->
+<resources>
+    <item name="daylight_telemetry" type="id" />
+    <item name="daylight_telemetry_shown" type="id" />
+</resources>

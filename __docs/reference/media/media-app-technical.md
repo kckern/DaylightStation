@@ -1083,6 +1083,55 @@ Log events (frontend, `mediaLog`): `home.shown`, `household.load-failed`,
 `play.spot-chosen`, `outcome.start-over`, `outcome.start-over-failed`, `move-here.initiated`,
 `move-here.succeeded`, `move-here.failed`, `played-earlier.shown`.
 
+### 2.11 Track extras (waveform, quality, lyrics)
+
+What a player shows beside the transport for one track. Router
+`__app_modules/media/media/server/api/track.mjs`, service
+`application/TrackExtrasService.mjs`, pure parsing in `domain/trackExtras.mjs`.
+Only Plex tracks have extras today (`PlexAdapter.getTrackLevels` /
+`getTrackLyrics`); any other source answers 204.
+
+#### `GET /api/v1/track/levels/:source/*?samples=N`
+
+`samples` defaults to 120 and is clamped to 16..400.
+
+```json
+200 { "samples": [0.41, 0.48, …], "quality": { "codec": "flac", "bitrate": 1411, "sampleRate": 44100, "bitDepth": 16 }, "source": "plex" }
+```
+
+- `samples`: loudness over the length of the track, `N` evenly spaced windows,
+  as bar heights 0..1 (Plex's per-window dB mapped linearly from −40 dB = 0 to
+  0 dB = 1). Plex's `/library/streams/<audio stream>/levels?subsample=N`, asked
+  only for a stream carrying `loudness` (an analysed one). `[]` when the track
+  was never analysed; the quality is still answered.
+- `quality`: from the track's media and audio stream. `bitrate` in kbps,
+  `sampleRate` in Hz. Unknown fields are left out; `quality` itself is left out
+  when nothing is known.
+- `204`: neither levels nor quality (or a source without extras). `404`: unknown item.
+
+#### `GET /api/v1/track/lyrics/:source/*`
+
+```json
+200 { "synced": true, "lines": [{ "ms": 7690, "text": "…" }, { "ms": 14710, "text": "" }], "provider": "plex" }
+```
+
+- Order: the track's own lyrics in Plex (its `streamType 4` stream: LyricFind
+  LRC, or a `.lrc`/`.txt` beside the file), then **LRCLIB**
+  (`https://lrclib.net/api/get`, sent the artist, title, album and length only,
+  under a generic client name). Turn LRCLIB off with `lyrics.lrclib: false` in
+  the household media config (`media/config.yml`); default on.
+- `synced: true`: LRC. Each time tag places its line (a line with several tags
+  appears several times), header tags (`[ar:]`, `[au:]`, `[by:]` …) are dropped,
+  `[offset:]` is applied, word-level `<mm:ss.xx>` tags are removed, and an empty
+  timed line is kept as `text: ""` (an instrumental gap). Lines are in time order.
+- `synced: false`: plain text, `ms: null`, blank runs collapsed to one.
+- `204`: no lyrics anywhere, or the LRCLIB call failed (logged
+  `media.trackLyrics.lrclib-failed`; not cached, so the next play asks again).
+  `404`: unknown item.
+- Cache: every answer, found or not, is kept at
+  `<data>/system/cache/lyrics/<source>/<id>.json` (found for 30 days, a miss for
+  7). Deleting the directory only costs lookups.
+
 ---
 
 ## 3. Reserved

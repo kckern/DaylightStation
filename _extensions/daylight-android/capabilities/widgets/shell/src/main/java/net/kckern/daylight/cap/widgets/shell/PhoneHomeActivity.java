@@ -9,14 +9,10 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ShortcutInfo;
 import android.content.pm.ShortcutManager;
-import android.content.res.ColorStateList;
 import android.graphics.Bitmap;
+import net.kckern.daylight.shellkit.NowPlayingNote;
 import net.kckern.daylight.shellkit.PlaylistArtwork;
-import android.graphics.Color;
-import android.graphics.Typeface;
-import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.Icon;
-import android.graphics.drawable.RippleDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -28,6 +24,9 @@ import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.*;
 
 import net.kckern.daylight.api.PayloadPort;
+import net.kckern.daylight.shellkit.DaylightTheme;
+import net.kckern.daylight.shellkit.DaylightTheme.Radius;
+import net.kckern.daylight.shellkit.DaylightTheme.Type;
 import net.kckern.daylight.shellkit.ShellStart;
 import net.kckern.daylight.shellkit.PlaylistWidgetState;
 import net.kckern.daylight.shellkit.SurfaceCache;
@@ -44,7 +43,6 @@ import java.util.concurrent.Executors;
 
 /** The phone launcher. Incoming intents never select or run an action. */
 public class PhoneHomeActivity extends Activity {
-    private static final int INK = 0xff14382f, GREEN = 0xff125b47, PAPER = 0xfff4f7f4;
     private static final String NOW_PLAYING = "net.kckern.daylight.cap.mediaservice.shell.NowPlayingActivity";
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private JSONArray pages = new JSONArray();
@@ -68,17 +66,25 @@ public class PhoneHomeActivity extends Activity {
     private boolean loading = true;
     private boolean launcherPicker;
     private String loadError;
+    private DaylightTheme t;
+
+    @Override protected void attachBaseContext(android.content.Context base) {
+        super.attachBaseContext(DaylightTheme.wrap(base));
+    }
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
+        net.kckern.daylight.shellkit.UiTelemetry.install(this);
+        t = DaylightTheme.of(this);
         launcherPicker = Intent.ACTION_CREATE_SHORTCUT.equals(getIntent().getAction());
         if (launcherPicker) setResult(RESULT_CANCELED);
         placements = new PlacementStore(this);
         swipe = makeSwipe();
         addedSeen = placements.addedSignature();
-        getWindow().setStatusBarColor(PAPER);
-        getWindow().setNavigationBarColor(PAPER);
-        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+        getWindow().setStatusBarColor(t.background);
+        getWindow().setNavigationBarColor(t.background);
+        // Dark bar icons on the light page; the system's light icons on the dark one.
+        getWindow().getDecorView().setSystemUiVisibility(t.dark ? 0 : View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
                 | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
         ShellStart.ensure(this);
         draw();
@@ -87,6 +93,8 @@ public class PhoneHomeActivity extends Activity {
 
     @Override protected void onStart() {
         super.onStart();
+        NowPlayingNote.listen(nowChanged);
+        drawNowStrip();
         if (!launcherPicker) {
             observingPlacement = true;
             placements.prefs.registerOnSharedPreferenceChangeListener(placementChanged);
@@ -95,6 +103,7 @@ public class PhoneHomeActivity extends Activity {
     }
 
     @Override protected void onStop() {
+        NowPlayingNote.unlisten(nowChanged);
         observingPlacement = false;
         placements.prefs.unregisterOnSharedPreferenceChangeListener(placementChanged);
         timer.removeCallbacks(placementTimeout);
@@ -234,9 +243,9 @@ public class PhoneHomeActivity extends Activity {
         for (int i = 0; i < TABS.length; i++) {
             int index = i;
             boolean selected = i == tab;
-            TextView chip = PlaylistPicker.text(this, TABS[i], 14, selected ? android.graphics.Color.WHITE : GREEN, true);
+            TextView chip = PlaylistPicker.text(this, TABS[i], Type.LABEL, selected ? t.onPrimary : t.primary, true);
             chip.setGravity(Gravity.CENTER);
-            chip.setBackground(PlaylistPicker.round(selected ? GREEN : PlaylistPicker.COLOR_CHIP, 20, this));
+            chip.setBackground(t.round(selected ? t.primary : t.surfaceVariant, Radius.LARGE));
             chip.setContentDescription(TABS[i] + (selected ? ", selected" : ""));
             chip.setOnClickListener(v -> selectTab(index, index > tab ? 1 : -1));
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(40), 1);
@@ -248,14 +257,13 @@ public class PhoneHomeActivity extends Activity {
     private void draw() {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(PAPER);
+        root.setBackgroundColor(t.background);
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.VERTICAL);
         header.setPadding(dp(16), dp(16), dp(16), dp(8));
-        TextView title = label("Daylight", 28, INK);
-        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        TextView title = t.text(this, "Daylight", Type.DISPLAY, t.ink, true);
         header.addView(title);
-        header.addView(label(launcherPicker ? "Choose a shortcut" : "Add to your Android home screen", 16, INK));
+        header.addView(label(launcherPicker ? "Choose a shortcut" : "Add to your Android home screen", Type.BODY, t.inkMuted));
         root.addView(header);
         tabs = null;
         if (tabsShown()) {
@@ -265,11 +273,57 @@ public class PhoneHomeActivity extends Activity {
             root.addView(tabs);
         }
         pageHost = new android.widget.FrameLayout(this);
-        pageHost.setBackgroundColor(PAPER);
+        pageHost.setBackgroundColor(t.background);
         root.addView(pageHost, new LinearLayout.LayoutParams(-1, 0, 1));
+        nowStrip = null;
+        if (!launcherPicker) {
+            nowStrip = new LinearLayout(this);
+            root.addView(nowStrip, new LinearLayout.LayoutParams(-1, -2));
+            drawNowStrip();
+        }
         setContentView(root);
         page = buildPage();
         pageHost.addView(page);
+    }
+
+    private LinearLayout nowStrip;
+    private final NowPlayingNote.Listener nowChanged = () -> runOnUiThread(this::drawNowStrip);
+
+    /**
+     * "Playing on Office · A song" along the bottom while something plays here or on a
+     * screen this phone is driving; a tap opens Now playing on that target. Gone when
+     * nothing does (JellyBox's playing-elsewhere strip).
+     */
+    private void drawNowStrip() {
+        if (nowStrip == null || isDestroyed()) return;
+        NowPlayingNote.Entry now = NowPlayingNote.current();
+        Intent open = new Intent().setClassName(this, NOW_PLAYING);
+        boolean can = getPackageManager().resolveActivity(open, 0) != null;
+        nowStrip.removeAllViews();
+        nowStrip.setVisibility(now == null || !can ? View.GONE : View.VISIBLE);
+        if (now == null || !can) return;
+        nowStrip.setGravity(Gravity.CENTER_VERTICAL);
+        nowStrip.setMinimumHeight(dp(56));
+        nowStrip.setPadding(dp(16), dp(6), dp(8), dp(6));
+        nowStrip.setBackground(t.pressable(new android.graphics.drawable.ColorDrawable(t.surfaceVariant)));
+        android.widget.ImageView mark = new android.widget.ImageView(this);
+        mark.setImageResource(now.playing ? android.R.drawable.ic_media_play : android.R.drawable.ic_media_pause);
+        mark.setImageTintList(android.content.res.ColorStateList.valueOf(t.primary));
+        nowStrip.addView(mark, new LinearLayout.LayoutParams(dp(22), dp(22)));
+        LinearLayout words = new LinearLayout(this);
+        words.setOrientation(LinearLayout.VERTICAL);
+        words.setPadding(dp(12), 0, dp(8), 0);
+        TextView what = t.text(this, now.title, Type.BODY, t.ink, true);
+        what.setMaxLines(1);
+        what.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        words.addView(what);
+        String where = "local".equals(now.target) ? "On this phone" : "Playing on " + now.targetName;
+        words.addView(t.text(this, now.playing ? where : where + " · paused", Type.LABEL, t.inkMuted, false));
+        nowStrip.addView(words, new LinearLayout.LayoutParams(0, -2, 1));
+        nowStrip.addView(t.text(this, "›", Type.HEADLINE, t.inkMuted, false));
+        nowStrip.setContentDescription((now.playing ? "" : "Paused: ") + now.title + ", " + where + ". Open Now playing");
+        final String target = now.target;
+        nowStrip.setOnClickListener(v -> startActivity(new Intent(open).putExtra("target", target)));
     }
 
     /** One page: the section the selected tab names, in its own scrolling view. */
@@ -279,14 +333,14 @@ public class PhoneHomeActivity extends Activity {
         placementPanel = null;
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
-        scroll.setBackgroundColor(PAPER);
+        scroll.setBackgroundColor(t.background);
         column = new LinearLayout(this);
         column.setOrientation(LinearLayout.VERTICAL);
         column.setPadding(dp(16), dp(8), dp(16), dp(16));
         scroll.addView(column);
-        if (loading) { column.addView(label("Loading services…", 16, INK)); return scroll; }
+        if (loading) { column.addView(label("Loading services…", Type.BODY, t.ink)); return scroll; }
         if (loadError != null) {
-            column.addView(label(loadError, 16, INK));
+            column.addView(label(loadError, Type.BODY, t.ink));
             row("Try again", "Try again", "open", "›", this::refresh);
             return scroll;
         }
@@ -418,8 +472,13 @@ public class PhoneHomeActivity extends Activity {
         android.graphics.Bitmap bitmap = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888);
         android.graphics.Canvas canvas = new android.graphics.Canvas(bitmap);
         android.graphics.Paint paint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
-        paint.setColor(GREEN);
-        if (adaptive) canvas.drawColor(GREEN);
+        // A launcher icon is not themed by dark mode: always the light theme's primary.
+        android.content.res.Configuration light = new android.content.res.Configuration(getResources().getConfiguration());
+        light.uiMode = (light.uiMode & ~android.content.res.Configuration.UI_MODE_NIGHT_MASK)
+                | android.content.res.Configuration.UI_MODE_NIGHT_NO;
+        int brand = DaylightTheme.of(createConfigurationContext(light)).primary;
+        paint.setColor(brand);
+        if (adaptive) canvas.drawColor(brand);
         else canvas.drawRoundRect(new android.graphics.RectF(0, 0, size, size), size * 0.22f, size * 0.22f, paint);
         android.graphics.drawable.Drawable glyph = getDrawable(glyphResource);
         if (glyph != null) {
@@ -494,7 +553,7 @@ public class PhoneHomeActivity extends Activity {
         playlistRow = null;
         playlistScreen = new LinearLayout(this);
         playlistScreen.setOrientation(LinearLayout.VERTICAL);
-        playlistScreen.setBackgroundColor(PAPER);
+        playlistScreen.setBackgroundColor(t.background);
         playlistScreen.setPadding(dp(16), dp(8), dp(16), 0);
 
         LinearLayout header = new LinearLayout(this);
@@ -502,12 +561,12 @@ public class PhoneHomeActivity extends Activity {
         Button back = actionButton("‹", "back to setup", this::closeMediaChoices);
         back.setContentDescription("Back to setup");
         header.addView(back, dp(48), dp(48));
-        TextView heading = label("Drive playlists", 24, INK);
+        TextView heading = label("Drive playlists", Type.HEADLINE, t.ink);
         if (android.os.Build.VERSION.SDK_INT >= 28) heading.setAccessibilityHeading(true); // API 28; the phone floor is 26
         header.addView(heading, new LinearLayout.LayoutParams(0, -2, 1));
-        TextView add = PlaylistPicker.text(this, "+ Add", 15, android.graphics.Color.WHITE, true);
+        TextView add = PlaylistPicker.text(this, "+ Add", Type.BODY, t.onPrimary, true);
         add.setGravity(Gravity.CENTER);
-        add.setBackground(PlaylistPicker.round(GREEN, 20, this));
+        add.setBackground(t.round(t.primary, Radius.LARGE));
         add.setOnClickListener(v -> pickPlaylistToAdd());
         header.addView(add, new LinearLayout.LayoutParams(dp(88), dp(40)));
         playlistScreen.addView(header);
@@ -520,7 +579,7 @@ public class PhoneHomeActivity extends Activity {
         playlistGrid = new LinearLayout(this);
         playlistGrid.setOrientation(LinearLayout.VERTICAL);
         content.addView(playlistGrid);
-        playlistStatus = label("", 16, INK);
+        playlistStatus = label("", Type.BODY, t.ink);
         playlistStatus.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         content.addView(playlistStatus);
         setContentView(playlistScreen);
@@ -634,18 +693,17 @@ public class PhoneHomeActivity extends Activity {
                 setMeasuredDimension(side, side);
             }
         };
-        cover.setBackgroundColor(0xffdcebe4);
+        cover.setBackgroundColor(t.tile);
         cover.setImageResource(drawable("play"));
         cover.setScaleType(ImageView.ScaleType.CENTER);
         cover.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         tile.addView(cover, new LinearLayout.LayoutParams(-1, -2));
-        TextView name = label(title, 14, INK);
+        TextView name = label(title, Type.LABEL, t.ink);
         tile.setOnClickListener(view -> managePlaylist(contentId, title));
         name.setPadding(0, dp(6), 0, 0);
         name.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         tile.addView(name);
-        TextView note = label(where, 12, INK);
-        note.setAlpha(0.7f);
+        TextView note = label(where, Type.CAPTION, t.inkMuted);
         note.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         tile.addView(note);
         playlistRow.addView(tile, new LinearLayout.LayoutParams(0, -2, 1));
@@ -699,7 +757,7 @@ public class PhoneHomeActivity extends Activity {
     }
 
     private void showWidgetHandoff(LauncherPlacement request) {
-        AlertDialog progress = new AlertDialog.Builder(this).setTitle(request.title)
+        AlertDialog progress = new AlertDialog.Builder(this, DaylightTheme.alert()).setTitle(request.title)
                 .setMessage("Confirm placement in Android.")
                 .setNegativeButton("Close", null)
                 .setNeutralButton("Place manually", (dialog, which) -> showManualWidgetPlacement(request.title))
@@ -841,15 +899,13 @@ public class PhoneHomeActivity extends Activity {
         LinearLayout banner = new LinearLayout(this);
         banner.setOrientation(LinearLayout.VERTICAL);
         banner.setPadding(dp(16), dp(12), dp(16), dp(12));
-        banner.setBackground(PlaylistPicker.round(problem ? 0xfffff1d6 : PlaylistPicker.COLOR_CHIP, 16, this));
-        TextView headline = PlaylistPicker.text(this, (problem ? "" : "✓  ") + request.title, 15, INK, true);
+        banner.setBackground(t.round(problem ? t.attentionContainer : t.surfaceVariant, Radius.MEDIUM));
+        TextView headline = PlaylistPicker.text(this, (problem ? "" : "✓  ") + request.title, Type.BODY, t.ink, true);
         banner.addView(headline);
-        TextView detail = PlaylistPicker.text(this, message, 14, INK, false);
-        detail.setAlpha(0.85f);
+        TextView detail = PlaylistPicker.text(this, message, Type.LABEL, t.ink, false);
         banner.addView(detail);
         if (status == LauncherPlacement.Status.UNCONFIRMED || status == LauncherPlacement.Status.REFUSED) {
-            TextView retry = PlaylistPicker.text(this, "Tap the item below to retry, or check your launcher's shortcuts.", 13, INK, false);
-            retry.setAlpha(0.7f);
+            TextView retry = PlaylistPicker.text(this, "Tap the item below to retry, or check your launcher's shortcuts.", Type.LABEL, t.inkMuted, false);
             banner.addView(retry);
         }
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
@@ -871,7 +927,7 @@ public class PhoneHomeActivity extends Activity {
 
     private void section(String name) {
         buttonRow = null;
-        TextView heading = label(name, 18, INK);
+        TextView heading = label(name, Type.TITLE, t.ink);
         heading.setPadding(0, dp(10), 0, dp(2));
         column.addView(heading);
     }
@@ -881,8 +937,7 @@ public class PhoneHomeActivity extends Activity {
         line.setGravity(Gravity.CENTER_VERTICAL);
         line.setMinimumHeight(dp(48));
         line.setPaddingRelative(dp(8), dp(4), dp(8), dp(4));
-        line.setBackground(new RippleDrawable(ColorStateList.valueOf(0x30125b47),
-                round(Color.WHITE, 10), null));
+        line.setBackground(t.pressable(t.round(t.surface, Radius.SMALL)));
         line.setOnClickListener(v -> click.run());
         line.setFocusable(true);
         line.setContentDescription(action.equals(name) ? name : action + ", " + name);
@@ -894,18 +949,18 @@ public class PhoneHomeActivity extends Activity {
         });
 
         ImageView icon = new ImageView(this);
-        icon.setBackground(round(GREEN, 8));
+        icon.setBackground(DaylightTheme.round(t.primary, dp(8)));
         icon.setPadding(dp(6), dp(6), dp(6), dp(6));
         icon.setImageResource(drawable(glyph));
         icon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         line.addView(icon, dp(24), dp(24));
 
-        TextView heading = label(name, 14, INK);
+        TextView heading = label(name, Type.LABEL, t.ink);
         heading.setPaddingRelative(dp(6), 0, dp(4), 0);
         heading.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         line.addView(heading, new LinearLayout.LayoutParams(0, -2, 1));
 
-        TextView cue = label(indicator, 20, GREEN);
+        TextView cue = PlaylistPicker.glyph(this, indicator, 20, t.primary);
         cue.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         line.addView(cue);
 
@@ -931,16 +986,8 @@ public class PhoneHomeActivity extends Activity {
         return button;
     }
 
-    private TextView label(String text, int size, int color) {
-        TextView view = new TextView(this);
-        view.setText(text); view.setTextSize(size); view.setTextColor(color);
-        return view;
-    }
-
-    private GradientDrawable round(int color, int radius) {
-        GradientDrawable shape = new GradientDrawable();
-        shape.setColor(color); shape.setCornerRadius(dp(radius));
-        return shape;
+    private TextView label(String text, Type type, int color) {
+        return t.text(this, text, type, color, false);
     }
 
     private void toast(String message) { Toast.makeText(this, message, Toast.LENGTH_LONG).show(); }

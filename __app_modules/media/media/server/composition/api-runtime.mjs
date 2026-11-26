@@ -123,5 +123,25 @@ export async function createMediaApiRuntime({ configService, mediaProgressMemory
     }
   }
 
+  // Track extras for players: the loudness waveform + audio quality, and lyrics
+  // (the source's own first, then LRCLIB unless media config `lyrics.lrclib: false`),
+  // with looked-up lyrics cached under <data>/system/cache/lyrics.
+  // See __docs/reference/media/media-app-technical.md (Track extras).
+  {
+    const { createTrackRouter } = await import("../api/track.mjs");
+    const { TrackExtrasService } = await import("../application/TrackExtrasService.mjs");
+    const { LrclibLyricsAdapter } = await import("../adapters/lyrics/LrclibLyricsAdapter.mjs");
+    const { FileLyricsCache } = await import("../adapters/lyrics/FileLyricsCache.mjs");
+    const trackLogger = rootLogger.child({ module: 'track-extras' });
+    const trackExtras = new TrackExtrasService({
+      registry: contentRegistry,
+      lrclib: new LrclibLyricsAdapter(),
+      cache: new FileLyricsCache({ dir: path.join(configService.getDataDir(), 'system', 'cache', 'lyrics') }),
+      lrclibEnabled: () => (configService.getHouseholdAppConfig(undefined, 'media') || {})?.lyrics?.lrclib !== false,
+      logger: trackLogger,
+    });
+    v1Routers.track = createTrackRouter({ trackExtras, logger: trackLogger });
+  }
+
   return { householdMediaMemory, mediaHouse };
 }

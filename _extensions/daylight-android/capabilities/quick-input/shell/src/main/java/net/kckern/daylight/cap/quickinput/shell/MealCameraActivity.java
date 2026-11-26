@@ -216,6 +216,8 @@ public final class MealCameraActivity extends Activity implements TextureView.Su
         TextView chip = new TextView(this);
         chip.setText(text);
         chip.setTextSize(sp);
+        // Camera chrome stays white on black in either theme; the household font still applies.
+        chip.setTypeface(net.kckern.daylight.shellkit.DaylightTheme.of(this).face(false));
         chip.setTextColor(Color.WHITE);
         chip.setGravity(Gravity.CENTER);
         GradientDrawable bg = new GradientDrawable();

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The window themes of values/ on the dark framework parents. -->
+<resources>
+    <style name="Theme.Daylight" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/daylight_background</item>
+        <item name="android:colorBackground">@color/daylight_background</item>
+        <item name="android:colorPrimary">@color/daylight_primary</item>
+        <item name="android:colorPrimaryDark">@color/daylight_background</item>
+        <item name="android:colorAccent">@color/daylight_primary</item>
+        <item name="android:textColorPrimary">@color/daylight_ink</item>
+        <item name="android:statusBarColor">@color/daylight_background</item>
+        <item name="android:navigationBarColor">@color/daylight_background</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:fontFamily">@string/daylight_font_family</item>
+    </style>
+    <style name="Theme.Daylight.WithTitle" parent="@android:style/Theme.Material">
+        <item name="android:windowBackground">@color/daylight_background</item>
+        <item name="android:colorBackground">@color/daylight_background</item>
+        <item name="android:colorPrimary">@color/daylight_surface</item>
+        <item name="android:colorPrimaryDark">@color/daylight_background</item>
+        <item name="android:colorAccent">@color/daylight_primary</item>
+        <item name="android:textColorPrimary">@color/daylight_ink</item>
+        <item name="android:navigationBarColor">@color/daylight_background</item>
+        <item name="android:fontFamily">@string/daylight_font_family</item>
+    </style>
+    <style name="Theme.Daylight.Dialog" parent="@android:style/Theme.Material.Dialog">
+        <item name="android:colorBackground">@color/daylight_surface</item>
+        <item name="android:colorPrimary">@color/daylight_primary</item>
+        <item name="android:colorAccent">@color/daylight_primary</item>
+        <item name="android:textColorPrimary">@color/daylight_ink</item>
+        <item name="android:fontFamily">@string/daylight_font_family</item>
+    </style>
+    <style name="Theme.Daylight.Alert" parent="@android:style/Theme.Material.Dialog.Alert">
+        <item name="android:colorBackground">@color/daylight_surface</item>
+        <item name="android:colorPrimary">@color/daylight_primary</item>
+        <item name="android:colorAccent">@color/daylight_primary</item>
+        <item name="android:textColorPrimary">@color/daylight_ink</item>
+        <item name="android:fontFamily">@string/daylight_font_family</item>
+    </style>
+</resources>

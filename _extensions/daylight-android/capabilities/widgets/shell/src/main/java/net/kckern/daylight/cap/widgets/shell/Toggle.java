@@ -11,12 +11,13 @@ import android.view.View;
 import java.util.function.Consumer;
 
 /**
- * An on/off switch drawn here, so it looks the same everywhere: a green pill when on, a grey
- * one when off, and a white knob that always has an edge, so it never disappears into a white
- * card. The platform switch cut its knob out of its own track.
+ * An on/off switch drawn here, so it looks the same everywhere: a pill in the theme's primary
+ * when on, its disabled color when off, and a knob in the surface color that always has an
+ * edge (a soft shadow), so it never disappears into a card of the same color.
+ * The platform switch cut its knob out of its own track.
  */
 final class Toggle extends View {
-    private static final int ON = PlaylistPicker.COLOR_GREEN, OFF = 0xffb9c7c0;
+    private final int onColor, offColor, knob, shadow;
 
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF box = new RectF();
@@ -27,6 +28,11 @@ final class Toggle extends View {
 
     Toggle(Context context, boolean on) {
         super(context);
+        net.kckern.daylight.shellkit.DaylightTheme t = net.kckern.daylight.shellkit.DaylightTheme.of(context);
+        onColor = t.primary;
+        offColor = t.disabled;
+        knob = t.surface;
+        shadow = t.scrim;
         this.on = on;
         this.position = on ? 1f : 0f;
         setClickable(true);
@@ -78,15 +84,15 @@ final class Toggle extends View {
         float density = getResources().getDisplayMetrics().density;
         float w = getWidth(), h = getHeight(), pad = 4 * density, r = h / 2f - pad;
         paint.setStyle(Paint.Style.FILL);
-        paint.setColor(blend(OFF, ON, position));
+        paint.setColor(blend(offColor, onColor, position));
         box.set(0, 0, w, h);
         canvas.drawRoundRect(box, h / 2f, h / 2f, paint);
         float cx = pad + r + position * (w - 2 * pad - 2 * r);
         float cy = h / 2f;
         // A soft edge under the knob keeps it visible on any background.
-        paint.setColor(0x33000000);
+        paint.setColor(shadow);
         canvas.drawCircle(cx, cy + density, r + 1.5f * density, paint);
-        paint.setColor(Color.WHITE);
+        paint.setColor(knob);
         canvas.drawCircle(cx, cy, r, paint);
     }
 

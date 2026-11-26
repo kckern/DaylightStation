@@ -58,6 +58,8 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
     /** The pinned controllers as the payload last cached them; read at each connection. */
     private final java.util.function.Supplier<String> pinCache;
     private final Runnable stopPlayback;
+    /** The sleep timer: set by its own session command, held here for the session's life. */
+    final SleepTimer sleep = new SleepTimer();
     private DrivingRadio radio;
     private Runnable cancelHandoff = () -> {};
     private final AtomicBoolean waitingForPayload = new AtomicBoolean();
@@ -126,12 +128,17 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
     private static SessionCommands sessionCommands() {
         SessionCommands.Builder commands = MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon();
         for (String action : CarControls.ACTIONS) commands.add(new SessionCommand(action, Bundle.EMPTY));
+        commands.add(new SessionCommand(SleepTimer.ACTION, Bundle.EMPTY));
         return commands.build();
     }
 
     @Override
     public ListenableFuture<SessionResult> onCustomCommand(MediaSession session, MediaSession.ControllerInfo controller,
                                                             SessionCommand command, Bundle arguments) {
+        if (SleepTimer.ACTION.equals(command.customAction)) {
+            sleep.set(session, arguments.getInt(SleepTimer.ARG_MINUTES, 0));
+            return Futures.immediateFuture(new SessionResult(SessionResult.RESULT_SUCCESS));
+        }
         if (!CarControls.run(command.customAction, session.getPlayer(), stopPlayback))
             return MediaLibrarySession.Callback.super.onCustomCommand(session, controller, command, arguments);
         return Futures.immediateFuture(new SessionResult(SessionResult.RESULT_SUCCESS));

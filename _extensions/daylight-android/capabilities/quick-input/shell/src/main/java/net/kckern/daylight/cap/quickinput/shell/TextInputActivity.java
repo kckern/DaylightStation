@@ -1,10 +1,12 @@
 package net.kckern.daylight.cap.quickinput.shell;
 
+import net.kckern.daylight.shellkit.DaylightTheme;
+import net.kckern.daylight.shellkit.DaylightTheme.Radius;
+import net.kckern.daylight.shellkit.DaylightTheme.Type;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
 import android.os.Build;
-import android.graphics.Color;
 import android.os.Bundle;
 import android.text.Editable;
 import android.text.InputFilter;
@@ -50,8 +52,13 @@ public class TextInputActivity extends Activity {
     private TextView cancel;
     private TextView send;
 
+    @Override protected void attachBaseContext(android.content.Context base) {
+        super.attachBaseContext(DaylightTheme.wrap(base));
+    }
+
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        net.kckern.daylight.shellkit.UiTelemetry.install(this);
         setFinishOnTouchOutside(false);
         if (Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false);
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE
@@ -206,9 +213,10 @@ public class TextInputActivity extends Activity {
         layout.setOrientation(LinearLayout.VERTICAL);
         int pad = CaptureUi.dp(this, 20);
         layout.setPadding(pad, pad, pad, pad / 2);
-        layout.setBackgroundColor(CaptureUi.PAPER);
+        DaylightTheme t = DaylightTheme.of(this);
+        layout.setBackgroundColor(t.background);
 
-        TextView heading = CaptureUi.text(this, label, 22, CaptureUi.INK, true);
+        TextView heading = CaptureUi.text(this, label, Type.HEADLINE, t.ink, true);
         if (android.os.Build.VERSION.SDK_INT >= 28) heading.setAccessibilityHeading(true); // API 28; the phone floor is 26
         layout.addView(heading);
 
@@ -220,9 +228,9 @@ public class TextInputActivity extends Activity {
         field.setMaxLines(10);
         field.setGravity(Gravity.TOP | Gravity.START);
         field.setHint("Type here");
-        field.setTextSize(17);
-        field.setTextColor(CaptureUi.INK);
-        field.setBackground(CaptureUi.round(this, Color.WHITE, 16));
+        t.style(field, Type.BODY, t.ink, false);
+        field.setHintTextColor(t.inkMuted);
+        field.setBackground(t.round(t.surface, Radius.MEDIUM));
         field.setPadding(CaptureUi.dp(this, 16), CaptureUi.dp(this, 14), CaptureUi.dp(this, 16), CaptureUi.dp(this, 14));
         // The intake's limit, held as the text is typed: what does not fit is not taken.
         field.setFilters(new InputFilter[] { (source, start, end, into, dstart, dend) -> {
@@ -230,8 +238,7 @@ public class TextInputActivity extends Activity {
             int take = TextDraft.accepted(kept, source, start, end, TextDraft.MAX_BYTES);
             return take == end - start ? null : source.subSequence(start, start + take);
         } });
-        counter = CaptureUi.text(this, "", 12, CaptureUi.INK, false);
-        counter.setAlpha(0.6f);
+        counter = CaptureUi.text(this, "", Type.CAPTION, t.inkMuted, false);
         field.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) { }
@@ -298,7 +305,7 @@ public class TextInputActivity extends Activity {
         invalidateDiscard();
         TextDraftWriter selected = writer;
         DraftDiscard.Request requested = confirmation.ask(selected.id);
-        discardDialog = new AlertDialog.Builder(this)
+        discardDialog = new AlertDialog.Builder(this, DaylightTheme.alert())
                 .setTitle("Discard this text draft?")
                 .setNegativeButton("Keep draft", null)
                 .setPositiveButton("Discard draft", (dialog, which) -> {

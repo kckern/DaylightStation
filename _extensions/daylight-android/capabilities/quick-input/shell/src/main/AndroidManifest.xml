@@ -23,7 +23,7 @@
             android:label="Voice memo"
             android:launchMode="singleTop"
             android:taskAffinity=""
-            android:theme="@android:style/Theme.DeviceDefault.Dialog" />
+            android:theme="@style/Theme.Daylight.Dialog" />
 
         <!-- Not exported: started by this app only, when the payload has accepted a keyed
              input link. Typed text leaves it only on Send. Kept out of the recents list, and
@@ -35,7 +35,7 @@
             android:label="Quick input"
             android:launchMode="singleTop"
             android:taskAffinity=""
-            android:theme="@android:style/Theme.DeviceDefault.Dialog"
+            android:theme="@style/Theme.Daylight.Dialog"
             android:windowSoftInputMode="stateVisible|adjustResize" />
 
         <!-- Not exported: started by this app only, when the payload has accepted a keyed
@@ -62,7 +62,7 @@
             android:excludeFromRecents="true"
             android:label="Photo"
             android:taskAffinity=""
-            android:theme="@android:style/Theme.DeviceDefault.Dialog" />
+            android:theme="@style/Theme.Daylight.Dialog" />
 
         <!-- Exported, no permission: Daylight in Android's share sheet. Another app's share
              (plain text: a link, a title around it) opens it; nothing is sent until the owner
@@ -75,7 +75,7 @@
             android:label="Daylight"
             android:launchMode="standard"
             android:taskAffinity=""
-            android:theme="@android:style/Theme.DeviceDefault.Dialog">
+            android:theme="@style/Theme.Daylight.Dialog">
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -94,7 +94,7 @@
             android:exported="false"
             android:excludeFromRecents="true"
             android:label="Capture status"
-            android:theme="@android:style/Theme.DeviceDefault" />
+            android:theme="@style/Theme.Daylight.WithTitle" />
 
         <!-- Not exported. Gives the camera app the one file a capture is written to, by a
              grant the photo screen makes for that file alone; grants can be made for

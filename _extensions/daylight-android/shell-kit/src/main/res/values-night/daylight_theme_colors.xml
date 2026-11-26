@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The dark seeds: used when the phone is in dark mode, or always when a device file
+     sets theme.mode: dark. Same names as values/. -->
+<resources>
+    <color name="daylight_background">#0F1916</color>
+    <color name="daylight_surface">#18241F</color>
+    <color name="daylight_ink">#E6F2EC</color>
+    <color name="daylight_primary">#4FC99A</color>
+    <color name="daylight_secondary">#8CC3DC</color>
+    <color name="daylight_danger">#F2B8B5</color>
+    <color name="daylight_attention">#FFB870</color>
+</resources>

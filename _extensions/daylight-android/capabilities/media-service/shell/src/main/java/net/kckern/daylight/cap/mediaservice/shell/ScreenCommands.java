@@ -46,6 +46,11 @@ final class ScreenCommands {
             case Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM:
                 return transport(device, "skipNext");
             case Player.COMMAND_SEEK_TO_PREVIOUS:
+                // Media3 has already chosen, as every player does: more than 3 s in (or
+                // nothing before), "previous" restarts the item, which arrives as the
+                // current index. The same on the phone, the car and here.
+                if (index == current) return transport(device, "seekAbs", 0);
+                return transport(device, "skipPrev");
             case Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM:
                 return transport(device, "skipPrev");
             case Player.COMMAND_SEEK_BACK:

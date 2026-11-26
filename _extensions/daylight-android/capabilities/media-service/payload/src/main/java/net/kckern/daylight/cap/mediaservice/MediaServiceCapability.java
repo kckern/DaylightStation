@@ -223,6 +223,26 @@ public final class MediaServiceCapability implements Capability {
         if (w != null) w.shutdownNow();
     }
 
+    /**
+     * The waveform (and quality) or the lyrics of one track, for Now playing. {ok, none:true}
+     * when the backend has none, so a screen leaves the strip or the button out rather than
+     * showing an error. Only content ids are accepted: the id becomes path segments.
+     */
+    private Outcome trackDetail(JSONObject request, boolean levels) throws Exception {
+        String id = Json.str(request, "id");
+        if (!ContentId.valid(id)) return failure(400, "bad_request");
+        int samples = Math.max(16, Math.min(400, request.optInt("samples", 120)));
+        try {
+            JSONObject found = levels ? api.levels(id, samples) : api.lyrics(id);
+            if (found == null) return new Outcome(200, Replies.ok().put("none", true));
+            return new Outcome(200, Replies.ok().put(levels ? "levels" : "lyrics", found));
+        } catch (MediaApi.Refused refused) {
+            // An older backend without the route answers 404: the same as having none.
+            if (refused.status == 404) return new Outcome(200, Replies.ok().put("none", true));
+            throw refused;
+        }
+    }
+
     // ── the one entry for the port and the routes ─────────────────────────────
 
     Outcome call(JSONObject request) {
@@ -237,6 +257,8 @@ public final class MediaServiceCapability implements Capability {
             if ("event".equals(op)) return event(request);
             if ("action".equals(op)) return action(request);
             if ("search".equals(op)) return search(request);
+            if ("track-levels".equals(op)) return trackDetail(request, true);
+            if ("track-lyrics".equals(op)) return trackDetail(request, false);
             if ("screens".equals(op)) return new Outcome(200, screens.screens());
             if ("screen-session".equals(op)) return new Outcome(200, screens.session(Json.str(request, "device")));
             if ("screen-command".equals(op)) return new Outcome(200, screens.command(request));

@@ -46,6 +46,35 @@ When `sessionLog: true` is set on a child logger, the frontend automatically emi
 
 The frontend logger sends events over a shared WebSocket connection to the backend. Each event carries its full `context` object, including `app` and `sessionLog`.
 
+### 2b. Client log over HTTP (clients with no WebSocket)
+
+The DaylightStation Android app's native screens have no WebSocket. They batch their
+events and send them to **`POST /api/v1/client-log`**
+(`__backend/src/4_api/v1/routers/clientLog.mjs`), which hands them to the same
+`ingestFrontendLogs` as the WebSocket `logging` topic: same normalization, same
+process-wide rate limiter, same log store.
+
+```json
+POST /api/v1/client-log
+{ "source": "android",
+  "events": [{ "event": "ui.tap", "level": "info", "ts": "…",
+               "data": { "control": "np.play", "screen": "now-playing" },
+               "context": { "app": "phone", "component": "now-playing" } }] }
+→ 202 { "accepted": 1, "dropped": 0 }
+```
+
+- `context.source` is set to the body's `source` (a lowercase slug, default `android`):
+  ingestion would otherwise call these events `frontend`. Everything else in
+  `context` passes through, so `context.app:phone` filters them.
+- The `X-Daylight-Device` header (e.g. `fleet:phone`) becomes `context.device`.
+- At most 200 events per request and a 128 KB body (413 above either); `400` for a
+  body that is not `{events: [...]}`. An entry that is not an object with a string
+  `event` is dropped and counted in `dropped`.
+- No auth beyond the other device routes (household network or VPN).
+
+Reading them: `context.source:android AND _msg:"ui.tap"`, or
+`context.source:android | stats by ("data.control") count()` for the most-pressed controls.
+
 ### 3. Backend: Ingestion
 
 `__backend/src/1_adapters/logging/FrontendLogIngestion.mjs` processes incoming events:
