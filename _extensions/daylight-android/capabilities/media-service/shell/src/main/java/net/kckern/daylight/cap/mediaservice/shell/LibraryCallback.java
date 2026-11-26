@@ -387,7 +387,10 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
     }
 
     private static Exception failure(Throwable e) {
-        Log.w(TAG, "could not resolve a play request: " + e.getClass().getSimpleName());
+        // The payload's answer is an error code (bad_request, backend_refused, unreachable...),
+        // never an id or a title: it says which way a play failed.
+        String why = e instanceof BrowseAnswer.Failed ? " " + e.getMessage() : "";
+        Log.w(TAG, "could not resolve a play request: " + e.getClass().getSimpleName() + why);
         return e instanceof Exception ? (Exception) e : new IllegalStateException(e.getClass().getSimpleName());
     }
 }
