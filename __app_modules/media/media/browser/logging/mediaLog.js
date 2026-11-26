@@ -215,6 +215,10 @@ export const mediaLog = {
   playPrepared:           info('play.prepared'),
   playPrepareUnavailable: info('play.prepare-unavailable'),
   playPrepareFailed:      debug('play.prepare-failed'),
+  // Info view preview (browse/InfoPreview.jsx): muted, on this device, inside
+  // the art — never a play. `seconds` is how far it got when stopped.
+  previewStarted:         info('preview.started'),
+  previewStopped:         info('preview.stopped'),
 };
 
 export default mediaLog;

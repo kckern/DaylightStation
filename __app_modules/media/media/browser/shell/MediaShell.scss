@@ -1058,6 +1058,60 @@ $amber-ink: $on-accent;
   max-width: 680px;
 
   .detail-poster { max-width: 280px; }
+
+  // Preview (browse/InfoPreview.jsx) plays inside the art's own box. Its label
+  // and control are neutral on purpose: amber belongs to PLAY.
+  .detail-preview {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--mantine-spacing-xs);
+  }
+
+  .detail-poster-box {
+    position: relative;
+    max-width: 280px;
+
+    &[data-previewing] { max-width: 480px; width: 100%; }
+  }
+
+  .detail-preview-video {
+    display: block;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    object-fit: contain;
+    background: var(--mantine-color-dark-8);
+    border-radius: var(--mantine-radius-md);
+  }
+
+  .detail-preview-label {
+    position: absolute;
+    top: var(--mantine-spacing-xs);
+    left: var(--mantine-spacing-xs);
+    padding: 2px 8px;
+    border-radius: var(--mantine-radius-sm);
+    background: scrim(0.6);
+    color: var(--mantine-color-dark-0);
+    font-size: var(--mantine-font-size-xs);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    pointer-events: none;
+  }
+
+  .detail-preview-sound {
+    position: absolute;
+    right: var(--mantine-spacing-xs);
+    bottom: var(--mantine-spacing-xs);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: scrim(0.6);
+    color: var(--mantine-color-dark-0);
+    @include media-focus-ring;
+  }
 }
 
 // ---- Fleet ----------------------------------------------------------------------

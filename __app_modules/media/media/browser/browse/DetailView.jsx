@@ -6,9 +6,11 @@ import { ItemQualityButton } from "../quality/PlaybackQualityButtons.jsx";
 // Play here / Play on… beside it for the other places, then the queue verbs.
 // Opening this page never plays anything: it is where a look lands. It does
 // ask the server to prepare the start on that screen (cast/usePrepareStart.js),
-// which touches no screen.
+// which touches no screen. A video may be previewed inside its art
+// (InfoPreview: muted, on this device, records nothing); every play verb
+// stops that preview before it dispatches.
 import React, { useEffect, useRef, useState } from 'react';
-import { Stack, Title, Text, Button, Group, Image } from '@mantine/core';
+import { Stack, Title, Text, Button, Group } from '@mantine/core';
 import { IconPlayerPlayFilled, IconPlayerTrackNext, IconRowInsertTop, IconPlaylistAdd, IconCast } from '@tabler/icons-react';
 import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import { EmptyState } from '@/lib/ui/states.jsx';
@@ -30,6 +32,7 @@ import mediaLog from "../logging/mediaLog.js";
 import { resultSubtitle } from "../search/resultPresentation.js";
 import { usePlayDestination } from "../habits/usePlayDestination.js";
 import { usePrepareStart } from "../cast/usePrepareStart.js";
+import { InfoPreview } from "./InfoPreview.jsx";
 
 // `focusPlay`: opened from search — PLAY takes focus once it can be pressed,
 // so a second Enter plays by that button's own activation (no key handler
@@ -39,6 +42,9 @@ import { usePrepareStart } from "../cast/usePrepareStart.js";
 export function DetailView({ contentId, focusPlay = false }) {
   const [oneShot, setOneShot] = useState(null);
   const playRef = useRef(null);
+  const previewRef = useRef(null);
+  // Synchronously, before any play verb dispatches: a preview never overlaps a play.
+  const stopPreview = () => previewRef.current?.stop();
   const playFocusedRef = useRef(false);
   const { info, loading, error, reload } = useContentInfo(contentId);
   const { regionProps, retry } = useRetryRegion(reload, loading);
@@ -106,9 +112,7 @@ export function DetailView({ contentId, focusPlay = false }) {
 
     body = (
       <>
-        {info.thumbnail && (
-          <Image src={info.thumbnail} alt="" className="detail-poster" radius="md" />
-        )}
+        <InfoPreview ref={previewRef} item={detailItem} />
         <Title order={1}>{info.title ?? contentId}</Title>
         {facts && <Text size="sm" c="dimmed" data-testid="detail-facts">{facts}</Text>}
         {description && <Text c="dimmed">{description}</Text>}
@@ -122,6 +126,7 @@ export function DetailView({ contentId, focusPlay = false }) {
             leftSection={elsewhere ? <IconCast size={18} /> : <IconPlayerPlayFilled size={18} />}
             loading={!collection && pendingResume}
             onClick={() => {
+              stopPreview();
               const route = collection ? dispatchLeafVerb('playNow', contentId, detailItem) : run('playNow', detailItem, { entry });
               if (route === 'ask') setOneShot({ kind: 'playOn', item: detailItem });
             }}
@@ -132,14 +137,14 @@ export function DetailView({ contentId, focusPlay = false }) {
             <Button
               data-testid="detail-play-here"
               variant="default"
-              onClick={() => dispatchLeafVerb('playNow', contentId, detailItem, { targetIds: [] })}
+              onClick={() => { stopPreview(); dispatchLeafVerb('playNow', contentId, detailItem, { targetIds: [] }); }}
             >
               Play here
             </Button>
           )}
-          <Button variant="default" data-testid="detail-play-on" onClick={() => setOneShot({ kind: 'playOn', item: detailItem })}>Play on…</Button>
+          <Button variant="default" data-testid="detail-play-on" onClick={() => { stopPreview(); setOneShot({ kind: 'playOn', item: detailItem }); }}>Play on…</Button>
           <ItemQualityButton item={detailItem} />
-          {isContainer(detailItem) && <Button variant="default" onClick={() => { if (dispatchLeafVerb('shuffle', contentId, detailItem) === 'ask') setOneShot({ kind: 'playOn', item: detailItem }); }}>{elsewhere ? `Shuffle on ${whereName}` : 'Shuffle'}</Button>}
+          {isContainer(detailItem) && <Button variant="default" onClick={() => { stopPreview(); if (dispatchLeafVerb('shuffle', contentId, detailItem) === 'ask') setOneShot({ kind: 'playOn', item: detailItem }); }}>{elsewhere ? `Shuffle on ${whereName}` : 'Shuffle'}</Button>}
           <Button data-testid="detail-play-next" variant="default" leftSection={<IconPlayerTrackNext size={16} />}
                   {...playNextHold.bind}
                   onClick={playNextHold.guardClick(() => dispatchLeafVerb('playNext', contentId, detailItem))}>
