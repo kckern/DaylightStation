@@ -15,10 +15,12 @@ package net.kckern.daylight.cap.mediaservice;
  * URL: what plays is whatever the backend answers for a content id.
  */
 final class MediaId {
-    enum Kind { ROOT, RECENT, CATALOG, CONTAINER, AUDIO_SOURCE, AUDIO_LIST, LEAF }
+    enum Kind { ROOT, RECENT, CONTINUE, CATALOG, CONTAINER, AUDIO_SOURCE, AUDIO_LIST, LEAF }
 
     static final String ROOT = "root";
     static final String RECENT = "recent";
+    /** Long items in progress, then the lists played lately: the car's Continue tab. */
+    static final String CONTINUE = "continue";
     static final String CATALOG = "catalog";
     /** The most children of one container that can be reached by paging. */
     static final int MAX_SKIP = 100_000;
@@ -52,6 +54,7 @@ final class MediaId {
         if (raw == null) throw unknown();
         if (ROOT.equals(raw)) return new MediaId(Kind.ROOT, null, null, 0);
         if (RECENT.equals(raw)) return new MediaId(Kind.RECENT, null, null, 0);
+        if (CONTINUE.equals(raw)) return new MediaId(Kind.CONTINUE, null, null, 0);
         if (CATALOG.equals(raw)) return new MediaId(Kind.CATALOG, null, null, 0);
         if (raw.length() > 2 * ContentId.MAX_LENGTH + 16 || raw.length() < 3 || raw.charAt(1) != ':') throw unknown();
         String rest = raw.substring(2);

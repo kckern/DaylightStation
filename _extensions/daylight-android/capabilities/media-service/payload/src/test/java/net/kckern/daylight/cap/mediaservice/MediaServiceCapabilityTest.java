@@ -189,8 +189,10 @@ public class MediaServiceCapabilityTest {
         assertTrue(clear.body.getBoolean("accepted"));
         assertEquals(400, cap.call(new JSONObject().put("op", "screen-command").put("device", "office-tv").put("command", "system")).status);
         assertEquals(400, cap.call(new JSONObject().put("op", "screen-session").put("device", "../x")).status);
-        assertEquals(4, sent.size());
-        assertTrue(sent.get(3), sent.get(3).endsWith("/session/queue/clear"));
+        // device config, the household screen list (browsers open as screens), session, play, clear.
+        assertEquals(5, sent.size());
+        assertTrue(sent.get(1), sent.get(1).endsWith("/api/v1/media/screens"));
+        assertTrue(sent.get(4), sent.get(4).endsWith("/session/queue/clear"));
     }
 
     @Test public void aKeyedMediaLinkStartsThePlayerWithAContentIdAndNothingElse() throws Exception {
@@ -602,5 +604,54 @@ public class MediaServiceCapabilityTest {
         // samples are clamped to 16..400
         cap.call(new JSONObject().put("op", "track-levels").put("id", "plex:9").put("samples", 5000));
         assertTrue(api.calls.contains("levels plex:9 400"));
+    }
+
+    /** Continue listening: long audio started and not finished, newest first; songs, video and finished items stay out. */
+    @Test public void continueListsLongAudioInProgress() throws Exception {
+        api.responses.put("recent 50", "{\"items\":["
+                + "{\"contentId\":\"plex:727120\",\"title\":\"A book\",\"type\":\"track\",\"playhead\":178,\"duration\":17800,\"parentTitle\":\"The book\"},"
+                + "{\"contentId\":\"plex:352337\",\"title\":\"A song\",\"type\":\"track\",\"playhead\":24,\"duration\":64},"
+                + "{\"contentId\":\"plex:775444\",\"title\":\"A film\",\"type\":\"movie\",\"playhead\":62,\"duration\":5636},"
+                + "{\"contentId\":\"plex:377395\",\"title\":\"A lecture\",\"type\":\"track\",\"playhead\":4600,\"duration\":4636},"
+                + "{\"contentId\":\"plex:1\",\"title\":\"Barely begun\",\"type\":\"track\",\"playhead\":5,\"duration\":4000},"
+                + "{\"contentId\":\"plex:2\",\"title\":\"A talk\",\"type\":\"track\",\"playhead\":900,\"duration\":3000},"
+                + "{\"contentId\":\"plex:727120\",\"title\":\"A book\",\"type\":\"track\",\"playhead\":10,\"duration\":17800}]}");
+        JSONObject reply = cap.call(new JSONObject().put("op", "continue")).body;
+        org.json.JSONArray items = reply.getJSONArray("items");
+        assertEquals(2, items.length());
+        assertEquals("plex:727120", items.getJSONObject(0).getString("contentId"));
+        assertEquals("p:plex:727120", items.getJSONObject(0).getString("id"));
+        assertEquals(178, items.getJSONObject(0).getLong("playhead"));
+        assertEquals("The book", items.getJSONObject(0).getString("subtitle"));
+        assertEquals("plex:2", items.getJSONObject(1).getString("contentId"));
+    }
+
+    /** The car's Continue tab: books and talks in progress, then the lists played lately. */
+    @Test public void continueTabHoldsProgressThenRecentLists() throws Exception {
+        assertNull(BrowseTree.rootsProblem("Drive=drive:;Continue=continue;Recent=recent"));
+        api.responses.put("recent 50", "{\"items\":[{\"contentId\":\"plex:727120\",\"title\":\"A book\",\"type\":\"track\",\"playhead\":178,\"duration\":17800}]}");
+        org.json.JSONArray lists = new org.json.JSONArray()
+                .put(new JSONObject().put("contentId", "plex:900").put("title", "80s radio"))
+                .put(new JSONObject().put("contentId", "plex:900").put("title", "80s radio (again)"));
+        java.util.List<MediaNode> nodes = BrowseTree.continueNodes(api.recent(50), null, lists);
+        assertEquals(2, nodes.size());
+        assertEquals("p:plex:727120", nodes.get(0).toJson().getString("id"));
+        assertTrue(nodes.get(0).toJson().getString("subtitle").startsWith("4 h 53 min left"));
+        assertEquals("c:plex:900", nodes.get(1).toJson().getString("id"));
+        assertTrue(nodes.get(1).toJson().getBoolean("playable"));
+    }
+
+    @Test public void recentListsKeepTheNewestFirstOnce() throws Exception {
+        java.io.File dir = java.nio.file.Files.createTempDirectory("rl").toFile();
+        RecentLists lists = new RecentLists(new java.io.File(dir, "recent-lists.json"));
+        lists.record("plex:1", "One", null, 1);
+        lists.record("plex:2", "Two", "https://x/a.jpg", 2);
+        lists.record("plex:1", "One", null, 3);
+        assertEquals(2, lists.list().length());
+        assertEquals("plex:1", lists.list().getJSONObject(0).getString("contentId"));
+        for (int i = 0; i < 20; i++) lists.record("plex:" + (10 + i), "L" + i, null, 10 + i);
+        assertEquals(RecentLists.MAX, lists.list().length());
+        lists.record("../etc", "bad", null, 99);
+        assertEquals("plex:29", lists.list().getJSONObject(0).getString("contentId"));
     }
 }

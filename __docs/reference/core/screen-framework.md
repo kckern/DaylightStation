@@ -90,6 +90,33 @@ layout:
             - widget: health
 ```
 
+## Ad-hoc screens: any browser
+
+Any browser can be a screen without a household YAML file: open `/screen/adhoc`.
+
+- **Config.** `adhoc` is built in (`__capabilities/screen-host/server/application/builtInScreens.mjs`),
+  served by `GET /api/v1/screens/adhoc` when the household has no `screens/adhoc.yml` (a
+  household file of that name replaces it). It is a calm face (the clock and "This browser
+  is a screen: <name>") with `websocket.guardrails.device: $browser`.
+- **Identity.** `ScreenRenderer` puts this browser's own persistent id (`browser:<token>`,
+  `frontend/src/lib/deviceIdentity.js`) in place of `$browser` before anything subscribes,
+  publishes or acks (`resolveScreenDevice`, screen-host `identity/adhocScreen.js`). Commands
+  addressed to that id reach this page alone; its presence, session and acks are reported
+  under it. It does not take a `fleet:` name. Without a persistent id (private mode) the
+  page renders but takes no commands.
+- **Name and presence.** `?name=MacBook` names it (remembered by the browser; "Browser"
+  until named). While open it announces itself to the household screen list
+  (`POST /api/v1/media/screens/announce`) on mount and every 60 s.
+- **Opening an app.** The usual launch paths work: `/screen/adhoc/party-games/charades:fhe`
+  or `?open=party-games/charades:fhe`, `?play=`, `?queue=`.
+- **Remote control.** The device routes take a browser id (`browser:[A-Za-z0-9_-]{4,64}`;
+  anything else that starts `browser:` is refused with 400), so `POST /api/v1/device/browser:<token>/input`
+  and `GET /api/v1/device/browser:<token>/session` behave as for a configured screen. The
+  phone lists a browser screen seen in the last 2 minutes (or reported online) on its
+  Connect tab, and its D-pad drives that page.
+
+Charades on a laptop: `/screen/adhoc/party-games/charades:fhe?name=MacBook`.
+
 ## Resolution & Centering
 
 Screens declare a fixed resolution. The layout renders at that exact pixel size, centered horizontally and vertically in the viewport. This decouples the layout from the browser window size — the dashboard is designed for a specific display resolution.

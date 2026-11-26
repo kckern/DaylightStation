@@ -7,6 +7,11 @@
         <package android:name="com.anddoes.launcher" />
     </queries>
     <application>
+        <!-- Not exported: only the system's job scheduler binds it. Sends the phone's held
+             telemetry once a network is there, with the app closed (shell-kit UiTelemetry). -->
+        <service android:name="net.kckern.daylight.cap.widgets.shell.TelemetryJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
         <activity android:name="net.kckern.daylight.cap.widgets.shell.FreematicsActivity"
             android:exported="false" android:label="Freematics"
             android:theme="@style/Theme.Daylight.WithTitle" />

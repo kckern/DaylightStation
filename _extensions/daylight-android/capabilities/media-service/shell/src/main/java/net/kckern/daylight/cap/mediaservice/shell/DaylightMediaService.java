@@ -63,6 +63,43 @@ public class DaylightMediaService extends MediaLibraryService {
     private Uri artworkUri;
     private MediaLibrarySession session;
     private LibraryCallback callback;
+    private LongFormPolicy longFormPolicy;
+    private volatile float levelVolume = 1f, fadeVolume = 1f;
+    private final java.util.Map<String, Float> levels = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private void applyVolume() {
+        if (player != null) player.setVolume(levelVolume * fadeVolume);
+    }
+
+    /** The level for this item from its Plex gain (track levels route), kept per item. */
+    private void level(MediaItem item) {
+        String id = item == null ? null : item.mediaId;
+        if (id == null || id.indexOf(':') <= 0) { levelVolume = 1f; applyVolume(); return; }
+        Float known = levels.get(id);
+        if (known != null) { levelVolume = known; applyVolume(); return; }
+        levelVolume = 1f;
+        applyVolume();
+        ExecutorService pool = io;
+        if (pool == null) return;
+        pool.execute(() -> {
+            float v = 1f;
+            try {
+                org.json.JSONObject reply = new org.json.JSONObject(media.trackLevels(id, 16, 5000));
+                org.json.JSONObject q = reply.optJSONObject("levels") == null ? null : reply.optJSONObject("levels").optJSONObject("quality");
+                if (q != null && q.has("gainDb")) v = LongForm.levelFor(q.optDouble("gainDb", Double.NaN));
+            } catch (Exception unknown) { /* no analysis: full volume */ }
+            float level = v;
+            levels.put(id, level);
+            new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
+                MediaItem now = player == null ? null : player.getCurrentMediaItem();
+                if (now != null && id.equals(now.mediaId)) {
+                    levelVolume = level;
+                    applyVolume();
+                    Log.i(TAG, "loudness level " + Math.round(level * 100) + "%");
+                }
+            });
+        });
+    }
     /** The layout the car was last given; null before the first. */
     private Boolean carLongForm;
     private PlaybackEvents events;
@@ -105,14 +142,25 @@ public class DaylightMediaService extends MediaLibraryService {
                 .setSeekForwardIncrementMs(CarControls.SEEK_STEP_MS)
                 .build();
 
+        // Long items: the listener's speed (music stays 1x) and a short step back on resume.
+        longFormPolicy = new LongFormPolicy(player, this::longForm, () -> {
+                    MediaItem item = player.getCurrentMediaItem();
+                    if (item == null) return "";
+                    CharSequence album = item.mediaMetadata.albumTitle;
+                    return LongForm.speedKey(NodeItems.listId(item), album == null ? null : album.toString());
+                },
+                getSharedPreferences(LongFormPolicy.PREFS, MODE_PRIVATE), SystemClock::elapsedRealtime);
+        player.addListener(longFormPolicy);
+        // Loudness levelling: each track at its Plex gain (never above full), times the
+        // sleep timer's fade; the two meet here so neither undoes the other.
+        player.addListener(new Player.Listener() {
+            @Override public void onMediaItemTransition(MediaItem item, int reason) { level(item); }
+        });
         player.addListener(new Player.Listener() {
             @Override public void onEvents(Player player, Player.Events events) {
                 publishPlaylistState();
                 refreshCarLayout();
-                CharSequence title = player.getMediaItemCount() == 0 ? null : player.getMediaMetadata().title;
-                net.kckern.daylight.shellkit.NowPlayingNote.update("local", "This phone", title == null ? "" : title.toString(),
-                        player.isPlaying() || (player.getPlayWhenReady() && player.getPlaybackState() == Player.STATE_BUFFERING),
-                        android.os.SystemClock.elapsedRealtime());
+                net.kckern.daylight.shellkit.NowPlayingNote.report(NowPlayingNotes.entry("local", "This phone", player));
             }
 
             @Override public void onTimelineChanged(androidx.media3.common.Timeline timeline, int reason) {
@@ -195,6 +243,7 @@ public class DaylightMediaService extends MediaLibraryService {
         callback = new LibraryCallback(media, io, getPackageName(), new AndroidPackageFacts(getPackageManager()),
                 () -> SurfaceCache.get(this, ControllerPins.KEY), DaylightMediaService::stopPlayback)
                 .withDrivingRadio(radio, this::cancelRadioHandoff);
+        callback.sleep.setFadeSink(v -> { fadeVolume = v; applyVolume(); });
         MediaLibrarySession.Builder builder = new MediaLibrarySession.Builder(this, sessionPlayer, callback);
         builder.setCustomLayout(CarControls.layout(false));
         // A tap on the media notification opens the Now playing screen on this phone's

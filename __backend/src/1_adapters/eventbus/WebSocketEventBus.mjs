@@ -1005,6 +1005,23 @@ export class WebSocketEventBus {
       return;
     }
 
+    this.#dispatchClientMessage(clientId, message);
+  }
+
+  /**
+   * A message a device sent some other way than its own socket (the phone app's
+   * HTTP long-poll and ack, PhoneInboxService), handled exactly as if it had come in
+   * on one: the same authorizer, the same handlers (client ingress, liveness, any
+   * waitForMessage). `clientId` names the server-side sender; it has no socket.
+   * @param {string} clientId
+   * @param {Object} message
+   */
+  publishAsClient(clientId, message) {
+    if (!message || typeof message !== 'object') return;
+    this.#dispatchClientMessage(clientId, message);
+  }
+
+  #dispatchClientMessage(clientId, message) {
     if (this.#messageAuthorizer) {
       const result = this.#messageAuthorizer(clientId, message);
       if (result === false || result?.ok === false) {

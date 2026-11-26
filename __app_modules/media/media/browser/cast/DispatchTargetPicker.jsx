@@ -46,6 +46,7 @@ const GLYPHS = {
   tablet: IconDeviceTablet,
   speaker: IconSpeakerphone,
   browser: IconBrowser,
+  phone: IconDeviceMobile,
 };
 
 /** This browser's own icon: a phone on a touch-only screen, else a laptop. */

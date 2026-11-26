@@ -194,6 +194,8 @@ import { FullyKioskVolumeAdapter } from '#adapters/devices/FullyKioskVolumeAdapt
 import { DaylightAndroidContentAdapter } from '#adapters/devices/DaylightAndroidContentAdapter.mjs';
 import { DaylightAndroidVolumeAdapter } from '#adapters/devices/DaylightAndroidVolumeAdapter.mjs';
 import { WebSocketContentAdapter } from '#adapters/devices/WebSocketContentAdapter.mjs';
+import { PhoneInboxContentAdapter } from '#adapters/devices/PhoneInboxContentAdapter.mjs';
+import { getPhoneInboxService } from '#composition/modules/phoneInbox.mjs';
 import { SshOsAdapter } from '#adapters/devices/SshOsAdapter.mjs';
 import { AdbAdapter } from '#adapters/devices/AdbAdapter.mjs';
 import { ResilientContentAdapter } from '#adapters/devices/ResilientContentAdapter.mjs';
@@ -1042,6 +1044,7 @@ export async function createDeviceServices(config) {
       daylightAndroidVolume: (adapterConfig, deps) => new DaylightAndroidVolumeAdapter(adapterConfig, deps),
       resilient: (adapterConfig, deps) => new ResilientContentAdapter(adapterConfig, deps),
       websocket: (adapterConfig, deps) => new WebSocketContentAdapter(adapterConfig, deps),
+      phoneInbox: (adapterConfig, deps) => new PhoneInboxContentAdapter(adapterConfig, { ...deps, inbox: getPhoneInboxService({ logger }) }),
     },
     logger,
   });

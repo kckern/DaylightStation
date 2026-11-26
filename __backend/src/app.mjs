@@ -101,6 +101,7 @@ import { createConfiguredLibbyRuntime } from "../../__capabilities/content-catal
 // Logging system
 import { getDispatcher } from "./0_system/logging/dispatcher.mjs";
 import { createLogger } from "./0_system/logging/logger.mjs";
+import { getPhoneInboxService } from '#composition/modules/phoneInbox.mjs';
 import { ingestFrontendLogs } from '#adapters/logging/FrontendLogIngestion.mjs';
 import { createClientLogRouter } from './4_api/v1/routers/clientLog.mjs';
 import { registerClientIngress } from '#composition/modules/clientIngress.mjs';
@@ -864,6 +865,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     frontendLogIngestion: { ingest: ingestFrontendLogs },
     getFitnessPresence: () => donowModule?.presence?.fitness,
     logger: rootLogger,
+  });
+
+  // The phone app has no socket: its commands wait in an inbox it long-polls, and
+  // what it reports over HTTP reaches the bus as if sent on one (device-state for the
+  // fleet and the picker, device-ack for the dispatch). Only devices whose
+  // content_control.provider is phone-inbox are served.
+  getPhoneInboxService({ logger: rootLogger.child?.({ module: 'phone-inbox' }) ?? rootLogger }).connect({
+    serves: (deviceId) => configService.getDeviceConfig?.(deviceId)?.content_control?.provider === 'phone-inbox',
+    publish: (message) => eventBus.publishAsClient?.(`phone-inbox:${message.deviceId}`, message),
   });
 
   // DeviceLivenessService — caches last-known device-state snapshots and

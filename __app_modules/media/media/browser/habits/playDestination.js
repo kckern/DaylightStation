@@ -25,7 +25,9 @@ import { deviceName } from "../fleet/deviceDisplay.js";
 export function canPlayOn(device, kind) {
   if (!device?.id) return false;
   if (device.type === 'browser' || String(device.id).startsWith('browser:')) return true;
-  if (deviceKind(device) === 'speaker') return kind !== 'video';
+  // A speaker plays sound only; so does the phone app (its native player is audio).
+  const k = deviceKind(device);
+  if (k === 'speaker' || k === 'phone') return kind !== 'video';
   // Listed for the house view only (`fleet: true`) with no way to receive
   // content: a send there is acknowledged by nobody and fails 90 s later.
   if (device.fleet === true && !device.content_control) return false;

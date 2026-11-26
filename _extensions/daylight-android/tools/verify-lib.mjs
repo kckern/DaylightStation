@@ -287,6 +287,8 @@ export const EXPECTED_COMPONENTS = {
   'activity net.kckern.daylight.cap.widgets.shell.FreematicsActivity': { exported: false, permission: null },
   'activity net.kckern.daylight.cap.widgets.shell.PhoneHomeActivity': { exported: true, permission: null },
   'receiver net.kckern.daylight.cap.widgets.shell.ButtonWidgetProvider': { exported: false, permission: null },
+  // Sends held telemetry with the app closed; only the job scheduler binds it.
+  'service net.kckern.daylight.cap.widgets.shell.TelemetryJob': { exported: false, permission: 'android.permission.BIND_JOB_SERVICE' },
   // Exported with no permission: the launcher starts it when a one-action button is
   // placed (APPWIDGET_CONFIGURE), and no permission exists that only a launcher holds.
   // It reads the widget id and nothing else, uses it only for a widget Android says is

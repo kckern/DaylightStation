@@ -19,6 +19,10 @@ const STEP_LABELS = {
     power: 'Waking the screen…',
     verify: 'Checking the screen…',
   },
+  phone: {
+    power: 'Reaching the phone…',
+    verify: 'Checking the phone…',
+  },
 };
 const COMMON_STEPS = {
   volume: 'Setting volume…',
@@ -32,11 +36,13 @@ const SPEAKER_TYPES = new Set(['speaker', 'speaker-lane']);
 const TV_TYPES = new Set(['shield-tv']);
 
 /**
- * The kind of screen a device is, for wording only: 'tv' | 'speaker' | 'screen'.
+ * The kind of screen a device is, for wording only: 'tv' | 'speaker' | 'phone' | 'screen'.
  * Unknown devices are a generic screen — never assumed to be a TV.
  */
 export function deviceKind(device) {
   const type = typeof device?.type === 'string' ? device.type : '';
+  // The household phone app: plays sound on the phone (content_control phone-inbox).
+  if (type === 'phone' || device?.content_control?.provider === 'phone-inbox') return 'phone';
   const icon = typeof device?.icon === 'string' ? device.icon.trim() : '';
   if (SPEAKER_TYPES.has(type) || icon === 'speaker' || icon === '🔊') return 'speaker';
   if (TV_TYPES.has(type) || /tv$/i.test(type) || icon === 'tv' || icon === '📺') return 'tv';
@@ -56,7 +62,7 @@ export function friendlyStepPhrase(step, kind = 'tv') {
 
 /** What the screen is called in a sentence: "the TV", "the speaker", "the screen". */
 export function deviceKindNoun(kind) {
-  return kind === 'tv' ? 'TV' : kind === 'speaker' ? 'speaker' : 'screen';
+  return kind === 'tv' ? 'TV' : kind === 'speaker' ? 'speaker' : kind === 'phone' ? 'phone' : 'screen';
 }
 
 function fmtRemaining(position, duration) {

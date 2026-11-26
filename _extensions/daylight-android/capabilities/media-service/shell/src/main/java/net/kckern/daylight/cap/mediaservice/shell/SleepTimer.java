@@ -28,6 +28,18 @@ final class SleepTimer {
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private final Runnable fire = this::pauseNow;
+    /** The last minute: the volume falls to 10% (LongForm.fadeVolume), as audiobook players do. */
+    private final Runnable fade = this::fadeStep;
+    private boolean fading;
+    /** Where the fade goes: the session's volume mix (with loudness levelling), else the player itself. */
+    private java.util.function.Consumer<Float> fadeSink;
+
+    void setFadeSink(java.util.function.Consumer<Float> sink) { fadeSink = sink; }
+
+    private void fadeTo(float v) {
+        if (fadeSink != null) fadeSink.accept(v);
+        else if (session != null) session.getPlayer().setVolume(v);
+    }
     private MediaSession session;
     private long until;
     private boolean armed;
@@ -56,6 +68,7 @@ final class SleepTimer {
             s.getPlayer().addListener(ends);
         }
         main.removeCallbacks(fire);
+        restoreVolume();
         if (minutes == 0) { cancel(); return; }
         armed = true;
         if (minutes == END_OF_ITEM) {
@@ -64,20 +77,37 @@ final class SleepTimer {
             long ms = Math.max(1, minutes) * 60_000L;
             until = SystemClock.elapsedRealtime() + ms;
             main.postDelayed(fire, ms);
+            main.postDelayed(fade, Math.max(0, ms - LongForm.FADE_MS));
         }
         Log.i(TAG, "sleep timer: " + (minutes == END_OF_ITEM ? "end of item" : minutes + " min"));
         publish();
     }
 
+    private void fadeStep() {
+        if (!armed || session == null || until == UNTIL_END_OF_ITEM) return;
+        fading = true;
+        long left = until - SystemClock.elapsedRealtime();
+        fadeTo(LongForm.fadeVolume(left));
+        if (left > 0) main.postDelayed(fade, 1000);
+    }
+
     private void pauseNow() {
         if (!armed || session == null) return;
         session.getPlayer().pause();
+        restoreVolume();
         Log.i(TAG, "sleep timer: paused");
         cancel();
     }
 
+    private void restoreVolume() {
+        main.removeCallbacks(fade);
+        if (fading) fadeTo(1f);
+        fading = false;
+    }
+
     void cancel() {
         main.removeCallbacks(fire);
+        restoreVolume();
         boolean was = armed;
         armed = false;
         if (was) publish();
@@ -85,6 +115,7 @@ final class SleepTimer {
 
     void release() {
         main.removeCallbacks(fire);
+        restoreVolume();
         shownArmed = false;
         if (session != null) session.getPlayer().removeListener(ends);
         session = null;

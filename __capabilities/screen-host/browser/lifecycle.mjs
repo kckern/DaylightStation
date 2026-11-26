@@ -5,3 +5,4 @@ export { useFleetDeviceIdentity } from "./hooks/useFleetDeviceIdentity.js";
 export { ActionLoadingShell } from "./ActionLoadingShell.jsx";
 export { layoutOwnsRouting } from "./layoutOwnsRouting.js";
 export { BROWSE_NAV_TYPES } from "./screenActivity.js";
+export { resolveScreenDevice, screenName, startScreenAnnounce, BROWSER_SCREEN_ID } from "./identity/adhocScreen.js";

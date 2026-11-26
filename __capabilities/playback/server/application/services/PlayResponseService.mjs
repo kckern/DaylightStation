@@ -21,6 +21,10 @@ import { isResumeWorthy } from '../../domain/services/isResumeWorthy.mjs';
  * - Route matching or parameter parsing
  * - Adapter selection or content ID resolution
  */
+/** Audio resumes from this far in (seconds): listening has no "peek" to protect against. */
+export const AUDIO_RESUME_MIN_SEC = 30;
+const AUDIO_TYPES = new Set(['audio', 'track', 'audiobook', 'podcast']);
+
 export class PlayResponseService {
   #mediaProgressMemory;
   #progressSyncService;
@@ -98,7 +102,7 @@ export class PlayResponseService {
     // Add resume position if in progress (use domain entity)
     // Skip if resume explicitly disabled (e.g., list items with resume: false)
     {
-      const progress = this.#resumeProgress(response.resumable, watchState, resume);
+      const progress = this.#resumeProgress(response.resumable, watchState, resume, response.mediaType);
       if (progress) {
         response.resume_position = progress.playhead;
         response.resume_percent = progress.percent;
@@ -211,11 +215,15 @@ export class PlayResponseService {
    * @returns {Promise<Object|null>} Watch state or null
    */
   /** The progress a play resumes from, or null when it starts from the top. */
-  #resumeProgress(resumable, watchState, resume) {
+  #resumeProgress(resumable, watchState, resume, mediaType = null) {
     if (resume === false || !resumable || !(watchState?.playhead > 0) || !(watchState?.duration > 0)) return null;
     const progress = new MediaProgress({ ...watchState, now: this.#now() });
     // A peek at the opening (a few seconds, then back out) starts from the top.
-    return progress.isInProgress() && isResumeWorthy(progress) ? progress : null;
+    // The "peek" floor (3 min) is for films: picked one, watched a moment, backed out.
+    // Listening has no such peek: a book, a talk or a course resumes from 30 s in, the
+    // same line the phone's Continue listening uses.
+    const minSec = AUDIO_TYPES.has(String(mediaType || '').toLowerCase()) ? AUDIO_RESUME_MIN_SEC : undefined;
+    return progress.isInProgress() && isResumeWorthy(progress, minSec ? { minSec } : undefined) ? progress : null;
   }
 
   /**
@@ -224,7 +232,7 @@ export class PlayResponseService {
    * @returns {number}
    */
   startPositionFor(item, watchState) {
-    return this.#resumeProgress(item?.resumable ?? false, watchState, undefined)?.playhead ?? 0;
+    return this.#resumeProgress(item?.resumable ?? false, watchState, undefined, item?.mediaType)?.playhead ?? 0;
   }
 
   /**

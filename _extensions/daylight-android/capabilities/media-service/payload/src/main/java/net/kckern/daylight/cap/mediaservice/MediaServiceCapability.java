@@ -48,6 +48,8 @@ public final class MediaServiceCapability implements Capability {
     private static final String PLAY_ACTIVITY = "net.kckern.daylight.cap.mediaservice.shell.PlayActivity";
     private static final String NOW_PLAYING_ACTIVITY = "net.kckern.daylight.cap.mediaservice.shell.NowPlayingActivity";
     private static final String ROOTS = "media.roots";
+    /** Whether this device takes "Play on" from the household's web (the phone: long-polls the backend). */
+    static final String PLAY_ON_TARGET = "media.playOnTarget";
     private static final String RECENT_LIMIT = "media.recentLimit";
     private static final String PAGE_SIZE = "media.pageSize";
     /** How a screen's notes name this device when it pauses or skips there: "Paused by Phone". */
@@ -121,6 +123,14 @@ public final class MediaServiceCapability implements Capability {
         core.settings().declare(RECENT_LIMIT, SettingsRegistry.Type.INTEGER, 30, SettingsRegistry.range(1, 100));
         // How many entries one browse level holds. A car limits what it shows per level.
         core.settings().declare(PAGE_SIZE, SettingsRegistry.Type.INTEGER, 50, SettingsRegistry.range(10, 200));
+        core.settings().declare(PLAY_ON_TARGET, SettingsRegistry.Type.BOOLEAN, false, null);
+        if (inbox == null) {
+            inbox = new PlayInbox(http, backend::url, core.deviceId(), mediaId -> {
+                Launcher l = launcher();
+                if (l == null) throw new IllegalStateException("no player");
+                l.play(mediaId);
+            });
+        }
         core.settings().declare(REMOTE_NAME, SettingsRegistry.Type.STRING, "Phone",
                 value -> ((String) value).length() > 80 ? "media.remoteName: at most 80 characters" : null);
         // The apps that may connect to the media session beside this app and the system:
@@ -139,7 +149,8 @@ public final class MediaServiceCapability implements Capability {
                     // only ever a device id of the registry's spelling; the screen asks the payload
                     // which screens exist.
                     String target = query.get("target") == null ? "" : query.get("target");
-                    if (!target.isEmpty() && !"local".equals(target) && !ScreenRemote.ID.matcher(target).matches()) {
+                    if (!target.isEmpty() && !"local".equals(target) && !ScreenRemote.ID.matcher(target).matches()
+                            && !ScreenRemote.BROWSER.matcher(target).matches()) {
                         throw new IllegalArgumentException("expected media/now-playing?target=<local or a device id>");
                     }
                     Launcher l = launcher();
@@ -192,6 +203,7 @@ public final class MediaServiceCapability implements Capability {
         started = true;
         writePins();
         port.attach(onCall);
+        if (Boolean.TRUE.equals(core.settings().get(PLAY_ON_TARGET)) && inbox != null) inbox.start();
     }
 
     /** The installed service reads the pins from the surface cache: it may run with no payload loaded. */
@@ -218,6 +230,7 @@ public final class MediaServiceCapability implements Capability {
     @Override public void stop() {
         started = false;
         port.detach(onCall);
+        if (inbox != null) inbox.stop();
         ExecutorService w = worker;
         worker = null;
         if (w != null) w.shutdownNow();
@@ -257,6 +270,10 @@ public final class MediaServiceCapability implements Capability {
             if ("event".equals(op)) return event(request);
             if ("action".equals(op)) return action(request);
             if ("search".equals(op)) return search(request);
+            if ("continue".equals(op)) {
+                return new Outcome(200, Replies.ok().put("items",
+                        BrowseTree.continueItems(api.recent(50), backend, Math.max(1, Math.min(20, request.optInt("limit", 8))))));
+            }
             if ("track-levels".equals(op)) return trackDetail(request, true);
             if ("track-lyrics".equals(op)) return trackDetail(request, false);
             if ("screens".equals(op)) return new Outcome(200, screens.screens());
@@ -328,7 +345,9 @@ public final class MediaServiceCapability implements Capability {
 
     private List<MediaNode> load(MediaId id, int pageSize) throws Exception {
         List<MediaNode> nodes;
-        if (id.kind == MediaId.Kind.RECENT) {
+        if (id.kind == MediaId.Kind.CONTINUE) {
+            nodes = BrowseTree.continueNodes(api.recent(50), backend, recentLists().list());
+        } else if (id.kind == MediaId.Kind.RECENT) {
             nodes = BrowseTree.fromRecent(api.recent((Integer) core.settings().get(RECENT_LIMIT)), backend);
         } else if (id.kind == MediaId.Kind.CATALOG) {
             nodes = BrowseTree.fromAudioListCatalog(api.rootList(), "", 0, backend);
@@ -358,8 +377,46 @@ public final class MediaServiceCapability implements Capability {
                 api, backend, "daylight-" + core.deviceId(), request.optBoolean("shuffle"));
         JSONArray tracks = new JSONArray();
         for (Track t : r.tracks) tracks.put(t.toJson());
+        String first = mediaIds.isEmpty() ? null : mediaIds.get(0);
+        if (first != null && first.startsWith("c:") && !r.tracks.isEmpty()) rememberList(first.substring(2));
         return new Outcome(200, Replies.ok().put("tracks", tracks).put("startIndex", r.startIndex)
                 .put("startPositionMs", r.startPositionMs).put("selectionResolved", r.selectionResolved));
+    }
+
+    private RecentLists recentLists;
+    private PlayInbox inbox;
+    private final java.util.concurrent.ExecutorService listNamer = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "daylight-recent-lists");
+        t.setDaemon(true);
+        return t;
+    });
+
+    /** The lists played lately, kept with the payload's state; in memory only where there is none (tests). */
+    synchronized RecentLists recentLists() {
+        if (recentLists != null) return recentLists;
+        java.io.File dir = null;
+        try {
+            Object payloadDir = core == null ? null : core.shell().payloadDir();
+            if (payloadDir instanceof java.io.File) dir = net.kckern.daylight.api.PayloadState.dir((java.io.File) payloadDir);
+        } catch (RuntimeException none) { /* no state dir */ }
+        if (dir == null) {
+            try { dir = java.nio.file.Files.createTempDirectory("recent-lists").toFile(); }
+            catch (java.io.IOException e) { dir = new java.io.File(System.getProperty("java.io.tmpdir")); }
+        }
+        recentLists = new RecentLists(new java.io.File(dir, "recent-lists.json"));
+        return recentLists;
+    }
+
+    /** A list started playing: name it (its title and cover from the list route) and remember it, off the play path. */
+    private void rememberList(String contentId) {
+        if (!ContentId.valid(contentId)) return;
+        listNamer.execute(() -> {
+            try {
+                JSONObject l = api.list(contentId, 1, 0);
+                recentLists().record(contentId, Json.first(Json.str(l, "title"), Json.str(l, "label")),
+                        BrowseTree.art(backend, Json.str(l, "image")), clock.getAsLong());
+            } catch (Exception unnamed) { /* not remembered this time */ }
+        });
     }
 
     /**

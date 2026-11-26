@@ -8,6 +8,7 @@ import Weight from "../../../../../__app_modules/wellness/health/browser/weight-
 import EntropyPanel from "../../../../../__app_modules/household/home/browser/entropy/EntropyPanel.jsx";
 import { PianoVisualizer } from "../../../../../__app_modules/learning/piano/browser/widget.mjs";
 import MenuWidget from './MenuWidget.jsx';
+import ScreenIdentity from './ScreenIdentity.jsx';
 import ArtMode from './ArtMode.jsx';
 import WeeklyReview from "../../../../../__app_modules/personal/weekly-review/browser/widget.mjs";
 import CameraOverlay from "../../../../../__app_modules/household/camera/browser/overlay.mjs";
@@ -19,6 +20,7 @@ import MediaLessonScreen from "../../../../../__app_modules/learning/school/brow
 export function registerBuiltinWidgets() {
   const registry = getWidgetRegistry();
   registry.register('clock', Time);
+  registry.register('screen-identity', ScreenIdentity);
   registry.register('weather', Weather);
   registry.register('weather-forecast', WeatherForecast);
   registry.register('calendar', Upcoming);

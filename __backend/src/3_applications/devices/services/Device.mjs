@@ -461,6 +461,15 @@ export class Device {
     return !!caps[capability];
   }
 
+  /**
+   * Whether a dispatch should prewarm (transcode ahead) for this device. False when
+   * its content control says it streams on its own (the phone app's inbox).
+   * @returns {boolean}
+   */
+  wantsPrewarm() {
+    return this.#contentControl?.wantsPrewarm?.() !== false;
+  }
+
   // =============================================================================
   // Private Methods
   // =============================================================================
