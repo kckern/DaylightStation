@@ -17,10 +17,11 @@
 // Reuses the useContentCombobox HOOK for search state/transport/dedupe/D5
 // fallback, but NOT the ContentCombobox popover component — a Mantine
 // Combobox portal doesn't fit a full-screen surface. Results render via the
-// shared ResultRow (Content/combobox/ResultRow.jsx — Task 14, spec D6): a
-// leaf tap plays now, a container tap browses; the trailing ▶/⋯ are the
-// explicit verbs (play-as-queue for containers; Play Now/Play Next/Up Next/
-// Add to Queue/Open detail for leaves). Tapping a row dispatches via the
+// shared ResultRow (Content/combobox/ResultRow.jsx): a tap is a LOOK — a
+// leaf opens its detail page, a container its list — and the trailing ▶ that
+// names a screen ("▶ Office Screen") is the one deliberate play; ⋯ holds the
+// rest (Play here, Play Next, Up Next, Add to Queue, Open detail). Results
+// this person picked for these words before come first (habits/). Tapping a row dispatches via the
 // same useContentDispatch path MediaContentSearch already uses.
 import { LoadErrorLine } from "../shared/LoadErrorLine.jsx";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -46,6 +47,9 @@ import { useDialogFocus } from '@/lib/ui/dismiss/useDialogFocus.js';
 import { useDismissLayer } from '@/lib/ui/dismiss/useDismissLayer.js';
 import { ItemDestinationPicker } from "../actions/ItemDestinationPicker.jsx";
 import { useHouseholdResultActions } from "../household/useHouseholdResultActions.js";
+import { usePlayDestination } from "../habits/usePlayDestination.js";
+import { rankByHabits } from "../habits/mediaHabits.js";
+import { isContainer } from "../../../../../__capabilities/content-catalog/browser/combobox-state.mjs";
 import "./Search.scss";
 import "../shell/SessionControls.scss";
 
@@ -72,7 +76,11 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
   const { extraActions, runHousehold } = useHouseholdResultActions();
   const { queue } = useSessionController('local');
   const { push } = useNav();
+  const { scoresFor, recordPick } = usePlayDestination();
   const log = useMemo(() => getLogger().child({ component: 'search-mode' }), []);
+  // The words on screen when a row is opened or played (set below, read by
+  // the handlers, which are defined before the combobox that owns the text).
+  const searchTextRef = useRef('');
   const dialogRef = useRef(null);
   const searchInputRef = useRef(null);
   const handleDialogKeys = useDialogFocus(true, dialogRef, searchInputRef);
@@ -151,16 +159,14 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
     if (!id) return; // clear/empty commits are no-ops for a transient picker
     if (addTo) { addOnce(id, item, 'tap'); return; }
     log.info('select', { contentId: id, title: item?.title ?? null, type: item?.type ?? null });
+    recordPick(searchTextRef.current, { ...item, id }, 'open');
     const route = dispatch(id, item, { replaceHistoryEntry: true });
     log.info('dispatch', { contentId: id, route });
-    // Every route reports its own outcome through the one outcome system
-    // (useContentDispatch → DispatchProvider): quiet "Playing X here" for
-    // this device, named with progress for a far screen.
-    // Playback is not navigation: keep the surface (and therefore the exact
-    // query/scope plus its marker entry) alive. A container row is the one
-    // route that navigates, so it hands the marker entry to Browse and exits.
-    if (route === 'browse') closeSurface('dispatch', { navigated: true });
-  }, [dispatch, log, closeSurface, addTo, addOnce]);
+    // A tap is a look: a collection opens its list, an item its detail page —
+    // both navigate, so the marker entry is handed over and the surface
+    // exits. (A camera shown here is the one tap that does not navigate.)
+    if (route === 'browse' || route === 'detail') closeSurface('dispatch', { navigated: true });
+  }, [dispatch, log, closeSurface, addTo, addOnce, recordPick]);
 
   // Trailing ▶ on a container row (Task 14, spec D6): explicitly send the
   // whole container to the current destination, replacing the queue. This is
@@ -170,6 +176,14 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
     if (!id) return;
     if (addTo) { addOnce(id, item, 'playAll'); return; }
     log.info('select', { contentId: id, title: item?.title ?? null, type: item?.type ?? null, verb: 'playAll' });
+    recordPick(searchTextRef.current, item, 'play');
+    // A playable row's own ▶: play it where the ▶ says. Playback is not
+    // navigation, so Search stays open for the next pick.
+    if (!isContainer(item)) {
+      const route = dispatchLeafVerb('playNow', id, item);
+      log.info('dispatch', { contentId: id, route, verb: 'play' });
+      return;
+    }
     // FIND.8b/AC2: with a part under way the inline play IS "Continue S2E7".
     const cont = continueFor(item);
     if (cont) {
@@ -180,7 +194,7 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
     }
     const route = playContainerAsQueue(id, item);
     log.info('dispatch', { contentId: id, route, verb: 'playAll' });
-  }, [playContainerAsQueue, dispatchLeafVerb, continueFor, log, addTo, addOnce]);
+  }, [playContainerAsQueue, dispatchLeafVerb, continueFor, log, addTo, addOnce, recordPick]);
 
   // Trailing ⋯ on a leaf row: Play Now / Play Next / Up Next / Add to Queue
   // / Open detail. Reuses the exact appliers BrowseView rows use (queueOps
@@ -190,7 +204,9 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
     if (!id) return;
     log.info('row_action', { contentId: id, action });
     if (addTo && action !== 'detail' && action !== 'details') { addOnce(id, item, action); return; }
+    if (['playNow', 'playHere', 'playOn', 'detail', 'details'].includes(action)) recordPick(searchTextRef.current, item, action);
     if (runHousehold(action, item)) return;
+    if (action === 'playHere') { dispatchLeafVerb('playNow', id, item, { targetIds: [] }); return; }
     if (action === 'playOn' || action === 'addOn') {
       const returnFocusRef = {
         get current() {
@@ -209,7 +225,7 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
     // 'detail' is the only verb that navigates; queue mutations leave search
     // and its marker untouched.
     if (action === 'detail' || action === 'details') closeSurface('dispatch', { navigated: true });
-  }, [queue, pushOverSurface, log, closeSurface, dispatchLeafVerb, addTo, addOnce, runHousehold]);
+  }, [queue, pushOverSurface, log, closeSurface, dispatchLeafVerb, addTo, addOnce, runHousehold, recordPick]);
 
   const combo = useContentCombobox({
     value: '',
@@ -228,8 +244,13 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
     state, searchState, handleInput, isSearching, pendingSources, sourceErrors,
     streamError, retrySource = () => {}, fellBackToAll,
   } = combo;
-  const results = useMemo(() => collapseResultEditions(state.results), [state.results]);
   const searchText = state.search ?? '';
+  searchTextRef.current = searchText;
+  // What this person picked for these words before comes first.
+  const results = useMemo(
+    () => rankByHabits(collapseResultEditions(state.results), scoresFor(searchText)),
+    [state.results, scoresFor, searchText],
+  );
 
   // Every open resets scope to catalog-wide (spec D1: scope never carries
   // over from a prior search session). This is a

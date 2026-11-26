@@ -70,13 +70,13 @@ describe('Browse Detail browser history', () => {
       screen.getByTestId('scroll-host').scrollTop = 137;
       fireEvent.click(source);
       fireEvent.click(await screen.findByTestId('browse-open-plex:movies'));
-      fireEvent.click(await screen.findByTestId('browse-detail-plex:e2'));
+      fireEvent.click(await screen.findByTestId('browse-open-plex:e2'));
       expect(screen.getByTestId('detail-route')).toHaveTextContent('plex:e2');
     };
 
     await openDetail();
     fireEvent.click(screen.getByRole('button', { name: 'Detail Back' }));
-    await screen.findByTestId('browse-detail-plex:e2');
+    await screen.findByTestId('browse-open-plex:e2');
     await openDetail();
     fireEvent.click(screen.getByRole('button', { name: 'Browse area' }));
     await screen.findByTestId('browse-open-plex:');
@@ -119,10 +119,10 @@ describe('Browse Detail browser history', () => {
     expect(DaylightAPI).toHaveBeenCalledWith('api/v1/list/plex/movies/expand?take=150', {}, 'GET', { signal: expect.any(AbortSignal) });
     await waitFor(() => {
       expect(screen.getByTestId('scroll-host').scrollTop).toBe(137);
-      expect(screen.getByTestId('result-play-now-plex:m100')).toHaveFocus();
+      expect(screen.getByTestId('browse-open-plex:m100')).toHaveFocus();
     });
 
-    fireEvent.click(screen.getByTestId('browse-detail-plex:m100'));
+    fireEvent.click(screen.getByTestId('browse-open-plex:m100'));
     expect(window.history.state.mediaNavStack.at(-2).params).toMatchObject({
       path: 'plex/movies', focusedId: 'plex:m100', loadedCount: 120,
     });
@@ -132,10 +132,10 @@ describe('Browse Detail browser history', () => {
     render(<MantineProvider><CastTargetProvider><NavProvider>
       <NavigationSurface />
     </NavProvider></CastTargetProvider></MantineProvider>);
-    await screen.findByTestId('browse-detail-plex:e2');
+    await screen.findByTestId('browse-open-plex:e2');
     const host = screen.getByTestId('scroll-host');
     host.scrollTop = 137;
-    fireEvent.click(screen.getByTestId('browse-detail-plex:e2'));
+    fireEvent.click(screen.getByTestId('browse-open-plex:e2'));
     await screen.findByTestId('detail-route');
 
     let finishRead;
@@ -153,8 +153,8 @@ describe('Browse Detail browser history', () => {
     render(<MantineProvider><CastTargetProvider><NavProvider>
       <NavigationSurface />
     </NavProvider></CastTargetProvider></MantineProvider>);
-    await screen.findByTestId('browse-detail-plex:e2');
-    fireEvent.click(screen.getByTestId('browse-detail-plex:e2'));
+    await screen.findByTestId('browse-open-plex:e2');
+    fireEvent.click(screen.getByTestId('browse-open-plex:e2'));
     await screen.findByTestId('detail-route');
 
     let finishRead;
@@ -175,12 +175,12 @@ describe('Browse Detail browser history', () => {
     render(<MantineProvider><CastTargetProvider><NavProvider>
       <NavigationSurface />
     </NavProvider></CastTargetProvider></MantineProvider>);
-    await screen.findByTestId('browse-detail-plex:e2');
+    await screen.findByTestId('browse-open-plex:e2');
     const host = screen.getByTestId('scroll-host');
     host.scrollTop = 137;
 
     if (entrypoint === 'Details') {
-      fireEvent.click(screen.getByTestId('browse-detail-plex:e2'));
+      fireEvent.click(screen.getByTestId('browse-open-plex:e2'));
     } else {
       fireEvent.click(screen.getByTestId('result-more-plex:e2'));
       fireEvent.click(await screen.findByRole('menuitem', { name: 'Open detail' }));
@@ -191,12 +191,12 @@ describe('Browse Detail browser history', () => {
 
     act(() => window.history.back());
 
-    await screen.findByTestId('browse-detail-plex:e2');
+    await screen.findByTestId('browse-open-plex:e2');
     expect(new URLSearchParams(location.search).get('path')).toBe('plex/season-2');
     expect(screen.getByText('Season 2')).toHaveAttribute('aria-current', 'page');
     await waitFor(() => {
       expect(host.scrollTop).toBe(137);
-      expect(screen.getByTestId('result-play-now-plex:e2')).toHaveFocus();
+      expect(screen.getByTestId('browse-open-plex:e2')).toHaveFocus();
     });
     expect(window.history.state.mediaNavStack.at(-1)).toMatchObject({
       view: 'browse', params: { path: 'plex/season-2', scrollTop: 137, focusedId: 'plex:e2' },

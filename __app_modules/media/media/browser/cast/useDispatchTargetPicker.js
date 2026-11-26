@@ -13,6 +13,10 @@ import { useControllerSnapshot } from "../controller/useControllerSnapshot.js";
 import { LocalSessionContext } from "../session/LocalSessionContext.js";
 import { describeBusy } from "./castCopy.js";
 import mediaLog from "../logging/mediaLog.js";
+import { itemKind } from "../habits/mediaHabits.js";
+import { canPlayOn } from "../habits/playDestination.js";
+import { usePlayDestination } from "../habits/usePlayDestination.js";
+import { deviceName } from "../fleet/deviceDisplay.js";
 
 const LOCAL_ACTIVE_STATES = new Set(['playing', 'paused', 'buffering', 'stalled']);
 
@@ -66,7 +70,17 @@ export function useDispatchTargetPicker({ source, onComplete, intent = 'dispatch
   const moveSupported = hasMoveSnapshot && selected.size === 1;
   const moveUnavailable = hasPotentialContent && mode === 'transfer' && !moveSupported && !asksKeepOrStop;
 
-  const devices = fleet.devices ?? [];
+  // What is being sent decides which screens can take it: a film never lists
+  // a speaker, and a screen that takes no content is never offered at all.
+  // Order is stable — the screen this browser used last for this kind of
+  // thing first, then by name — so the screen you want is where it was.
+  const { destinationFor, recordPlay } = usePlayDestination();
+  const sourceItem = source?.itemAction?.item ?? source?.item
+    ?? (source?.getSnapshot ? null : source?.snapshot?.currentItem) ?? null;
+  const kind = itemKind(sourceItem);
+  const learnedFirst = sourceItem ? destinationFor(sourceItem) : null;
+  const preferredIds = learnedFirst && learnedFirst.source !== 'here' ? learnedFirst.targetIds : [];
+  const devices = orderPickerDevices((fleet.devices ?? []).filter(device => canPlayOn(device, kind)), preferredIds);
 
   // Every mount of this picker IS an "open" — it's only ever rendered while
   // a popover/portal/sheet is showing it (CastButton, NowPlayingView's
@@ -185,6 +199,10 @@ export function useDispatchTargetPicker({ source, onComplete, intent = 'dispatch
           }
         }
         dispatchIds = await dispatchToTarget(params);
+        // A play chosen on purpose teaches where this kind of thing is watched.
+        if (!params.brief && (params.play || params.snapshot)) {
+          recordPlay(sourceItem ?? snapshot?.currentItem ?? null, targetIds);
+        }
       } catch {
         setDispatchError('Could not start playback on that device. Nothing was moved.');
         return { ok: false, error: 'dispatch-failed' };
@@ -197,11 +215,22 @@ export function useDispatchTargetPicker({ source, onComplete, intent = 'dispatch
     setDispatchError(null);
     onComplete?.({ targetIds, mode });
     return { ok: true, dispatchIds };
-  }, [moveUnavailable, hasMoveSnapshot, selected, mode, source, dispatchToTarget, handOff, onComplete, hasPotentialContent, asksKeepOrStop, local]);
+  }, [moveUnavailable, hasMoveSnapshot, selected, mode, source, dispatchToTarget, handOff, onComplete, hasPotentialContent, asksKeepOrStop, local, recordPlay, sourceItem]);
 
   submitRef.current = submit;
 
   return { devices, selected, multi, mode, asksKeepOrStop, canSubmit, localPlaying, hasPotentialContent, moveSupported, moveUnavailable, dispatchError, select, toggleMulti, setMode, submit };
+}
+
+/** Preferred ids first (in their order), then everything else by name. */
+export function orderPickerDevices(devices, preferredIds = []) {
+  const rank = new Map(preferredIds.map((id, index) => [id, index]));
+  return [...devices].sort((a, b) => {
+    const ra = rank.has(a.id) ? rank.get(a.id) : Infinity;
+    const rb = rank.has(b.id) ? rank.get(b.id) : Infinity;
+    if (ra !== rb) return ra - rb;
+    return deviceName(a).localeCompare(deviceName(b));
+  });
 }
 
 export default useDispatchTargetPicker;

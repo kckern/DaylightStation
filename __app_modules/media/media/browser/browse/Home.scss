@@ -6,6 +6,7 @@
 // with a pointer, ‹ › step buttons sit at the heading's right end. Every
 // control is at least 44px.
 @use "../../../../../frontend/src/styles/breakpoints" as *;
+@use "../theme/ink" as *;
 
 .home-row {
   display: flex;
@@ -139,6 +140,41 @@
     display: block;
     height: 100%;
     background: color-mix(in srgb, var(--media-text) 70%, transparent);
+  }
+
+  // The one deliberate play: a solid amber disc on the art's bottom-right
+  // corner, clear of the progress edge. 44 px target, 36 px disc. The art
+  // around it opens the item; only this plays.
+  .home-tile-play {
+    position: absolute;
+    right: 4px;
+    bottom: 8px;
+    width: 44px;
+    height: 44px;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border: none;
+    background: none;
+    cursor: pointer;
+
+    &::before {
+      content: "";
+      position: absolute;
+      inset: 4px;
+      border-radius: 50%;
+      background: var(--mantine-color-amber-5);
+      box-shadow: 0 1px 4px scrim(0.45);
+    }
+
+    svg {
+      position: relative;
+      color: var(--mantine-color-dark-9);
+      margin-left: 2px; // optical centre of the triangle
+    }
+
+    &:hover::before { background: var(--mantine-color-amber-4); }
+    &:focus-visible { outline: 2px solid var(--mantine-color-amber-3); outline-offset: -2px; border-radius: 50%; }
   }
 
   // Title row: the title block, then ⋯ (a 44 px target) at its right. With a

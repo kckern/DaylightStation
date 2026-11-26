@@ -56,12 +56,11 @@ export function useItemVerbs() {
     if (!item?.id) return undefined;
     const collection = isCollection(item);
     switch (kind) {
+      // A tap is a look: a collection opens its list, an item opens its
+      // detail page. Playing is the tile's ▶ (`playNow`), never the tap.
       case 'tap':
-        return collection ? dispatch(item.id, item) : playLeaf(item, ctx.entry);
       case 'open':
-        if (collection) return dispatch(item.id, item);
-        push('detail', { contentId: item.id });
-        return 'detail';
+        return dispatch(item.id, item, { via: ctx.via ?? kind });
       case 'details':
         push('detail', { contentId: item.id });
         return 'detail';

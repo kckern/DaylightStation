@@ -46,10 +46,11 @@ describe('PlayedEarlier', () => {
     expect(screen.getByTestId('played-earlier-1')).toHaveTextContent('Song A');
   });
 
-  it('a row plays at the aim and offers favourites in its menu', async () => {
+  it('a row opens the item (a look, never a play) and offers favourites in its menu', async () => {
     render(<MantineProvider><PlayedEarlier screenId="livingroom-tv" /></MantineProvider>);
     fireEvent.click(await screen.findByTestId('played-earlier-0-play'));
-    expect(dispatchLeafVerb).toHaveBeenCalledWith('playNow', 'plex:2', expect.objectContaining({ id: 'plex:2' }));
+    expect(dispatch).toHaveBeenCalledWith('plex:2', expect.objectContaining({ id: 'plex:2' }), { via: 'played-earlier' });
+    expect(dispatchLeafVerb).not.toHaveBeenCalled();
     fireEvent.click(screen.getByTestId('played-earlier-0-more'));
     fireEvent.click(await screen.findByTestId('played-earlier-0-verb-favourite'));
     expect(apiMock).toHaveBeenCalledWith('api/v1/media/household/favourites', expect.objectContaining({ id: 'plex:2', kind: 'item' }), 'POST');

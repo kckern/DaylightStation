@@ -40,7 +40,7 @@ beforeEach(() => {
 describe('useContentDispatch outcomes', () => {
   it('a local Play records one quiet confirmation naming the item, with Undo, and no toast', async () => {
     const { result } = renderHook(() => useContentDispatch());
-    await act(async () => { result.current.dispatch('plex:55854', { title: 'Arrival', format: 'video' }); await Promise.resolve(); });
+    await act(async () => { result.current.dispatchLeafVerb('playNow', 'plex:55854', { title: 'Arrival', format: 'video' }); await Promise.resolve(); });
     expect(recordLocal).toHaveBeenCalledTimes(1);
     expect(recordLocal).toHaveBeenCalledWith(expect.objectContaining({
       kind: 'play', phase: 'running', item: expect.objectContaining({ contentId: 'plex:55854', title: 'Arrival' }),
@@ -61,7 +61,7 @@ describe('useContentDispatch outcomes', () => {
   it('an aimed Play leaves confirmation to the dispatch outcome, not a toast', async () => {
     aim = { targetIds: ['office-tv'], mode: 'fork' };
     const { result } = renderHook(() => useContentDispatch());
-    await act(async () => { result.current.dispatch('plex:55854', { title: 'Arrival', format: 'video' }); await Promise.resolve(); });
+    await act(async () => { result.current.dispatchLeafVerb('playNow', 'plex:55854', { title: 'Arrival', format: 'video' }); await Promise.resolve(); });
     expect(dispatchToTarget).toHaveBeenCalled();
     expect(notificationsShow).not.toHaveBeenCalled();
     expect(recordLocal).not.toHaveBeenCalled();
@@ -81,7 +81,7 @@ describe('selected quality dispatch', () => {
   it('attaches per-item overrides to local playback and preserves them in the queue', async () => {
     selectedOverrides = { 'plex:42': { maxResolution: '720', maxVideoBitrate: 4000, transcode: 'force', adaptive: false } };
     const { result } = renderHook(() => useContentDispatch());
-    await act(async () => { result.current.dispatch('plex:42', { title: 'Movie', format: 'video' }); });
+    await act(async () => { result.current.dispatchLeafVerb('playNow', 'plex:42', { title: 'Movie', format: 'video' }); });
     expect(controller.getSnapshot().currentItem).toMatchObject(selectedOverrides['plex:42']);
     expect(controller.getSnapshot().queue.items[0]).toMatchObject(selectedOverrides['plex:42']);
     await act(async () => { result.current.dispatchLeafVerb('add', 'plex:43', { title: 'Other', format: 'video' }); });
@@ -91,7 +91,7 @@ describe('selected quality dispatch', () => {
     selectedOverrides = { 'plex:42': { maxResolution: '720', adaptive: false } };
     aim = { targetIds: ['office-tv'], mode: 'fork' };
     const { result } = renderHook(() => useContentDispatch());
-    await act(async () => { result.current.dispatch('plex:42', { title: 'Movie', format: 'video' }); });
+    await act(async () => { result.current.dispatchLeafVerb('playNow', 'plex:42', { title: 'Movie', format: 'video' }); });
     expect(dispatchToTarget).toHaveBeenCalledWith(expect.objectContaining({ itemAction: expect.objectContaining({ item: expect.objectContaining(selectedOverrides['plex:42']) }) }));
   });
 });

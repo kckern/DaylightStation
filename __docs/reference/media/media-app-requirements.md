@@ -45,9 +45,9 @@ These apply to every requirement. When a requirement and a principle seem to con
 
 | ID | Principle | Traces |
 |---|---|---|
-| **PR-1** | **One aim.** Where new content plays is decided by exactly one setting per device, the aim. It is visible wherever a play or add action appears, and no control ignores it. The only exceptions are explicit one-off actions that name their screen: Play on…, Add to queue on…, Move to…, and Add to this queue. | PLACE.1a, T1 |
+| **PR-1** | **One aim.** Where new content plays is decided by exactly one setting per device, the aim, and no control ignores it. With nothing aimed, a play goes to the screen this browser last chose for that kind of thing (films, music), or here. Every play names where it goes before it is pressed ("▶ Office Screen", "Play here"). The only other exceptions are explicit one-off actions that name their screen: Play on…, Play here, Add to queue on…, Move to…, and Add to this queue. | PLACE.1a, T1 |
 | **PR-2** | **One verb set.** Play, Shuffle, Play next, Add to queue, Play on… and Move to… mean the same thing on every item, on every surface, at every device size. | PLAY.1a, Q9, R28 |
-| **PR-3** | **One tap rule.** Tapping a playable item plays it at the aim, and tapping a collection opens it. Cameras and single photos show on this device. Details are always one step away. | FIND.8b, Q2, R8, R10 |
+| **PR-3** | **Looking is not watching.** Searching, tapping and previewing never start anything. A tap opens: a playable item's detail page (art, facts, where anyone got to), a collection's list. Playing is one deliberate ▶, on the row, on the tile's art or on the detail page, and it names where it plays (PR-1). Cameras and single photos show on this device. Superseded 2026-11-25: "tapping a playable item plays it at the aim" — in a week of logs three of four taps-that-played were abandoned or moved to a TV within a minute. | FIND.8b, Q2, R8, R10 |
 | **PR-4** | **Steering is not aiming.** Controlling a screen never changes the aim, and changing the aim never changes what is being controlled. | STEER.1b, T2 |
 | **PR-5** | **One set of controls for any playback.** Controls, queue and settings are the same, in the same layout, for this device and for any other screen. Controls a screen can't support show as unavailable, with a reason. | STEER.1b |
 | **PR-6** | **One voice for outcomes.** Every change to playback or a queue reports its outcome through one confirmation system. The same outcome at the same distance reports the same way, and failures are always reported. | RELY.1a, T8 |
@@ -217,7 +217,7 @@ A tap is one deliberate touch or click, including opening a menu. Typing a searc
 
 | ID | Path | Budget | Traces |
 |---|---|---|---|
-| NF-TAP-01 | A name typed → a playable item playing at the aim. | 1 tap | FIND.8b, SK-1 |
+| NF-TAP-01 | A name typed → a playable item playing where its ▶ says (the aim, else the screen this browser used last for that kind of thing, else here). | 1 tap | FIND.8b, SK-1 |
 | NF-TAP-02 | A name typed → a collection playing at the aim, via inline Play. | 1 tap | R8 |
 | NF-TAP-03 | Pause the screen this device last sent to, from anywhere. | 1 tap | R21, BS-3 |
 | NF-TAP-04 | Open the queue of the playback being held, from anywhere. | 1 tap | STEER.7a |
@@ -226,7 +226,8 @@ A tap is one deliberate touch or click, including opening a menu. Typing a searc
 | NF-TAP-07 | Move a screen's playback to this device. | 2 taps | PLACE.7a, R22 |
 | NF-TAP-08 | Pause all screens. | 2 taps | STEER.11a |
 | NF-TAP-09 | Retry a failed send, or put back a change. | 1 tap | RELY.6a, RELY.4b |
-| NF-TAP-10 | Send one item to a screen other than the aim. | 3 taps | PLACE.3a |
+| NF-TAP-10 | Send one item to a screen other than the aim. The screen used last for that kind of thing is the ▶ itself (1 tap); any other is ⋯ → Play on… → its tile, and the tile list holds only screens that can play it, the usual one first. | 3 taps | PLACE.3a |
+| NF-TAP-11 | Words searched before → the item picked for them last time, in the first row. | 0 scrolls | FIND.8b |
 
 ### NF-TIME — Responsiveness
 

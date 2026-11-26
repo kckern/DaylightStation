@@ -219,6 +219,13 @@
 .cast-picker-mode-option:hover:not([data-disabled='true']) .cast-picker-mode-option__content { background: var(--mantine-color-dark-5); }
 
 .cast-picker-cta {
+  // Never below the fold: however long the screen list, the button that
+  // sends stays on screen at the bottom of whatever scrolls (the Play on…
+  // sheet, the Cast popover), with the picker's own surface behind its edge.
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  box-shadow: 0 -8px 0 var(--mantine-color-dark-6);
   width: 100%;
   min-height: 44px;
   background: var(--mantine-color-amber-5);

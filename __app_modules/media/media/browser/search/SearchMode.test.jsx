@@ -436,14 +436,14 @@ describe('SearchMode', () => {
       expect(screen.getByTestId('result-more-plex:663508')).toBeInTheDocument();
     });
 
-    it('a leaf row never shows the container ▶', async () => {
+    it('a leaf row has its own ▶, which names where it plays', async () => {
       comboState = {
         search: 'bluey',
         results: [{ id: 'plex:685088', title: 'Bluey', type: 'episode', thumbnail: null }],
       };
       render(<Harness />);
       await screen.findByTestId('search-mode-result-plex:685088');
-      expect(screen.queryByTestId('result-play-all-plex:685088')).toBeNull();
+      expect(screen.getByTestId('result-play-all-plex:685088')).toHaveAccessibleName(/^Play Bluey (here|on .+)$/);
     });
 
     it('⋯ on a leaf: Play Next follows the aim and keeps the surface open', async () => {

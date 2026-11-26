@@ -193,6 +193,14 @@ export const mediaLog = {
   // Kind and outcome only: never the content id or the label.
   homeScreenPinShown:     debug('home-screen-pin.shown'),
   homeScreenPinRequested: info('home-screen-pin.requested'),
+  // Looking vs watching (habits/): what this browser learned, and how a tap
+  // or a ▶ was read. `item.opened` is a look (never a play); `play.sent`
+  // names where a deliberate ▶ went and whether learning chose it.
+  habitPickRecorded:      info('habit.pick-recorded'),
+  habitScreenRecorded:    info('habit.screen-recorded'),
+  habitResultsRanked:     debug('habit.results-ranked'),
+  itemOpened:             info('item.opened'),
+  playSent:               info('play.sent'),
 };
 
 export default mediaLog;

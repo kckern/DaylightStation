@@ -206,3 +206,20 @@
   color: var(--mantine-color-dark-1);
   font-size: 14px;
 }
+
+// A row's ▶ names where it plays ("▶ Office Screen"). On a phone that name
+// costs the title its room — three Sonic films all read "Sonic the Hed…" —
+// and the title is how the right one is told apart. Below 480 px the ▶ is a
+// 44 px icon button; its spoken name and tooltip still say where it plays,
+// and the detail page (a tap away) spells it out.
+@media (max-width: 479px) {
+  .search-mode .result-play-label {
+    width: 44px;
+    min-width: 44px;
+    padding-inline: 0;
+    justify-content: center;
+
+    .mantine-Button-label { display: none; }
+    .mantine-Button-section { margin: 0; }
+  }
+}

@@ -130,14 +130,13 @@ describe('BrowseView — container dispatch header (Task 15)', () => {
     expect(screen.queryByTestId('browse-dispatch-header')).not.toBeInTheDocument();
   });
 
-  it('renders ▶ Play · 🔀 Shuffle · + Queue and the destination for a container browse view', () => {
+  it('renders ▶ Play · 🔀 Shuffle · + Queue for a container browse view, Play naming where it plays', () => {
     renderBrowse({ containerItem });
     expect(screen.getByTestId('browse-dispatch-header')).toBeInTheDocument();
-    expect(screen.getByTestId('browse-dispatch-play')).toHaveTextContent('Play');
+    // Nothing aimed or learned: the ▶ says it plays here.
+    expect(screen.getByTestId('browse-dispatch-play')).toHaveTextContent('Play here');
     expect(screen.getByTestId('browse-dispatch-shuffle')).toHaveTextContent('Shuffle');
     expect(screen.getByTestId('browse-dispatch-queue')).toHaveTextContent('Queue');
-    expect(screen.getByTestId('destination-line')).toBeInTheDocument();
-    expect(screen.getByTestId('destination-line-name')).toHaveTextContent('This device');
   });
 
   it('renders the header directly under the breadcrumb, above the row list', () => {
@@ -196,33 +195,17 @@ describe('BrowseView — nested drill carries containerItem forward', () => {
   });
 });
 
-describe('BrowseView — leaf Detail and Play Now entrypoints', () => {
-  it('keeps the playable row itself as one-tap Play Now at the current aim', () => {
+describe('BrowseView — a playable row: the tap looks, its ▶ plays', () => {
+  it('a row tap opens the exact item\'s detail page and plays nothing', () => {
     browseState = {
       items: [{ id: 'plex:55854', title: 'Arrival', type: 'movie', thumbnail: 'arrival.jpg' }],
       total: 1, loading: false, error: null,
     };
     renderBrowse();
     const row = screen.getByRole('button', { name: /Arrival artwork\s+Arrival/ });
-    expect(row).toHaveAttribute('data-testid', 'result-play-now-plex:55854');
+    expect(row).toHaveAttribute('data-testid', 'browse-open-plex:55854');
     expect(row.closest('li')).toHaveClass('result-row');
     fireEvent.click(row);
-
-    expect(dispatchLeafVerbMock).toHaveBeenCalledWith('playNow', 'plex:55854', expect.objectContaining({
-      id: 'plex:55854', title: 'Arrival', thumbnail: 'arrival.jpg',
-    }));
-    expect(navPush).not.toHaveBeenCalled();
-  });
-
-  it('opens the exact item from a separate Detail action without dispatching playback', () => {
-    browseState = {
-      items: [{ id: 'plex:55854', title: 'Arrival', type: 'movie', thumbnail: 'arrival.jpg' }],
-      total: 1, loading: false, error: null,
-    };
-    renderBrowse();
-    const detail = screen.getByRole('button', { name: 'Details', exact: true });
-    expect(detail).toHaveAttribute('data-testid', 'browse-detail-plex:55854');
-    fireEvent.click(detail);
 
     expect(navPush).toHaveBeenCalledWith('detail', { contentId: 'plex:55854' }, {
       currentPatch: { path: 'plex/663508', scrollTop: 0, focusedId: 'plex:55854', loadedCount: 1 },
@@ -230,13 +213,16 @@ describe('BrowseView — leaf Detail and Play Now entrypoints', () => {
     expect(dispatchLeafVerbMock).not.toHaveBeenCalled();
   });
 
-  it('routes the exact browse row through the current destination dispatcher', () => {
+  it('the row\'s own ▶ plays that exact row through the destination dispatcher', () => {
     browseState = {
       items: [{ id: 'plex:685088', title: 'Episode 3', type: 'episode', thumbnail: 'episode.jpg' }],
       total: 1, loading: false, error: null,
     };
     renderBrowse();
-    fireEvent.click(screen.getByTestId('result-play-now-plex:685088'));
+    const play = screen.getByTestId('result-play-all-plex:685088');
+    expect(play).toHaveTextContent('Play');
+    expect(play).toHaveAccessibleName('Play Episode 3 here');
+    fireEvent.click(play);
 
     expect(dispatchLeafVerbMock).toHaveBeenCalledWith('playNow', 'plex:685088', expect.objectContaining({
       id: 'plex:685088', title: 'Episode 3', thumbnail: 'episode.jpg',

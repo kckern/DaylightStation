@@ -119,11 +119,12 @@ describe('HomeView start page', () => {
     await waitFor(() => expect(two.querySelectorAll('.home-tile-line')).toHaveLength(2));
   });
 
-  it('draws no Play bar on a tile and an amber-free progress bar only for unfinished items', async () => {
+  it('draws no Play bar on a tile — one small ▶ disc that says where it plays — and an amber-free progress bar only for unfinished items', async () => {
     renderHome();
     const arrival = await screen.findByTestId('home-tile-carry-on-plex:1');
     expect(within(arrival).queryByRole('button', { name: /^Play$/ })).toBeNull();
-    expect(arrival.querySelector('[data-testid$="-play"]')).toBeNull();
+    const disc = within(arrival).getByTestId('home-tile-carry-on-plex:1-play');
+    expect(disc).toHaveAccessibleName(/^Play .+ here$/);
     expect(arrival.querySelector('.home-tile-progress')).not.toBeNull();
     const fresh = await screen.findByTestId('home-tile-new-plex:400');
     expect(fresh.querySelector('.home-tile-progress')).toBeNull();
@@ -169,17 +170,20 @@ describe('HomeView start page', () => {
     renderHome();
     const fav = await screen.findByTestId('home-tile-favourites-plex:100');
     fireEvent.click(within(fav).getByTestId('home-tile-favourites-plex:100-picture'));
-    expect(dispatch).toHaveBeenCalledWith('plex:100', expect.objectContaining({ itemType: 'container' }));
+    expect(dispatch).toHaveBeenCalledWith('plex:100', expect.objectContaining({ itemType: 'container' }), expect.anything());
     // The next part is one entry of the tile's ⋯ menu, not a bar under it.
     fireEvent.click(within(fav).getByTestId('home-tile-favourites-plex:100-more'));
     fireEvent.click(await screen.findByTestId('home-tile-favourites-plex:100-verb-continue'));
     expect(dispatchLeafVerb).toHaveBeenCalledWith('playNow', 'plex:105', expect.objectContaining({ id: 'plex:105' }));
   });
 
-  it('a playable carry-on picture continues from its spot', async () => {
+  it('a carry-on picture opens the item; only its ▶ disc plays, continuing from its spot', async () => {
     renderHome();
     const tile = await screen.findByTestId('home-tile-carry-on-plex:1');
     fireEvent.click(within(tile).getByTestId('home-tile-carry-on-plex:1-picture'));
+    expect(dispatch).toHaveBeenCalledWith('plex:1', expect.objectContaining({ id: 'plex:1' }), expect.anything());
+    expect(dispatchLeafVerb).not.toHaveBeenCalled();
+    fireEvent.click(within(tile).getByTestId('home-tile-carry-on-plex:1-play'));
     // The named spot itself, not the server's last-write playhead (review B2).
     expect(dispatchLeafVerb).toHaveBeenCalledWith('playNow', 'plex:1', expect.objectContaining({ id: 'plex:1' }), { startAt: 1800 });
   });
@@ -188,7 +192,7 @@ describe('HomeView start page', () => {
     renderHome();
     const tile = await screen.findByTestId('home-tile-carry-on-plex:2');
     await waitFor(() => expect(tile.querySelectorAll('.home-tile-line')).toHaveLength(2));
-    fireEvent.click(within(tile).getByTestId('home-tile-carry-on-plex:2-picture'));
+    fireEvent.click(within(tile).getByTestId('home-tile-carry-on-plex:2-play'));
     const choice = await screen.findByTestId('spot-choice-1');
     expect(choice).toHaveTextContent('1:20:00 on Living Room TV');
     fireEvent.click(choice);
@@ -385,7 +389,7 @@ describe('HomeView start page', () => {
     expect(tile).toHaveTextContent('4 editions');
     fireEvent.click(within(tile).getByTestId('home-tile-new-plex:501-more'));
     fireEvent.click(await screen.findByTestId('home-tile-new-plex:501-edition-2'));
-    expect(dispatch).toHaveBeenCalledWith('plex:503', expect.objectContaining({ id: 'plex:503' }));
+    expect(dispatch).toHaveBeenCalledWith('plex:503', expect.objectContaining({ id: 'plex:503' }), expect.anything());
   });
 
   it('never shows a machine browser name: an unnamed browser is "a browser"', async () => {

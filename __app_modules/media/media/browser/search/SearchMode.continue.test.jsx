@@ -72,14 +72,14 @@ beforeEach(() => {
 describe('SearchMode collection inline play (FIND.8b/AC2)', () => {
   it('reads Play, and plays the whole collection, when nothing is under way', async () => {
     await mount([]);
-    fireEvent.click(await screen.findByRole('button', { name: 'Play', exact: true }));
+    fireEvent.click(await screen.findByRole('button', { name: /^Play .+ here$/ }));
     expect(playContainerAsQueueMock).toHaveBeenCalledExactlyOnceWith('plex:100', show);
     expect(dispatchLeafVerbMock).not.toHaveBeenCalled();
   });
 
   it('reads Continue S2E7 when a part is under way, and plays that episode', async () => {
     await mount([{ contentId: 'plex:507', title: 'Bingo', type: 'episode', parentId: '20', grandparentId: '100', parentTitle: 'Season 2', itemIndex: 7 }]);
-    fireEvent.click(await screen.findByRole('button', { name: 'Continue S2E7', exact: true }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue S2E7 here', exact: true }));
     expect(dispatchLeafVerbMock).toHaveBeenCalledExactlyOnceWith('playNow', 'plex:507', expect.objectContaining({ title: 'Bingo' }));
     expect(playContainerAsQueueMock).not.toHaveBeenCalled();
   });

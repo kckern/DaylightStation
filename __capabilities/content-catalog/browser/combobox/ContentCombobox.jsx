@@ -183,7 +183,10 @@ export function ContentCombobox({
   const mode = state.mode;
   const isBrowse = mode === Modes.BROWSE;
   const isEditing = mode !== Modes.DISPLAY;
-  const items = isBrowse ? state.browse.items : (transformResults ? transformResults(state.results) : state.results);
+  // `transformResults(results, { query })`: callers may reorder or collapse
+  // what is shown (Media: collapse editions, then put what this person picked
+  // for these words before last time first). The query is the box's text.
+  const items = isBrowse ? state.browse.items : (transformResults ? transformResults(state.results, { query: state.search ?? '' }) : state.results);
   const search = state.search;
   const breadcrumbs = state.browse.breadcrumbs;
   const pagination = state.browse.pagination;
@@ -398,7 +401,7 @@ export function ContentCombobox({
     }
     if (e.key === 'Enter') {
       e.preventDefault();
-      commit('enter');   // decideCommit owns pick/render/literal/open; may keep the dropdown open
+      commit('enter', items);   // decideCommit owns pick/render/literal/open; may keep the dropdown open
       return;
     }
     if (e.key === 'Escape' && isEditing) {
@@ -654,7 +657,10 @@ export function ContentCombobox({
               onAction={onAction}
               extraActions={resultExtraActions}
               playLabel={resultRowLabels?.(item)?.play ?? null}
+              playTitle={resultRowLabels?.(item)?.playTitle ?? null}
               playOnLabel={resultRowLabels?.(item)?.playOn ?? null}
+              playNowLabel={resultRowLabels?.(item)?.playNow ?? null}
+              playHereLabel={resultRowLabels?.(item)?.playHere ?? null}
               onMoreMenuPointerDown={handleMoreMenuPointerDown}
               onMoreMenuChange={handleMoreMenuChange}
               onMoreMenuAction={handleMoreMenuAction}

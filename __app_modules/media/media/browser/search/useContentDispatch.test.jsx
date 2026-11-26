@@ -91,7 +91,7 @@ describe('useContentDispatch', () => {
   });
 
   describe('FIND.8b/AC3 cameras and single photos show on this device', () => {
-    it('a photo tap shows here even with another screen aimed; an ordinary leaf still goes to the aim', () => {
+    it('a photo tap shows here even with another screen aimed; an ordinary leaf tap opens it', () => {
       castTargetState = { targetIds: ['livingroom-tv'], mode: 'fork' };
       const { dispatch } = setup();
       let photoRoute; let filmRoute;
@@ -100,7 +100,8 @@ describe('useContentDispatch', () => {
       expect(dispatchToTarget).not.toHaveBeenCalled();
       expect(playNow).toHaveBeenCalledWith(expect.objectContaining({ contentId: 'immich:asset:1' }), expect.anything());
       act(() => { filmRoute = dispatch('plex:1', { id: 'plex:1', title: 'Arrival', type: 'movie' }); });
-      expect(filmRoute).toBe('cast');
+      expect(filmRoute).toBe('detail');
+      expect(dispatchToTarget).not.toHaveBeenCalled();
     });
   });
 
@@ -150,63 +151,39 @@ describe('useContentDispatch', () => {
     });
   });
 
-  it('non-peek view routes to local queue.playNow with clearRest', () => {
-    navState = { view: 'home', params: {} };
-    const { dispatch } = setup();
-    act(() => {
-      dispatch('plex:42', { title: 'Bluey', thumbnail: 'thumb.jpg' });
-    });
-    expect(playNow).toHaveBeenCalledWith(
-      { contentId: 'plex:42', title: 'Bluey', thumbnail: 'thumb.jpg' },
-      { clearRest: true }
-    );
+  // Looking is not watching: a TAP on a playable item opens it and plays
+  // nothing, whatever is aimed and whichever view is showing. Playing is the
+  // deliberate ▶ (dispatchLeafVerb('playNow')), covered below.
+  it('a leaf tap opens its detail page and plays nothing, wherever it is aimed', () => {
+    for (const [nav, aim] of [
+      [{ view: 'home', params: {} }, []],
+      [{ view: 'peek', params: { deviceId: 'shield-tv' } }, []],
+      [{ view: 'home', params: {} }, ['livingroom-tv']],
+    ]) {
+      navState = nav;
+      castTargetState = { targetIds: aim, mode: 'transfer' };
+      push.mockClear();
+      const { dispatch } = setup();
+      let route;
+      act(() => { route = dispatch('plex:42', { title: 'Bluey', thumbnail: 'thumb.jpg' }); });
+      expect(route).toBe('detail');
+      expect(push).toHaveBeenCalledWith('detail', { contentId: 'plex:42' });
+    }
+    expect(playNow).not.toHaveBeenCalled();
     expect(dispatchToTarget).not.toHaveBeenCalled();
   });
 
-  it('PLACE.1a/STEER.1b Remote view still routes a leaf to the displayed local aim', () => {
-    navState = { view: 'peek', params: { deviceId: 'shield-tv' } };
-    const { dispatch } = setup();
-    act(() => {
-      dispatch('plex:99', { title: 'Lonesome Dove' });
-    });
-    expect(playNow).toHaveBeenCalledWith(
-      { contentId: 'plex:99', title: 'Lonesome Dove', thumbnail: null },
-      { clearRest: true }
-    );
+  it('the ▶ plays locally when nothing is aimed or learned', () => {
+    const { dispatchLeafVerb } = setup();
+    act(() => { dispatchLeafVerb('playNow', 'plex:1'); });
+    expect(playNow).toHaveBeenCalledWith({ contentId: 'plex:1', title: null, thumbnail: null });
     expect(dispatchToTarget).not.toHaveBeenCalled();
   });
 
-  it('peek view WITHOUT a deviceId falls back to local playNow', () => {
-    navState = { view: 'peek', params: {} };
-    const { dispatch } = setup();
-    act(() => {
-      dispatch('plex:7', { title: 'X' });
-    });
-    expect(playNow).toHaveBeenCalledWith(
-      { contentId: 'plex:7', title: 'X', thumbnail: null },
-      { clearRest: true }
-    );
-    expect(dispatchToTarget).not.toHaveBeenCalled();
-  });
-
-  it('defaults missing title/thumbnail to null', () => {
-    navState = { view: 'home', params: {} };
-    const { dispatch } = setup();
-    act(() => {
-      dispatch('plex:1');
-    });
-    expect(playNow).toHaveBeenCalledWith(
-      { contentId: 'plex:1', title: null, thumbnail: null },
-      { clearRest: true }
-    );
-  });
-
-  it('routes ordinary Play with the default transfer aim as non-destructive fork', () => {
+  it('the ▶ with the default transfer aim casts as a non-destructive fork', () => {
     castTargetState = { targetIds: ['livingroom-tv'], mode: 'transfer' };
-    const { dispatch } = setup();
-    act(() => {
-      dispatch('plex:685088', { title: 'Episode 3' });
-    });
+    const { dispatchLeafVerb } = setup();
+    act(() => { dispatchLeafVerb('playNow', 'plex:685088', { title: 'Episode 3' }); });
     expect(dispatchToTarget).toHaveBeenCalledWith({
       targetIds: ['livingroom-tv'],
       play: 'plex:685088',
@@ -216,57 +193,26 @@ describe('useContentDispatch', () => {
     expect(playNow).not.toHaveBeenCalled();
   });
 
-  it('passes the chip mode through verbatim (fork)', () => {
-    castTargetState = { targetIds: ['livingroom-tv'], mode: 'fork' };
-    const { dispatch } = setup();
-    act(() => {
-      dispatch('plex:685088', { title: 'Episode 3' });
-    });
+  it('the ▶ passes the chip mode through (fork) and fans out to every aimed screen', () => {
+    castTargetState = { targetIds: ['livingroom-tv', 'office-tv'], mode: 'fork' };
+    const { dispatchLeafVerb } = setup();
+    act(() => { dispatchLeafVerb('playNow', 'plex:685088', { title: 'Episode 3' }); });
     expect(dispatchToTarget).toHaveBeenCalledWith(
-      expect.objectContaining({ mode: 'fork' })
+      expect.objectContaining({ mode: 'fork', targetIds: ['livingroom-tv', 'office-tv'] })
     );
-  });
-
-  it('fans out to every configured target', () => {
-    castTargetState = { targetIds: ['livingroom-tv', 'office-tv'], mode: 'transfer' };
-    const { dispatch } = setup();
-    act(() => {
-      dispatch('plex:685088', { title: 'Episode 3' });
-    });
-    expect(dispatchToTarget).toHaveBeenCalledWith(
-      expect.objectContaining({ targetIds: ['livingroom-tv', 'office-tv'] })
-    );
-  });
-
-  it('PLACE.1a/STEER.1b Remote view preserves the displayed remote aim for a leaf', () => {
-    navState = { view: 'peek', params: { deviceId: 'shield-tv' } };
-    castTargetState = { targetIds: ['livingroom-tv'], mode: 'transfer' };
-    const { dispatch } = setup();
-    act(() => {
-      dispatch('plex:99', { title: 'Lonesome Dove' });
-    });
-    expect(dispatchToTarget).toHaveBeenCalledWith({
-      targetIds: ['livingroom-tv'],
-      play: 'plex:99',
-      mode: 'fork',
-      title: 'Lonesome Dove',
-    });
   });
 
   it('returns the branch it took', () => {
     const { result, rerender } = renderHook(() => useContentDispatch());
     let route;
     act(() => { route = result.current.dispatch('plex:1', { title: 'A' }); });
+    expect(route).toBe('detail');
+    act(() => { route = result.current.dispatchLeafVerb('playNow', 'plex:1', { title: 'A' }); });
     expect(route).toBe('local');
 
     castTargetState = { targetIds: ['livingroom-tv'], mode: 'transfer' };
     rerender();
-    act(() => { route = result.current.dispatch('plex:2', { title: 'B' }); });
-    expect(route).toBe('cast');
-
-    navState = { view: 'peek', params: { deviceId: 'shield-tv' } };
-    rerender();
-    act(() => { route = result.current.dispatch('plex:3', { title: 'C' }); });
+    act(() => { route = result.current.dispatchLeafVerb('playNow', 'plex:2', { title: 'B' }); });
     expect(route).toBe('cast');
   });
 
@@ -323,11 +269,11 @@ describe('useContentDispatch', () => {
       });
     });
 
-    it('a leaf still plays locally', () => {
+    it('a leaf opens its detail page instead of browsing or playing', () => {
       const { dispatch } = setup();
       act(() => { dispatch('plex:665667', { title: 'Episode 8', type: 'episode' }); });
-      expect(push).not.toHaveBeenCalled();
-      expect(playNow).toHaveBeenCalled();
+      expect(push).toHaveBeenCalledWith('detail', { contentId: 'plex:665667' });
+      expect(playNow).not.toHaveBeenCalled();
     });
 
     // Task 14 REVERSAL of prior behavior: an aimed cast target used to win
@@ -367,11 +313,11 @@ describe('useContentDispatch', () => {
       expect(dispatchToTarget).not.toHaveBeenCalled();
     });
 
-    it('a bare id with no item metadata plays locally, not browse', () => {
+    it('a bare id with no item metadata opens its detail page, not browse', () => {
       const { dispatch } = setup();
       act(() => { dispatch('plex:1'); });
-      expect(push).not.toHaveBeenCalled();
-      expect(playNow).toHaveBeenCalled();
+      expect(push).toHaveBeenCalledWith('detail', { contentId: 'plex:1' });
+      expect(playNow).not.toHaveBeenCalled();
     });
   });
 
@@ -557,8 +503,8 @@ describe('useContentDispatch', () => {
     it('raises no ad-hoc toast for a cast; the dispatch outcome record names the screen', () => {
       castTargetState = { targetIds: ['livingroom-tv', 'office-tv'], mode: 'transfer' };
       dispatchToTarget.mockReturnValue(['d1', 'd2']);
-      const { dispatch } = setup();
-      act(() => { dispatch('plex:1', { title: 'Bluey' }); });
+      const { dispatchLeafVerb } = setup();
+      act(() => { dispatchLeafVerb('playNow', 'plex:1', { title: 'Bluey' }); });
       expect(dispatchToTarget).toHaveBeenCalledWith(expect.objectContaining({ targetIds: ['livingroom-tv', 'office-tv'], title: 'Bluey' }));
       expect(notificationsShow).not.toHaveBeenCalled();
     });
@@ -566,8 +512,8 @@ describe('useContentDispatch', () => {
     it('raises no toast for a failed dispatch either; the tray row carries its own Retry', () => {
       castTargetState = { targetIds: ['livingroom-tv'], mode: 'transfer' };
       dispatchToTarget.mockReturnValue(['d1']);
-      const { dispatch, rerender } = setup();
-      act(() => { dispatch('plex:1', { title: 'Bluey' }); });
+      const { dispatchLeafVerb, rerender } = setup();
+      act(() => { dispatchLeafVerb('playNow', 'plex:1', { title: 'Bluey' }); });
       dispatchesState = new Map([['d1', { status: 'failed', error: 'boom' }]]);
       rerender();
       expect(notificationsShow).not.toHaveBeenCalled();

@@ -3,10 +3,13 @@
 // the item's kind — stills 16:9, posters 2:3, music 1:1), a title that wraps to
 // two lines, ONE muted meta line with the most useful fact, a thin progress
 // bar on the art's bottom edge for unfinished items, and the ⋯ menu with every
-// verb (in the title row, never over the art). The art and the title both follow the tap rule they are given; there
-// is no per-tile Play bar.
+// verb (in the title row, never over the art). The art and the title OPEN the
+// item (a look); the small ▶ disc on the art's corner is the one deliberate
+// play, and its accessible name says where it plays ("Play Sonic on Office
+// Screen"). No Play bar, no slab: a disc on the thumbnail.
 import React, { useState } from 'react';
 import { UnstyledButton } from '@mantine/core';
+import { IconPlayerPlayFilled } from '@tabler/icons-react';
 import { ItemMenu } from "../household/ItemMenu.jsx";
 import { tileKind } from "./tilePresentation.js";
 
@@ -19,6 +22,7 @@ export function HomeTile({
   item, title: titleOverride = null, meta = null, size = 'normal', onPicture, pictureLabel,
   onVerb, favourite, watched = null, removable = false, testId, progress = null,
   editions = null, onEdition = null, continueLabel = null, kind: kindOverride = null,
+  onPlay = null, playLabel = null,
 }) {
   const title = titleOverride ?? item?.title ?? 'Untitled';
   const pictureName = pictureLabel ?? title;
@@ -63,6 +67,17 @@ export function HomeTile({
             </span>
           )}
         </UnstyledButton>
+        {onPlay && (
+          <UnstyledButton
+            className="home-tile-play"
+            data-testid={`${testId}-play`}
+            aria-label={playLabel ?? `Play ${title}`}
+            title={playLabel ?? `Play ${title}`}
+            onClick={(event) => { event.stopPropagation(); onPlay(); }}
+          >
+            <IconPlayerPlayFilled size={16} aria-hidden />
+          </UnstyledButton>
+        )}
       </div>
       <div className="home-tile-head">
         <div className="home-tile-body">

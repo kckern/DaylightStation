@@ -489,6 +489,60 @@ Local playback reports its progress with this device's identity (every request
 carries `X-Daylight-Device`); when a routine or another device started the item,
 that origin rides the progress report too, so "started by" and the ledger know.
 
+## Looking and watching
+
+> Media App treats looking and watching as different acts: searching,
+> clicking and previewing never commit, and playing on a screen takes one
+> deliberate action, aimed at the item and screen it has learned this person
+> usually wants.
+
+**A tap is a look.** Tapping a search row, a start-page tile, a browse row or
+a Played earlier row opens the item: a playable item's detail page (poster,
+facts, summary, how far anyone got, every action), a collection's list. It
+never starts playback anywhere. Cameras and single photos are the one tap that
+shows something — on this device, as before.
+
+**The ▶ is the act, and it says where.** Every playable row carries a labelled
+▶ ("▶ Office Screen", or "▶ Play" when it plays here); a tile carries a small
+amber ▶ disc on its art; the detail page's primary button reads "▶ Play on
+Office Screen" or "▶ Play here". Where it goes (`habits/playDestination.js`):
+
+1. the aim, when something is aimed in the header;
+2. otherwise the screen this browser last played that kind of thing on (films
+   and episodes are one kind, music and audiobooks another), if that screen is
+   still in the house and can play it;
+3. otherwise this device.
+
+The ⋯ menu's Play Now carries the same words, and offers **Play here** when the
+▶ goes elsewhere; the detail page has **Play here** and **Play on…** beside
+its primary Play. Queue edits (Play next, Add to queue) still follow the aim
+alone: they change a queue that is already playing somewhere.
+
+**What the app learns** (`habits/mediaHabits.js`, localStorage
+`media-app.habits`, this browser only). Two things, both from deliberate acts
+only — typing, scrolling and looking at a detail page write nothing:
+
+- *Picks.* Opening or playing a result remembers it against the words in the
+  box. The next search for those words (or while they are still being typed,
+  from three letters; or words that extend them) lists that item first, then
+  everything else in the order it came. Picks fade by half every 30 days; the
+  more often and more lately an item was picked, the higher it sits. Enter
+  picks from the list as shown, not the order underneath.
+- *Screens.* A play of a film on the Office Screen — from its ▶, from Play
+  on…, or a move of local playback — makes the Office Screen the ▶ for the
+  next film. Play here makes it here again. The last deliberate choice wins.
+
+**Play on… only offers what can play it.** A film never lists a speaker or
+headset; a display listed for the house view only (`fleet: true` with no
+`content_control`, e.g. a gym screen whose page has no receiver) is never
+listed at all. The list is in a stable order — the screen used last for that
+kind of thing first, then by name — and its send button stays on screen at
+the bottom of the sheet however long the list.
+
+Logs: `item.opened` (a tap that looked), `play.sent` (where a ▶ went and
+whether the aim, learning or a one-off choice decided it), `habit.pick-recorded`,
+`habit.screen-recorded`, `habit.results-ranked` (debug).
+
 ## Finding and starting things
 
 - **Collections carry an inline play** (FIND.8b/AC2). A collection result (show,
@@ -496,8 +550,8 @@ that origin rides the progress report too, so "started by" and the ledger know.
   household has that show under way (an unfinished episode, or the episode
   after the last finished one). Continue plays that episode at the aim; Play
   plays the whole collection as a queue. A collection tap still opens it.
-- **Cameras and single photos** (FIND.8b/AC3) are the exception to "a tap plays
-  at the aim": a tap shows them on this device, and the second action reads
+- **Cameras and single photos** (FIND.8b/AC3) are the one tap that shows
+  something: a tap shows them on this device, and the second action reads
   **Show on…** (instead of Play on…) to send them to another screen.
 - **Starting on…** (PLAY.1a/AC5). While an item's start on a screen is in
   flight (sent, not yet confirmed playing), the item itself reads **Starting
@@ -551,9 +605,10 @@ operable, hidden when the row fits) sit at the heading's right end.
   line carries the most useful fact — "2 h 39 min left · Garage", "Next
   episode", "Recently added", "4 editions". When screens stopped in different places, a Carry on tile shows one short
   line per spot (at most two) instead.
-- Tapping the art or the title is the item's primary action under the one tap
-  rule; there is no per-tile Play bar (a next part is "Continue …" in the ⋯
-  menu).
+- Tapping the art or the title opens the item (a look); the small amber ▶ disc
+  on the art's bottom-right corner is the one deliberate play, named for where
+  it plays ("Play Sonic on Office Screen"). There is no per-tile Play bar (a
+  next part is "Continue …" in the ⋯ menu).
 - ⋯ is a 44 px target on the art's corner: visible on hover/focus with a
   pointer, always visible but muted on touch (`@media (hover: none)`).
 - *Progress*: a 3 px bar along the art's bottom edge in the text colour at 70 %
@@ -810,11 +865,12 @@ and a **canvas** that shows exactly one view at a time:
 - the **search bar** with the scope control (All / Video / Music / Books, a
   text-weight and underline segmented control) — search is always
   one keystroke away (`/` focuses it on a laptop and opens it on a phone),
-  never a destination page; results drop down inline. A row tap plays a
-  playable item at the aim and opens a container in Browse; containers carry a
-  trailing ▶ (play the whole thing) and playable items a trailing ⋯ (**Play**,
-  **Play next**, **Add to queue**, **Play on…**, Open detail, favourite and
-  watched marks),
+  never a destination page; results drop down inline, with what this person
+  picked for these words before first. A row tap opens the item (its detail
+  page, or a container in Browse); every row carries a trailing ▶ that names
+  where it plays (a container's plays the whole thing) and a ⋯ (**Play on
+  Office Screen** / **Play**, **Play here**, **Play next**, **Add to queue**,
+  **Play on…**, Open detail, favourite and watched marks),
 - the **house indicator** — "N playing" (and "M paused"), an at-a-glance
   summary of the house that opens **Devices**; it is hidden when nothing is
   playing or paused, and its words, not the small dot, carry the state,
@@ -918,11 +974,9 @@ rather than mounting the Mantine `Combobox` popover, which doesn't fit a
 full-screen surface. It mounts `ScopeChips` and `DestinationLine` unchanged —
 the same components the desktop dock and Now Playing use — so "where does a
 tap go" reads identically everywhere. A row tap dispatches through the same
-`useContentDispatch` path as the desktop search bar. Ordinary Play, explicit
-container playback and existing queue actions retain the search surface,
-query and narrowing; leaf Play deliberately avoids the combobox's selecting
-close transition. Container/detail navigation closes search and replaces its
-history marker. Browser Back or explicit close consumes the one marker pushed
+`useContentDispatch` path as the desktop search bar: it opens the item, so it
+closes search and replaces its history marker. A row's ▶, explicit container
+playback and queue actions retain the search surface, query and narrowing. Browser Back or explicit close consumes the one marker pushed
 on open, so repeated playback actions do not add extra Back presses. The
 **Play on…** (send one item to a screen other than the aim) is in every
 result's ⋯ menu; with an idle screen the tile tap itself sends it (three taps:
@@ -1007,7 +1061,7 @@ informational and need no input. Journeys: `screen-tv-input.runtime.test.mjs`.
 |---|---|---|
 | **Home** | The start page: Resume, Playing now on other screens, this screen's suggestions (Favourites, Carry on, Usually (here) at this time, New) and the household's Recent — see [The start page](#the-start-page-and-the-households-memory). | Default; nav; breadcrumb. |
 | **Browse** | Hierarchical catalog listing with artwork or a recognisable placeholder, kind labels, natural part ordering, and a breadcrumb containing every parent. Long collections page automatically as the end approaches; there is no separate load-more hunt. Pages are 50 titles: `GET /api/v1/list/...?take=50&skip=N` returns `{ items, total }`, and for Plex path containers (e.g. `library/sections/6/all`) the page is fetched from Plex itself (`X-Plex-Container-Start/Size`), so a 2,800-title library opens in ~0.3 s instead of sending every title. Each history entry owns `{ path, scrollTop, focusedId, loadedCount }`, captured before drilling into a container or opening Detail through either Details or More → Open detail. Back re-fetches `loadedCount` rows in one request (capped at 1,000) so a row the person had scrolled to exists again, then restores the exact prior collection viewport and triggering row focus. `loadedCount` is a viewport snapshot like `scrollTop`: re-selecting the Browse area ignores it when matching the original root entry. A specific container adds Play / Shuffle / Add at the top and names the current destination. | Nav; container rows; container taps in search. |
-| **Detail** | One item: artwork, what it is and how long ("Movie · 1 hr 56 min", "TV Show · 12 episodes"), description (the source's summary when it has no description), how far each screen has got, full action row (Play Now / Play Next / Play First / Add / Cast), favourite and watched marks. | Browse rows; search results; any item's Details. |
+| **Detail** | One item: artwork, what it is and how long ("Movie · 1 hr 56 min", "TV Show · 12 episodes"), description (the source's summary when it has no description), how far each screen has got, one primary Play that names where it plays ("Play on Office Screen" / "Play here"), then Play here and Play on… when it goes elsewhere, then Play Next / Play First / Add / Add on… / Show briefly on…, favourite and watched marks. Opening it never plays. | A tap on any row or tile; ⋯ Open detail. |
 | **Now Playing** | Full local transport: seek bar, prev/play-pause/next/stop, volume, the queue panel, the tappable aim line, and the same session controls as a screen's Remote. Hosts the visual output of the player. | The handle; Escape/Back returns (the Back button names where it goes, e.g. "Home" with a back chevron). |
 | **Fleet** | Configured devices and named browser screens, live and sorted with playing first. Each card offers **Remote**, **Play…**, inline **Pause**/**Stop** while active, and a truthful unavailable **Move here** until safe native adoption exists. Silent browser rows become uncertain after two minutes. Rows also carry start status, Started by, Add only, notes and "(was …)"; the view offers Pause all / Stop all / Resume all (see "The house view"). | Nav; fleet indicator. |
 | **Screens** | Screen admin: add, name and room, merge/unmerge, retire after the routines are shown, restore; "Not seen lately". | Devices → Screens; Settings. |
@@ -1211,13 +1265,13 @@ channel through `usePlaybackPosition`.
 
 ## Code & Doc Pointers
 
-- App entry: `frontend/src/Apps/MediaApp.jsx` (route `/media` in
-  `frontend/src/main.jsx`)
-- Modules: `frontend/src/modules/Media/` — `shell/` (dock, nav, canvas,
+- App entry: `__app_modules/media/media/browser/MediaApp.jsx` (route `/media`)
+- Modules: `__app_modules/media/media/browser/` — `shell/` (dock, nav, canvas,
   views), `session/` (local session), `fleet/`, `peek/`, `cast/`, `search/`,
   `browse/`, `externalControl/`, `logging/`, `house/` (house view rows,
   house-wide actions, screen admin, routine history; events `house.*`),
-  `identity/` (browser identity, registry naming, first use)
+  `identity/` (browser identity, registry naming, first use), `habits/`
+  (what this browser learned, where a ▶ goes — "Looking and watching")
 - Requirements: [`media-app-requirements.md`](./media-app-requirements.md)
 - Contracts: [`media-app-technical.md`](./media-app-technical.md)
 - Search scopes: [`search-scopes.md`](./search-scopes.md)

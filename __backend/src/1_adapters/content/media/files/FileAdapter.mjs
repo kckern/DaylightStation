@@ -12,7 +12,9 @@ import {
   dirExists,
   listEntries,
   getStats,
-  loadYamlSafe
+  loadYamlSafe,
+  readDirectoryAsync,
+  getFileStatsAsync,
 } from '#system/utils/FileIO.mjs';
 
 const MEDIA_PREFIXES = ['', 'audio', 'video', 'img'];
@@ -933,17 +935,25 @@ export class FileAdapter extends IContentSource {
     if (depth > 5 || limit <= 0) return [];
 
     const results = [];
-    const entries = listEntries(dirPath);
+    // One non-blocking readdir per directory, with entry types: the walk used
+    // to be readdirSync + statSync per ENTRY — on this media root ~600k
+    // syscalls back to back, which held the event loop for seconds, so every
+    // OTHER search source timed out with it (2026-11: "files", "abs" and
+    // "singalong" missed their budgets on every all-sources search, and the
+    // search box said "Still searching" for 8 s after Plex had answered).
+    // Only a symlink still needs a stat, to learn what it points at.
+    let dirents;
+    try {
+      dirents = await readDirectoryAsync(dirPath, { withFileTypes: true });
+    } catch {
+      return results;
+    }
 
-    for (const entry of entries) {
-      // The walk is built on SYNC fs calls (listEntries/getStats): a full
-      // media-tree scan is thousands of syscalls back-to-back, which BLOCKS
-      // the event loop for seconds (1.77s measured live) — every concurrent
-      // adapter's HTTP response sits unprocessed and "times out" through no
-      // fault of its own (2026-07-14: plex+immich both hit their budgets and
-      // "bluey" claimed no results). Yield every 25 entries so the loop
-      // breathes; total work is unchanged.
-      if (++budget.ops % 25 === 0) {
+    for (const dirent of dirents) {
+      const entry = dirent.name;
+      // Breathe between batches of names too: a directory of thousands of
+      // entries is one readdir, then a long synchronous filter loop.
+      if (++budget.ops % 500 === 0) {
         await new Promise((resolve) => setImmediate(resolve));
       }
       if (results.length >= limit) break;
@@ -954,17 +964,19 @@ export class FileAdapter extends IContentSource {
       if (prefix === '' && depth === 0 && MEDIA_PREFIXES.includes(entry)) continue;
 
       const entryPath = path.join(dirPath, entry);
-      const stats = getStats(entryPath);
-      if (!stats) continue;
+      let isDirectory = dirent.isDirectory();
+      if (dirent.isSymbolicLink()) {
+        try { isDirectory = (await getFileStatsAsync(entryPath)).isDirectory(); } catch { continue; }
+      } else if (!isDirectory && !dirent.isFile()) continue;
 
       // Build localId relative to mediaBasePath
       const relativePath = path.relative(this.mediaBasePath, entryPath);
       const entryLower = entry.toLowerCase();
 
       // Skip excluded paths (private footage, e.g. video/fitness/**)
-      if (this._isSearchExcluded(relativePath, stats.isDirectory(), excludePaths)) continue;
+      if (this._isSearchExcluded(relativePath, isDirectory, excludePaths)) continue;
 
-      if (stats.isDirectory()) {
+      if (isDirectory) {
         // Check if directory name matches
         if (entryLower.includes(searchText)) {
           const item = await this.getItem(relativePath);
