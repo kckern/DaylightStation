@@ -74,6 +74,22 @@ export class ImmichClient {
   }
 
   /**
+   * Get the detected faces on one asset, each with its bounding box and the
+   * person it is assigned to (`person: null` for an unassigned face).
+   * Newer Immich servers no longer embed `faces` in an asset's `people`; this
+   * endpoint is where the boxes live.
+   * @param {string} assetId - Asset UUID
+   * @returns {Promise<Array>}
+   */
+  async getFaces(assetId) {
+    const response = await this.#httpClient.get(
+      `${this.#host}/api/faces?id=${encodeURIComponent(assetId)}`,
+      { headers: this.#getHeaders() }
+    );
+    return Array.isArray(response.data) ? response.data : [];
+  }
+
+  /**
    * Get all albums
    * @returns {Promise<Array>}
    */

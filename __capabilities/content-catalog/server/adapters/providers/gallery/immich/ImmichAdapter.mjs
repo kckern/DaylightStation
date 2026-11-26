@@ -128,6 +128,41 @@ export class ImmichAdapter {
   }
 
   /**
+   * Fetch one asset with face bounding boxes on its people.
+   *
+   * Older Immich servers return `people[].faces` inside the asset; newer ones
+   * return people without faces and serve the boxes from `GET /api/faces`.
+   * When the asset has people but none carry faces, fetch the boxes and attach
+   * each to its person. A failed face lookup keeps the asset (faces stay empty)
+   * so the photo still shows; Ken Burns then falls back to a central point.
+   * @param {string} assetId
+   * @returns {Promise<Object|null>}
+   */
+  async #getAssetWithFaces(assetId) {
+    const asset = await this.#client.getAsset(assetId);
+    if (!asset?.people?.length || asset.people.some(p => p.faces?.length)) return asset;
+
+    let faces;
+    try {
+      faces = await this.#client.getFaces(asset.id || assetId);
+    } catch (err) {
+      console.warn(`[ImmichAdapter:${this.#source}] face lookup failed for ${assetId}:`, err.message);
+      return asset;
+    }
+    const byPerson = new Map();
+    for (const face of faces) {
+      const personId = face.person?.id;
+      if (!personId) continue;
+      if (!byPerson.has(personId)) byPerson.set(personId, []);
+      byPerson.get(personId).push(face);
+    }
+    return {
+      ...asset,
+      people: asset.people.map(p => ({ ...p, faces: byPerson.get(p.id) || [] })),
+    };
+  }
+
+  /**
    * Get single item by ID
    * @param {string} id - Compound ID (immich:abc-123, immich:person:abc-123, immich:album:abc-123)
    * @returns {Promise<ListableItem|PlayableItem|null>}
@@ -163,7 +198,7 @@ export class ImmichAdapter {
 
       // Try as asset ID first
       try {
-        const asset = await this.#client.getAsset(localId);
+        const asset = await this.#getAssetWithFaces(localId);
         if (asset) {
           if (asset.type === 'VIDEO') {
             return this.#toPlayableItem(asset);
@@ -329,7 +364,7 @@ export class ImmichAdapter {
       }
 
       // Single asset
-      const asset = await this.#client.getAsset(localId);
+      const asset = await this.#getAssetWithFaces(localId);
       if (!asset) return [];
       return [this.#toPlayableItem(asset, true)];
     } catch (err) {
@@ -346,7 +381,7 @@ export class ImmichAdapter {
   async getViewable(id) {
     try {
       const localId = this.#stripPrefix(id);
-      const asset = await this.#client.getAsset(localId);
+      const asset = await this.#getAssetWithFaces(localId);
       if (!asset) return null;
 
       const { width, height } = immichDimensions(asset);
