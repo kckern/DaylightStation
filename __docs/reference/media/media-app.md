@@ -641,9 +641,12 @@ Play here, Play on…, queue verbs) stops it first, and Back stops it. Logs
 after the info view opens on a screen destination, the app asks the server to
 warm what it can (`cast/usePrepareStart.js`, `POST api/v1/device/:id/prepare`):
 the queue and the Plex playback decision only. It never starts a transcoder and
-never powers, wakes or commands the screen. On PLAY the item reads "Starting on
-<screen>" immediately, the list stays, and the outcome row confirms or offers
-Retry in place.
+never powers, wakes or commands the screen. The server keeps that decision for
+two minutes against the screen and the item, and PLAY on that screen reuses it:
+the start skips the queue and the decision and only starts the transcoder
+(server log `play.prepared-reused {deviceId, contentId, savedMs}`). On PLAY the
+item reads "Starting on <screen>" immediately, the list stays, and the outcome
+row confirms or offers Retry in place.
 
 Logs: `item.opened` (a tap that looked),
 `search.returned` (Back to the search), `search.destination-cycled`,

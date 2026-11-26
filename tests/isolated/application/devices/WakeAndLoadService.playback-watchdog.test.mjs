@@ -78,6 +78,11 @@ describe('WakeAndLoadService — playback watchdog on container dispatches', () 
     expect(prewarmService.prewarm).toHaveBeenCalledWith('plex:59493', expect.any(Object));
   });
 
+  it('names the screen to prewarm, so a prepare from the info view on it is reused', async () => {
+    await svc.execute('tv', { play: 'plex:59493' });
+    expect(prewarmService.prewarm).toHaveBeenCalledWith('plex:59493', expect.objectContaining({ deviceId: 'tv', shuffle: false }));
+  });
+
   it('confirms a shuffled child only with the matching operation and real playing state', async () => {
     const itemAction = { kind: 'shuffle', operationId: 'shuffle-op', tappedAt: Date.now(), clearRest: true, item: { contentId: 'plex:59493', type: 'show' } };
     await svc.execute('tv', { play: 'plex:59493', itemAction: JSON.stringify(itemAction) });

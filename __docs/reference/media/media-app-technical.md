@@ -416,10 +416,21 @@ info view, `cast/usePrepareStart.js`). Body `{ "contentId": "<id>" }`. Through
 `DevicePlaybackPrepareService` it runs the transcode prewarm with
 `startTranscoder: false`: it resolves the queue and asks Plex for the playback
 decision, and it stops there. It fetches no MPD, starts no transcoder and mints
-no prewarm token, because every playback URL carries its own Plex session, so
-a transcoder started on look could never be the one PLAY uses. PLAY's `load`
-prewarms (and starts the transcoder) as before. It never powers, wakes, loads
-or commands the screen, and records no history, progress or session.
+no prewarm token: a transcoder per look would run for nobody and can starve
+live streams. It never powers, wakes, loads or commands the screen, and records
+no history, progress or session.
+
+**PLAY reuses it.** `TranscodePrewarmService` keeps the decision (the resolved
+queue ids, the first item's id and its decided playback URL) for
+`PREPARED_TTL_MS` = 2 minutes, keyed by (screen id, content id, shuffle). The
+prewarm step of the next `load` / WakeAndLoad for that screen and that content
+id takes it (once) and skips the queue resolution and the Plex decision: it
+starts the transcoder on the decided URL (the MPD fetch) and mints the prewarm
+token as usual, so the screen plays the very session that was decided. It logs
+`play.prepared-reused {deviceId, contentRef, contentId, savedMs}` (`savedMs` =
+what the prepare took) and `wake-and-load.prewarm.done` carries `reused: true`.
+Another screen, another id, a shuffled PLAY, an expired or already-taken entry
+miss and decide as before; a failed decision is never kept.
 
 At most one prepare is in flight per screen. A call for the same item joins
 it; a call for another item answers `status: "busy"` instead of stacking
@@ -429,7 +440,7 @@ prewarm is not wired. Best-effort: a failed, skipped or busy warm-up is still
 200, with `{ ok: false, status }`.
 
 The client sends it 400 ms after the info view opens, once per item and
-destination for five minutes (a busy or failed answer lets a later look ask
+destination for two minutes (the reuse window) (a busy or failed answer lets a later look ask
 again), and only when PLAY names a screen (never for "here"). Logs
 `play.prepared {contentId, targetIds, ms}`; a build without the route logs
 `play.prepare-unavailable` once.
@@ -2525,6 +2536,7 @@ dot-delimited namespaces. Every event SHOULD include `clientId`,
 | `search.returned` | info | Back or Esc from a search-opened info view restored the search. | `contentId`, `surface` (`dock`\|`sheet`) |
 | `play.prepared` | info | The look-time prepare answered (never started anything). | `contentId`, `targetIds`, `ms` |
 | `play.prepare-unavailable` | warn | The server has no prepare route; logged once. | — |
+| `play.prepared-reused` (server, `module: prewarm`) | info | PLAY's prewarm took a look's prepare for this screen and item instead of deciding again. | `deviceId`, `contentRef`, `contentId`, `savedMs` |
 | `preview.started` / `preview.stopped` | info | The info view's muted Preview began / ended (a look; nothing recorded). | `contentId`, `seconds` |
 | `preview.failed` | warn | The preview could not play. | `contentId`, `error` |
 | `play.sent` | info | A deliberate play started (row ▶, tile ▶, detail Play, Play here, a queue start). | `contentId`, `kind` (`playNow`\|`shuffle`), `targetIds` (`[]` = here), `source` (`aim`\|`learned`\|`here`\|`chosen`) |

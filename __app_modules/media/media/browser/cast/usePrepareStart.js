@@ -12,10 +12,12 @@
 //
 // What it warms is the queue resolution and Plex's playback decision ONLY.
 // It passes `startTranscoder: false`, so no MPD is fetched and no transcoder
-// starts: every playback URL carries its own Plex session, so a transcoder
-// started on look could never be the one PLAY uses — it would run for nobody.
-// The server also holds at most one prepare in flight per screen (`busy`
-// otherwise). PLAY's own load starts the transcoder as before.
+// starts on a look (a transcode per look would starve live streams). The
+// server keeps that decision for two minutes against (screen, item), and
+// PLAY's load on the same screen reuses it (`play.prepared-reused` on the
+// server): the queue and the decision are skipped and PLAY only starts the
+// transcoder on the decided URL. The server also holds at most one prepare in
+// flight per screen (`busy` otherwise).
 //
 // What this hook therefore never does: call `device/:id/on`, `/load`, or
 // anything else that touches a screen — those stay behind PLAY. A destination
@@ -23,9 +25,11 @@
 // all a local start needs ahead of time.
 //
 // Debounced 400 ms (a look that leaves at once costs nothing) and once per
-// item + destination per page (module-level, for 5 minutes — re-opening the
-// item does not ask again). The warm-up is screen-independent, so one request
-// to the first target covers a multi-screen destination. A build without the
+// item + destination per page (module-level, for 2 minutes — the server's
+// reuse window — so re-opening the item soon after does not ask again, and a
+// later look renews what PLAY can reuse). One request goes to the first
+// target of a multi-screen destination: its PLAY reuses the decision, the
+// others decide as before. A build without the
 // route (404 without DEVICE_NOT_FOUND, or 501) logs `play.prepare-unavailable`
 // once and is not asked again; an unknown screen is skipped silently; a busy
 // screen or any other error lets a later look try again.
@@ -34,7 +38,8 @@ import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import mediaLog from "../logging/mediaLog.js";
 
 export const PREPARE_DEBOUNCE_MS = 400;
-const PREPARED_FOR_MS = 5 * 60_000;
+// Matches the server's PREPARED_TTL_MS (TranscodePrewarmService).
+const PREPARED_FOR_MS = 2 * 60_000;
 
 const prepared = new Map();
 let unavailable = false;

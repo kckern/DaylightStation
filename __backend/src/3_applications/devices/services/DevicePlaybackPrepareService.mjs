@@ -11,6 +11,10 @@
  * device gateway at all, only the device CONFIGURATION, to refuse an id that
  * is not a screen), and nothing is recorded (history, progress, session).
  *
+ * What it decides is kept for two minutes against (screen, item), and the
+ * PLAY that follows on that screen (WakeAndLoad's prewarm step) reuses it:
+ * see TranscodePrewarmService `#prepared`.
+ *
  * At most one prepare is in flight per screen: a call for the same item joins
  * it, a call for another item is skipped (`status: 'busy'`) rather than
  * stacking requests on a Plex that serializes them.
@@ -56,7 +60,7 @@ export class DevicePlaybackPrepareService {
 
   async #run(deviceId, contentId) {
     const started = this.#clock.now();
-    const result = await this.#prewarm.prewarm(contentId, { shuffle: false, startTranscoder: false });
+    const result = await this.#prewarm.prewarm(contentId, { shuffle: false, startTranscoder: false, deviceId });
     const ms = this.#clock.now() - started;
     const status = typeof result?.status === 'string' ? result.status : 'unknown';
     this.#logger.info?.('device.prepare.done', { deviceId, contentId, status, ms });

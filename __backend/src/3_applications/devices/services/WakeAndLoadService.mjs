@@ -440,8 +440,10 @@ export class WakeAndLoadService {
 
       const deadlineMs = this.#prewarmDeadlineMs;
       const deadlineError = new Error('timeout');
+      // deviceId lets a look's prepare on this screen (info view) be reused.
       const prewarmWork = Promise.resolve().then(() => this.#prewarmService.prewarm(prewarmRef, {
-        shuffle: contentQuery.shuffle === '1' || contentQuery.shuffle === 'true'
+        shuffle: contentQuery.shuffle === '1' || contentQuery.shuffle === 'true',
+        deviceId,
       }));
       try {
         try {
@@ -478,9 +480,10 @@ export class WakeAndLoadService {
         } else if (prewarmResult?.status === 'ok') {
           contentQuery.prewarmToken = prewarmResult.token;
           contentQuery.prewarmContentId = prewarmResult.contentId;
-          result.steps.prewarm = { ok: true, contentId: prewarmResult.contentId };
+          const reusedPrepare = prewarmResult.reused === true;
+          result.steps.prewarm = { ok: true, contentId: prewarmResult.contentId, ...(reusedPrepare ? { reused: true } : {}) };
           this.#logger.info?.('wake-and-load.prewarm.done', {
-            deviceId, dispatchId, contentId: prewarmResult.contentId, token: prewarmResult.token
+            deviceId, dispatchId, contentId: prewarmResult.contentId, token: prewarmResult.token, reused: reusedPrepare
           });
         } else if (prewarmResult?.status === 'failed') {
           result.steps.prewarm = {

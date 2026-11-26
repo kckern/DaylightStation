@@ -10,7 +10,7 @@ describe('DevicePlaybackPrepareService', () => {
     const service = new DevicePlaybackPrepareService({ prewarm, configuration, clock: clockAt(1000, 1250) });
     const result = await service.prepare('office-tv', 'plex:1');
     expect(prewarm.prewarm).toHaveBeenCalledTimes(1);
-    expect(prewarm.prewarm).toHaveBeenCalledWith('plex:1', { shuffle: false, startTranscoder: false });
+    expect(prewarm.prewarm).toHaveBeenCalledWith('plex:1', { shuffle: false, startTranscoder: false, deviceId: 'office-tv' });
     expect(result).toEqual({ kind: 'prepared', status: 'ok', contentId: 'plex:2', ms: 250 });
   });
 
