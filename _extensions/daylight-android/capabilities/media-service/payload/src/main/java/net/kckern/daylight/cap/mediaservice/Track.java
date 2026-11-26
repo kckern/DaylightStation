@@ -13,8 +13,15 @@ final class Track {
     final String artUrl;
     final String listId;
     final long durationMs;
+    /** The file behind it at home ("<partId>:<updatedAt>"), when the backend says; "" otherwise. */
+    final String fileVersion;
 
     Track(String id, String url, String title, String artist, String album, String artUrl, String listId, long durationMs) {
+        this(id, url, title, artist, album, artUrl, listId, durationMs, "");
+    }
+
+    Track(String id, String url, String title, String artist, String album, String artUrl, String listId, long durationMs,
+          String fileVersion) {
         this.id = id;
         this.url = url;
         this.title = title;
@@ -23,6 +30,7 @@ final class Track {
         this.artUrl = artUrl;
         this.listId = listId;
         this.durationMs = durationMs;
+        this.fileVersion = fileVersion == null ? "" : fileVersion;
     }
 
     JSONObject toJson() throws JSONException {
@@ -31,6 +39,7 @@ final class Track {
         if (!album.isEmpty()) o.put("album", album);
         if (artUrl != null) o.put("artUrl", artUrl);
         if (!listId.isEmpty()) o.put("listId", listId);
+        if (!fileVersion.isEmpty()) o.put("fileVersion", fileVersion);
         return o;
     }
 }

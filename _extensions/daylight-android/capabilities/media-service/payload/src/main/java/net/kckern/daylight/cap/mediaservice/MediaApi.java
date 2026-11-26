@@ -25,7 +25,8 @@ interface MediaApi {
     JSONObject play(String contentId, boolean resume) throws Exception;
     /** GET /api/v1/content/query/search?text=&take=. text is already cut and cleaned (BrowseTree.searchText). */
     JSONObject search(String text, int take) throws Exception;
-    void log(JSONObject body) throws Exception;
+    /** POST /api/v1/play/log; the backend's answer (empty when it sent none). */
+    JSONObject log(JSONObject body) throws Exception;
     /**
      * GET /api/v1/track/levels/<source>/<id>?samples=N: the loudness curve (0..1 per sample)
      * and audio quality of one track, or null when the backend has neither (204).
@@ -33,4 +34,6 @@ interface MediaApi {
     default JSONObject levels(String contentId, int samples) throws Exception { return null; }
     /** GET /api/v1/track/lyrics/<source>/<id>: {synced, lines:[{ms,text}], provider}, or null for none (204). */
     default JSONObject lyrics(String contentId) throws Exception { return null; }
+    /** GET /api/v1/info/<source>/<id>: an item's details (a track's albumId is in its metadata). */
+    default JSONObject info(String contentId) throws Exception { return null; }
 }

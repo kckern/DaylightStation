@@ -9,7 +9,7 @@ abis: []
 # all. Its installed components (the link activity, the tiles, the widget) reach the
 # payload in-process. Debugging is over adb: logcat, and run-as for its files.
 control: { port: 8780, lifelinePort: 8781, bind: none }
-shell: { versionCode: 118, versionName: "0.1-phone.118" }
+shell: { versionCode: 124, versionName: "0.1-phone.124" }
 # The household site's host, so an https link to it (in a relayed push, say) can open in
 # the app. Private: resolved from `placeholders:` when this device's manifest is built.
 appLinks: { host: "{phone_link_host}" }
@@ -97,10 +97,13 @@ defaults:
   # The tabs a car (and any media browser) shows, at most four: "Label=target;...", a
   # target being recent, continue (long items in progress, then the lists played lately),
   # catalog or a container's content id. No folder browsing in the car.
-  media.roots: "Drive=drive:;Continue=continue;Recent=recent"
+  media.roots: "Drive=drive:;Continue=continue;Recent=recent;On phone=kept"
   # Take "Play on" from the household's web: while the app runs it long-polls the
   # backend for commands addressed to this device (the backend's phone-inbox provider).
   media.playOnTarget: true
+  # Keep on this phone: downloads wait for Wi-Fi, and take at most 4 GB.
+  media.downloadOnCellular: false
+  media.downloadCapMb: 4096
   # The apps that may connect to the media session beside this app and the system (a
   # car, an assistant): "package=sha256 of its signing certificate", comma-separated.
   # Signer verified on the Play-installed Android Auto app. The package must also

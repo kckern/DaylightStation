@@ -5,6 +5,8 @@
 entry: net.kckern.daylight.cap.mediaservice.MediaServiceCapability
 permissions:
   - android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK
+  # The downloads kept on this phone (KeepService, foregroundServiceType dataSync).
+  - android.permission.FOREGROUND_SERVICE_DATA_SYNC
   # Merged in by media3-common and media3-exoplayer; the base shell asks for it too.
   - android.permission.ACCESS_NETWORK_STATE
 exported:

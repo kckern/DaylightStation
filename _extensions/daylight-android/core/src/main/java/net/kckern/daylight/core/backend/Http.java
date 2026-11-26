@@ -50,6 +50,13 @@ public interface Http {
     Reply get(String url) throws IOException;
 
     Reply postJson(String url, String json) throws IOException;
+    /**
+     * GET with extra request headers (an inbox's bearer token). A fake that ignores them
+     * keeps working; the real client sends them.
+     */
+    default Reply get(String url, Map<String, String> headers) throws IOException { return get(url); }
+    /** POST JSON with extra request headers. */
+    default Reply postJson(String url, String json, Map<String, String> headers) throws IOException { return postJson(url, json); }
 
     /** PUT with a JSON body. Fakes that never send one need not implement it. */
     default Reply putJson(String url, String json) throws IOException {
