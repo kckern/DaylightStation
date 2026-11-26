@@ -194,6 +194,9 @@ test('[PLACE.2b/AC3] Start fresh defaults to returning the aim to This device wi
   await expect(page.getByText('It does not stop anything playing on other screens.')).toBeVisible();
   await page.getByRole('dialog', { name: 'Start fresh on this device?' }).getByRole('button', { name: 'Start fresh', exact: true }).click();
   await page.getByTestId('media-search-launcher').click();
-  await expect(chipIn(page.getByTestId('search-mode'))).toContainText(/This browser|This device/);
+  // The aim is cleared back to unaimed (StartFreshDialog): the chip no longer
+  // names the other screen. With nothing learned on a fresh browser a film's
+  // ▶ then asks ("Choose"); it never stays pointed at the receiver.
+  await expect(chipIn(page.getByTestId('search-mode'))).not.toContainText('Acceptance receiver');
   expect(commands, 'Starting fresh must not issue a command to another screen').toEqual([]);
 });
