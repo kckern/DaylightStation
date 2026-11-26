@@ -50,6 +50,8 @@ import { ItemDestinationPicker } from "../actions/ItemDestinationPicker.jsx";
 import { useHouseholdResultActions } from "../household/useHouseholdResultActions.js";
 import { usePlayDestination } from "../habits/usePlayDestination.js";
 import { rankByHabits } from "../habits/mediaHabits.js";
+import { TopMoreList } from '@/lib/ui/TopMore.jsx';
+import { SEARCH_RESULTS_SHOWN } from "./searchLimits.js";
 import { isContainer } from "../../../../../__capabilities/content-catalog/browser/combobox-state.mjs";
 import "./Search.scss";
 import "../shell/SessionControls.scss";
@@ -431,7 +433,17 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
             {emptyMessage}
           </li>
         )}
-        {results.map((item) => (
+        {/* Smart long lists: the first eight, then Show all N (stays open
+            until search closes). */}
+        <TopMoreList
+          items={results}
+          n={SEARCH_RESULTS_SHOWN}
+          moreAs="li"
+          testId="search-mode-results"
+          moreClassName="search-mode-show-all"
+          moreLabel={() => `Show all ${results.length}`}
+          onExpand={(counts) => mediaLog.listMoreExpanded({ surface: 'search-mode', ...counts })}
+          renderItem={(item) => (
           <li key={item.id} className="result-row">
             <SearchResultRow
               item={item}
@@ -450,7 +462,8 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
               testId={`search-mode-result-${item.id}`}
             />
           </li>
-        ))}
+          )}
+        />
       </ul>
       <ItemDestinationPicker
         action={oneShotAction}

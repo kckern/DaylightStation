@@ -34,7 +34,14 @@ import { useSlideshowStopGuard } from "./PlayerFeatureControls.jsx";
 import { formatTime } from "./formatTime.js";
 import { StartStatusLine, StartedByLine, AddOnlyNotice, RowNotes, ScreenStopControl } from "../house/RowExtras.jsx";
 import { HouseQuietBar } from "../house/HouseQuietControls.jsx";
+import { TopMoreList } from '@/lib/ui/TopMore.jsx';
+import mediaLog from "../logging/mediaLog.js";
 import "../house/House.scss";
+
+// The Devices page leads with what is on; screens that are off or have not
+// been heard from wait under one control (the fleet keeps them last already).
+const OFF_STATES = new Set(['off', 'unknown']);
+const isOnNow = (device) => !OFF_STATES.has(device?.displayState ?? device?.state);
 
 const MOVE_HERE_UNAVAILABLE = "This screen's playback can't be moved here.";
 const ACTIVE_STATES = new Set(['playing', 'paused', 'buffering', 'stalled']);
@@ -245,9 +252,18 @@ export function FleetView() {
         </Alert>
       )}
       <ul className="fleet-cards">
-        {devices.map((d) => (
-          <FleetCard key={d.id} deviceId={d.id} startStatus={startStatuses.get(d.id) ?? null} startedBy={startedBy.get(d.id) ?? null} />
-        ))}
+        <TopMoreList
+          items={devices}
+          n={Infinity}
+          canTop={isOnNow}
+          moreAs="li"
+          testId="fleet"
+          moreLabel={(count) => `Off or not heard from (${count})`}
+          onExpand={(counts) => mediaLog.listMoreExpanded({ surface: 'devices', ...counts })}
+          renderItem={(d) => (
+            <FleetCard key={d.id} deviceId={d.id} startStatus={startStatuses.get(d.id) ?? null} startedBy={startedBy.get(d.id) ?? null} />
+          )}
+        />
       </ul>
     </div>
   );

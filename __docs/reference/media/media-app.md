@@ -206,8 +206,9 @@ wraps at phone width, so nothing is lost to a narrow screen.
   order; turning it off plays them in the listed order again. **Move up/down**
   on a screen's queue reorders it and is undoable like Remove and Clear. A live
   channel has no queue panel (it is one thing, with no position).
-- **Move to…** (a screen's Remote) lists every other screen and **This
-  device**. The destination picks up at the same moment; only once it has
+- **Move to…** (a screen's Remote) lists **This device** and the other
+  screens that can play what is on there (a film never goes to a speaker),
+  the usual ones first, three before More (see [Long lists](#long-lists)). The destination picks up at the same moment; only once it has
   started is the original stopped (it shows "Moved by …"). If the
   destination can't confirm, the original keeps playing and the outcome says
   so. Moving to this device opens Now Playing when the original Remote visit
@@ -265,7 +266,9 @@ wraps at phone width, so nothing is lost to a narrow screen.
   tablet, speaker, browser — `deviceGlyph()`), its name, and one muted line
   "Room · status" in the same shape on every row (`pickerStatus()`: Ready,
   Off, Playing: <title>, Paused: <title>). The screen this browser usually
-  uses for this kind of thing comes first with a quiet **Usual** tag. **A tap
+  uses for this kind of thing comes first with a quiet **Usual** tag. Three
+  screens show; asleep screens and browser tabs wait under **More (k)** (see
+  [Long lists](#long-lists)). **A tap
   is the send.** A screen that is playing something asks in its own row —
   "Replace Arrival? [Play here instead]" — and a second tap on that row also
   sends; a brief show, an Add and the destination sheet never ask, because
@@ -500,7 +503,8 @@ far each screen has got when the household lists know the item.
 **Played earlier.** Every screen's queue panel — this device's and any remote
 one's — ends with what played there earlier, newest first, with picture, title
 and time, shuffled and "keep similar things playing" runs included, each with
-the full verb set.
+the full verb set. The ten most recent show; **Show more** adds twenty at a
+time.
 
 Local playback reports its progress with this device's identity (every request
 carries `X-Daylight-Device`); when a routine or another device started the item,
@@ -632,9 +636,11 @@ only — typing, scrolling and looking at a detail page write nothing:
 headset; a display listed for the house view only (`fleet: true` with no
 `content_control`, e.g. a gym screen whose page has no receiver) is never
 listed at all. A learned screen is not checked for being awake: sending wakes
-it, as a send to the aim always has. The list is in a stable order — the screen used last for that
-kind of thing first, then by name — and its send button stays on screen at
-the bottom of the sheet however long the list.
+it, as a send to the aim always has. The list is ranked — the screen ▶ would
+use first, then the screens this browser uses for that kind of thing, then
+what is on now, then by name — and shows three before **More (k)** (see
+[Long lists](#long-lists)); its send button stays on screen at the bottom of
+the sheet.
 
 **Preview is a look at the film, never a play.** On the info view a neutral
 **Preview** control (film glyph, no amber, no ▶) plays the film muted on this
@@ -742,6 +748,49 @@ Logs: `screen-handle.play-state` (`status` starting / playing / paused / failed
 `screen-handle.play-here`, `picker.volume-step` / `picker.volume-failed`,
 `playing-on.command` / `playing-on.failed` (pause, play, startOver, open),
 `shortcut.space-toggle` / `shortcut.space-toggle-failed`.
+
+### Long lists
+
+One rule for every long list (spec addendum 2026-11-26 (b)): the top few,
+ranked by what this browser actually uses, then one **More (k)** that opens
+the rest in place (a menu opens them in the same dropdown, below a divider).
+What is active, selected or current is always in the top part; a row once
+shown stays while the surface is open; a More that would hide one row shows it
+instead; once opened it stays open until the surface closes. Enter or Space
+on More opens it and moves focus to the first new row. One shared component
+(`lib/ui/TopMore.jsx`, `splitTopMore`), never a per-surface copy.
+
+| Surface | Shown first | Under More |
+|---|---|---|
+| Play on… / Add on… picker, Fling, Move to…, Send elsewhere | 3 screens (Move to… also This device) | the rest; asleep screens and browser tabs fall here first |
+| Aim checkboxes (header destination) | 4 screens and every aimed one | the rest |
+| Remote's Switch screen | every screen with something on, plus 3 | the rest |
+| Search results (search box, full-screen search, Devices-page play search) | 8 (habit-ranked), then **Show all N** | the rest of the results |
+| Queue panel | the current item and the next 5 | earlier and later items; opened, the whole queue in play order |
+| Subtitles / Audio | Off, the current track and 3 in the languages chosen last | the other tracks |
+| Played earlier | the 10 most recent | **Show more**, 20 at a time |
+| Routine runs | the 10 most recent | older runs |
+| Devices page | screens that are on | **Off or not heard from (k)** |
+
+Screens rank (`fleet/screenRanking.js`): the screen ▶ would use (aim or
+learned), then habit weight (`habits/mediaHabits.js` `screensFor(kind)`, every
+remembered choice with its faded weight; a screen in several choices sums
+them), then what is on now (the Devices page's order, `liveRank`), then by
+name. Browser tabs rank after every screen and take a top place only when
+used before or chosen. A habit keeps an asleep usual screen on top. Lists are
+kind-filtered: a film never lists a speaker. Track languages are a small
+per-browser memory (`media-app.track-languages`, `shell/trackLanguages.js`,
+written only when a track is chosen). The combobox's "Show all N" is a row of
+its keyboard model: Arrow onto it and Enter opens the rest with the highlight
+on the first new result.
+
+Not collapsed: browse rows (natural order, paged), home rows (capped by the
+server), scope chips, rooms, short fixed menus.
+
+Logs: `list.more-expanded` `{ surface, shown, hidden }` (surface `play-on`,
+`fling`, `move-to`, `send-elsewhere`, `aim`, `peek-switch`, `search`,
+`search-mode`, `devices-play-search`, `queue`, `subtitles`, `audio-tracks`,
+`played-earlier`, `routine-runs`, `devices`).
 
 Logs: `item.opened` (a tap that looked),
 `search.returned` (Back to the search), `search.destination-cycled`,

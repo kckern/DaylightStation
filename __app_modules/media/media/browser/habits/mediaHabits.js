@@ -209,6 +209,19 @@ export function createHabitsStore({ getStorage = () => localStorage, now = () =>
       return [...choices].sort((a, b) => weight(b, at) - weight(a, at))[0].targetIds;
     },
 
+    /**
+     * Every remembered choice for a `kind`, strongest first, with its faded
+     * weight: [{ targetIds, weight }]. `screenFor` is the first of these; long
+     * screen lists rank by the whole of it (screenWeights).
+     */
+    screensFor(kind) {
+      const choices = screenChoices(current().places?.[kind]);
+      const at = now();
+      return choices
+        .map(choice => ({ targetIds: [...choice.targetIds], weight: weight(choice, at) }))
+        .sort((a, b) => b.weight - a.weight);
+    },
+
     /** For tests and the debug surface only. */
     reset() { save(emptyState()); },
   };
@@ -263,6 +276,18 @@ export function rankByHabits(results, scores, remembered = null) {
   if (ids.length === 0) return results;
   ids.sort((a, b) => scores.get(b) - scores.get(a));
   return [...ids.map(id => arrived.get(id) ?? { ...remembered.get(id), remembered: true }), ...rest];
+}
+
+/**
+ * Per-screen habit weight from `screensFor`: a screen in several remembered
+ * choices (alone, and with another) sums them. Map(id → weight).
+ */
+export function screenWeights(choices) {
+  const weights = new Map();
+  for (const choice of choices ?? []) {
+    for (const id of choice?.targetIds ?? []) weights.set(id, (weights.get(id) ?? 0) + (choice.weight ?? 0));
+  }
+  return weights;
 }
 
 let shared = null;

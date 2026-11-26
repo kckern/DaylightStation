@@ -233,3 +233,18 @@ describe('FlingButton picker', () => {
     expect(screen.queryByTestId('fling-start-choice')).toBeNull();
   });
 });
+
+describe('FlingButton: smart long list', () => {
+  it('shows three screens and puts the rest under More', async () => {
+    localStorage.clear();
+    const house = ['a', 'b', 'c', 'd', 'e', 'f'].map((x) => ({ id: `tv-${x}`, name: `TV ${x.toUpperCase()}`, content_control: {} }));
+    renderFling({ fleetDevices: house });
+    fireEvent.click(screen.getByTestId('fling-button'));
+    await screen.findByTestId('fling-target-tv-a');
+    expect(screen.getAllByTestId(/^fling-target-/).map((el) => el.dataset.testid)).toEqual(['fling-target-tv-a', 'fling-target-tv-b', 'fling-target-tv-c']);
+    expect(screen.getByTestId('fling-more')).toHaveTextContent('More (3)');
+    fireEvent.click(screen.getByTestId('fling-more'));
+    expect(screen.getAllByTestId(/^fling-target-/)).toHaveLength(6);
+    expect(log.calls.listMoreExpanded?.[0]?.[0]).toEqual({ surface: 'fling', shown: 3, hidden: 3 });
+  });
+});

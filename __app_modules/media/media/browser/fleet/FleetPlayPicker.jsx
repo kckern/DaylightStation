@@ -22,6 +22,11 @@ import { useHotkey } from "@/lib/hooks/useHotkey.js";
 import { useDismissLayer } from "@/lib/ui/dismiss/useDismissLayer.js";
 import "./Fleet.scss";
 import { isContainer } from "../../../../../__capabilities/content-catalog/browser/combobox-state.mjs";
+import { rankByHabits } from "../habits/mediaHabits.js";
+import { usePlayDestination } from "../habits/usePlayDestination.js";
+import { TopMoreList } from '@/lib/ui/TopMore.jsx';
+import { SEARCH_RESULTS_SHOWN } from "../search/searchLimits.js";
+import mediaLog from "../logging/mediaLog.js";
 
 // Thumbnail for a result row: explicit thumbnail wins, else the display
 // endpoint derived from the id (the id only ever appears in the img src
@@ -47,8 +52,13 @@ export function FleetPlayPicker({ deviceId, onClose, openerRef }) {
   const { device, entry } = useDevice(deviceId);
   const { dispatchToTarget } = useDispatch();
   const liveSearch = useLiveSearch();
-  const { results, error, sourceErrors, setQuery, retry } = liveSearch;
+  const { results: rawResults, error, sourceErrors, setQuery, retry } = liveSearch;
   const [text, setText] = useState('');
+  // What this person picked for these words before comes first, as in the
+  // search box (habits/mediaHabits.js).
+  const { scoresFor, recordPick } = usePlayDestination();
+  const results = useMemo(() => rankByHabits(rawResults, scoresFor(text)), [rawResults, scoresFor, text]);
+  const playableResults = results.filter((row) => row.id ?? row.itemId);
   const [panel, setPanel] = useState(null);
   const inside = useMemo(() => {
     const opener = openerRef?.current;
@@ -93,11 +103,12 @@ export function FleetPlayPicker({ deviceId, onClose, openerRef }) {
   const playRow = useCallback((row) => {
     const id = row.id ?? row.itemId;
     if (!id) return;
+    recordPick(text, { ...row, id }, 'fleet-play');
     // fork: never touches the local session — see header comment.
     dispatchToTarget({ targetIds: [deviceId], play: id, title: displayTitle(row), mode: 'fork',
       itemAction: { kind: 'playNow', item: { ...row, contentId: id }, clearRest: isContainer(row) } });
     closeFromKeyboard();
-  }, [dispatchToTarget, deviceId, closeFromKeyboard]);
+  }, [dispatchToTarget, deviceId, closeFromKeyboard, recordPick, text]);
 
   return (
     <div ref={setPanel} data-testid={`fleet-play-panel-${deviceId}`} className="fleet-play-panel">
@@ -143,9 +154,16 @@ export function FleetPlayPicker({ deviceId, onClose, openerRef }) {
       )}
       {hasResults && (
         <ul className="fleet-play-results">
-          {results.map((row) => {
+          <TopMoreList
+            items={playableResults}
+            n={SEARCH_RESULTS_SHOWN}
+            getId={(row) => row.id ?? row.itemId}
+            moreAs="li"
+            testId={`fleet-play-results-${deviceId}`}
+            moreLabel={() => `Show all ${playableResults.length}`}
+            onExpand={(counts) => mediaLog.listMoreExpanded({ surface: 'devices-play-search', ...counts })}
+            renderItem={(row) => {
             const id = row.id ?? row.itemId;
-            if (!id) return null;
             const thumb = thumbnailSrc(row);
             const subtitle = resultSubtitle(row);
             return (
@@ -172,7 +190,8 @@ export function FleetPlayPicker({ deviceId, onClose, openerRef }) {
                 </button>
               </li>
             );
-          })}
+          }}
+          />
         </ul>
       )}
     </div>

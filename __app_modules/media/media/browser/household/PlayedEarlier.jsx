@@ -16,6 +16,8 @@ import { useItemVerbs } from "./useItemVerbs.jsx";
 import { ItemMenu } from "./ItemMenu.jsx";
 import "./PlayedEarlier.scss";
 
+// Smart long lists (2026-11-26): the ten most recent first, then pages of 20.
+export const FIRST_PAGE = 10;
 const PAGE = 20;
 const MAX = 200;
 const INVALID_HISTORY_RESPONSE = Object.freeze(new Error('The history response did not include a valid item list.'));
@@ -28,7 +30,7 @@ export const REFRESH_MIN_MS = 60_000;
  * @param {string|null} [props.currentContentId] refetch when the screen moves on
  */
 export function PlayedEarlier({ screenId, currentContentId = null }) {
-  const [limit, setLimit] = useState(PAGE);
+  const [limit, setLimit] = useState(FIRST_PAGE);
   const path = screenId ? playedEarlierPath(screenId, { limit }) : null;
   const { data, hasResult, loading, error, reload, revalidating } = useApiResource(path, {
     swr: true, label: 'media-played-earlier', logger: householdResourceLogger,
@@ -113,6 +115,7 @@ export function PlayedEarlier({ screenId, currentContentId = null }) {
         <Button variant="subtle" color="gray" size="sm" data-testid="played-earlier-more"
           onClick={() => {
             focus();
+            mediaLog.listMoreExpanded({ surface: 'played-earlier', shown: items.length, hidden: null });
             setLimit(value => Math.min(MAX, value + PAGE));
           }}>
           Show more

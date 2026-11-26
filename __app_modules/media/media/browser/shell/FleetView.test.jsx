@@ -197,3 +197,22 @@ describe('FleetView Play… affordance', () => {
     expect(screen.getByTestId('fleet-state-livingroom-tv')).toHaveTextContent('Off — last seen playing');
   });
 });
+
+describe('FleetView: smart long list', () => {
+  it('leads with screens that are on; off and never-heard screens wait under one control', () => {
+    fleet.devices = [
+      { id: 'kitchen', name: 'Kitchen', state: 'playing', displayState: 'playing' },
+      { id: 'office-tv', name: 'Office TV', state: 'idle', displayState: 'idle' },
+      { id: 'den-tv', name: 'Den TV', state: 'off', displayState: 'off' },
+      { id: 'garage-tv', name: 'Garage TV', state: 'unknown', displayState: 'unknown' },
+    ];
+    renderFleet();
+    expect(screen.getByTestId('fleet-card-kitchen')).toBeInTheDocument();
+    expect(screen.getByTestId('fleet-card-office-tv')).toBeInTheDocument();
+    expect(screen.queryByTestId('fleet-card-den-tv')).toBeNull();
+    expect(screen.getByTestId('fleet-more')).toHaveTextContent('Off or not heard from (2)');
+    fireEvent.click(screen.getByTestId('fleet-more'));
+    expect(screen.getByTestId('fleet-card-den-tv')).toBeInTheDocument();
+    expect(screen.getByTestId('fleet-card-garage-tv')).toBeInTheDocument();
+  });
+});

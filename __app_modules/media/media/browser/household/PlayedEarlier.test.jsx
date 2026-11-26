@@ -39,7 +39,7 @@ describe('PlayedEarlier', () => {
   it('lists the screen plays newest first with picture, title and time played', async () => {
     render(<MantineProvider><PlayedEarlier screenId="livingroom-tv" /></MantineProvider>);
     const first = await screen.findByTestId('played-earlier-0');
-    expect(apiMock.mock.calls.map(c => c[0])).toContain('api/v1/media/screens/livingroom-tv/played-earlier?limit=20');
+    expect(apiMock.mock.calls.map(c => c[0])).toContain('api/v1/media/screens/livingroom-tv/played-earlier?limit=10');
     expect(first).toHaveTextContent('Song B');
     expect(within(first).getByTestId('played-earlier-0-when')).toHaveTextContent(/Artist · Today/);
     expect(first.querySelector('img')).toHaveAttribute('src', '/b.jpg');

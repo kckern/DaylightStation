@@ -15,22 +15,27 @@ import { ClientIdentityContext } from "../identity/ClientIdentityProvider.jsx";
 import { DispatchContext } from "../cast/DispatchProvider.jsx";
 import { moveScreenPlayback, moveFailureReason } from "../cast/screenMove.js";
 import { canPlayOn } from "../habits/playDestination.js";
-import { orderPickerDevices } from "../cast/useDispatchTargetPicker.js";
+import { rankScreens, SCREEN_TOP_N } from "../fleet/screenRanking.js";
 import { moveMenuEntries } from "../actions/itemMenuTable.js";
+import { itemKind } from "../habits/mediaHabits.js";
+import { usePlayDestination } from "../habits/usePlayDestination.js";
+import { TopMoreMenu } from '@/lib/ui/TopMore.jsx';
+import mediaLog from "../logging/mediaLog.js";
 import "./SessionControls.scss";
 
 /**
  * Screens playback can move to: content screens other than the source that
  * can play this kind of thing (a film never lists a headset; a display listed
- * for the house view only, with no receiver, is never listed). Stable order:
- * `preferredIds` first (the screen this browser usually uses), then by name.
+ * for the house view only, with no receiver, is never listed). Order
+ * (fleet/screenRanking.js): `preferredIds` first (the screen this browser
+ * usually uses), then habit `weights`, then what is on now, then by name.
  */
-export function moveDestinations(devices = [], sourceId, { kind = null, preferredIds = [] } = {}) {
-  return orderPickerDevices(devices.filter((device) => typeof device?.id === 'string'
+export function moveDestinations(devices = [], sourceId, { kind = null, preferredIds = [], weights = null } = {}) {
+  return rankScreens(devices.filter((device) => typeof device?.id === 'string'
     && device.id !== sourceId
     && !device.id.startsWith('browser:')
     && (device.content_control || device.fleet === true)
-    && canPlayOn(device, kind)), preferredIds);
+    && canPlayOn(device, kind)), { preferredIds, weights });
 }
 
 export function MoveToMenu({ sourceId, available = true, title = null, captureLocalMoveNavigation }) {
@@ -39,7 +44,16 @@ export function MoveToMenu({ sourceId, available = true, title = null, captureLo
   const identity = useContext(ClientIdentityContext);
   const outcomes = useContext(DispatchContext);
   const [moving, setMoving] = useState(false);
-  const choices = moveDestinations(devices, sourceId);
+  // What plays there decides where it can go (no film to a speaker) and which
+  // screens come first (the one this browser uses for that kind of thing).
+  const playing = store?.getEntry?.(sourceId)?.snapshot?.currentItem ?? null;
+  const { destinationFor, screenWeightsFor } = usePlayDestination({ here: false });
+  const usual = playing ? destinationFor(playing) : null;
+  const choices = moveDestinations(devices, sourceId, {
+    kind: itemKind(playing),
+    preferredIds: usual && usual.source !== 'here' ? usual.targetIds : [],
+    weights: screenWeightsFor(playing),
+  });
   // Addendum item 7: the heading and "This device" come from the one menu table.
   const menu = moveMenuEntries(choices.map((device) => ({
     id: device.id,
@@ -89,16 +103,25 @@ export function MoveToMenu({ sourceId, available = true, title = null, captureLo
       }
     >
       <Menu.Label>{menu.heading}</Menu.Label>
-      {menu.entries.map((entry) => (
-        <Menu.Item
-          key={entry.kind}
-          data-testid={`move-to-${entry.kind}`}
-          className="session-controls-menu-item"
-          onClick={() => move(entry.kind)}
-        >
-          {entry.label}
-        </Menu.Item>
-      ))}
+      {/* This device, then the first few screens; the rest under More. */}
+      <TopMoreMenu
+        items={menu.entries}
+        n={SCREEN_TOP_N + 1}
+        getId={(entry) => entry.kind}
+        keepIds={['local']}
+        testId="move-to"
+        onExpand={(counts) => mediaLog.listMoreExpanded({ surface: 'move-to', ...counts })}
+        renderItem={(entry) => (
+          <Menu.Item
+            key={entry.kind}
+            data-testid={`move-to-${entry.kind}`}
+            className="session-controls-menu-item"
+            onClick={() => move(entry.kind)}
+          >
+            {entry.label}
+          </Menu.Item>
+        )}
+      />
     </ActionMenu>
   );
 }

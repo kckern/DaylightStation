@@ -13,6 +13,17 @@ import { deviceName } from "../fleet/deviceDisplay.js";
 import { EndOfQueueChoice } from "./EndOfQueueChoice.jsx";
 import { getDeviceId } from "../../../../../frontend/src/lib/deviceIdentity.js";
 import { PlayedEarlier } from "../household/PlayedEarlier.jsx";
+import { TopMoreList } from '@/lib/ui/TopMore.jsx';
+import mediaLog from "../logging/mediaLog.js";
+
+// A long queue shows what plays now and the next few; the rest under More.
+export const QUEUE_UP_NEXT_SHOWN = 5;
+
+/** The queue ids shown before More: the current item and the next few. */
+export function queueWindowIds(items = [], currentIndex = 0) {
+  const start = Number.isInteger(currentIndex) && currentIndex >= 0 ? currentIndex : 0;
+  return items.slice(start, start + 1 + QUEUE_UP_NEXT_SHOWN).map((item) => item.queueItemId);
+}
 
 const REPEAT_NEXT = { off: 'all', all: 'one', one: 'off' };
 const REPEAT_LABEL = { off: 'Repeat off', all: 'Repeat all', one: 'Repeat one' };
@@ -94,6 +105,7 @@ export function QueuePanel({ target = 'local', availability = null }) {
     );
   }
 
+  const indexOf = new Map(q.items.map((item, index) => [item.queueItemId, index]));
   const shuffle = !!snapshot.config?.shuffle;
   const repeat = snapshot.config?.repeat ?? 'off';
 
@@ -140,7 +152,18 @@ export function QueuePanel({ target = 'local', availability = null }) {
         </Button>
       </Group>
       <ul className="queue-items">
-        {q.items.map((it, idx) => {
+        <TopMoreList
+          items={q.items}
+          n={0}
+          keepIds={queueWindowIds(q.items, q.currentIndex)}
+          getId={(it) => it.queueItemId}
+          stable={false}
+          expandedOrder="input"
+          moreAs="li"
+          testId="queue"
+          onExpand={(counts) => mediaLog.listMoreExpanded({ surface: 'queue', ...counts })}
+          renderItem={(it) => {
+          const idx = indexOf.get(it.queueItemId);
           const isCurrent = idx === q.currentIndex;
           const rowLabel = `item ${idx + 1}, ${it.title ?? it.contentId}`;
           const cls = [
@@ -202,7 +225,8 @@ export function QueuePanel({ target = 'local', availability = null }) {
               </ActionIcon>
             </li>
           );
-        })}
+        }}
+        />
       </ul>
       <EndOfQueueChoice target={target} targetName={remoteId ? deviceName(remoteDevice, remoteId) : null} />
       {earlier}

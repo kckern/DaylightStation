@@ -596,3 +596,21 @@ describe('SearchMode — Add to this queue (STEER.1b/AC7)', () => {
     expect(JSON.parse(localStorage.getItem('media-app.cast-target')).targetIds).toEqual(['kitchen']);
   });
 });
+
+describe('SearchMode: smart long list (eight, then Show all N)', () => {
+  it('shows eight results and Show all N; expanding focuses the ninth and stays until search closes', async () => {
+    comboState = {
+      search: 'sonic',
+      results: Array.from({ length: 11 }, (_, i) => ({ id: `plex:${i}`, title: `Sonic ${i}`, type: 'movie', thumbnail: null })),
+    };
+    render(<Harness />);
+    await screen.findByTestId('search-mode-result-plex:0');
+    expect(screen.getAllByTestId(/^search-mode-result-plex:\d+$/)).toHaveLength(8);
+    const more = screen.getByTestId('search-mode-results-more');
+    expect(more).toHaveTextContent('Show all 11');
+    fireEvent.click(more);
+    expect(screen.getAllByTestId(/^search-mode-result-plex:\d+$/)).toHaveLength(11);
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId('search-mode-result-plex:8')));
+    expect(mediaLog.listMoreExpanded).toHaveBeenCalledWith({ surface: 'search-mode', shown: 8, hidden: 3 });
+  });
+});

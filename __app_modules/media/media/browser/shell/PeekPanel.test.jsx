@@ -289,6 +289,20 @@ describe('PeekPanel screen switcher (STEER.1b/AC3)', () => {
     expect(peekPush).toHaveBeenCalledWith('peek', { deviceId: 'kitchen' });
   });
 
+  it('lists every screen with something on plus three more; the rest under More', async () => {
+    const extra = [
+      ...['a', 'b', 'c', 'd', 'e', 'f'].map((x) => ({ id: `idle-${x}`, name: x, displayState: 'idle' })),
+      { id: 'on-1', name: 'p', displayState: 'playing' },
+      { id: 'on-2', name: 'q', displayState: 'paused' },
+    ];
+    render(<PeekTestProviders extraDevices={extra} />);
+    fireEvent.click(screen.getByTestId('peek-switch'));
+    await screen.findByTestId('peek-switch-on-1');
+    const shown = screen.getAllByTestId(/^peek-switch-(on|idle)-/).map((el) => el.dataset.testid.replace('peek-switch-', ''));
+    expect(shown).toEqual(['on-1', 'on-2', 'idle-a', 'idle-b', 'idle-c']);
+    expect(screen.getByTestId('peek-switch-more')).toHaveTextContent('More (3)');
+  });
+
   it('offers no switcher when this is the only screen', () => {
     render(<PeekTestProviders />);
     expect(screen.queryByTestId('peek-switch')).toBeNull();

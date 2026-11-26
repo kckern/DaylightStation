@@ -587,3 +587,43 @@ describe('picker states (addendum item 2)', () => {
     castTargetState = { targetIds: [], mode: 'transfer' };
   });
 });
+
+describe('DispatchTargetPicker: smart long list (addendum 2026-11-26 (b))', () => {
+  const HOUSE = [
+    { id: 'zeta-tv', name: 'Zeta TV', displayState: 'idle' },
+    { id: 'alpha-tv', name: 'Alpha TV', displayState: 'idle' },
+    { id: 'den-tv', name: 'Den TV', displayState: 'off' },
+    { id: 'kitchen-tv', name: 'Kitchen TV', displayState: 'playing' },
+    { id: 'garage-tv', name: 'Garage TV', displayState: 'off' },
+    { id: 'browser:tab', name: 'Phone', type: 'browser', displayState: 'idle' },
+  ];
+  const film = { itemAction: { kind: 'playNow', item: { contentId: 'plex:1', id: 'plex:1', title: 'Arrival', type: 'movie' } } };
+  const rows = () => screen.queryAllByTestId(/^picker-device-[^s]/).filter((el) => !/-(usual|busy)$/.test(el.dataset.testid));
+
+  beforeEach(() => {
+    localStorage.clear();
+    fleetDevices = HOUSE;
+  });
+
+  it('shows three screens (usual, then what is on, then by name); asleep screens and browser tabs under More', () => {
+    habitsStore().recordScreen('video', ['den-tv']);
+    render(<DispatchTargetPicker source={film} verb="Play" />);
+    expect(rows().map((el) => el.dataset.testid)).toEqual(['picker-device-den-tv', 'picker-device-kitchen-tv', 'picker-device-alpha-tv']);
+    expect(screen.getByTestId('picker-more')).toHaveTextContent('More (3)');
+  });
+
+  it('More expands in place, focuses the first newly shown screen and is logged', async () => {
+    render(<DispatchTargetPicker source={film} verb="Play" />);
+    fireEvent.click(screen.getByTestId('picker-more'));
+    expect(rows()).toHaveLength(6);
+    expect(screen.queryByTestId('picker-more')).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId('picker-device-den-tv')));
+    expect(mediaLog.listMoreExpanded).toHaveBeenCalledWith({ surface: 'play-on', shown: 3, hidden: 3 });
+  });
+
+  it('the aimed screen is always shown, even asleep and unranked', () => {
+    castTargetState = { targetIds: ['garage-tv'], mode: 'transfer' };
+    render(<DispatchTargetPicker source={film} verb="Play" />);
+    expect(screen.getByTestId('picker-device-garage-tv')).toBeInTheDocument();
+  });
+});

@@ -18,6 +18,7 @@
 import { Component, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useDismissLayer } from '@/lib/ui/dismiss/useDismissLayer.js';
 import { getReducedMotionQuery } from '@/lib/ui/browserMotion.js';
+import { splitTopMore } from '@/lib/ui/splitTopMore.js';
 import { DS_TOKENS } from '@/lib/theme/tokens.mjs';
 import {
   Combobox, TextInput, ScrollArea, Group, Text, Avatar, Badge, Loader, Button,
@@ -197,6 +198,10 @@ export function ContentCombobox({
   retainQueryOnClose = false,
   inputAccessory = null,
   onTabKey = null,
+  // Smart long lists (Media): show the first `collapseAt` results, then one
+  // "Show all N" row; null shows every result (admin pickers).
+  collapseAt = null,
+  onShowAll = null,
 }) {
   const log = useMemo(() => getChildLogger({ component: 'ContentCombobox', app: logApp, sessionLog: true }), [logApp]);
   const {
@@ -217,7 +222,27 @@ export function ContentCombobox({
   // `transformResults(results, { query, searching })`: callers may reorder or collapse
   // what is shown (Media: collapse editions, then put what this person picked
   // for these words before last time first). The query is the box's text.
-  const items = isBrowse ? state.browse.items : (transformResults ? transformResults(state.results, { query: state.search ?? '', searching: isSearching }) : state.results);
+  const allItems = isBrowse ? state.browse.items : (transformResults ? transformResults(state.results, { query: state.search ?? '', searching: isSearching }) : state.results);
+  // Collapsed search results: the first few (the current value always among
+  // them), then "Show all N", which is itself a row of the keyboard model —
+  // Arrow onto it and Enter expands in place with the highlight on the first
+  // newly shown result. Expanded stays expanded until the list closes.
+  const [showAll, setShowAll] = useState(false);
+  useEffect(() => { if (!isEditing) setShowAll(false); }, [isEditing]);
+  const collapsing = !isBrowse && Number.isFinite(collapseAt) && !showAll && allItems.length > collapseAt + 1;
+  const items = collapsing
+    ? splitTopMore(allItems, { n: collapseAt, keepIds: allItems.filter((item) => normalizeValue(item?.id) === normalizeValue(value)).map((item) => item.id) }).top
+    : allItems;
+  const hiddenCount = collapsing ? allItems.length - items.length : 0;
+  const showAllIdx = hiddenCount > 0 ? items.length : -1;
+  const expandResults = (via) => {
+    const shownIds = new Set(items.map((item) => item.id));
+    const firstNew = allItems.findIndex((item) => !shownIds.has(item.id));
+    setShowAll(true);
+    dispatch({ type: 'HIGHLIGHT', idx: firstNew, userNavigated: true });
+    log.info('results.show_all', { shown: items.length, hidden: hiddenCount, via });
+    onShowAll?.({ shown: items.length, hidden: hiddenCount, via });
+  };
   const search = state.search;
   // The typed words differ from the words the results answer (debounce, a
   // stream not yet started or retired): not settled, so never "No results".
@@ -414,6 +439,10 @@ export function ContentCombobox({
       commitExplicitRaw();
       return;
     }
+    if (val === '__show_all__') {
+      expandResults('pointer');
+      return;
+    }
     const item = items.find((r) => r.id === val);
     if (!item) return;
     if (isContainer(item) && !selectContainers) drill(item);
@@ -424,7 +453,7 @@ export function ContentCombobox({
   const handleKeyDown = (e) => {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
-      dispatch({ type: 'ARROW', dir: e.key === 'ArrowDown' ? 1 : -1, itemCount: items.length });
+      dispatch({ type: 'ARROW', dir: e.key === 'ArrowDown' ? 1 : -1, itemCount: items.length + (showAllIdx >= 0 ? 1 : 0) });
       return;
     }
     if (e.key === 'ArrowRight') {
@@ -443,6 +472,11 @@ export function ContentCombobox({
         goUp();
       }
       // otherwise let the cursor move
+      return;
+    }
+    if (e.key === 'Enter' && showAllIdx >= 0 && highlightIdx === showAllIdx) {
+      e.preventDefault();
+      expandResults('keyboard');
       return;
     }
     if (e.key === 'Enter') {
@@ -1044,6 +1078,18 @@ export function ContentCombobox({
               ) : items.length > 0 ? (
                 items.map(renderOption)
               ) : null}
+              {showAllIdx >= 0 && (
+                <Combobox.Option
+                  value="__show_all__"
+                  key="__show_all__"
+                  data-testid="combobox-show-all"
+                  data-highlighted={highlightIdx === showAllIdx ? 'true' : 'false'}
+                  className={`${OPTION_CLASS} content-combobox-show-all${highlightIdx === showAllIdx ? ' highlighted' : ''}`}
+                  aria-label={`Show all ${allItems.length} results`}
+                >
+                  <Text size="sm" fw={500}>Show all {allItems.length}</Text>
+                </Combobox.Option>
+              )}
               {showFreeform && (
                 <Combobox.Option value="__freeform__" key="__freeform__" data-testid="freeform-commit-option">
                   <Group gap="xs"><IconPencil size={14} /><Text size="sm">Use “{search}” as raw value</Text></Group>

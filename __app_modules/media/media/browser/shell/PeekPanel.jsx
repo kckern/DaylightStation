@@ -29,6 +29,10 @@ import { useSearchLauncher } from "./SearchLauncherContext.js";
 import { LineUpOffer } from "./LineUpOffer.jsx";
 import { MoveToMenu } from "./MoveToMenu.jsx";
 import { StartedByLine } from "../house/RowExtras.jsx";
+import { TopMoreMenu } from '@/lib/ui/TopMore.jsx';
+import { rankScreens, screenCanTop, SCREEN_TOP_N } from "../fleet/screenRanking.js";
+import { liveRank } from "../fleet/browserLiveness.js";
+import { usePlayDestination } from "../habits/usePlayDestination.js";
 
 export function PeekPanel({ deviceId }) {
   const { enterPeek, exitPeek } = usePeek();
@@ -56,7 +60,16 @@ export function PeekPanel({ deviceId }) {
   };
   const devices = useContext(FleetContext)?.devices ?? [];
   // Steer another screen in one step (STEER.1b/AC3): the controls move to it; my aim is untouched.
-  const otherScreens = devices.filter((d) => typeof d?.id === 'string' && d.id !== deviceId);
+  // Every screen with something on, then the few this browser uses most; the
+  // rest under More.
+  const { screenWeightsFor } = usePlayDestination();
+  const switchWeights = screenWeightsFor(null);
+  const steerable = devices.filter((d) => typeof d?.id === 'string' && d.id !== deviceId);
+  const onNowIds = steerable.filter((d) => liveRank(d) <= 1).map((d) => d.id);
+  const otherScreens = rankScreens(steerable, { preferredIds: onNowIds, weights: switchWeights });
+  const usedFirst = screenCanTop({ weights: switchWeights });
+  // The three slots are for screens beyond the ones with something on.
+  const switchCanTop = (d) => !onNowIds.includes(d.id) && usedFirst(d);
   const switchTo = (toId) => {
     mediaLog.peekSwitched({ from: deviceId, to: toId });
     push('peek', { deviceId: toId });
@@ -134,11 +147,19 @@ export function PeekPanel({ deviceId }) {
             }
           >
             <Menu.Label>Steer another screen</Menu.Label>
-            {otherScreens.map((d) => (
-              <Menu.Item key={d.id} data-testid={`peek-switch-${d.id}`} className="session-controls-menu-item" onClick={() => switchTo(d.id)}>
-                {deviceName(d, d.id)}{deviceLocation(d) ? ` · ${deviceLocation(d)}` : ''}
-              </Menu.Item>
-            ))}
+            <TopMoreMenu
+              items={otherScreens}
+              n={SCREEN_TOP_N}
+              keepIds={onNowIds}
+              canTop={switchCanTop}
+              testId="peek-switch"
+              onExpand={(counts) => mediaLog.listMoreExpanded({ surface: 'peek-switch', ...counts })}
+              renderItem={(d) => (
+                <Menu.Item key={d.id} data-testid={`peek-switch-${d.id}`} className="session-controls-menu-item" onClick={() => switchTo(d.id)}>
+                  {deviceName(d, d.id)}{deviceLocation(d) ? ` · ${deviceLocation(d)}` : ''}
+                </Menu.Item>
+              )}
+            />
           </ActionMenu>
         )}
         {entry?.isStale && <Badge color="yellow" variant="light">Out of date</Badge>}

@@ -13,7 +13,11 @@ import { useRefreshableRead } from '@/lib/hooks/useRefreshableRead.js';
 import { houseApi as defaultApi } from "./houseApi.js";
 import { routineRunLine } from "./houseCopy.js";
 import houseLog from "./houseLog.js";
+import { TopMoreList } from '@/lib/ui/TopMore.jsx';
+import mediaLog from "../logging/mediaLog.js";
 import "./House.scss";
+
+const ROUTINE_RUNS_SHOWN = 10;
 
 const flagsTitle = 'Before they run';
 
@@ -106,10 +110,18 @@ export function RoutineHistoryView({ api = defaultApi }) {
         )}
         {history.items.length ? (
           <ul className="house-list" data-testid="routine-history-list">
-            {history.items.map((run, i) => {
+            {/* The ten most recent; older starts under More. */}
+            <TopMoreList
+              items={history.items.map((run, i) => ({ run, key: `${run.at}|${run.routine?.id}|${i}` }))}
+              n={ROUTINE_RUNS_SHOWN}
+              getId={(row) => row.key}
+              moreAs="li"
+              testId="routine-history"
+              onExpand={(counts) => mediaLog.listMoreExpanded({ surface: 'routine-runs', ...counts })}
+              renderItem={({ run, key }) => {
               const line = routineRunLine(run);
               return (
-                <li key={`${run.at}|${run.routine?.id}|${i}`} className="house-item" data-testid="routine-run" data-outcome={run.outcome}>
+                <li key={key} className="house-item" data-testid="routine-run" data-outcome={run.outcome}>
                   <div className="house-item-head">
                     <Text size="sm" c="dimmed">{line.when}</Text>
                     <Text fw={600}>{line.routine}</Text>
@@ -120,7 +132,8 @@ export function RoutineHistoryView({ api = defaultApi }) {
                   </Text>
                 </li>
               );
-            })}
+            }}
+            />
           </ul>
         ) : !history.error && (history.loading ? (
           <LoadingState label="routine history">

@@ -31,6 +31,8 @@ import { formatTime } from "./formatTime.js";
 import { useDismissLayer } from "@/lib/ui/dismiss/useDismissLayer.js";
 import { MediaRadioOption } from '../shared/MediaRadioOption.jsx';
 import mediaLog from "../logging/mediaLog.js";
+import { TopMoreList } from '@/lib/ui/TopMore.jsx';
+import { SCREEN_TOP_N } from "../fleet/screenRanking.js";
 import "./Fling.scss";
 
 const ACTIVE_STATES = new Set(['playing', 'paused', 'buffering', 'stalled']);
@@ -73,11 +75,12 @@ function FlingControl({ fleet, outcomes, position: placement = 'top-end', size =
 
   const item = snapshot?.currentItem ?? null;
   // Only screens that can play this; the usual one first (habits/).
-  const { destinationFor, recordPlay } = usePlayDestination();
+  const { destinationFor, recordPlay, screenWeightsFor } = usePlayDestination();
   const usual = item ? destinationFor(item) : null;
   const targets = moveDestinations(fleet.devices ?? [], null, {
     kind: itemKind(item),
     preferredIds: usual && usual.source !== 'here' ? usual.targetIds : [],
+    weights: screenWeightsFor(item),
   });
   const available = !!item && ACTIVE_STATES.has(snapshot?.state)
     && typeof controller?.portability?.capture === 'function'
@@ -216,7 +219,13 @@ function FlingControl({ fleet, outcomes, position: placement = 'top-end', size =
           </div>
         )}
         <div className="fling-targets" role="group" aria-label="Screens">
-          {targets.map((device) => {
+          <TopMoreList
+            items={targets}
+            n={SCREEN_TOP_N}
+            keepIds={pendingId ? [pendingId] : []}
+            testId="fling"
+            onExpand={(counts) => mediaLog.listMoreExpanded({ surface: 'fling', ...counts })}
+            renderItem={(device) => {
             const name = deviceName(device, device.id);
             const location = deviceLocation(device);
             const pending = pendingId === device.id;
@@ -241,7 +250,8 @@ function FlingControl({ fleet, outcomes, position: placement = 'top-end', size =
                 </span>
               </button>
             );
-          })}
+          }}
+          />
         </div>
         {error && <div className="fling-error" role="alert" data-testid="fling-error">{error}</div>}
       </Popover.Dropdown>

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { createHabitsStore, rankByHabits, normalizeQuery, itemKind, HABITS_KEY } from './mediaHabits.js';
+import { createHabitsStore, rankByHabits, normalizeQuery, itemKind, HABITS_KEY, screenWeights } from './mediaHabits.js';
 import { resolvePlayDestination, destinationLabels, canPlayOn } from './playDestination.js';
 
 function memoryStorage() {
@@ -176,5 +176,33 @@ describe('where a ▶ goes', () => {
     expect(canPlayOn(garage, null)).toBe(false);
     expect(canPlayOn(office, 'video')).toBe(true);
     expect(canPlayOn({ id: 'browser:abc', type: 'browser' }, 'video')).toBe(true);
+  });
+});
+
+describe('habits: screensFor (the whole weighted list, for long screen lists)', () => {
+  it('returns every remembered choice, strongest first, faded by age', () => {
+    const storage = memoryStorage();
+    let clock = 1_800_000_000_000;
+    const store = createHabitsStore({ getStorage: () => storage, now: () => clock });
+    expect(store.screensFor('video')).toEqual([]);
+    store.recordScreen('video', ['den-tv']);
+    clock += 60 * DAY; // two half-lives: 1 → 0.25
+    for (let i = 0; i < 2; i++) store.recordScreen('video', ['office-tv']);
+    store.recordScreen('video', ['office-tv', 'kitchen-tv']);
+    const list = store.screensFor('video');
+    expect(list.map((c) => c.targetIds)).toEqual([['office-tv'], ['kitchen-tv', 'office-tv'], ['den-tv']]);
+    expect(list[0].weight).toBeCloseTo(2);
+    expect(list[2].weight).toBeCloseTo(0.25);
+    expect(list[0].targetIds).toEqual(store.screenFor('video'));
+    expect(store.screensFor('audio')).toEqual([]);
+  });
+
+  it('screenWeights sums a screen across the choices it is in', () => {
+    const weights = screenWeights([
+      { targetIds: ['office-tv'], weight: 2 },
+      { targetIds: ['kitchen-tv', 'office-tv'], weight: 1 },
+      { targetIds: [], weight: 3 },
+    ]);
+    expect(Object.fromEntries(weights)).toEqual({ 'office-tv': 3, 'kitchen-tv': 1 });
   });
 });

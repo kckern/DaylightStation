@@ -870,3 +870,45 @@ describe('ContentCombobox search pending placeholders', () => {
     expect(screen.getByText(/^No results/)).toBeInTheDocument();
   });
 });
+
+describe('ContentCombobox collapseAt (smart long lists)', () => {
+  const results = Array.from({ length: 12 }, (_, i) => ({ id: `plex:${i}`, title: `Result ${i}`, source: 'plex' }));
+  const searching = (highlight = { idx: -1, userNavigated: false }) => makeHook({
+    state: { ...initialState(''), mode: Modes.SEARCH, search: 're', results, highlight },
+  });
+  const options = () => screen.queryAllByTestId(/^combobox-option-plex:/);
+
+  it('shows the first few and one Show all N row; admin pickers (no collapseAt) show everything', () => {
+    currentHook = searching();
+    const { unmount } = renderCombobox({ collapseAt: 8 });
+    expect(options()).toHaveLength(8);
+    expect(screen.getByTestId('combobox-show-all')).toHaveTextContent('Show all 12');
+    unmount();
+    currentHook = searching();
+    renderCombobox();
+    expect(options()).toHaveLength(12);
+    expect(screen.queryByTestId('combobox-show-all')).toBeNull();
+  });
+
+  it('Show all is a row of the keyboard model: Arrow reaches it, Enter expands with the highlight on the first new result', () => {
+    currentHook = searching({ idx: 8, userNavigated: true });
+    const onShowAll = vi.fn();
+    renderCombobox({ collapseAt: 8, onShowAll });
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'ArrowDown' });
+    expect(currentHook.dispatch).toHaveBeenCalledWith({ type: 'ARROW', dir: 1, itemCount: 9 });
+    expect(screen.getByTestId('combobox-show-all')).toHaveAttribute('data-highlighted', 'true');
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+    expect(currentHook.commit).not.toHaveBeenCalled();
+    expect(currentHook.dispatch).toHaveBeenCalledWith({ type: 'HIGHLIGHT', idx: 8, userNavigated: true });
+    expect(onShowAll).toHaveBeenCalledWith({ shown: 8, hidden: 4, via: 'keyboard' });
+    expect(options()).toHaveLength(12);
+    expect(screen.queryByTestId('combobox-show-all')).toBeNull();
+  });
+
+  it('Enter on a result still commits from the list as shown', () => {
+    currentHook = searching({ idx: 2, userNavigated: true });
+    renderCombobox({ collapseAt: 8 });
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+    expect(currentHook.commit).toHaveBeenCalledWith('enter', results.slice(0, 8));
+  });
+});

@@ -21,8 +21,8 @@ import mediaLog from "../logging/mediaLog.js";
 import { itemKind } from "../habits/mediaHabits.js";
 import { canPlayOn } from "../habits/playDestination.js";
 import { usePlayDestination } from "../habits/usePlayDestination.js";
-import { deviceName } from "../fleet/deviceDisplay.js";
 import { executeItemAction } from "../actions/itemAction.js";
+import { rankScreens, screenCanTop } from "../fleet/screenRanking.js";
 
 /** The `pendingId` of this device's own row while it asks before replacing. */
 export const HERE_ID = '__here__';
@@ -90,11 +90,13 @@ export function useDispatchTargetPicker({ source, onComplete, intent = 'dispatch
 
   // What is being sent decides which screens can take it: a film never lists
   // a speaker, and a screen that takes no content is never offered at all.
-  // Order is stable — the screen this browser used last for this kind of
-  // thing first, then by name — so the screen you want is where it was.
-  // Ordering and "Usual" come from the habit, not from a sticky This device:
-  // choosing here must not hide the usual screen in Play on….
-  const { destinationFor, recordPlay } = usePlayDestination({ here: false });
+  // Order (fleet/screenRanking.js): the screen ▶ would use first, then the
+  // screens this browser uses for this kind of thing, then what is on now,
+  // then by name. The picker shows the first few and puts the rest (asleep
+  // screens, browser tabs) under More. Ordering and "Usual" come from the
+  // habit, not from a sticky This device: choosing here must not hide the
+  // usual screen in Play on….
+  const { destinationFor, recordPlay, screenWeightsFor } = usePlayDestination({ here: false });
   const sourceItem = source?.itemAction?.item ?? source?.item
     ?? (source?.getSnapshot ? null : source?.snapshot?.currentItem) ?? null;
   const kind = itemKind(sourceItem);
@@ -103,7 +105,9 @@ export function useDispatchTargetPicker({ source, onComplete, intent = 'dispatch
   const localId = fleet.identity?.deviceId ?? null;
   const isLocalDevice = (device) => device?.isLocal === true || (!!localId && device?.id === localId);
   const playable = (fleet.devices ?? []).filter(device => canPlayOn(device, kind));
-  const devices = orderPickerDevices(playable.filter(device => !isLocalDevice(device)), preferredIds);
+  const weights = screenWeightsFor(sourceItem);
+  const devices = rankScreens(playable.filter(device => !isLocalDevice(device)), { preferredIds, weights });
+  const canTop = screenCanTop({ preferredIds, weights });
   // "Usual" is only ever a learned habit, never the current aim.
   const usualIds = learnedFirst?.source === 'learned' ? learnedFirst.targetIds : [];
   // This browser's own name: its fleet row when the bus has it, else the name
@@ -313,20 +317,9 @@ export function useDispatchTargetPicker({ source, onComplete, intent = 'dispatch
 
   return {
     devices, selected, multi, mode, asksKeepOrStop, canSubmit, localPlaying, hasPotentialContent, moveSupported, moveUnavailable, dispatchError,
-    usualIds, here, pendingId, localNow,
+    usualIds, here, pendingId, localNow, canTop,
     select, toggleMulti, setMode, submit, playHere, confirmReplace, cancelReplace,
   };
-}
-
-/** Preferred ids first (in their order), then everything else by name. */
-export function orderPickerDevices(devices, preferredIds = []) {
-  const rank = new Map(preferredIds.map((id, index) => [id, index]));
-  return [...devices].sort((a, b) => {
-    const ra = rank.has(a.id) ? rank.get(a.id) : Infinity;
-    const rb = rank.has(b.id) ? rank.get(b.id) : Infinity;
-    if (ra !== rb) return ra - rb;
-    return deviceName(a).localeCompare(deviceName(b));
-  });
 }
 
 export default useDispatchTargetPicker;

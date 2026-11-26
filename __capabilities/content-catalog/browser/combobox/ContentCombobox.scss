@@ -233,3 +233,13 @@
   // section, so it must not shrink to the section it sizes.
   flex-shrink: 0;
 }
+
+// Smart long lists: the "Show all N" row after the first few results. A row of
+// the list (Arrow reaches it, Enter expands), quieter than a result.
+.content-combobox-show-all {
+  min-height: var(--ds-control-touch-target);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--mantine-color-dimmed);
+}

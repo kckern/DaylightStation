@@ -18,7 +18,14 @@ import { deviceName } from "../fleet/deviceDisplay.js";
 import { ClientIdentityContext } from "../identity/ClientIdentityProvider.jsx";
 import { useDestinationLabel } from "../search/DestinationChip.jsx";
 import { useDestinationInteraction } from "./destinationInteraction.js";
+import { TopMoreList } from '@/lib/ui/TopMore.jsx';
+import { rankScreens, screenCanTop } from "../fleet/screenRanking.js";
+import { usePlayDestination } from "../habits/usePlayDestination.js";
+import mediaLog from "../logging/mediaLog.js";
 import "./Cast.scss";
+
+// The aim list shows a few more than Play on… (it is where several are chosen).
+const AIM_TOP_N = 4;
 
 export function CastTargetChip({ controlRef }) {
   const modeLabelId = `cast-mode-label-${useId()}`;
@@ -43,6 +50,11 @@ export function CastTargetChip({ controlRef }) {
   // aim, This device chosen, the learned film screen, or ask), so the phone
   // header and the search never name two different places.
   const { label: name, asks } = useDestinationLabel();
+  // The screens this browser uses most first; what is aimed is always shown.
+  const { screenWeightsFor } = usePlayDestination();
+  const weights = screenWeightsFor(null);
+  // Not ranked by the aim itself: a row must not jump when it is ticked.
+  const ranked = rankScreens(devices, { weights });
 
   const control = (
     <UnstyledButton
@@ -111,17 +123,25 @@ export function CastTargetChip({ controlRef }) {
               data-testid="cast-target-here"
             />
             {devices.length === 0 && <Text size="sm" c="dimmed">No devices</Text>}
-            {devices.map((d) => (
-              <label key={d.id} className="cast-popover-row">
-                <input
-                  type="checkbox"
-                  checked={targetIds.includes(d.id)}
-                  onChange={() => toggleTarget(d.id)}
-                  data-testid={`cast-target-checkbox-${d.id}`}
-                />
-                <span>{deviceName(d)}</span>
-              </label>
-            ))}
+            <TopMoreList
+              items={ranked}
+              n={AIM_TOP_N}
+              keepIds={targetIds}
+              canTop={screenCanTop({ weights })}
+              testId="cast-target"
+              onExpand={(counts) => mediaLog.listMoreExpanded({ surface: 'aim', ...counts })}
+              renderItem={(d) => (
+                <label key={d.id} className="cast-popover-row">
+                  <input
+                    type="checkbox"
+                    checked={targetIds.includes(d.id)}
+                    onChange={() => toggleTarget(d.id)}
+                    data-testid={`cast-target-checkbox-${d.id}`}
+                  />
+                  <span>{deviceName(d)}</span>
+                </label>
+              )}
+            />
           </div>
         </div>
       </Popover.Dropdown>

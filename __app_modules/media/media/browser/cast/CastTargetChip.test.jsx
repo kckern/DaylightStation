@@ -127,3 +127,18 @@ describe('CastTargetChip as the destination control', () => {
     expect(identity.completeFirstUse).toHaveBeenCalledWith('skipped');
   });
 });
+
+describe('CastTargetChip aim list: smart long list', () => {
+  it('shows four screens and the aimed ones; the rest under More', async () => {
+    state.devices = ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((x) => ({ id: `tv-${x}`, name: `TV ${x.toUpperCase()}` }));
+    state.targetIds = ['tv-g'];
+    renderChip();
+    fireEvent.click(screen.getByTestId('cast-target-chip'));
+    await screen.findByTestId('cast-target-checkbox-tv-a');
+    const shown = screen.getAllByTestId(/^cast-target-checkbox-/).map((el) => el.dataset.testid.replace('cast-target-checkbox-', ''));
+    expect(shown).toEqual(['tv-a', 'tv-b', 'tv-c', 'tv-d', 'tv-g']);
+    expect(screen.getByTestId('cast-target-more')).toHaveTextContent('More (2)');
+    fireEvent.click(screen.getByTestId('cast-target-more'));
+    expect(screen.getAllByTestId(/^cast-target-checkbox-/)).toHaveLength(7);
+  });
+});

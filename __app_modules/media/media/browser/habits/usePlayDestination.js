@@ -5,7 +5,7 @@
 import { useCallback, useContext, useMemo, useSyncExternalStore } from 'react';
 import { CastTargetContext } from "../cast/CastTargetProvider.jsx";
 import { FleetContext } from "../fleet/FleetProvider.jsx";
-import { habitsStore, itemKind } from "./mediaHabits.js";
+import { habitsStore, itemKind, screenWeights } from "./mediaHabits.js";
 import { resolvePlayDestination, destinationLabels } from "./playDestination.js";
 import mediaLog from "../logging/mediaLog.js";
 
@@ -46,6 +46,18 @@ export function usePlayDestination({ aimIds: aimOverride, here: hereOverride } =
 
   const labelsFor = useCallback((item, opts) => destinationLabels(destinationFor(item), opts), [destinationFor]);
 
+  /**
+   * How much this browser has used each screen for things like `item`
+   * (Map id → faded weight), for ranking long screen lists. An item of no
+   * known kind counts films and music together.
+   */
+  const screenWeightsFor = useCallback((item) => {
+    const kind = item === null || item === undefined ? null : itemKind(item);
+    const choices = kind ? store.screensFor(kind) : [...store.screensFor('video'), ...store.screensFor('audio')];
+    return screenWeights(choices);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [store, snapshot]);
+
   /** A deliberate play of `item` went to `targetIds` ([] = here). */
   const recordPlay = useCallback((item, targetIds) => {
     const kind = itemKind(item);
@@ -71,8 +83,8 @@ export function usePlayDestination({ aimIds: aimOverride, here: hereOverride } =
     [store, snapshot]);
 
   return useMemo(
-    () => ({ destinationFor, labelsFor, recordPlay, recordPick, scoresFor, rememberedFor }),
-    [destinationFor, labelsFor, recordPlay, recordPick, scoresFor, rememberedFor],
+    () => ({ destinationFor, labelsFor, recordPlay, recordPick, scoresFor, rememberedFor, screenWeightsFor }),
+    [destinationFor, labelsFor, recordPlay, recordPick, scoresFor, rememberedFor, screenWeightsFor],
   );
 }
 

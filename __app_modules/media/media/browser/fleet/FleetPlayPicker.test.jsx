@@ -194,3 +194,32 @@ describe('FleetPlayPicker', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 });
+
+describe('FleetPlayPicker: habits and the smart long list', () => {
+  const many = Array.from({ length: 12 }, (_, i) => ({ id: `plex:${i}`, title: `Sonic ${i}`, type: 'movie' }));
+
+  beforeEach(async () => {
+    localStorage.clear();
+    const { resetHabitsStoreForTests } = await import('../habits/mediaHabits.js');
+    resetHabitsStoreForTests();
+  });
+
+  it('puts what was picked for these words before first (rankByHabits)', async () => {
+    const { habitsStore } = await import('../habits/mediaHabits.js');
+    habitsStore().recordPick('sonic', many[9]);
+    search.value = baseSearch({ results: many });
+    renderPicker();
+    typeQuery('sonic');
+    const rows = screen.getAllByTestId(/^fleet-play-result-/);
+    expect(rows[0]).toHaveAttribute('data-testid', 'fleet-play-result-plex:9');
+  });
+
+  it('shows eight results, then Show all N', () => {
+    search.value = baseSearch({ results: many });
+    renderPicker();
+    expect(screen.getAllByTestId(/^fleet-play-result-/)).toHaveLength(8);
+    expect(screen.getByTestId('fleet-play-results-livingroom-tv-more')).toHaveTextContent('Show all 12');
+    fireEvent.click(screen.getByTestId('fleet-play-results-livingroom-tv-more'));
+    expect(screen.getAllByTestId(/^fleet-play-result-/)).toHaveLength(12);
+  });
+});

@@ -34,6 +34,7 @@ import { collapseResultEditions } from "./collapseResultEditions.js";
 import { isContainer } from "../../../../../__capabilities/content-catalog/browser/combobox-state.mjs";
 import { useRowLabels } from "./useRowLabels.js";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
+import { SEARCH_RESULTS_SHOWN } from "./searchLimits.js";
 import mediaLog from "../logging/mediaLog.js";
 import { ItemDestinationPicker } from "../actions/ItemDestinationPicker.jsx";
 import { useHouseholdResultActions } from "../household/useHouseholdResultActions.js";
@@ -199,6 +200,9 @@ export function MediaContentSearch({ inputRef: suppliedInputRef, destinationWrap
             inputAccessory={destinationChip}
             onTabKey={handleTabKey}
             transformResults={transformResults}
+            // Smart long lists: the first eight (habit-ranked), then Show all N.
+            collapseAt={SEARCH_RESULTS_SHOWN}
+            onShowAll={(counts) => mediaLog.listMoreExpanded({ surface: 'search', ...counts })}
             resultExtraActions={extraActions}
             resultRowLabels={rowLabelsFor}
             placeholder="Search media…"

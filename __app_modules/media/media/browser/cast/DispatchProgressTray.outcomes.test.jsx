@@ -86,6 +86,24 @@ describe('DispatchProgressTray outcomes', () => {
     expect(sendElsewhere).toHaveBeenCalledWith('f1', 'office-tv');
   });
 
+  it('another screen for a film: no speaker, three screens first, the rest under More', () => {
+    DEVICES.push(...['a', 'b', 'c', 'd'].map((x) => ({ id: `tv-${x}`, name: `TV ${x.toUpperCase()}`, content_control: { type: 'websocket' } })));
+    try {
+      outcomes.set('f3', record({ attemptId: 'f3', dispatchId: 'f3', targetId: 'livingroom-tv', deviceId: 'livingroom-tv', title: 'Arrival', status: 'failed', phase: 'failed', failedStep: 'load',
+        command: { itemAction: { kind: 'playNow', item: { contentId: 'plex:1', type: 'movie' } } } }));
+      render(<MantineProvider><DispatchProgressTray /></MantineProvider>);
+      fireEvent.click(screen.getByTestId('dispatch-elsewhere-f3'));
+      const choices = screen.getByTestId('dispatch-elsewhere-list-f3');
+      expect(within(choices).queryByText('Kitchen Speaker')).toBeNull();
+      expect(within(choices).getAllByTestId(/^dispatch-elsewhere-to-/).map((el) => el.textContent)).toEqual(['Office TV', 'TV A', 'TV B']);
+      expect(screen.getByTestId('dispatch-elsewhere-f3-more')).toHaveTextContent('More (2)');
+      fireEvent.click(screen.getByTestId('dispatch-elsewhere-f3-more'));
+      expect(within(choices).getAllByTestId(/^dispatch-elsewhere-to-/)).toHaveLength(5);
+    } finally {
+      DEVICES.splice(4);
+    }
+  });
+
   it('a local skip names the failed item, this device and what plays instead', () => {
     outcomes.set('s1', record({ attemptId: 's1', dispatchId: 's1', targetId: 'local', deviceId: 'local', distance: 'here', kind: 'playback', phase: 'skipped', reason: 'stalled', item: { contentId: 'plex:1', title: 'Arrival' }, title: 'Arrival', replacement: { contentId: 'plex:2', title: 'Nova' } }));
     render(<MantineProvider><DispatchProgressTray /></MantineProvider>);

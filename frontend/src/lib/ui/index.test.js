@@ -13,6 +13,7 @@ const PUBLIC_EXPORTS = [
   'LoadingState', 'ErrorState', 'EmptyState', 'StateMessage',
   'SectionCard', 'StatCard', 'Skeleton', 'DateStepper', 'createAppLogger',
   'TouchButton', 'ToastRegion', 'Toast', 'Button', 'SubmitButton', 'Select', 'UiIcon',
+  'splitTopMore', 'TopMoreList', 'TopMoreMenu',
 ];
 
 describe('lib/ui barrel', () => {

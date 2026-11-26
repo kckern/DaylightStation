@@ -2,7 +2,7 @@
 // and routines flagged ahead of time.
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { RoutineHistoryView } from "./RoutineHistoryView.jsx";
 import { HouseApiError } from "./houseApi.js";
@@ -41,5 +41,17 @@ describe('RoutineHistoryView', () => {
     unmount();
     wrap({ routineHistory: vi.fn(async () => { throw new HouseApiError('down', { transient: true }); }), routineFlags: vi.fn(async () => ({ items: [] })) });
     await waitFor(() => expect(screen.getByTestId('routine-history-error')).toBeInTheDocument());
+  });
+
+  it('shows the ten most recent starts; older ones under More', async () => {
+    const items = Array.from({ length: 14 }, (_, i) => ({
+      at: new Date(Date.now() - i * 60_000).toISOString(), routine: { id: `automation:r${i}`, name: `Routine ${i}` },
+      deviceId: 'fleet:livingroom-tv', screenName: 'Living Room TV', outcome: 'started',
+    }));
+    wrap({ routineHistory: vi.fn(async () => ({ items })), routineFlags: vi.fn(async () => ({ items: [] })) });
+    expect(await screen.findAllByTestId('routine-run')).toHaveLength(10);
+    expect(screen.getByTestId('routine-history-more')).toHaveTextContent('More (4)');
+    fireEvent.click(screen.getByTestId('routine-history-more'));
+    expect(screen.getAllByTestId('routine-run')).toHaveLength(14);
   });
 });

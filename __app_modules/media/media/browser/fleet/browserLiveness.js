@@ -70,6 +70,11 @@ export function mergeCanonicalFleetState(devices, entries, { now = Date.now } = 
   });
 }
 
+/** How "there" a fleet row is: 0 playing … 6 unknown (lower is more there). */
+export function liveRank(device) {
+  return ORDER.get(device?.displayState ?? device?.state) ?? 99;
+}
+
 export function sortFleetDevices(devices) {
   return [...devices].sort((left, right) => {
     const rank = (ORDER.get(left.displayState ?? left.state) ?? 99) - (ORDER.get(right.displayState ?? right.state) ?? 99);

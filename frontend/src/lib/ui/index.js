@@ -25,3 +25,5 @@ export { Button } from './Button.jsx';
 export { SubmitButton } from './SubmitButton.jsx';
 export { Select } from './Select.jsx';
 export { UiIcon } from './UiIcon.jsx';
+export { splitTopMore } from './splitTopMore.js';
+export { TopMoreList, TopMoreMenu } from './TopMore.jsx';

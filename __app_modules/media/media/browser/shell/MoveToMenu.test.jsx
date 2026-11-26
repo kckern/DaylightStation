@@ -85,4 +85,50 @@ describe('MoveToMenu', () => {
     expect(api).toHaveBeenCalledWith('api/v1/device/kitchen/session/claim', expect.objectContaining({ origin: { kind: 'device', id: 'browser:me' } }), 'POST');
     expect(navigateAfterMove).toHaveBeenCalledOnce();
   });
+
+  function renderMenu(house, playing) {
+    const store = createFleetStore();
+    store.receive({ deviceId: 'kitchen', ts: new Date().toISOString(), snapshot: {
+      sessionId: 's', state: 'playing', position: 1, currentItem: playing,
+      queue: { items: [], currentIndex: 0, upNextCount: 0 },
+      config: { shuffle: false, repeat: 'off', shader: null, volume: 50, playbackRate: 1 },
+      meta: { ownerId: 'kitchen', updatedAt: new Date().toISOString() },
+    } });
+    const local = createLocalSessionController({ clientId: 'me', sessionControls: { storage: null } });
+    render(
+      <MantineProvider>
+        <FleetContext.Provider value={{ devices: house, store, identity: { deviceId: 'browser:me' } }}>
+          <LocalSessionContext.Provider value={{ controller: local }}>
+            <DispatchContext.Provider value={{ recordLocal: vi.fn(), resolveLocal: vi.fn() }}>
+              <MoveToMenu sourceId="kitchen" title="x" />
+            </DispatchContext.Provider>
+          </LocalSessionContext.Provider>
+        </FleetContext.Provider>
+      </MantineProvider>,
+    );
+    fireEvent.click(screen.getByTestId('peek-move-to'));
+  }
+
+  it('a film playing on the screen is never offered a speaker (kind comes from what plays there)', async () => {
+    renderMenu([
+      { id: 'kitchen', name: 'Kitchen TV', content_control: {} },
+      { id: 'den', name: 'Den TV', content_control: {} },
+      { id: 'speaker-red', name: 'Red Headset', type: 'speaker', fleet: true },
+    ], { contentId: 'plex:1', title: 'Arrival', format: 'video' });
+    expect(await screen.findByTestId('move-to-den')).toBeInTheDocument();
+    expect(screen.queryByTestId('move-to-speaker-red')).toBeNull();
+  });
+
+  it('This device and three screens, the rest under More', async () => {
+    localStorage.clear();
+    const house = [{ id: 'kitchen', name: 'Kitchen TV', content_control: {} },
+      ...['a', 'b', 'c', 'd', 'e'].map((x) => ({ id: `tv-${x}`, name: `TV ${x.toUpperCase()}`, content_control: {} }))];
+    renderMenu(house, { contentId: 'plex:2', title: 'Song', format: 'audio' });
+    await screen.findByTestId('move-to-local');
+    expect(screen.getAllByRole('menuitem').filter((el) => /^move-to-(local|tv-)/.test(el.dataset.testid)).map((el) => el.dataset.testid))
+      .toEqual(['move-to-local', 'move-to-tv-a', 'move-to-tv-b', 'move-to-tv-c']);
+    expect(screen.getByTestId('move-to-more')).toHaveTextContent('More (2)');
+    fireEvent.click(screen.getByTestId('move-to-more'));
+    expect(screen.getByTestId('move-to-tv-e')).toBeInTheDocument();
+  });
 });

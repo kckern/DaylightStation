@@ -25,6 +25,11 @@ import { friendlyStepLabel, friendlyStepPhrase, deviceKind, notSentReason } from
 import { pickHandlePlay } from "../shell/screenHandleModel.js";
 import { rowPhase } from "./dispatchRowPhase.js";
 import mediaLog from "../logging/mediaLog.js";
+import { TopMoreList } from '@/lib/ui/TopMore.jsx';
+import { rankScreens, SCREEN_TOP_N } from "../fleet/screenRanking.js";
+import { canPlayOn } from "../habits/playDestination.js";
+import { itemKind } from "../habits/mediaHabits.js";
+import { usePlayDestination } from "../habits/usePlayDestination.js";
 import "./Cast.scss";
 
 // Confirmed playback lingers long enough to be seen, then clears.
@@ -241,18 +246,30 @@ function farCopy(d, phase, name, kind) {
   }
 }
 
-/** Other screens this attempt can be sent to: content screens, not browsers. */
-function otherScreens(devices, targetId) {
+/**
+ * Other screens this attempt can be sent to: content screens, not browsers,
+ * that can play what it was (no film to a speaker).
+ */
+export function otherScreens(devices, targetId, kind = null) {
   return (devices ?? []).filter((device) => typeof device?.id === 'string'
     && device.id !== targetId
     && !device.id.startsWith('browser:')
-    && (device.content_control || device.fleet === true));
+    && (device.content_control || device.fleet === true)
+    && canPlayOn(device, kind));
+}
+
+/** What an outcome record was sending (its command keeps the item or snapshot). */
+function recordItem(d) {
+  return d.command?.itemAction?.item ?? d.command?.snapshot?.currentItem ?? d.snapshot?.currentItem ?? d.item ?? null;
 }
 
 function SendElsewhere({ d, sendElsewhere }) {
   const { devices } = useFleetContext();
   const [open, setOpen] = useState(false);
-  const choices = otherScreens(devices, d.targetId ?? d.deviceId);
+  const { screenWeightsFor } = usePlayDestination();
+  const item = recordItem(d);
+  // The usual screens for this kind of thing first, then what is on, then by name.
+  const choices = rankScreens(otherScreens(devices, d.targetId ?? d.deviceId, itemKind(item)), { weights: screenWeightsFor(item) });
   if (choices.length === 0) return null;
   return (
     <>
@@ -266,15 +283,23 @@ function SendElsewhere({ d, sendElsewhere }) {
       </UnstyledButton>
       {open && (
         <div className="cast-tray-elsewhere" data-testid={`dispatch-elsewhere-list-${d.attemptId ?? d.dispatchId}`} role="group" aria-label="Send to another screen">
-          {choices.map((device) => (
-            <UnstyledButton
-              key={device.id}
-              className="cast-tray-action"
-              onClick={() => { setOpen(false); sendElsewhere?.(d.attemptId ?? d.dispatchId, device.id); }}
-            >
-              {deviceName(device, device.id)}
-            </UnstyledButton>
-          ))}
+          <TopMoreList
+            items={choices}
+            n={SCREEN_TOP_N}
+            testId={`dispatch-elsewhere-${d.attemptId ?? d.dispatchId}`}
+            moreClassName="cast-tray-action"
+            onExpand={(counts) => mediaLog.listMoreExpanded({ surface: 'send-elsewhere', ...counts })}
+            renderItem={(device) => (
+              <UnstyledButton
+                key={device.id}
+                className="cast-tray-action"
+                data-testid={`dispatch-elsewhere-to-${device.id}`}
+                onClick={() => { setOpen(false); sendElsewhere?.(d.attemptId ?? d.dispatchId, device.id); }}
+              >
+                {deviceName(device, device.id)}
+              </UnstyledButton>
+            )}
+          />
         </div>
       )}
     </>

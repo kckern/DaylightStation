@@ -222,3 +222,35 @@ describe('Shown briefly on a screen (PLAY.8a)', () => {
     await waitFor(() => expect(session.controller.sessionControls.closeBrief).toHaveBeenCalled());
   });
 });
+
+describe('long subtitle lists (smart long lists, 2026-11-26)', () => {
+  const many = {
+    contentId: 'plex:9', source: 'plex',
+    audio: [{ id: 'a1', language: 'eng', label: 'English' }],
+    subtitles: ['eng', 'fra', 'deu', 'spa', 'ita', 'jpn', 'kor', 'por'].map((language, i) => ({ id: `s${i}`, language, label: language.toUpperCase() })),
+    selected: { audio: 'a1', subtitle: 's6' },
+  };
+  const shownSubs = () => [...screen.getByTestId('pf-subtitles-menu').querySelectorAll('[data-testid^="pf-subtitle-"]')].map((el) => el.dataset.testid);
+
+  beforeEach(() => { localStorage.clear(); });
+
+  it('Off, the current track and three more, ranked by the languages used last; the rest under More', async () => {
+    localStorage.setItem('media-app.track-languages', JSON.stringify({ subtitle: ['spa', 'jpn'], audio: [] }));
+    session.snapshot = { state: 'playing', currentItem: { contentId: 'plex:9', format: 'dash_video' }, controls: { tracks: many } };
+    wrap(<PlayerFeatureControls target={REMOTE} />);
+    fireEvent.click(screen.getByTestId('pf-subtitles'));
+    await screen.findByTestId('pf-subtitles-menu');
+    expect(shownSubs()).toEqual(['pf-subtitle-off', 'pf-subtitle-s3', 'pf-subtitle-s5', 'pf-subtitle-s0', 'pf-subtitle-s6']);
+    expect(screen.getByTestId('pf-subtitles-more')).toHaveTextContent('More (4)');
+    fireEvent.click(screen.getByTestId('pf-subtitles-more'));
+    expect(shownSubs()).toHaveLength(9);
+  });
+
+  it('choosing a track remembers its language', async () => {
+    session.snapshot = { state: 'playing', currentItem: { contentId: 'plex:9', format: 'dash_video' }, controls: { tracks: many } };
+    wrap(<PlayerFeatureControls target={REMOTE} />);
+    fireEvent.click(screen.getByTestId('pf-subtitles'));
+    fireEvent.click(await screen.findByTestId('pf-subtitle-s1'));
+    expect(JSON.parse(localStorage.getItem('media-app.track-languages')).subtitle).toEqual(['fra']);
+  });
+});

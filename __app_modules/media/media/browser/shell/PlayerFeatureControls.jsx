@@ -26,7 +26,12 @@ import { FormDialog } from '@/lib/ui/FormDialog.jsx';
 import { ActionMenu } from '@/lib/ui/ActionMenu.jsx';
 import { commandFailureCopy } from "./stateCopy.js";
 import mediaLog from "../logging/mediaLog.js";
+import { TopMoreMenu } from '@/lib/ui/TopMore.jsx';
+import { trackLanguages, trackLanguageRank } from "./trackLanguages.js";
 import "./PlayerFeatureControls.scss";
+
+// Off, the current track and the three in the languages used last; the rest under More.
+const TRACKS_SHOWN = 3;
 
 const FALLBACK_MUSIC_SCOPE = 'mediaType=audio';
 const FAILURE_COPY = {
@@ -100,17 +105,28 @@ function TrackMenu({ kind, tracks, selected, onSelect, disabled }) {
         <Menu.Item data-testid="pf-subtitle-off" onClick={() => onSelect({ subtitle: SUBTITLES_OFF })}
           data-selected={!selected || undefined} leftSection={<Mark on={!selected} />}>Off</Menu.Item>
       )}
-      {list.map((t) => (
-        <Menu.Item
-          key={t.id}
-          data-selected={t.id === selected || undefined}
-          leftSection={<Mark on={t.id === selected} />}
-          data-testid={`pf-${isSubs ? 'subtitle' : 'audio'}-${t.id}`}
-          onClick={() => onSelect(isSubs ? { subtitle: t.id } : { audio: t.id })}
-        >
-          {t.label}
-        </Menu.Item>
-      ))}
+      <TopMoreMenu
+        items={list}
+        n={TRACKS_SHOWN}
+        rank={trackLanguageRank(trackLanguages().recent(kind), list)}
+        keepIds={current ? [current.id] : []}
+        testId={`pf-${isSubs ? 'subtitles' : 'audio'}`}
+        onExpand={(counts) => mediaLog.listMoreExpanded({ surface: isSubs ? 'subtitles' : 'audio-tracks', ...counts })}
+        renderItem={(t) => (
+          <Menu.Item
+            key={t.id}
+            data-selected={t.id === selected || undefined}
+            leftSection={<Mark on={t.id === selected} />}
+            data-testid={`pf-${isSubs ? 'subtitle' : 'audio'}-${t.id}`}
+            onClick={() => {
+              trackLanguages().record(kind, t.language);
+              onSelect(isSubs ? { subtitle: t.id } : { audio: t.id });
+            }}
+          >
+            {t.label}
+          </Menu.Item>
+        )}
+      />
     </ActionMenu>
   );
 }

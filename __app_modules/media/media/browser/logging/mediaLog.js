@@ -220,6 +220,9 @@ export const mediaLog = {
   // names where a deliberate ▶ went and whether learning chose it.
   habitPickRecorded:      info('habit.pick-recorded'),
   habitScreenRecorded:    info('habit.screen-recorded'),
+  // A long list's "More (k)" / "Show all N" was opened (lib/ui TopMore):
+  // { surface, shown, hidden } — how often the top part was not enough.
+  listMoreExpanded:       info('list.more-expanded'),
   habitResultsRanked:     debug('habit.results-ranked'),
   itemOpened:             info('item.opened'),
   // Back from an info view the search opened: the search came back

@@ -122,3 +122,25 @@ it('shows no queue for a live channel (no Shuffle, Repeat or Clear), but keeps a
   mount(live);
   expect(screen.getByTestId('queue-panel')).toBeInTheDocument();
 });
+
+it('a long queue shows the current item and the next five; the rest, before and after, under More in play order', () => {
+  const items = Array.from({ length: 12 }, (_, i) => ({ queueItemId: `q${i}`, contentId: `c${i}`, title: `Song ${i}` }));
+  const snapshot = { state: 'playing', currentItem: { contentId: 'c3' }, queue: { items, currentIndex: 3 }, config: {} };
+  const controller = { getSnapshot: () => snapshot, subscribe: () => () => {}, queue: {}, config: {} };
+  render(
+    <MantineProvider>
+      <PeekContext.Provider value={{ getController: () => controller }}>
+        <FleetContext.Provider value={{ store: createFleetStore(), devices: [] }}>
+          <DispatchProvider><QueuePanel target={{ deviceId: 'tv-a' }} /></DispatchProvider>
+        </FleetContext.Provider>
+      </PeekContext.Provider>
+    </MantineProvider>,
+  );
+  const shown = () => screen.getAllByTestId(/^queue-item-q/).map((el) => el.dataset.testid.replace('queue-item-', ''));
+  expect(shown()).toEqual(['q3', 'q4', 'q5', 'q6', 'q7', 'q8']);
+  expect(screen.getByTestId('queue-item-q3')).toHaveAttribute('aria-current', 'true');
+  expect(screen.getByTestId('queue-more')).toHaveTextContent('More (6)');
+  fireEvent.click(screen.getByTestId('queue-more'));
+  expect(shown()).toEqual(items.map((it) => it.queueItemId));
+  expect(screen.getByTestId('queue-jump-q0')).toHaveTextContent('1.');
+});

@@ -38,6 +38,8 @@ import { outcomePhase } from "./dispatchReducer.js";
 import { aimName } from "./AimLabel.jsx";
 import { screenRoomsFromRegistry, sharedRoomGroups, neighbouringRoomGroups, driftWarningText } from "./screenRooms.js";
 import mediaLog from "../logging/mediaLog.js";
+import { TopMoreList } from '@/lib/ui/TopMore.jsx';
+import { SCREEN_TOP_N } from "../fleet/screenRanking.js";
 import "./Cast.scss";
 
 const GLYPHS = {
@@ -273,7 +275,7 @@ function Note({ testId, children, tone = 'plain' }) {
 export function DispatchTargetPicker({ source, onComplete, autoFocus = true, verb = 'Cast', intent = 'dispatch', heading = null }) {
   const {
     devices, selected, multi, mode, asksKeepOrStop, canSubmit, localPlaying, moveUnavailable, dispatchError,
-    usualIds, here, pendingId, localNow,
+    usualIds, here, pendingId, localNow, canTop,
     select, toggleMulti, setMode, submit, playHere, confirmReplace,
   } = useDispatchTargetPicker({ source, onComplete, intent });
 
@@ -305,7 +307,17 @@ export function DispatchTargetPicker({ source, onComplete, autoFocus = true, ver
         </div>
       )}
       <div className="cast-picker__list" role="group" aria-label="Screens">
-        {devices.map((d, index) => (
+        {/* The first few screens, the rest (asleep, browser tabs) under More.
+            What is chosen, aimed or asking is always shown. */}
+        <TopMoreList
+          items={devices}
+          n={SCREEN_TOP_N}
+          canTop={canTop}
+          keepIds={[...selected, ...aimIds, ...(pendingId ? [pendingId] : [])]}
+          testId="picker"
+          moreClassName="cast-picker__more"
+          onExpand={(counts) => mediaLog.listMoreExpanded({ surface: 'play-on', ...counts })}
+          renderItem={(d, index) => (
           <DeviceRow
             key={d.id}
             device={d}
@@ -321,7 +333,8 @@ export function DispatchTargetPicker({ source, onComplete, autoFocus = true, ver
             aimed={aimSet.has(d.id)}
             chooseOnly={isDestination}
           />
-        ))}
+          )}
+        />
       </div>
       {(here || showsStopSwitch) && (
         <div className="cast-picker__here">
