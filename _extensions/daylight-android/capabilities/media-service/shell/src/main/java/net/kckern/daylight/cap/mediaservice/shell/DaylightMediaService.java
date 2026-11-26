@@ -16,6 +16,7 @@ import java.util.List;
 import androidx.media3.common.AudioAttributes;
 import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
+import androidx.media3.common.MediaMetadata;
 import androidx.media3.common.ForwardingPlayer;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
@@ -72,6 +73,65 @@ public class DaylightMediaService extends MediaLibraryService {
     }
 
     /** The level for this item from its Plex gain (track levels route), kept per item. */
+    // ── chapters (ops:docs/superpowers/specs/2026-11-26-phone-audiobook-chapters.md §4.5) ──
+
+    private volatile Chapters chapters = Chapters.NONE;
+    private volatile String chaptersFor = "";
+    private int publishedChapter = -1;
+    private Player sessionPlayerRef;
+    private final java.util.List<Player.Listener> sessionListeners = new java.util.concurrent.CopyOnWriteArrayList<>();
+    private final Runnable chapterTick = this::chapterTick;
+
+    /** A long item's chapters, asked of the payload (home, else the kept copy); none for music. */
+    private void loadChapters(MediaItem item) {
+        widgetUpdates.removeCallbacks(chapterTick);
+        boolean had = !chapters.isEmpty();
+        chapters = Chapters.NONE;
+        chaptersFor = "";
+        publishedChapter = -1;
+        if (had) emitMetadata();
+        String id = item == null ? null : item.mediaId;
+        ExecutorService pool = io;
+        if (id == null || id.indexOf(':') <= 0 || pool == null) return;
+        long fileMs = NodeItems.durationMs(item, androidx.media3.common.C.TIME_UNSET);
+        if (fileMs > 0 && fileMs < 20 * 60_000L) return;
+        pool.execute(() -> {
+            Chapters found;
+            try {
+                found = Chapters.parse(new org.json.JSONObject(media.trackChapters(id, 8000)), Math.max(0, fileMs));
+            } catch (Exception none) { found = Chapters.NONE; }
+            Chapters got = found;
+            widgetUpdates.post(() -> {
+                MediaItem now = player == null ? null : player.getCurrentMediaItem();
+                if (now == null || !id.equals(now.mediaId) || got.isEmpty()) return;
+                chapters = got;
+                chaptersFor = id;
+                Log.i(TAG, "chapters: " + got.count() + " for the current item");
+                chapterTick();
+            });
+        });
+    }
+
+    /** Re-publishes the subtitle when the position crosses into another chapter. */
+    private void chapterTick() {
+        Chapters c = chapters;
+        if (c.isEmpty() || player == null) return;
+        int i = c.indexAt(player.getCurrentPosition());
+        if (i != publishedChapter) { publishedChapter = i; emitMetadata(); }
+        widgetUpdates.postDelayed(chapterTick, 2000);
+    }
+
+    private void emitMetadata() {
+        Player sp = sessionPlayerRef;
+        if (sp == null) return;
+        MediaMetadata m = sp.getMediaMetadata();
+        Player.Events events = new Player.Events(new androidx.media3.common.FlagSet.Builder().add(Player.EVENT_MEDIA_METADATA_CHANGED).build());
+        for (Player.Listener l : sessionListeners) {
+            l.onMediaMetadataChanged(m);
+            l.onEvents(sp, events);
+        }
+    }
+
     private void level(MediaItem item) {
         String id = item == null ? null : item.mediaId;
         if (id == null || id.indexOf(':') <= 0) { levelVolume = 1f; applyVolume(); return; }
@@ -156,7 +216,7 @@ public class DaylightMediaService extends MediaLibraryService {
         // Loudness levelling: each track at its Plex gain (never above full), times the
         // sleep timer's fade; the two meet here so neither undoes the other.
         player.addListener(new Player.Listener() {
-            @Override public void onMediaItemTransition(MediaItem item, int reason) { level(item); }
+            @Override public void onMediaItemTransition(MediaItem item, int reason) { level(item); loadChapters(item); }
         });
         player.addListener(new Player.Listener() {
             @Override public void onEvents(Player player, Player.Events events) {
@@ -208,6 +268,25 @@ public class DaylightMediaService extends MediaLibraryService {
         });
 
         Player sessionPlayer = new ForwardingPlayer(player) {
+            // A chaptered book: the subtitle names the chapter (notification, lock screen, car).
+            @Override public MediaMetadata getMediaMetadata() {
+                MediaMetadata base = super.getMediaMetadata();
+                Chapters c = chapters;
+                MediaItem cur = player.getCurrentMediaItem();
+                if (c.isEmpty() || cur == null || !chaptersFor.equals(cur.mediaId)) return base;
+                return base.buildUpon().setSubtitle(c.subtitle(player.getCurrentPosition())).build();
+            }
+
+            @Override public void addListener(Player.Listener listener) {
+                super.addListener(listener);
+                sessionListeners.add(listener);
+            }
+
+            @Override public void removeListener(Player.Listener listener) {
+                super.removeListener(listener);
+                sessionListeners.remove(listener);
+            }
+
             @Override public long getDuration() {
                 return NodeItems.durationMs(player.getCurrentMediaItem(), super.getDuration());
             }
@@ -243,6 +322,7 @@ public class DaylightMediaService extends MediaLibraryService {
                 return true;
             }
         };
+        sessionPlayerRef = sessionPlayer;
         callback = new LibraryCallback(media, io, getPackageName(), new AndroidPackageFacts(getPackageManager()),
                 () -> SurfaceCache.get(this, ControllerPins.KEY), DaylightMediaService::stopPlayback)
                 .withDrivingRadio(radio, this::cancelRadioHandoff);

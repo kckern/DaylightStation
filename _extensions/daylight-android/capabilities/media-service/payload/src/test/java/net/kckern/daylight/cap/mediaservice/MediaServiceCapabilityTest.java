@@ -607,6 +607,22 @@ public class MediaServiceCapabilityTest {
         assertTrue(api.calls.contains("levels plex:9 400"));
     }
 
+    /** Chapters pass through; none and an older backend are none; without home, the ones seen this session answer. */
+    @Test public void trackChaptersPassThroughAndAnswerOfflineFromWhatWasSeen() throws Exception {
+        api.responses.put("chapters plex:731397", "{\"chapters\":[{\"startMs\":0,\"endMs\":1000,\"title\":\"Chapter 1\"},"
+                + "{\"startMs\":1000,\"endMs\":2000,\"title\":\"Chapter 2\"}],\"durationMs\":2000,\"provider\":\"audiobookshelf\"}");
+        JSONObject got = cap.call(new JSONObject().put("op", "track-chapters").put("id", "plex:731397")).body;
+        assertEquals(2, got.getJSONObject("chapters").getJSONArray("chapters").length());
+        api.responses.put("chapters plex:1", "none");
+        assertTrue(cap.call(new JSONObject().put("op", "track-chapters").put("id", "plex:1")).body.getBoolean("none"));
+        assertTrue(cap.call(new JSONObject().put("op", "track-chapters").put("id", "plex:2")).body.getBoolean("none")); // 404
+        assertEquals(400, cap.call(new JSONObject().put("op", "track-chapters").put("id", "../x")).status);
+        api.down = true;
+        JSONObject offline = cap.call(new JSONObject().put("op", "track-chapters").put("id", "plex:731397")).body;
+        assertEquals("audiobookshelf", offline.getJSONObject("chapters").getString("provider"));
+        assertTrue(cap.call(new JSONObject().put("op", "track-chapters").put("id", "plex:3")).body.getBoolean("none"));
+    }
+
     /** Continue listening: long audio started and not finished, newest first; songs, video and finished items stay out. */
     @Test public void continueListsLongAudioInProgress() throws Exception {
         api.responses.put("recent 50", "{\"items\":["

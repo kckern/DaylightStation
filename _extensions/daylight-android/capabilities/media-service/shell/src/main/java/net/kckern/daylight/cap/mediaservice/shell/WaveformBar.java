@@ -67,6 +67,21 @@ final class WaveformBar extends View {
     /** The item's length, for fine scrubbing (0 or unknown: never zoomed). */
     void setDurationMs(long d) { durationMs = Math.max(0, d); }
 
+    /** Chapter starts as fractions of the file (empty for none): thin ticks, the current one in the accent. */
+    private float[] marks = new float[0];
+    private int markCurrent = -1;
+    private final Paint markPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint markText = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+    void setMarks(float[] m, int current, int color) {
+        float[] next = m == null ? new float[0] : m;
+        if (java.util.Arrays.equals(next, marks) && current == markCurrent && markPaint.getColor() == color) return;
+        marks = next;
+        markCurrent = current;
+        markPaint.setColor(color);
+        invalidate();
+    }
+
     private void zoomIn() {
         if (!scrubbing || FineScrub.windowMs(durationMs) == 0) return;
         zoom = FineScrub.window(durationMs, fraction);
@@ -124,6 +139,24 @@ final class WaveformBar extends View {
                 float bx = left + i * step + (step - bw) / 2f;
                 bar.set(bx, mid - half, bx + bw, mid + half);
                 c.drawRoundRect(bar, r, r, bx + bw / 2f <= x ? played : rest);
+            }
+        }
+        // Chapter starts: a short tick above and below the bars; in the zoom, only those in view.
+        if (marks.length > 0) {
+            float tw = 1f * density, th = 5 * density;
+            for (int i = 0; i < marks.length; i++) {
+                float f = (marks[i] - view[0]) / (view[1] - view[0]);
+                if (f < 0f || f > 1f) continue;
+                float mx = left + w * f;
+                Paint p = i == markCurrent ? head : markPaint;
+                c.drawRect(mx - tw / 2f, getPaddingTop(), mx + tw / 2f, getPaddingTop() + th, p);
+                c.drawRect(mx - tw / 2f, getPaddingTop() + h - th, mx + tw / 2f, getPaddingTop() + h, p);
+                // Zoomed in, each start says which chapter it opens.
+                if (zoom != null) {
+                    markText.setColor(p.getColor());
+                    markText.setTextSize(10 * density);
+                    c.drawText(String.valueOf(i + 2), mx + 3 * density, getPaddingTop() + th + 9 * density, markText);
+                }
             }
         }
         float hw = 1f * density;
