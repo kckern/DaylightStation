@@ -31,7 +31,40 @@ describe('fitDown', () => {
     let measured = 0;
     const r = fitDown({ ceilPx: 28, floorPx: 14, apply: () => {}, ok: (px) => { measured += 1; return px <= 15; } });
     expect(r).toEqual({ px: 15, fits: true });
-    expect(measured).toBeLessThanOrEqual(6);
+    // 15 candidates (28..14): the ceiling, the floor, then a bisection of the rest.
+    expect(measured).toBeLessThanOrEqual(2 + Math.ceil(Math.log2(15)));
+  });
+
+  it('leaves the winner applied when the last probe was a failing size', () => {
+    // 28..14 with ok at <= 16: the search ends probing 17, which fails.
+    const applied = [];
+    const measuredAt = [];
+    const r = fitDown({
+      ceilPx: 28, floorPx: 14,
+      apply: (px) => applied.push(px),
+      ok: (px) => { measuredAt.push(px); return px <= 16; },
+    });
+    expect(r).toEqual({ px: 16, fits: true });
+    expect(measuredAt[measuredAt.length - 1]).toBe(17);
+    expect(applied[applied.length - 1]).toBe(16);
+  });
+
+  it('never sets type larger than the ceiling it was given', () => {
+    const applied = [];
+    const r = fitDown({ ceilPx: 26.8375, floorPx: 14, apply: (px) => applied.push(px), ok: () => true });
+    expect(r).toEqual({ px: 26.8375, fits: true });
+    expect(applied).toEqual([26.8375]);
+  });
+
+  it('returns a size that passed when measured, even for a check that is not monotonic', () => {
+    // Passes only at 20, 15 and the floor 14 (the floor passing lets the search start).
+    const passedAt = new Set();
+    const r = fitDown({
+      ceilPx: 28, floorPx: 14, apply: () => {},
+      ok: (px) => { const pass = px === 20 || px === 15 || px === 14; if (pass) passedAt.add(px); return pass; },
+    });
+    expect(r.fits).toBe(true);
+    expect(passedAt.has(r.px)).toBe(true);
   });
 
   it('never rounds a candidate below a floor with more than two decimals', () => {

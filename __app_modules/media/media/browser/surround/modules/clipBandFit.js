@@ -14,9 +14,11 @@
  * Leaves the winning size applied.
  *
  * BINARY SEARCH, because every `ok` forces a layout and this runs on every clip
- * change on TV hardware. It relies on `ok` being monotonic (a smaller size
- * never fails where a larger one passed), which holds for every check here:
- * smaller type is never taller or wider.
+ * change on TV hardware. It finds the largest passing size when `ok` is
+ * monotonic (a smaller size never fails where a larger one passed), which every
+ * check here is: smaller type is never taller or wider. If a check is not (a
+ * rounding wobble in layout), the result is still a size that passed when it
+ * was measured, just not necessarily the largest.
  *
  * @param {object} args
  * @param {number} args.ceilPx the size the stylesheet sets (tried first).
@@ -29,14 +31,16 @@
  */
 export function fitDown({ ceilPx, floorPx, stepPx = 1, apply, ok }) {
   if (!(ceilPx > 0) || !(floorPx > 0) || floorPx > ceilPx) return { px: ceilPx, fits: true };
-  const sizes = [];
-  for (let px = ceilPx; px > floorPx + 1e-6; px -= stepPx) {
+  // The ceiling goes in as given: rounding it could set type larger than the
+  // stylesheet's (26.8375 -> 26.84).
+  const sizes = [ceilPx];
+  for (let px = ceilPx - stepPx; px > floorPx + 1e-6; px -= stepPx) {
     // Rounding can land a step on or under a floor with more than two decimals
     // (a fractional root size); the floor itself closes the list.
     const rounded = Number(px.toFixed(2));
     if (rounded > floorPx) sizes.push(rounded);
   }
-  sizes.push(floorPx);
+  if (floorPx < ceilPx) sizes.push(floorPx);
   const passes = (i) => { apply(sizes[i]); return ok(sizes[i]); };
 
   if (passes(0)) return { px: sizes[0], fits: true };
@@ -48,6 +52,7 @@ export function fitDown({ ceilPx, floorPx, stepPx = 1, apply, ok }) {
     const mid = (lo + hi) >> 1;
     if (passes(mid)) hi = mid; else lo = mid;
   }
+  // The last probe may have been a failing size (a lo), so set the winner again.
   apply(sizes[hi]);
   return { px: sizes[hi], fits: true };
 }
@@ -133,9 +138,10 @@ export function fitClipBand({ band, title = null, heading = null, nextText = nul
     const floorPx = TITLE_FLOOR_REM * rem;
     title.classList.remove('clip-band__title--clamped');
     // Two lines at most while any size allows it; a name that cannot be set in
-    // two lines at the floor takes a third rather than being cut.
+    // two lines at the floor takes a third rather than being cut. Past three it
+    // is clamped (the stylesheet's line-clamp is 3).
     let r = fitDown({ ceilPx, floorPx, apply, ok: (f) => lines(f) <= 2 && fitsBand() });
-    if (!r.fits) r = fitDown({ ceilPx, floorPx, apply, ok: fitsBand });
+    if (!r.fits) r = fitDown({ ceilPx, floorPx, apply, ok: (f) => lines(f) <= 3 && fitsBand() });
     if (!r.fits) title.classList.add('clip-band__title--clamped');
     report.titlePx = r.px;
     report.titleLines = lines(r.px);
