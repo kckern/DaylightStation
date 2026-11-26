@@ -550,6 +550,16 @@ targets are Media3 sessions behind one `MediaController`:
   playlists**: the playlists already chosen for Drive, a widget or Driving Radio, as cover
   tiles; a tap plays one here. A long Plex track now resumes where it was left
   (`PlexAdapter`: video, or a track of 20 minutes or more, is `resumable`).
+- **Remote control on the Connect tab.** One row per screen (anything in the screens list
+  that is not `type: speaker`): a tap opens Now playing on that screen with the D-pad
+  already shown (`NowPlayingActivity` extra `pad`), for the FHE menu, Charades or any
+  menu when no remote is in reach. The list is drawn at once from the last answer
+  (prefs `daylight.home`) and refreshed.
+- **No jumps on load.** Lines that may be empty (artist, album, quality, the status
+  line) keep their space from the first draw; the status line is one line that shrinks
+  its text to fit; the cover box is square from the start (a video's wide still is
+  letterboxed in it); the Play tab draws Continue listening from its last answer and
+  redraws only when the answer changed.
 - **Mini player.** Along the bottom of the phone home while something plays here or on
   a screen this phone drives: a progress line on its top edge, the cover, title, artist
   and where, play/pause and next (they act on that player through `NowPlayingNote`), on

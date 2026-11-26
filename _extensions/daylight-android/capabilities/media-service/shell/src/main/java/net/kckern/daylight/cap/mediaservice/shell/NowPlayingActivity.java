@@ -83,6 +83,8 @@ public class NowPlayingActivity extends Activity {
     private static final String TAG = "Daylight-Media";
     static final String EXTRA_TARGET = "target";
     static final String LOCAL = "local";
+    /** Open with the D-pad shown (a screen target only): the Connect tab's remote rows. */
+    static final String EXTRA_PAD = "pad";
     private static final String PREFS = "daylight.nowplaying";
     private static final int QUEUE_ROWS = 100;
     private static final int WAVE_SAMPLES = 96;
@@ -199,6 +201,8 @@ public class NowPlayingActivity extends Activity {
         buildViews();
         chooseInitialTarget(getIntent(), saved);
         loadScreens();
+        // Opened as a screen's remote (the phone home's Connect tab): the pad, at once.
+        if (saved == null && getIntent() != null && getIntent().getBooleanExtra(EXTRA_PAD, false) && remote()) showPad(true);
         Log.i(TAG, "now playing opened, target " + target);
     }
 
@@ -226,6 +230,7 @@ public class NowPlayingActivity extends Activity {
         String asked = intent == null ? "" : intent.getStringExtra(EXTRA_TARGET);
         if (asked != null && !asked.isEmpty() && !asked.equals(target)) switchTo(asked, nameOf(asked));
         else if (controller == null && pending == null && started) connect();
+        if (intent != null && intent.getBooleanExtra(EXTRA_PAD, false) && remote()) showPad(true);
     }
 
     /** The target chosen here outlives a rotation; the opening intent's does not override it. */
@@ -493,7 +498,9 @@ public class NowPlayingActivity extends Activity {
         else line = c.getPlayerError() != null ? "Could not play this" : "";
         if (line.isEmpty() && !remote()) line = SleepTimer.describeNow();
         status.setText(line);
-        status.setVisibility(line.isEmpty() ? View.GONE : View.VISIBLE);
+        // One line, always reserved; a long message shrinks to fit rather than adding a line.
+        status.setVisibility(line.isEmpty() ? View.INVISIBLE : View.VISIBLE);
+        status.setContentDescription(line);
 
         boolean playing = active(c);
         playPause.setImageResource(playing ? R.drawable.daylight_np_pause : R.drawable.daylight_np_play);
@@ -547,9 +554,13 @@ public class NowPlayingActivity extends Activity {
         tickPosition();
     }
 
+    /**
+     * Sets a line that may be empty. Its space is kept either way (INVISIBLE, never GONE):
+     * details arrive after the first draw, and the screen must not move when they do.
+     */
     private static void show(TextView v, CharSequence text) {
         v.setText(TextUtils.isEmpty(text) ? "" : text);
-        v.setVisibility(TextUtils.isEmpty(text) ? View.GONE : View.VISIBLE);
+        v.setVisibility(TextUtils.isEmpty(text) ? View.INVISIBLE : View.VISIBLE);
     }
 
     /** "All Eyez On Me (1996)", the album alone, or the year alone. */
@@ -683,10 +694,11 @@ public class NowPlayingActivity extends Activity {
                 if (!key.equals(shownArtwork) || bitmap == null) return;
                 art.setImageTintList(null);
                 art.setPadding(0, 0, 0, 0);
-                art.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                // The box is square from the first draw and stays so (no jump when a picture
+                // arrives): a square cover fills it; a video's wide still sits letterboxed in it.
+                boolean wide = bitmap.getWidth() > bitmap.getHeight() * 1.2f;
+                art.setScaleType(wide ? ImageView.ScaleType.FIT_CENTER : ImageView.ScaleType.CENTER_CROP);
                 art.setImageBitmap(bitmap);
-                // A video's still is wide, an album cover square: the box takes the picture's shape.
-                artFrame.setRatio(bitmap.getWidth() > bitmap.getHeight() * 1.2f ? 9f / 16f : 1f);
                 setAccent(a, s);
             });
         });
@@ -1308,7 +1320,8 @@ public class NowPlayingActivity extends Activity {
         player.addView(qualityLine);
         status = centred();
         status.setPadding(0, dp(8), 0, 0);
-        status.setMaxLines(2);
+        status.setMaxLines(1);
+        status.setAutoSizeTextTypeUniformWithConfiguration(10, 14, 1, android.util.TypedValue.COMPLEX_UNIT_SP);
         player.addView(status);
 
         // One transport row: (back 10) previous, play, next (forward 10).

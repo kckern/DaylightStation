@@ -326,7 +326,8 @@ public class PhoneHomeActivity extends Activity {
         String where = "local".equals(now.target) ? "" : "On " + now.targetName;
         String line = now.artist.isEmpty() ? where : where.isEmpty() ? now.artist : now.artist + " · " + where;
         nowWhere.setText(line);
-        nowWhere.setVisibility(line.isEmpty() ? View.GONE : View.VISIBLE);
+        // Its line is kept even when empty: the strip is one height from its first draw.
+        nowWhere.setVisibility(line.isEmpty() ? View.INVISIBLE : View.VISIBLE);
         nowPlay.setImageResource(now.playing ? R.drawable.daylight_mini_pause : R.drawable.daylight_mini_play);
         nowPlay.setContentDescription(now.playing ? "Pause" : "Play");
         nowPlay.setEnabled(now.transport != null);
@@ -591,20 +592,36 @@ public class PhoneHomeActivity extends Activity {
      * Nothing shows when there is nothing, or the payload cannot answer.
      */
     private void loadContinue(LinearLayout into) {
+        // Drawn at once from the last answer, so the tab does not jump when the payload
+        // answers; redrawn only when the answer is different (a book finished, a new one).
+        android.content.SharedPreferences cache = getSharedPreferences("daylight.home", MODE_PRIVATE);
+        String last = cache.getString("continue", "");
+        fillContinue(into, last);
         String body;
         try { body = new JSONObject().put("op", "continue").put("limit", 6).toString(); }
         catch (Exception impossible) { return; }
         call("media", body, reply -> {
             org.json.JSONArray items = reply.optJSONArray("items");
-            if (items == null || items.length() == 0 || into.getParent() == null) return;
-            TextView heading = label("Continue listening", Type.TITLE, t.ink);
-            heading.setPadding(0, dp(10), 0, dp(4));
-            into.addView(heading);
-            for (int i = 0; i < items.length(); i++) {
-                JSONObject item = items.optJSONObject(i);
-                if (item != null) into.addView(continueCard(item));
-            }
-        }, failure -> { /* nothing to continue is not an error */ });
+            String now = items == null ? "[]" : items.toString();
+            if (now.equals(last) || into.getParent() == null) return;
+            cache.edit().putString("continue", now).apply();
+            fillContinue(into, now);
+        }, failure -> { /* nothing to continue is not an error; the last answer stays */ });
+    }
+
+    private void fillContinue(LinearLayout into, String json) {
+        into.removeAllViews();
+        org.json.JSONArray items;
+        try { items = json == null || json.isEmpty() ? new org.json.JSONArray() : new org.json.JSONArray(json); }
+        catch (Exception unreadable) { return; }
+        if (items.length() == 0) return;
+        TextView heading = label("Continue listening", Type.TITLE, t.ink);
+        heading.setPadding(0, dp(10), 0, dp(4));
+        into.addView(heading);
+        for (int i = 0; i < items.length(); i++) {
+            JSONObject item = items.optJSONObject(i);
+            if (item != null) into.addView(continueCard(item));
+        }
     }
 
     private View continueCard(JSONObject item) {
@@ -713,8 +730,64 @@ public class PhoneHomeActivity extends Activity {
     }
 
     private void addConnections() {
+        // The phone as a TV remote: one row per screen, straight to its D-pad (up, down,
+        // left, right, OK, Back) for the FHE menu, Charades or any menu, when no remote is
+        // in reach. The list is drawn from the last answer at once, then refreshed.
+        Intent remote = new Intent().setClassName(this, NOW_PLAYING);
+        if (getPackageManager().resolveActivity(remote, 0) != null) {
+            section("Remote control");
+            LinearLayout screensBox = new LinearLayout(this);
+            screensBox.setOrientation(LinearLayout.VERTICAL);
+            column.addView(screensBox);
+            loadRemotes(screensBox, remote);
+            section("Devices");
+        }
         row("Freematics", "Manage Bluetooth connection", "open", "›",
                 () -> startActivity(new Intent(this, FreematicsActivity.class)));
+    }
+
+    private void loadRemotes(LinearLayout into, Intent remote) {
+        android.content.SharedPreferences cache = getSharedPreferences("daylight.home", MODE_PRIVATE);
+        String last = cache.getString("screens", "");
+        fillRemotes(into, remote, last);
+        call("media", "{\"op\":\"screens\"}", reply -> {
+            org.json.JSONArray items = reply.optJSONArray("items");
+            String now = items == null ? "[]" : items.toString();
+            if (now.equals(last) || into.getParent() == null) return;
+            cache.edit().putString("screens", now).apply();
+            fillRemotes(into, remote, now);
+        }, failure -> {
+            if (last.isEmpty() && into.getParent() != null) {
+                into.removeAllViews();
+                into.addView(label("Screens are listed when home can be reached.", Type.LABEL, t.inkMuted));
+            }
+        });
+    }
+
+    private void fillRemotes(LinearLayout into, Intent remote, String json) {
+        into.removeAllViews();
+        org.json.JSONArray items;
+        try { items = json == null || json.isEmpty() ? new org.json.JSONArray() : new org.json.JSONArray(json); }
+        catch (Exception unreadable) { return; }
+        LinearLayout saved = column;
+        LinearLayout savedRow = buttonRow;
+        column = into;
+        buttonRow = null;
+        try {
+            for (int i = 0; i < items.length(); i++) {
+                JSONObject sc = items.optJSONObject(i);
+                if (sc == null) continue;
+                String id = sc.optString("id"), name = sc.optString("name", id);
+                // A speaker or headset has no screen to move around: no remote for it.
+                if (id.isEmpty() || "speaker".equals(sc.optString("type"))) continue;
+                row(name, "Remote control for " + name, "remote", "›", () -> startActivity(new Intent(remote)
+                        .putExtra("target", id).putExtra("pad", true)
+                        .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)));
+            }
+        } finally {
+            column = saved;
+            buttonRow = savedRow;
+        }
     }
 
     private void returnCaptureShortcut(JSONObject action) {
