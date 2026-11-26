@@ -212,7 +212,11 @@ public class ShellService extends Service implements ShellServer.Host {
         @Override public String deviceId() { return BuildConfig.DEVICE_ID; }
         @Override public int shellVersionCode() { return versionCode(); }
         @Override public String controlToken() { return TOKEN; }
-        @Override public String inboxToken() { return BuildConfig.INBOX_TOKEN; }
+        // A device build running on an emulator sends no token: the emulator never presents the
+        // device's own (an emulator build, -PemulatorInbox, carries its own '<id>-emulator' one).
+        @Override public String inboxToken() {
+            return onEmulator() && !BuildConfig.INBOX_EMULATOR ? "" : BuildConfig.INBOX_TOKEN;
+        }
         @Override public File payloadDir() {
             PayloadLoader l = loader;
             return l == null ? new File(getFilesDir(), "payloads") : l.store().dir();
@@ -239,5 +243,14 @@ public class ShellService extends Service implements ShellServer.Host {
             return l == null ? "{\"ok\":false,\"error\":\"loader not ready\"}" : l.status().toString();
         }
         @Override public void note(String kind, String message) { ShellLog.note(kind, message); }
+    }
+
+    /** An Android emulator (the SDK images), from Build: the same test as the payload's inbox. */
+    static boolean onEmulator() {
+        String f = String.valueOf(android.os.Build.FINGERPRINT).toLowerCase(java.util.Locale.ROOT);
+        String h = String.valueOf(android.os.Build.HARDWARE).toLowerCase(java.util.Locale.ROOT);
+        String p = String.valueOf(android.os.Build.PRODUCT).toLowerCase(java.util.Locale.ROOT);
+        return f.startsWith("generic") || f.contains("/sdk_gphone") || f.contains("emulator")
+                || h.equals("ranchu") || h.equals("goldfish") || p.startsWith("sdk_gphone") || p.contains("emulator");
     }
 }

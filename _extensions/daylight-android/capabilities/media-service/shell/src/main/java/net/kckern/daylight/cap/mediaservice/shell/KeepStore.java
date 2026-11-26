@@ -108,6 +108,7 @@ final class KeepStore {
     private final Map<String, long[]> moved = new HashMap<>();
     private volatile long capMb = 4096;
     private volatile boolean onCellular, removeFinished;
+    private volatile long removeFinishedAfterMs = KeepRules.DAY_MS;
 
     static synchronized KeepStore get(Context context) {
         if (instance == null) instance = new KeepStore(context.getApplicationContext());
@@ -116,11 +117,43 @@ final class KeepStore {
 
     static String cacheKey(String contentId) { return "track:" + contentId; }
 
-    static String trackOf(String cacheKey) { return cacheKey.startsWith("track:") ? cacheKey.substring(6) : cacheKey; }
+    /** A track's download key for one file version at home ("" : the plain key). */
+    static String versionedKey(String contentId, String fileVersion) {
+        return fileVersion == null || fileVersion.isEmpty() ? cacheKey(contentId) : cacheKey(contentId) + "@" + fileVersion;
+    }
+
+    /** The content id a download key is for (any version). */
+    static String trackOf(String key) {
+        String k = key.startsWith("track:") ? key.substring(6) : key;
+        int at = k.indexOf('@');
+        return at < 0 ? k : k.substring(0, at);
+    }
+
+    /**
+     * The key the player reads a track from: the copy that is whole. A changed file at home is
+     * downloaded under a new key while the old copy keeps playing; the player moves to the new
+     * one only when it is whole. The plain key before any version was seen.
+     */
+    private static final Map<String, String> KEYS = new java.util.concurrent.ConcurrentHashMap<>();
+
+    static String playKey(String contentId) {
+        String k = KEYS.get(contentId);
+        return k != null ? k : cacheKey(contentId);
+    }
+
+    private String keyFor(String contentId) { return playKey(contentId); }
+
+    private void setKey(String contentId, String key, String version) {
+        KEYS.put(contentId, key);
+        prefs.edit().putString("key." + contentId, key).putString("ver." + contentId, version == null ? "" : version).apply();
+    }
 
     private KeepStore(Context app) {
         this.app = app;
         this.prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        for (Map.Entry<String, ?> e : prefs.getAll().entrySet()) {
+            if (e.getKey().startsWith("key.") && e.getValue() instanceof String) KEYS.put(e.getKey().substring(4), (String) e.getValue());
+        }
         net.kckern.daylight.shellkit.PlaylistArtwork.useKept(new File(app.getFilesDir(), "kept-art"));
         File sd = removableDir(app);
         String setting = prefs.getString("location.setting", KeepRules.INTERNAL);
@@ -194,6 +227,7 @@ final class KeepStore {
             onCellular = rules.optBoolean("onCellular", false);
             capMb = rules.optLong("capMb", 4096);
             removeFinished = rules.optBoolean("removeFinished", false);
+            removeFinishedAfterMs = rules.optLong("removeFinishedAfterMin", 1440) * 60_000L;
             String loc = rules.optString("location", KeepRules.INTERNAL);
             if (!loc.equals(prefs.getString("location.setting", KeepRules.INTERNAL))) {
                 // Takes effect on the next start: moving between locations downloads again there.
@@ -358,7 +392,7 @@ final class KeepStore {
         for (int i = 0; i < n; i++) {
             JSONObject t = tracks.optJSONObject(i);
             if (t == null) continue;
-            String key = cacheKey(t.optString("id"));
+            String key = keyFor(t.optString("id"));
             Download d = download(key);
             if (d == null || d.state == Download.STATE_FAILED) add(request(key, t.optString("url")));
         }
@@ -385,11 +419,16 @@ final class KeepStore {
             long freed = 0;
             JSONObject reply = new JSONObject(media.unkeep(contentId, WAIT_MS));
             JSONArray orphaned = reply.optJSONArray("orphaned");
+            Map<String, Download> all = downloads();
             for (int i = 0; orphaned != null && i < orphaned.length(); i++) {
-                String key = cacheKey(orphaned.getString(i));
-                Download d = download(key);
-                if (d != null) freed += d.getBytesDownloaded();
-                delete(key, reason);
+                String id = orphaned.getString(i);
+                for (Download d : all.values()) {
+                    if (!id.equals(trackOf(d.request.id))) continue;
+                    freed += d.getBytesDownloaded();
+                    delete(d.request.id, reason);
+                }
+                KEYS.remove(id);
+                prefs.edit().remove("key." + id).remove("ver." + id).apply();
             }
             clearItem(contentId);
             event("keep.removed", new JSONObject().put("reason", reason).put("tracks", orphaned == null ? 0 : orphaned.length()).put("bytes", freed));
@@ -483,7 +522,7 @@ final class KeepStore {
                 JSONArray tracks = reply.optJSONArray("tracks");
                 for (int i = 0; tracks != null && i < tracks.length(); i++) {
                     JSONObject t = tracks.getJSONObject(i);
-                    String key = cacheKey(t.optString("id"));
+                    String key = keyFor(t.optString("id"));
                     Download d = download(key);
                     if (d == null || d.state == Download.STATE_FAILED || prefs.getBoolean("damaged." + key, false)) {
                         String reason = prefs.getString("reason." + key, "");
@@ -535,7 +574,7 @@ final class KeepStore {
      * from scratch on the next allowed network; the player has already skipped past it.
      */
     void markDamaged(String contentId) {
-        String key = cacheKey(contentId);
+        String key = keyFor(contentId);
         prefs.edit().putBoolean("damaged." + key, true).remove("verified." + key).apply();
         event("keep.damaged", null);
         io.execute(() -> {
@@ -628,7 +667,7 @@ final class KeepStore {
             if (prefs.getBoolean("admitted." + cid, false)) continue;
             boolean anyHere = false;
             JSONArray tracks = k.optJSONArray("tracks");
-            for (int j = 0; tracks != null && j < tracks.length() && !anyHere; j++) anyHere = download(cacheKey(tracks.optJSONObject(j).optString("id"))) != null;
+            for (int j = 0; tracks != null && j < tracks.length() && !anyHere; j++) anyHere = download(keyFor(tracks.optJSONObject(j).optString("id"))) != null;
             boolean waiting = prefs.contains("needroom." + cid) || prefs.contains("undecided." + cid);
             if (anyHere && !waiting) {
                 prefs.edit().putBoolean("admitted." + cid, true).apply();   // kept before admission existed
@@ -643,9 +682,11 @@ final class KeepStore {
 
     private void reconcile(JSONObject reply, long now) throws Exception {
         JSONArray items = reply.optJSONArray("items");
-        Set<String> deletable = new HashSet<>();
+        Set<String> deletable = new HashSet<>();   // content ids an explicit removal released
         JSONArray d0 = reply.optJSONArray("deletable");
-        for (int i = 0; d0 != null && i < d0.length(); i++) deletable.add(cacheKey(d0.getString(i)));
+        for (int i = 0; d0 != null && i < d0.length(); i++) deletable.add(d0.getString(i));
+        Map<String, Download> all = downloads();
+        Map<String, String> replacing = new HashMap<>();   // new version's key -> the copy playing now
         Map<String, String> wanted = new LinkedHashMap<>();
         Map<String, String> collectionOf = new HashMap<>();
         Set<String> keptAnywhere = new HashSet<>();
@@ -656,20 +697,29 @@ final class KeepStore {
             JSONArray tracks = k.optJSONArray("tracks");
             for (int j = 0; tracks != null && j < tracks.length(); j++) {
                 JSONObject t = tracks.getJSONObject(j);
-                String key = cacheKey(t.optString("id"));
+                String key = wantKey(t, all, replacing);
                 keptAnywhere.add(key);
+                keptAnywhere.add(keyFor(t.optString("id")));
                 if (!admitted) continue;
                 if (!wanted.containsKey(key)) wanted.put(key, t.optString("url"));
                 collectionOf.putIfAbsent(key, cid);
             }
         }
-        Map<String, Download> all = downloads();
         Set<String> retryDue = new HashSet<>();
         for (Download d : all.values()) {
             String id = d.request.id;
             if (!keptAnywhere.contains(id)) {
                 // Two keys: kept by nothing, and released on purpose. Otherwise it stays.
-                if (deletable.contains(id)) delete(id, "removed");
+                if (deletable.contains(trackOf(id))) delete(id, "removed");
+                continue;
+            }
+            String old = replacing.get(id);
+            if (old != null && d.state == Download.STATE_COMPLETED && whole(d)) {
+                // The new file at home is whole here: the player moves to it, the old copy goes.
+                String cid = trackOf(id);
+                setKey(cid, id, id.contains("@") ? id.substring(id.indexOf('@') + 1) : "");
+                delete(old, "replaced");
+                event("keep.replaced", null);
                 continue;
             }
             if (!wanted.containsKey(id)) continue;   // kept, not admitted (needs room): left as it is
@@ -708,7 +758,7 @@ final class KeepStore {
                     JSONArray tracks = fresh.optJSONArray("tracks");
                     for (int i = 0; tracks != null && i < tracks.length(); i++) {
                         JSONObject t = tracks.getJSONObject(i);
-                        String key = cacheKey(t.optString("id"));
+                        String key = keyFor(t.optString("id"));
                         if (!retryDue.contains(key)) continue;
                         prefs.edit().putBoolean("reresolved." + key, true).apply();
                         fetchAgain(key, t.optString("url"), prefs.getString("reason." + key, ""));
@@ -717,6 +767,33 @@ final class KeepStore {
             }
         }
         watchStalls(items);
+    }
+
+    /**
+     * The download key a kept track should have: the copy there now, unless home names a
+     * different file version, in which case the new version's key (fetched beside the old one,
+     * which keeps playing until the new one is whole: {@code replacing}). A version seen for the
+     * first time on a track already kept is recorded, not fetched again.
+     */
+    private String wantKey(JSONObject t, Map<String, Download> all, Map<String, String> replacing) {
+        String id = t.optString("id"), v = t.optString("fileVersion", "");
+        String cur = KEYS.get(id);
+        if (cur == null && all.containsKey(cacheKey(id))) cur = cacheKey(id);
+        String recorded = prefs.contains("ver." + id) ? prefs.getString("ver." + id, "") : null;
+        if (cur == null) {
+            String k = versionedKey(id, v);
+            setKey(id, k, v);
+            return k;
+        }
+        if (v.isEmpty() || v.equals(recorded)) return cur;
+        if (recorded == null || recorded.isEmpty()) {
+            setKey(id, cur, v);   // first sight of a version: what is here is it
+            return cur;
+        }
+        String next = versionedKey(id, v);
+        if (next.equals(cur)) return cur;
+        replacing.put(next, cur);
+        return next;
     }
 
     /** Runs downloads from a job (KeepScheduler) while they last, at most {@code maxMs}; {@code more} hears whether to go on later. */
@@ -795,7 +872,7 @@ final class KeepStore {
             List<String> moving = new ArrayList<>();
             JSONArray tracks = k.optJSONArray("tracks");
             for (int j = 0; tracks != null && j < tracks.length(); j++) {
-                String key = cacheKey(tracks.optJSONObject(j).optString("id"));
+                String key = keyFor(tracks.optJSONObject(j).optString("id"));
                 Download d = all.get(key);
                 if (d == null) continue;
                 bytes += d.getBytesDownloaded();
@@ -836,7 +913,7 @@ final class KeepStore {
         e.apply();
         if (!removeFinished) return;
         for (String cid : done) {
-            if (!KeepRules.removeFinishedDue(prefs.getLong("finishedAt." + cid, 0), now)) continue;
+            if (!KeepRules.removeFinishedDue(prefs.getLong("finishedAt." + cid, 0), now, removeFinishedAfterMs)) continue;
             String title = titleOf(cid);
             if (removeNow(cid, "finished_auto")) notifyRemovedFinished(cid, title);
         }
@@ -971,7 +1048,7 @@ final class KeepStore {
 
     /** Whether this track plays from the phone (its file checked whole): Now playing says "Playing from this phone". */
     boolean playsFromPhone(String contentId) {
-        String key = cacheKey(contentId);
+        String key = keyFor(contentId);
         Download d = download(key);
         return d != null && d.state == Download.STATE_COMPLETED && !prefs.getBoolean("damaged." + key, false)
                 && prefs.getLong("verified." + key, -1) == d.contentLength;
@@ -1006,7 +1083,7 @@ final class KeepStore {
                 String reason = "";
                 for (int j = 0; tracks != null && j < tracks.length(); j++) {
                     JSONObject t = tracks.getJSONObject(j);
-                    String id = t.optString("id"), key = cacheKey(id);
+                    String id = t.optString("id"), key = keyFor(id);
                     if (t.has("artUrl")) covers.add(t.optString("artUrl"));
                     ids.put(id);
                     f.total++;
@@ -1169,7 +1246,7 @@ final class KeepStore {
         for (JSONObject e : KeptIndex.read(app.getFilesDir())) {
             if (!cid.equals(e.optString("contentId"))) continue;
             JSONArray ids = e.optJSONArray("trackIds");
-            for (int i = 0; ids != null && i < ids.length(); i++) out.add(cacheKey(ids.optString(i)));
+            for (int i = 0; ids != null && i < ids.length(); i++) out.add(keyFor(ids.optString(i)));
         }
         return out;
     }
@@ -1179,7 +1256,7 @@ final class KeepStore {
             JSONArray tracks = k.optJSONArray("tracks");
             for (int i = 0; tracks != null && i < tracks.length(); i++) {
                 JSONObject t = tracks.optJSONObject(i);
-                if (t != null && key.equals(cacheKey(t.optString("id")))) return t.optString("url");
+                if (t != null && key.equals(keyFor(t.optString("id")))) return t.optString("url");
             }
         }
         return null;
@@ -1226,7 +1303,7 @@ final class KeepStore {
         for (int i = 0; tracks != null && i < tracks.length(); i++) {
             JSONObject t = tracks.optJSONObject(i);
             if (t == null) continue;
-            Download d = download(cacheKey(t.optString("id")));
+            Download d = download(keyFor(t.optString("id")));
             if (d != null && d.state == Download.STATE_COMPLETED) continue;
             need += size(t.optString("url"));
         }
@@ -1237,7 +1314,7 @@ final class KeepStore {
         long have = 0;
         for (int i = 0; tracks != null && i < tracks.length(); i++) {
             JSONObject t = tracks.optJSONObject(i);
-            Download d = t == null ? null : download(cacheKey(t.optString("id")));
+            Download d = t == null ? null : download(keyFor(t.optString("id")));
             if (d != null && d.state == Download.STATE_COMPLETED) have += d.getBytesDownloaded();
         }
         return have;

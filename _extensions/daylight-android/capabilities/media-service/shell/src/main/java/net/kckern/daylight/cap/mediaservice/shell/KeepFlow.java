@@ -20,7 +20,41 @@ import org.json.JSONObject;
 final class KeepFlow {
     private KeepFlow() { }
 
+    /** Android stops this app in the background (battery "Restricted"): downloads cannot run with it closed. */
+    static boolean backgroundRestricted(Activity a) {
+        try {
+            android.app.ActivityManager am = (android.app.ActivityManager) a.getSystemService(Activity.ACTIVITY_SERVICE);
+            return android.os.Build.VERSION.SDK_INT >= 28 && am.isBackgroundRestricted();
+        } catch (RuntimeException unknown) { return false; }
+    }
+
+    /** The app's own settings page (Battery → Allow background use is one tap from there). */
+    static void openBatterySettings(Activity a) {
+        try {
+            a.startActivity(new android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    android.net.Uri.fromParts("package", a.getPackageName(), null)));
+        } catch (RuntimeException none) { /* no settings screen */ }
+    }
+
+    /** Once: when Android restricts the app in the background, say so before a keep, with the way out. */
+    private static boolean hintOnce(Activity a, Runnable then) {
+        android.content.SharedPreferences p = a.getSharedPreferences("daylight.keep", Activity.MODE_PRIVATE);
+        if (!backgroundRestricted(a) || p.getBoolean("bgHintShown", false)) return false;
+        p.edit().putBoolean("bgHintShown", true).apply();
+        UiTelemetry.event("Downloads", "keep.background_restricted", new JSONObject());
+        new AlertDialog.Builder(a, DaylightTheme.alert())
+                .setTitle("Allow background use")
+                .setMessage("Android stops this app in the background, so downloads only run while it is open. "
+                        + "Allow background use in its battery settings to keep downloading with the app closed.")
+                .setPositiveButton("Battery settings", (d, w) -> openBatterySettings(a))
+                .setNegativeButton("Not now", (d, w) -> then.run())
+                .setOnCancelListener(d -> then.run())
+                .show();
+        return true;
+    }
+
     static void start(Activity a, String mediaId) {
+        if (hintOnce(a, () -> start(a, mediaId))) return;
         UiTelemetry.event("Downloads", "keep.tap", new JSONObject());
         Toast.makeText(a, "Checking size…", Toast.LENGTH_SHORT).show();
         KeepStore store = KeepStore.get(a);

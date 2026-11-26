@@ -103,6 +103,16 @@ public final class DownloadsActivity extends Activity {
             o.setPadding(0, dp(4), 0, 0);
             column.addView(o);
         }
+        if (KeepFlow.backgroundRestricted(this)) {
+            // Shown while it is true: downloads stop whenever the app is closed.
+            TextView hint = t.text(this, "Downloads only run while the app is open: Android restricts it in the background.",
+                    Type.LABEL, t.attention, false);
+            hint.setPadding(0, dp(6), 0, 0);
+            column.addView(hint);
+            LinearLayout allow = new LinearLayout(this);
+            allow.addView(button("Allow background use", "keep.allow_background", () -> KeepFlow.openBatterySettings(this)));
+            column.addView(allow);
+        }
         if (KeepRules.SD_MISSING.equals(store.location)) {
             column.addView(t.text(this, "On the SD card — not inserted. Nothing was deleted.", Type.LABEL, t.attention, false));
         }

@@ -125,8 +125,11 @@ final class KeepRules {
     static boolean permanentAfter(int httpStatus, boolean reresolved) { return permanent(httpStatus) && reresolved; }
 
     /** A finished book is removed (media.removeFinished) a day after it was first seen finished. */
-    static boolean removeFinishedDue(long finishedAt, long now) {
-        return finishedAt > 0 && now - notAfterNow(finishedAt, now) >= DAY_MS;
+    static boolean removeFinishedDue(long finishedAt, long now) { return removeFinishedDue(finishedAt, now, DAY_MS); }
+
+    /** As above with the delay set (media.removeFinishedAfterMin; a day unless shortened for a check). */
+    static boolean removeFinishedDue(long finishedAt, long now, long afterMs) {
+        return finishedAt > 0 && now - notAfterNow(finishedAt, now) >= Math.max(60_000L, afterMs);
     }
 
     static final String NOT_ON_MOBILE = "Not allowed on mobile data";

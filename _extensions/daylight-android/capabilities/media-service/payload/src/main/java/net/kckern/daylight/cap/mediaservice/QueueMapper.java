@@ -49,7 +49,14 @@ final class QueueMapper {
                 Json.first(Json.str(item, "artist"), Json.str(meta, "artist"), Json.str(item, "grandparentTitle")),
                 Json.first(Json.str(item, "album"), Json.str(meta, "album"), Json.str(item, "parentTitle")),
                 BrowseTree.art(backend, Json.str(item, "thumbnail")), Json.str(item, "listId"),
-                Json.seconds(item, "duration"));
+                Json.seconds(item, "duration"), fileVersion(item));
+    }
+
+    /** The file version the backend names ("<partId>:<updatedAt>"), short and printable, or "". */
+    static String fileVersion(JSONObject item) {
+        JSONObject meta = item.optJSONObject("metadata");
+        String v = Json.first(Json.str(item, "fileVersion"), meta == null ? "" : Json.str(meta, "fileVersion"));
+        return v.length() <= 80 && v.matches("[A-Za-z0-9:._-]*") ? v : "";
     }
 
     /** The content id of a queue item or a play response, or "" when it has none that is one. */

@@ -57,6 +57,8 @@ public final class MediaServiceCapability implements Capability {
     static final String REMOVE_FINISHED = "media.removeFinished";
     /** Where downloads are kept: internal, or sd (a removable card, when the phone has one). */
     static final String DOWNLOAD_LOCATION = "media.downloadLocation";
+    /** Minutes from finished to removed with media.removeFinished (a day; shorter for a check). */
+    static final String REMOVE_FINISHED_AFTER = "media.removeFinishedAfterMin";
     private static final String RECENT_LIMIT = "media.recentLimit";
     private static final String PAGE_SIZE = "media.pageSize";
     /** How a screen's notes name this device when it pauses or skips there: "Paused by Phone". */
@@ -137,6 +139,7 @@ public final class MediaServiceCapability implements Capability {
         core.settings().declare(DOWNLOAD_CAP_MB, SettingsRegistry.Type.INTEGER, 4096, SettingsRegistry.range(0, 512_000));
         core.settings().declare(DOWNLOAD_ON_CELLULAR, SettingsRegistry.Type.BOOLEAN, false, null);
         core.settings().declare(REMOVE_FINISHED, SettingsRegistry.Type.BOOLEAN, false, null);
+        core.settings().declare(REMOVE_FINISHED_AFTER, SettingsRegistry.Type.INTEGER, 1440, SettingsRegistry.range(1, 100_000));
         core.settings().declare(DOWNLOAD_LOCATION, SettingsRegistry.Type.STRING, "internal",
                 value -> "internal".equals(value) || "sd".equals(value) ? null : "media.downloadLocation: internal or sd");
         if (inbox == null) {
@@ -327,6 +330,7 @@ public final class MediaServiceCapability implements Capability {
                 return new Outcome(200, Replies.ok().put("capMb", (Integer) core.settings().get(DOWNLOAD_CAP_MB))
                         .put("onCellular", Boolean.TRUE.equals(core.settings().get(DOWNLOAD_ON_CELLULAR)))
                         .put("removeFinished", Boolean.TRUE.equals(core.settings().get(REMOVE_FINISHED)))
+                        .put("removeFinishedAfterMin", (Integer) core.settings().get(REMOVE_FINISHED_AFTER))
                         .put("location", (String) core.settings().get(DOWNLOAD_LOCATION)));
             }
             if ("unkeep".equals(op)) {
@@ -600,6 +604,70 @@ public final class MediaServiceCapability implements Capability {
         try { flushPendingOnce(); } finally { flushing.set(false); }
     }
 
+    /** How long a play of a kept item waits for home's word on where it was. */
+    static final long PLACE_WAIT_MS = 1_000;
+
+    /**
+     * A kept collection answered from the phone, with the request's own choices (a picked
+     * track, shuffle), and the place: the phone's, unless home answers within a second with
+     * a place and the phone has nothing unsent for it (home then knows the newer one: it was
+     * heard on another screen). A late or absent answer updates the phone's places in the
+     * background for the next play.
+     */
+    private Resolver.Resolved keptFirst(Resolver.Resolved offline, JSONObject request) {
+        List<Track> tracks = new ArrayList<>(offline.tracks);
+        int start = offline.startIndex;
+        long at = offline.startPositionMs;
+        int asked = request.optInt("startIndex", -1);
+        if (request.optBoolean("shuffle")) {
+            java.util.Collections.shuffle(tracks);
+            start = 0;
+            at = 0;
+        } else if (request.optBoolean("explicitPosition") && asked >= 0 && asked < tracks.size()) {
+            start = asked;
+            at = 0;
+        } else if (!health.down(clock.getAsLong())) {
+            String id = tracks.get(start).id;
+            Long home = homePlace(id);
+            if (home != null && pending().get(id) == null) {
+                long dur = tracks.get(start).durationMs;
+                at = dur > 0 && home * 1000 >= dur - 1000 ? 0 : home * 1000;
+            }
+        }
+        flushSoon();
+        return new Resolver.Resolved(tracks, start, Math.max(0, at), true);
+    }
+
+    /**
+     * Home's place for one item in seconds, if it answers within {@link #PLACE_WAIT_MS};
+     * null otherwise. A later answer is kept as the phone's place for the next play.
+     */
+    private Long homePlace(String contentId) {
+        java.util.concurrent.CompletableFuture<Long> f = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+            try {
+                JSONObject recent = api.recent(100);
+                health.answered();
+                JSONArray items = recent == null ? null : recent.optJSONArray("items");
+                for (int i = 0; items != null && i < items.length(); i++) {
+                    JSONObject it = items.optJSONObject(i);
+                    if (it == null || !contentId.equals(Json.str(it, "contentId"))) continue;
+                    long seconds = it.optLong("playhead", -1);
+                    if (seconds >= 0 && pending().get(contentId) == null) {
+                        positions().keep(new JSONObject().put("assetId", contentId).put("seconds", seconds)
+                                .put("observedAt", clock.getAsLong()).put("fromHome", true));
+                    }
+                    return seconds >= 0 ? seconds : null;
+                }
+                return null;
+            } catch (Exception unreachable) {
+                health.failed(clock.getAsLong());
+                return null;
+            }
+        });
+        try { return f.get(PLACE_WAIT_MS, java.util.concurrent.TimeUnit.MILLISECONDS); }
+        catch (Exception notInTime) { return null; }
+    }
+
     /** Off the caller's thread: a play never waits on old reports going out. */
     private void flushSoon() {
         ExecutorService w = worker;
@@ -680,8 +748,9 @@ public final class MediaServiceCapability implements Capability {
         }
         Resolver.Resolved r = null;
         Resolver.Resolved offline = mediaIds.size() == 1 ? Offline.resolve(mediaIds.get(0), kept(), positions()) : null;
-        // Home failed a moment ago: something kept plays from the phone at once.
-        if (offline != null && health.down(clock.getAsLong())) r = offline;
+        // A kept item plays from the phone first, always: home is asked only for its place
+        // (a moment, then in the background), never waited on for the tracks.
+        if (offline != null) r = keptFirst(offline, request);
         if (r == null) {
             try {
                 r = Resolver.resolve(mediaIds, request.optInt("startIndex", -1), request.optBoolean("explicitPosition"),

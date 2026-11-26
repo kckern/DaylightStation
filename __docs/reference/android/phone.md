@@ -90,9 +90,20 @@ not need remote control: its installed components (the link activity, the tiles,
 the widget) reach the payload in-process, through a `PayloadPort`, or read what
 the payload last wrote.
 
-A `none` build has no control token compiled in, and needs no token entry in the
-private file. The payload's router is handed a random token made up for that
-process, which nothing can present. A value of `control.bind` the app does not
+A `none` build has no control token compiled in. The payload's router is handed a
+random token made up for that process, which nothing can present.
+
+It does compile one other token: the **inbox token** (`BuildConfig.INBOX_TOKEN`), the
+device's entry in the private tokens file, which the payload sends as a bearer token
+when it polls the backend's command inbox (Play on Phone, Keep on Phone). Its scope is
+only this device's inbox: its own commands, acks and keeps report, never a control API
+and never another device. It is readable by other apps on the phone, the same as any
+compiled value; that is the accepted risk for what it guards. Rotating it means a new
+value in the tokens file and a rebuild and install (the backend reloads its copy). A
+build for an emulator (`-PemulatorInbox`) carries the `<id>-emulator` entry instead,
+never the device's own, and a device build that finds itself on an emulator sends no
+token at all. A phone build without an entry for its id polls with no token, which the
+backend refuses once it requires one. A value of `control.bind` the app does not
 know is treated as `none`; the build accepts only `lan`, `loopback` and `none`.
 
 **Debugging a phone build is over adb.** `adb logcat` for the app's log lines

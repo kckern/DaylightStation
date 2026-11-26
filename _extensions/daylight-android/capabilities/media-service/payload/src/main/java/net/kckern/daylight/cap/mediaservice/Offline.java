@@ -64,7 +64,7 @@ final class Offline {
             if (t == null || !ContentId.valid(t.optString("id")) || t.optString("url").isEmpty()) continue;
             out.add(new Track(t.optString("id"), t.optString("url"), t.optString("title", "Untitled"),
                     t.optString("artist", ""), t.optString("album", ""), t.has("artUrl") ? t.optString("artUrl") : null,
-                    t.optString("listId", ""), t.optLong("durationMs", 0)));
+                    t.optString("listId", ""), t.optLong("durationMs", 0), t.optString("fileVersion", "")));
         }
         return out;
     }

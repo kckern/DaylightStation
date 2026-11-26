@@ -118,7 +118,7 @@ final class NodeItems {
             // The media id is the content id: it is what progress reports are keyed by.
             // The cache key is the content id, not the URL (whose session may differ): a track
             // kept on this phone is found in the download cache however it was resolved.
-            out.add(new MediaItem.Builder().setMediaId(t.id).setUri(t.url).setCustomCacheKey(KeepStore.cacheKey(t.id))
+            out.add(new MediaItem.Builder().setMediaId(t.id).setUri(t.url).setCustomCacheKey(KeepStore.playKey(t.id))
                     .setMediaMetadata(meta.build()).build());
         }
         return out;
