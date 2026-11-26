@@ -219,7 +219,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/dev/game-presentation-harness" element={<React.Suspense fallback={null}><GamePresentationHarness /></React.Suspense>} />
         <Route path="/dev/ds-gallery" element={<React.Suspense fallback={null}><DsGallery /></React.Suspense>} />
         <Route path="/dev/decoder-swatches" element={<React.Suspense fallback={null}><DecoderSwatches /></React.Suspense>} />
-        {["/screen/:screenId/*", "/screens/:screenId/*"].map(p => <Route key={p} path={p} element={<WebSocketProvider><ScreenRenderer /></WebSocketProvider>} />)}
+        {["/screen/:screenId/*", "/screens/:screenId/*", "/screen", "/screens"].map(p => <Route key={p} path={p} element={<WebSocketProvider><ScreenRenderer /></WebSocketProvider>} />)}
         {/* Host companion talks to the singleton wsService directly (auto-connects on
             first subscription) — no WebSocketProvider needed. Commands go out via HTTP. */}
         <Route path="/party-games/host/:sessionId" element={<PartyGamesHost />} />

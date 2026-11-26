@@ -43,7 +43,7 @@ import { bindBackButton, enableGlobalKeyCapture } from '../../lib/fkb.js';
 import getLogger from '../../lib/logging/Logger.js';
 import { useInitialActionGate } from "../../../../__capabilities/screen-host/browser/lifecycle.mjs";
 import { useFleetDeviceIdentity } from "../../../../__capabilities/screen-host/browser/lifecycle.mjs";
-import { resolveScreenDevice, screenName, startScreenAnnounce } from "../../../../__capabilities/screen-host/browser/lifecycle.mjs";
+import { resolveScreenDevice, screenName, startScreenAnnounce, routeScreenId, screenFrame, lockPageScroll } from "../../../../__capabilities/screen-host/browser/lifecycle.mjs";
 import { getDeviceId } from '../../lib/deviceIdentity.js';
 import { ActionLoadingShell } from "../../../../__capabilities/screen-host/browser/lifecycle.mjs";
 import { layoutOwnsRouting } from "../../../../__capabilities/screen-host/browser/lifecycle.mjs";
@@ -234,7 +234,8 @@ function ScreenSubscriptionHandler({ subscriptions }) {
 export function ScreenRenderer({ screenId: propScreenId }) {
   useDocumentTitle('Screen');
   const params = useParams();
-  const screenId = propScreenId || params.screenId;
+  // A bare /screen (or /screens) is the ad-hoc screen: /screen?queue=… plays in any browser.
+  const screenId = propScreenId || routeScreenId(params.screenId);
 
   const [config, setConfig] = useState(null);
   /** True on an ad-hoc screen: its device is this browser (`$browser` resolved), not a fleet name. */
@@ -467,6 +468,10 @@ export function ScreenRenderer({ screenId: propScreenId }) {
     }
   }, [sessionDeviceId, screenId, sessionControls]);
 
+  // A full-bleed screen owns the page: html and body neither scroll nor keep a margin.
+  const fullbleed = config?.fullbleed === true;
+  useEffect(() => (fullbleed && typeof document !== 'undefined' ? lockPageScroll(document) : undefined), [fullbleed]);
+
   // Convert theme to --screen-* CSS custom properties
   const themeStyle = useMemo(() => {
     if (!config?.theme) return {};
@@ -475,20 +480,13 @@ export function ScreenRenderer({ screenId: propScreenId }) {
     );
   }, [config]);
 
-  const res = config?.resolution;
-  const bgColor = config?.theme?.['screen-bg'] || '#000';
+  // A configured screen keeps its design resolution, centred; a full-bleed one (the
+  // ad-hoc screen) is the whole window: no margin, letterbox or scroll.
+  const frame = screenFrame(config);
 
   // Always render the dark viewport wrapper to prevent white flash during loading
   const viewport = (content) => (
-    <div className="screen-viewport" style={{
-      width: '100vw',
-      height: '100vh',
-      display: 'flex',
-      justifyContent: 'center',
-      alignItems: 'center',
-      overflow: 'hidden',
-      backgroundColor: bgColor,
-    }}>
+    <div className={frame.viewportClass} style={frame.viewportStyle}>
       {content}
     </div>
   );
@@ -514,9 +512,8 @@ export function ScreenRenderer({ screenId: propScreenId }) {
   return (
     <ScreenDataProvider sources={config.data}>
       {viewport(
-        <div ref={screenRootRef} tabIndex={-1} className={`screen-root screen-root--${screenId}`} style={{
-          width: res ? `${res.width}px` : '100%',
-          height: res ? `${res.height}px` : '100%',
+        <div ref={screenRootRef} tabIndex={-1} className={`screen-root screen-root--${screenId}${frame.rootClassExtra}`} style={{
+          ...frame.rootSize,
           display: 'flex',
           position: 'relative',
           overflow: 'hidden',
