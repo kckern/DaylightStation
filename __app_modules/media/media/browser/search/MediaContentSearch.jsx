@@ -61,11 +61,13 @@ export function MediaContentSearch({ inputRef }) {
   // was kept of it) in the catalog-wide scope only — a narrowed scope shows
   // only what the search returns for it.
   const wholeCatalog = currentScopeKey == null || currentScopeKey === scopes[0]?.key;
-  const transformResults = useCallback((results, { query = '' } = {}) => {
+  const transformResults = useCallback((results, { query = '', searching = false } = {}) => {
     queryRef.current = query;
     const collapsed = collapseResultEditions(results);
     const scores = scoresFor(query);
-    const ranked = rankByHabits(collapsed, scores, wholeCatalog ? rememberedFor(query) : null);
+    const ranked = // A placeholder only while sources are still answering: a search that
+    // settles without the item (gone from the library) shows what it found.
+    rankByHabits(collapsed, scores, wholeCatalog && searching ? rememberedFor(query) : null);
     if (ranked !== collapsed && lastRankedRef.current !== query) {
       lastRankedRef.current = query;
       mediaLog.habitResultsRanked({ textLength: query.trim().length, boosted: scores.size });

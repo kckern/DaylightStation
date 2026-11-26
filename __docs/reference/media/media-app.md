@@ -535,8 +535,10 @@ only — typing, scrolling and looking at a detail page write nothing:
   while they are still being typed, from three letters; or words that extend
   them) shows that item in row 1 at once — before any source answers, in the
   catalog-wide scope — and swaps in the real row in place when it arrives, so
-  nothing shifts under the pointer; everything else follows in the order it
-  came. Picks fade by half every 30 days; the more often and more lately an
+  nothing shifts under the pointer (a search that settles without the item,
+  say it left the library, drops the placeholder); everything else follows in
+  the order it came. Queue verbs in the ⋯ menus name the screen too ("Add to
+  Queue on Office Screen") when it is not here. Picks fade by half every 30 days; the more often and more lately an
   item was picked, the higher it sits. Enter picks from the list as shown.
 - *Screens.* Each deliberate play of a film — its ▶, Play on…, Play here, a
   move of local playback — counts for the screen it went to, and the counts

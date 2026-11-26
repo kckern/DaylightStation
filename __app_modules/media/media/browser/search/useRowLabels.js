@@ -33,6 +33,7 @@ export function useRowLabels() {
       playNow: sentence,
       playHere: elsewhere ? 'Play here' : null,
       playElsewhere: elsewhere,
+      queueWhere: elsewhere ? short : null,
       subtitle,
     };
     if (isContainer(item)) {

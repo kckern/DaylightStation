@@ -256,8 +256,8 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
   ].map(([kind, probe]) => (destinationFor(probe).source === 'learned' ? `${kind} on ${labelsFor(probe).short}` : null))
     .filter(Boolean).join(' · ') || null;
   const results = useMemo(
-    () => rankByHabits(collapseResultEditions(state.results), scoresFor(searchText), wholeCatalog ? rememberedFor(searchText) : null),
-    [state.results, scoresFor, rememberedFor, searchText, wholeCatalog],
+    () => rankByHabits(collapseResultEditions(state.results), scoresFor(searchText), wholeCatalog && isSearching ? rememberedFor(searchText) : null),
+    [state.results, scoresFor, rememberedFor, searchText, wholeCatalog, isSearching],
   );
 
   // Every open resets scope to catalog-wide (spec D1: scope never carries

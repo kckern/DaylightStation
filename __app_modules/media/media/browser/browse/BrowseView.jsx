@@ -117,6 +117,7 @@ export function BrowseView({
       playTitle: row.title ? sentence.replace(/^Play/, `Play ${row.title}`) : sentence,
       playNow: sentence,
       playHere: elsewhere ? 'Play here' : null,
+      queueWhere: elsewhere ? short : null,
     };
   };
   const log = useMemo(() => getLogger().child({ component: 'browse-view' }), []);
