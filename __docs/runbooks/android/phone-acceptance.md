@@ -634,6 +634,15 @@ with `quick_input.share` in the devices file) and a screen nobody is watching.
 
 Needs shell 115 or later and a screen that is on (the office screen is the easiest).
 
+**Run on an emulator, 2026-11-25** (API 33, Pixel 6 profile, the real backend): steps
+1 to 6 passed against the office screen (pause, play, stop, clear, volume 100 → 95 →
+100, the "Paused by Phone" and "Stopped by Phone" notes) and the living-room TV ("is
+not on"); local Talks played, the media notification opened Now playing, Next moved to
+the next talk and Stop cleared the phone's queue. Android's media card showed the
+screen as **Other device**. Still to do on the real phone: the lock-screen card, and
+the hardware volume keys with the screen off. An emulator only takes a new payload
+under the same shell version after `adb shell pm clear net.kckern.daylight.phone`.
+
 1. Open Daylight, the **Play** tab, **Now playing**. The strip reads **This phone**, then
    the screens. With nothing playing on the phone it says "Nothing playing on this phone".
 2. Share a short video to the office screen (F4). In Now playing tap the office screen's

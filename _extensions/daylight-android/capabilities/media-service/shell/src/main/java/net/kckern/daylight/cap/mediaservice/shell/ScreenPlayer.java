@@ -278,7 +278,7 @@ final class ScreenPlayer extends SimpleBasePlayer {
         SettableFuture<Void> done = SettableFuture.create();
         final long gen = generation;
         final String target = device;
-        final String what = request.optString("command") + " " + request.optString("action", request.optString("op", ""));
+        final String what = request.optString("command") + " " + request.optString("action", request.optString("queueOp", ""));
         io.execute(() -> {
             JSONObject reply;
             try {
@@ -310,7 +310,8 @@ final class ScreenPlayer extends SimpleBasePlayer {
 
     /** What the status line says about one command's answer; empty when it was done. */
     static String commandLine(JSONObject reply, String screen) {
-        if (reply == null || !reply.optBoolean("ok", false)) return "Can't reach home";
+        if (reply == null || "unreachable".equals(reply.optString("error"))) return "Can't reach home";
+        if (!reply.optBoolean("ok", false)) return "Could not send that to " + screen;
         if (reply.optBoolean("accepted", false)) return "";
         int status = reply.optInt("status", 0);
         String code = reply.optString("code", "");

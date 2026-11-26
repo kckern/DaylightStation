@@ -119,7 +119,8 @@ final class ScreenRemote {
                 break;
             }
             case "queue": {
-                String op = request.optString("op", "");
+                // queueOp, not op: op is the port's own key ("screen-command").
+                String op = request.optString("queueOp", "");
                 if (!QUEUE_OP.matcher(op).matches()) throw new IllegalArgumentException("queue op");
                 if (op.equals("jump") || op.equals("remove")) {
                     String item = request.optString("queueItemId", "");

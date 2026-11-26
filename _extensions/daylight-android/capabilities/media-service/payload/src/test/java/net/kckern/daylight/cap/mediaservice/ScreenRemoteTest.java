@@ -119,15 +119,15 @@ public class ScreenRemoteTest {
     }
 
     @Test public void queueJumpAndRemoveNameTheEntryNotTheContent() throws Exception {
-        remote.command(new JSONObject().put("device", "office-tv").put("command", "queue").put("op", "jump").put("queueItemId", "q7"));
+        remote.command(new JSONObject().put("device", "office-tv").put("command", "queue").put("queueOp", "jump").put("queueItemId", "q7"));
         assertTrue(calls.get(0), calls.get(0).startsWith("POST https://home.example/api/v1/device/office-tv/session/queue/jump "));
         assertTrue(calls.get(0).contains("\"queueItemId\":\"q7\""));
-        remote.command(new JSONObject().put("device", "office-tv").put("command", "queue").put("op", "clear"));
+        remote.command(new JSONObject().put("device", "office-tv").put("command", "queue").put("queueOp", "clear"));
         assertTrue(calls.get(1).startsWith("POST https://home.example/api/v1/device/office-tv/session/queue/clear "));
     }
 
     @Test public void aReorderSendsTheNewOrderById() throws Exception {
-        remote.command(new JSONObject().put("device", "office-tv").put("command", "queue").put("op", "reorder")
+        remote.command(new JSONObject().put("device", "office-tv").put("command", "queue").put("queueOp", "reorder")
                 .put("items", new org.json.JSONArray().put("q2").put("q1")));
         assertTrue(calls.get(0), calls.get(0).startsWith("POST https://home.example/api/v1/device/office-tv/session/queue/reorder "));
         assertTrue(calls.get(0).contains("\"items\":[\"q2\",\"q1\"]"));
@@ -157,7 +157,7 @@ public class ScreenRemoteTest {
     @Test public void unknownKindsActionsAndOpsAreRefusedBeforeSending() throws Exception {
         String[][] bad = {
                 {"command", "system"}, {"command", "transport", "action", "goLive"},
-                {"command", "queue", "op", "play-now"}, {"command", "repeat", "mode", "sometimes"},
+                {"command", "queue", "queueOp", "play-now"}, {"command", "repeat", "mode", "sometimes"},
         };
         for (String[] b : bad) {
             JSONObject r = new JSONObject().put("device", "office-tv");

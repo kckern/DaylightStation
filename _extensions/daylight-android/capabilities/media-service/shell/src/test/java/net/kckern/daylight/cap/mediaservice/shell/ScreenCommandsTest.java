@@ -46,7 +46,8 @@ public class ScreenCommandsTest {
     @Test public void tappingAnotherEntryJumpsToItById() throws Exception {
         JSONObject jump = ScreenCommands.seek("d", snap("playing"), 2, 0, Player.COMMAND_SEEK_TO_MEDIA_ITEM);
         assertEquals("queue", jump.optString("command"));
-        assertEquals("jump", jump.optString("op"));
+        assertEquals("jump", jump.optString("queueOp"));
+        assertEquals("the port op survives", "screen-command", jump.optString("op"));
         assertEquals("q3", jump.optString("queueItemId"));
         // The current entry again is a restart, not a jump.
         assertEquals("seekAbs", ScreenCommands.seek("d", snap("playing"), 1, 0, Player.COMMAND_SEEK_TO_DEFAULT_POSITION).optString("action"));
@@ -56,17 +57,18 @@ public class ScreenCommandsTest {
     @Test public void removingEverythingIsAClearAndOneEntryIsARemoveById() throws Exception {
         List<JSONObject> all = ScreenCommands.remove("d", snap("playing"), 0, 3);
         assertEquals(1, all.size());
-        assertEquals("clear", all.get(0).optString("op"));
+        assertEquals("clear", all.get(0).optString("queueOp"));
+        assertEquals("screen-command", all.get(0).optString("op"));
         List<JSONObject> one = ScreenCommands.remove("d", snap("playing"), 2, 3);
         assertEquals(1, one.size());
-        assertEquals("remove", one.get(0).optString("op"));
+        assertEquals("remove", one.get(0).optString("queueOp"));
         assertEquals("q3", one.get(0).optString("queueItemId"));
         assertTrue(ScreenCommands.remove("d", snap("playing"), 5, 9).isEmpty());
     }
 
     @Test public void aMoveSendsTheWholeNewOrder() throws Exception {
         JSONObject move = ScreenCommands.move("d", snap("playing"), 2, 3, 0);
-        assertEquals("reorder", move.optString("op"));
+        assertEquals("reorder", move.optString("queueOp"));
         assertEquals("[\"q3\",\"q1\",\"q2\"]", move.optJSONArray("items").toString());
     }
 
@@ -105,6 +107,7 @@ public class ScreenCommandsTest {
                 new JSONObject("{\"ok\":true,\"status\":409,\"accepted\":false,\"code\":\"IDEMPOTENCY_CONFLICT\"}"), "Office"));
         assertEquals("Can't reach home", ScreenPlayer.commandLine(null, "Office"));
         assertEquals("Can't reach home", ScreenPlayer.commandLine(new JSONObject("{\"ok\":false,\"error\":\"unreachable\"}"), "Office"));
+        assertEquals("Could not send that to Office", ScreenPlayer.commandLine(new JSONObject("{\"ok\":false,\"error\":\"bad_request\"}"), "Office"));
     }
 
     @Test public void clockReadsLikeAPlayer() {

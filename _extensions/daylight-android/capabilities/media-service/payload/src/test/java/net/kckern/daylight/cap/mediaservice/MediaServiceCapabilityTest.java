@@ -182,9 +182,15 @@ public class MediaServiceCapabilityTest {
         MediaServiceCapability.Outcome play = cap.call(new JSONObject().put("op", "screen-command").put("device", "office-tv")
                 .put("command", "transport").put("action", "play"));
         assertTrue(play.body.getBoolean("accepted"));
+        // The shape the installed player sends (ScreenCommands): op is the port's, queueOp the queue's.
+        MediaServiceCapability.Outcome clear = cap.call(new JSONObject().put("op", "screen-command").put("device", "office-tv")
+                .put("command", "queue").put("queueOp", "clear"));
+        assertEquals(200, clear.status);
+        assertTrue(clear.body.getBoolean("accepted"));
         assertEquals(400, cap.call(new JSONObject().put("op", "screen-command").put("device", "office-tv").put("command", "system")).status);
         assertEquals(400, cap.call(new JSONObject().put("op", "screen-session").put("device", "../x")).status);
-        assertEquals(3, sent.size());
+        assertEquals(4, sent.size());
+        assertTrue(sent.get(3), sent.get(3).endsWith("/session/queue/clear"));
     }
 
     @Test public void aKeyedMediaLinkStartsThePlayerWithAContentIdAndNothingElse() throws Exception {

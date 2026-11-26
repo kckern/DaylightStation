@@ -141,7 +141,8 @@ final class ScreenCommands {
     }
 
     private static JSONObject queue(String device, String op) {
-        return with(base(device, "queue"), "op", op);
+        // queueOp, not op: op is the port's key, and a queue op there would replace it.
+        return with(base(device, "queue"), "queueOp", op);
     }
 
     private static JSONObject base(String device, String command) {
