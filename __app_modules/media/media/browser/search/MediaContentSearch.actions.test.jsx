@@ -15,7 +15,11 @@ vi.mock("./useContentDispatch.js", () => ({
 vi.mock("../logging/mediaLog.js", () => ({
   default: new Proxy({}, { get: () => vi.fn() }),
 }));
-vi.mock("../shell/NavProvider.jsx", () => ({ useNav: () => ({ push: vi.fn() }) }));
+// Mutable so a test can walk the nav stack (home → detail → Back).
+let navState;
+const resetNav = () => { navState = { view: 'home', params: {}, depth: 1, push: vi.fn() }; };
+resetNav();
+vi.mock("../shell/NavProvider.jsx", () => ({ useNav: () => navState }));
 vi.mock("./useSearchContext.js", () => ({
   useSearchContext: () => ({
     scopes: [{ key: 'all', label: 'All', params: '' }],
@@ -81,7 +85,7 @@ function renderSearch({ onBaseDismiss = vi.fn() } = {}) {
     else if (verb === 'add') controller.queue.add(input);
     return 'local';
   });
-  render(
+  const tree = () => (
     <MantineProvider>
       <DismissStackProvider onBaseDismiss={onBaseDismiss}>
         <LocalSessionContext.Provider value={{ controller }}>
@@ -92,13 +96,19 @@ function renderSearch({ onBaseDismiss = vi.fn() } = {}) {
       </DismissStackProvider>
     </MantineProvider>
   );
-  return { controller, play, onBaseDismiss };
+  const { rerender } = render(tree());
+  // Move the (mocked) nav stack and let the search see it.
+  const navigate = (next) => { navState = { ...navState, ...next }; rerender(tree()); };
+  return { controller, play, onBaseDismiss, navigate };
 }
 
 describe('MediaContentSearch action-menu retention', () => {
   beforeEach(() => {
     dispatchContent.mockReset();
+    dispatchContent.mockReturnValue('detail');
     dispatchLeafVerb.mockReset();
+    resetNav();
+    localStorage.clear();
     resetScope.mockReset();
     vi.stubGlobal('EventSource', undefined);
     vi.stubGlobal('fetch', vi.fn(() => jsonResponse([leaf])));
@@ -115,7 +125,7 @@ describe('MediaContentSearch action-menu retention', () => {
     pointerActivate(await screen.findByTestId('combobox-option-plex:697368'));
 
     expect(controller.getSnapshot().currentItem.contentId).toBe('plex:existing');
-    expect(dispatchContent).toHaveBeenCalledWith('plex:697368', expect.objectContaining({ title: 'Disclosure Day' }));
+    expect(dispatchContent).toHaveBeenCalledWith('plex:697368', expect.objectContaining({ title: 'Disclosure Day' }), { from: 'search', via: 'tap' });
     await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
   });
 
@@ -236,5 +246,69 @@ describe('MediaContentSearch action-menu retention', () => {
     expect(controller.getSnapshot().state).toBe('paused');
     expect(play).not.toHaveBeenCalled();
     expect(dispatchContent).not.toHaveBeenCalled();
+  });
+});
+
+describe('MediaContentSearch: select opens the info view, Back returns to the same results', () => {
+  const other = { id: 'plex:111', title: 'Disclosure', source: 'plex', type: 'movie' };
+  beforeEach(() => {
+    dispatchContent.mockReset();
+    dispatchContent.mockReturnValue('detail');
+    dispatchLeafVerb.mockReset();
+    resetNav();
+    localStorage.clear();
+    vi.stubGlobal('EventSource', undefined);
+    vi.stubGlobal('fetch', vi.fn(() => jsonResponse([other, leaf])));
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  const highlighted = () => screen.getAllByRole('option').filter(o => o.getAttribute('data-highlighted') === 'true')
+    .map(o => o.getAttribute('data-testid'));
+
+  async function openSecondRowWithEnter() {
+    const helpers = renderSearch();
+    const input = screen.getByRole('textbox', { name: 'Search media…' });
+    act(() => input.focus());
+    fireEvent.change(input, { target: { value: 'Disclosure' } });
+    await screen.findByTestId('combobox-option-plex:697368');
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    return { ...helpers, input };
+  }
+
+  it('Enter on the highlighted row opens it from search, plays nothing', async () => {
+    const { controller, play } = await openSecondRowWithEnter();
+    expect(dispatchContent).toHaveBeenCalledTimes(1);
+    expect(dispatchContent).toHaveBeenCalledWith('plex:697368', expect.objectContaining({ title: 'Disclosure Day' }), { from: 'search', via: 'enter' });
+    expect(dispatchLeafVerb).not.toHaveBeenCalled();
+    expect(play).not.toHaveBeenCalled();
+    expect(controller.getSnapshot().currentItem.contentId).toBe('plex:existing');
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
+  });
+
+  it('Back from that info view puts focus in the box with the list open, same words, same row highlighted', async () => {
+    const { input, navigate } = await openSecondRowWithEnter();
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
+    // The info view takes focus (its PLAY), then Back pops it.
+    navigate({ view: 'detail', params: { contentId: 'plex:697368', focusPlay: true, from: 'search' }, depth: 2 });
+    act(() => screen.getByTestId('outside-focus').focus());
+    navigate({ view: 'home', params: {}, depth: 1 });
+    await waitFor(() => expect(document.activeElement).toBe(input));
+    expect(await screen.findByRole('listbox')).toBeVisible();
+    expect(input).toHaveValue('Disclosure');
+    // The pick now ranks first for these words; the highlight follows the id.
+    await waitFor(() => expect(highlighted()).toEqual(['combobox-option-plex:697368']));
+  });
+
+  it('a detail not opened from search does not pull focus back to the box', async () => {
+    const { input, navigate } = renderSearch();
+    navigate({ view: 'detail', params: { contentId: 'plex:697368' }, depth: 2 });
+    act(() => screen.getByTestId('outside-focus').focus());
+    navigate({ view: 'home', params: {}, depth: 1 });
+    await nextFrame();
+    expect(document.activeElement).toBe(screen.getByTestId('outside-focus'));
+    expect(screen.queryByRole('listbox')).toBeNull();
+    void input;
   });
 });

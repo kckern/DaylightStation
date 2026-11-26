@@ -131,8 +131,20 @@ export function decideCommit({ reason, search, value, results, highlightIdx, use
 
 export function reducer(state, event) {
   switch (event.type) {
-    case 'OPEN':
-      return { ...state, mode: Modes.SEARCH, search: state.search ?? state.value ?? '', highlight: { idx: -1, userNavigated: false } };
+    case 'OPEN': {
+      // A retained close kept the highlighted row by id (see CLOSE): put the
+      // highlight back on that row in the list as shown (`event.items`, when
+      // the surface reorders results), else row 1 — never a stale index.
+      const keptId = state.highlight.id;
+      let highlight = { idx: -1, userNavigated: false };
+      if (keptId != null) {
+        const list = Array.isArray(event.items) ? event.items : state.results;
+        const found = list.findIndex((item) => item?.id === keptId);
+        const idx = found >= 0 ? found : (list.length > 0 ? 0 : -1);
+        highlight = { idx, userNavigated: idx >= 0 };
+      }
+      return { ...state, mode: Modes.SEARCH, search: state.search ?? state.value ?? '', highlight };
+    }
     case 'INPUT':
       return { ...state, mode: Modes.SEARCH, search: event.text, browse: emptyBrowse(), highlight: { idx: -1, userNavigated: false } };
     case 'RESULTS':
@@ -181,11 +193,15 @@ export function reducer(state, event) {
       return initialState(event.value);
     case 'CLOSE':
       // `retainResults` (with a retained search): the list it found stays, so
-      // reopening shows it at once instead of searching again.
+      // reopening shows it at once instead of searching again. The row that
+      // was highlighted (`highlightId`) is kept by id so reopening lands on
+      // it again; without retainResults nothing is kept.
       return {
         ...initialState(state.value),
         search: event.retainSearch ?? null,
         ...(event.retainResults && event.retainSearch ? { results: state.results } : {}),
+        ...(event.retainResults && event.retainSearch && event.highlightId != null
+          ? { highlight: { idx: -1, userNavigated: false, id: event.highlightId } } : {}),
       };
     default:
       return state;

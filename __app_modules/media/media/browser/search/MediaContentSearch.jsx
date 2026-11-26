@@ -42,11 +42,16 @@ import { useHouseholdResultActions } from "../household/useHouseholdResultAction
 import { usePlayDestination } from "../habits/usePlayDestination.js";
 import { rankByHabits } from "../habits/mediaHabits.js";
 import { DestinationChip, useDestinationCycle } from "./DestinationChip.jsx";
+import { useReturnFromSearchDetail } from "./useReturnFromSearchDetail.js";
 import "./Search.scss";
 
 // `destinationWrapper`: a component the chip is wrapped in — the desktop dock
 // passes FirstUseCard so the first-use naming prompt points at the chip.
-export function MediaContentSearch({ inputRef, destinationWrapper: DestinationWrapper = null }) {
+export function MediaContentSearch({ inputRef: suppliedInputRef, destinationWrapper: DestinationWrapper = null }) {
+  const ownInputRef = useRef(null);
+  const inputRef = suppliedInputRef ?? ownInputRef;
+  // How the last pick was made, for the log: Enter in the box, else a tap.
+  const viaRef = useRef('tap');
   const [oneShotAction, setOneShotAction] = useState(null);
   const { scopes, currentScopeKey, currentScope } = useSearchContext();
   const { dispatch, dispatchLeafVerb, playContainerAsQueue } = useContentDispatch();
@@ -99,10 +104,24 @@ export function MediaContentSearch({ inputRef, destinationWrapper: DestinationWr
     // INTENT, not the outcome: the cast dispatch is async and unawaited, so a
     // dispatch that later fails (or is swallowed by the dedupe window) still
     // logs route:'cast'. Outcome lives in dispatch.succeeded/failed/deduplicated.
-    const route = dispatch(id, item);
+    // From search: the info view opens with its PLAY focused (a second Enter
+    // plays, by that button's own activation), and Back comes back here.
+    const route = dispatch(id, item, { from: 'search', via: viaRef.current });
+    viaRef.current = 'tap';
     log.info('dispatch', { contentId: id, route });
     return route;
   }, [dispatch, log, recordPick]);
+
+  // Back from an info view this search opened: the box takes focus again,
+  // which reopens the kept list on the row that was picked. Only while the
+  // box is on screen (on a phone the full-screen search reopens instead —
+  // MediaAppShell).
+  useReturnFromSearchDetail(useCallback(({ contentId }) => {
+    const el = inputRef.current;
+    if (!el?.isConnected || !el.getClientRects().length) return;
+    el.focus({ preventScroll: true });
+    mediaLog.searchReturned({ contentId, surface: 'dock' });
+  }, [inputRef]));
 
   // Trailing ▶ on a container row: send the whole thing to the current
   // destination. Its outcome is reported by useContentDispatch through the
@@ -159,7 +178,11 @@ export function MediaContentSearch({ inputRef, destinationWrapper: DestinationWr
       <ItemDestinationPicker action={oneShotAction} onClose={() => setOneShotAction(null)} />
       <div className="media-search-controls">
         <ScopeChips />
-        <div className="media-search-input-wrap">
+        <div
+          className="media-search-input-wrap"
+          onKeyDownCapture={(e) => { viaRef.current = e.key === 'Enter' ? 'enter' : 'tap'; }}
+          onPointerDownCapture={() => { viaRef.current = 'tap'; }}
+        >
           <ContentCombobox
             inputRef={inputRef}
             value=""

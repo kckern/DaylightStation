@@ -175,7 +175,9 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
     if (addTo) { addOnce(id, item, 'tap'); return; }
     log.info('select', { contentId: id, title: item?.title ?? null, type: item?.type ?? null });
     recordPick(searchTextRef.current, { ...item, id }, 'open');
-    const route = dispatch(id, item, { replaceHistoryEntry: true });
+    // From search: the info view lands on its PLAY, and Back from it reopens
+    // this search with the same words (MediaAppShell).
+    const route = dispatch(id, item, { replaceHistoryEntry: true, from: 'search', via: 'tap' });
     log.info('dispatch', { contentId: id, route });
     // A tap is a look: a collection opens its list, an item its detail page —
     // both navigate, so the marker entry is handed over and the surface

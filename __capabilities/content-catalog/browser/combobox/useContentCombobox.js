@@ -416,10 +416,12 @@ export function useContentCombobox({
     });
   }, []);
 
-  const openWithSiblings = useCallback(async () => {
+  // `visibleItems`: the list as shown (after transformResults), so a row kept
+  // by a retained close is found again where the person sees it.
+  const openWithSiblings = useCallback(async (visibleItems) => {
     if (allowFreeform) loadKnownSources();
     invalidateBrowseLoads();
-    dispatch({ type: 'OPEN' });
+    dispatch(Array.isArray(visibleItems) ? { type: 'OPEN', items: visibleItems } : { type: 'OPEN' });
     const contentId = stateRef.current.value;
     if (!contentId || !splitContentId(contentId)) {
       log.debug('load_siblings.skip', { contentId, reason: contentId ? 'no_colon' : 'no_value' });
@@ -557,7 +559,9 @@ export function useContentCombobox({
     dispatch({ type: 'RESULTS', items: [] });
   }, [retireSearch]);
 
-  const handleClose = useCallback((reason) => {
+  // `opts.highlightId`: the row to come back to on reopen — kept only when the
+  // close retains results (retainQueryOnClose); ignored otherwise.
+  const handleClose = useCallback((reason, opts = {}) => {
     const current = stateRef.current;
     const decision = closeDecision({ search: current.search, value: current.value, allowFreeform }, reason);
     if (decision.action === 'commit') {
@@ -567,7 +571,7 @@ export function useContentCombobox({
       log.info('freeform.revert_on_close', { discarded: current.search, kept: current.value, reason });
     }
     invalidateBrowseLoads();
-    dispatch({ type: 'CLOSE', reason, ...retained(reason, current.search) });
+    dispatch({ type: 'CLOSE', reason, ...retained(reason, current.search), highlightId: opts.highlightId ?? null });
     cancelPendingSearch();
   }, [cancelPendingSearch, invalidateBrowseLoads, log, allowFreeform, retained]);
 
@@ -576,7 +580,7 @@ export function useContentCombobox({
     rememberTitle(item.id, item.title);
     onChangeRef.current?.(item.id, item);
     if (retainPlayableSelection && !isContainer(item)) return;
-    handleClose('select'); // closeDecision('select') → no double-commit
+    handleClose('select', { highlightId: item.id }); // closeDecision('select') → no double-commit
   }, [handleClose, log, retainPlayableSelection]);
 
   // ── Commit executor: run the pure decision and perform its side effect ──

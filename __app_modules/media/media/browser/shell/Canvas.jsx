@@ -16,7 +16,7 @@ function renderView(view, params, destinationControlRef) {
     case 'browse': return <BrowseView path={params.path ?? ''} label={params.label} containerItem={params.containerItem ?? null}
       breadcrumbs={params.breadcrumbs ?? []} scrollTop={params.scrollTop ?? 0} focusedId={params.focusedId ?? null}
       loadedCount={params.loadedCount ?? 0} />;
-    case 'detail': return <DetailView key={params.contentId} contentId={params.contentId} />;
+    case 'detail': return <DetailView key={params.contentId} contentId={params.contentId} focusPlay={params.focusPlay === true} />;
     case 'nowPlaying': return <NowPlayingView destinationControlRef={destinationControlRef} />;
     case 'fleet': return <FleetView />;
     case 'peek': return <PeekPanel deviceId={params.deviceId} />;

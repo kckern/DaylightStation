@@ -519,6 +519,19 @@ facts, summary, how far anyone got, every action), a collection's list. It
 never starts playback anywhere. Cameras and single photos are the one tap that
 shows something — on this device, as before.
 
+**From search, the detail page lands on its PLAY, and Back comes back.** A
+result opened from the search (Enter on the highlighted row, or a tap) opens
+its detail page with the primary Play focused, so a second Enter plays it —
+that is the button's own activation; no key handler anywhere plays on a stray
+Enter. The nav entry carries `{ contentId, focusPlay: true, from: 'search' }`
+(`search/useContentDispatch.js`). Back or Esc from that page returns to the
+search exactly as it was: on a wide screen the box takes focus again and its
+kept list (`retainQueryOnClose`) reopens with the same words and the same row
+highlighted — kept by item id, so a list that reordered still lands on it, and
+one that no longer holds it highlights row 1; on a phone the full-screen
+search reopens with the same words (`search/useReturnFromSearchDetail.js`,
+`search.returned`).
+
 **The ▶ is the act, and it says where.** Every playable row carries a labelled
 ▶ ("▶ Office Screen", or "▶ Play" when it plays here); a tile carries a small
 amber disc on its art; the detail page's primary button reads "Play on Office

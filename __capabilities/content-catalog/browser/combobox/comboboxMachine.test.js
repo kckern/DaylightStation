@@ -271,6 +271,50 @@ describe('comboboxMachine', () => {
   });
 });
 
+describe('comboboxMachine: a retained close keeps the highlighted row by id', () => {
+  const rows = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+  const withResults = () => {
+    let s = type_(open(initialState('')), 'mo');
+    return reducer(s, { type: 'RESULTS', items: rows });
+  };
+
+  it('CLOSE with retainResults keeps the highlight as an id; OPEN puts it back on that row', () => {
+    let s = reducer(withResults(), { type: 'ARROW', dir: 1, itemCount: 3 });
+    s = reducer(s, { type: 'ARROW', dir: 1, itemCount: 3 });
+    s = reducer(s, { type: 'CLOSE', reason: 'select', retainSearch: 'mo', retainResults: true, highlightId: 'b' });
+    expect(s.mode).toBe(Modes.DISPLAY);
+    expect(s.highlight).toEqual({ idx: -1, userNavigated: false, id: 'b' });
+    s = reducer(s, { type: 'OPEN' });
+    expect(s.highlight).toEqual({ idx: 1, userNavigated: true });
+  });
+
+  it('OPEN restores by id against the list as shown when one is given', () => {
+    let s = reducer(withResults(), { type: 'CLOSE', reason: 'select', retainSearch: 'mo', retainResults: true, highlightId: 'b' });
+    s = reducer(s, { type: 'OPEN', items: [{ id: 'c' }, { id: 'b' }] });
+    expect(s.highlight).toEqual({ idx: 1, userNavigated: true });
+  });
+
+  it('a list that changed so the id is gone highlights row 1, never a stale index', () => {
+    let s = reducer(withResults(), { type: 'CLOSE', reason: 'select', retainSearch: 'mo', retainResults: true, highlightId: 'c' });
+    s = reducer(s, { type: 'RESULTS', items: [{ id: 'x' }, { id: 'y' }, { id: 'z' }] });
+    s = reducer(s, { type: 'OPEN' });
+    expect(s.highlight).toEqual({ idx: 0, userNavigated: true });
+  });
+
+  it('nothing is kept without retainResults (non-retaining callers unchanged)', () => {
+    let s = reducer(withResults(), { type: 'CLOSE', reason: 'select', retainSearch: null, highlightId: 'b' });
+    expect(s.highlight).toEqual({ idx: -1, userNavigated: false });
+    s = reducer(s, { type: 'OPEN' });
+    expect(s.highlight).toEqual({ idx: -1, userNavigated: false });
+  });
+
+  it('a retained close with no highlighted row restores nothing', () => {
+    let s = reducer(withResults(), { type: 'CLOSE', reason: 'outside', retainSearch: 'mo', retainResults: true });
+    expect(s.highlight).toEqual({ idx: -1, userNavigated: false });
+    expect(reducer(s, { type: 'OPEN' }).highlight).toEqual({ idx: -1, userNavigated: false });
+  });
+});
+
 describe('decideCommit', () => {
   const isContainer = (i) => i.type === 'show' || i.itemType === 'container';
   // Base args with a changed query and no pick. Override per test.

@@ -21,6 +21,7 @@ import { LocalStopFeedbackProvider, useLocalStopFeedbackCount } from "./LocalSto
 import { SearchLauncherContext } from "./SearchLauncherContext.js";
 import { PlaybackQualityHost } from "../quality/PlaybackQualityProvider.jsx";
 import mediaLog from "../logging/mediaLog.js";
+import { useReturnFromSearchDetail } from "../search/useReturnFromSearchDetail.js";
 import "./MediaShell.scss";
 
 function ShellInner() {
@@ -45,6 +46,16 @@ function ShellInner() {
       setSearchOpen(true);
     },
   }), []);
+  // Back from an info view the phone search opened: the search comes back
+  // with the same words (SearchMode restores them). On a wider screen the
+  // dock's box refocuses instead (MediaContentSearch).
+  useReturnFromSearchDetail(useCallback(({ contentId }) => {
+    if (searchOpen || searchInputRef.current?.getClientRects().length) return;
+    if (!launcherRef.current?.getClientRects().length) return;
+    setSearchAddTo(null);
+    setSearchOpen(true);
+    mediaLog.searchReturned({ contentId, surface: 'sheet' });
+  }, [searchOpen]));
   const queueKeptCount = useLocalStopFeedbackCount();
   const baseDismiss = useCallback(() => {
     if (depth > 1) pop();

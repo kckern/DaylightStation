@@ -252,7 +252,7 @@ describe('SearchMode', () => {
     expect(dispatchMock).toHaveBeenCalledWith(
       'plex:685088',
       expect.objectContaining({ id: 'plex:685088', title: 'Bluey' }),
-      { replaceHistoryEntry: true }
+      { replaceHistoryEntry: true, from: 'search', via: 'tap' }
     );
     expect(screen.getByTestId('search-mode')).toBeInTheDocument();
     expect(screen.getByTestId('search-mode-input')).toHaveValue('bluey');
@@ -445,7 +445,7 @@ describe('SearchMode', () => {
       expect(dispatchMock).toHaveBeenCalledWith(
         'plex:663508',
         expect.objectContaining({ id: 'plex:663508' }),
-        { replaceHistoryEntry: true }
+        { replaceHistoryEntry: true, from: 'search', via: 'tap' }
       );
       expect(playContainerAsQueueMock).not.toHaveBeenCalled();
     });

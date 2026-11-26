@@ -357,7 +357,8 @@ export function ContentCombobox({
   const startEditing = useCallback(() => {
     if (modeRef.current !== Modes.DISPLAY) return;
     log.info('editing.start', { value });
-    openWithSiblings();
+    // A kept search reopens on the row it closed on, found in the list as shown.
+    openWithSiblings(retainQueryOnClose ? items : undefined);
     // A kept query (retainQueryOnClose) comes back selected: typing replaces
     // it, arrows and Enter use the results it already found.
     const q = state.search || value || '';
@@ -375,7 +376,7 @@ export function ContentCombobox({
         el.select();
       }
     });
-  }, [value, state.search, openWithSiblings, renderValue, log]);
+  }, [value, state.search, openWithSiblings, renderValue, log, retainQueryOnClose, items]);
 
   // ── Explicit raw commit (freeform-row path only) ──
   // The user explicitly chose the "Use … as raw value" row, so we save the RAW

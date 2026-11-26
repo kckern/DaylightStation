@@ -103,6 +103,25 @@ describe('DetailView Play Now', () => {
     expect(dispatchLeafVerb).toHaveBeenCalledWith('playNow', 'plex:685088', expect.any(Object));
   });
 
+  it('opened from search (focusPlay) lands on PLAY; its activation plays, a stray Enter does not', async () => {
+    render(<MantineProvider><DetailView contentId="plex:685088" focusPlay /></MantineProvider>);
+    const play = screen.getByTestId('detail-play-now');
+    await waitFor(() => expect(document.activeElement).toBe(play));
+    expect(play).toHaveTextContent('Play here');
+    fireEvent.keyDown(document.body, { key: 'Enter' });
+    expect(dispatchLeafVerb).not.toHaveBeenCalled();
+    // The second Enter is the focused button's own activation (a click).
+    fireEvent.click(document.activeElement);
+    expect(dispatchLeafVerb).toHaveBeenCalledWith('playNow', 'plex:685088', expect.any(Object));
+  });
+
+  it('without focusPlay the page does not take focus', async () => {
+    render(<MantineProvider><DetailView contentId="plex:685088" /></MantineProvider>);
+    const play = screen.getByTestId('detail-play-now');
+    await waitFor(() => expect(play).toBeEnabled());
+    expect(document.activeElement).not.toBe(play);
+  });
+
   it('names where its one primary Play goes: here, when nothing is aimed or learned', () => {
     render(<MantineProvider><DetailView contentId="plex:685088" /></MantineProvider>);
     expect(screen.getByTestId('detail-play-now')).toHaveTextContent('Play here');

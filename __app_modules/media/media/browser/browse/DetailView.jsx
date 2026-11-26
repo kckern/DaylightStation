@@ -5,7 +5,7 @@ import { ItemQualityButton } from "../quality/PlaybackQualityButtons.jsx";
 // screen this browser learned for this kind of thing, else "here"), with
 // Play here / Play on… beside it for the other places, then the queue verbs.
 // Opening this page never plays anything: it is where a look lands.
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Stack, Title, Text, Button, Group, Image } from '@mantine/core';
 import { IconPlayerPlayFilled, IconPlayerTrackNext, IconRowInsertTop, IconPlaylistAdd, IconCast } from '@tabler/icons-react';
 import { UiIcon } from '@/lib/ui/UiIcon.jsx';
@@ -28,8 +28,13 @@ import mediaLog from "../logging/mediaLog.js";
 import { resultSubtitle } from "../search/resultPresentation.js";
 import { usePlayDestination } from "../habits/usePlayDestination.js";
 
-export function DetailView({ contentId }) {
+// `focusPlay`: opened from search — PLAY takes focus once it can be pressed,
+// so a second Enter plays by that button's own activation (no key handler
+// here: a stray Enter elsewhere plays nothing).
+export function DetailView({ contentId, focusPlay = false }) {
   const [oneShot, setOneShot] = useState(null);
+  const playRef = useRef(null);
+  const playFocusedRef = useRef(false);
   const { info, loading, error, reload } = useContentInfo(contentId);
   const { regionProps, retry } = useRetryRegion(reload, loading);
   const { dispatchLeafVerb } = useContentDispatch();
@@ -42,6 +47,14 @@ export function DetailView({ contentId }) {
   const { startingOnFor } = useStartingOn();
   const startingOn = startingOnFor(contentId);
   const playNextHold = usePressHoldOffer({ onOffered: () => mediaLog.playNextHoldOffered({ surface: 'detail' }) });
+  const playReady = !!info && !loading && !error;
+  useEffect(() => {
+    if (!focusPlay || playFocusedRef.current || !playReady) return;
+    const el = playRef.current;
+    if (!el || el.disabled) return;
+    playFocusedRef.current = true;
+    el.focus({ preventScroll: true });
+  }, [focusPlay, playReady, pendingResume]);
   const back = (
     <Button variant="subtle" color="gray" data-testid="detail-back" className="detail-back" onClick={() => pop()}>
       <UiIcon name="back" /> {backDestination ?? 'Home'}
@@ -95,6 +108,7 @@ export function DetailView({ contentId }) {
         <Group className="detail-actions" gap="sm">
           <Button
             data-testid="detail-play-now"
+            ref={playRef}
             leftSection={elsewhere ? <IconCast size={18} /> : <IconPlayerPlayFilled size={18} />}
             loading={!collection && pendingResume}
             onClick={() => {

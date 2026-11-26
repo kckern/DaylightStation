@@ -206,6 +206,9 @@ export const mediaLog = {
   habitScreenRecorded:    info('habit.screen-recorded'),
   habitResultsRanked:     debug('habit.results-ranked'),
   itemOpened:             info('item.opened'),
+  // Back from an info view the search opened: the search came back
+  // (surface 'dock' = the box refocused, 'sheet' = the phone search reopened).
+  searchReturned:         info('search.returned'),
   playSent:               info('play.sent'),
 };
 

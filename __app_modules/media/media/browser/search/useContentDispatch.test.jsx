@@ -178,6 +178,21 @@ describe('useContentDispatch', () => {
     expect(dispatchToTarget).not.toHaveBeenCalled();
   });
 
+  it('a pick from search opens the info view on its PLAY, marked as from search, and plays nothing', () => {
+    navState = { view: 'home', params: {} };
+    castTargetState = { targetIds: ['livingroom-tv'], mode: 'transfer' };
+    push.mockClear();
+    const { dispatch } = setup();
+    let route;
+    act(() => { route = dispatch('plex:42', { title: 'Bluey' }, { from: 'search', via: 'enter' }); });
+    expect(route).toBe('detail');
+    expect(push).toHaveBeenCalledWith('detail', { contentId: 'plex:42', focusPlay: true, from: 'search' });
+    act(() => { dispatch('plex:43', { title: 'Bluey 2' }, { from: 'search', replaceHistoryEntry: true }); });
+    expect(push).toHaveBeenLastCalledWith('detail', { contentId: 'plex:43', focusPlay: true, from: 'search' }, { replaceEntry: true });
+    expect(playNow).not.toHaveBeenCalled();
+    expect(dispatchToTarget).not.toHaveBeenCalled();
+  });
+
   it('the ▶ plays locally when nothing is aimed or learned', () => {
     const { dispatchLeafVerb } = setup();
     act(() => { dispatchLeafVerb('playNow', 'plex:1'); });

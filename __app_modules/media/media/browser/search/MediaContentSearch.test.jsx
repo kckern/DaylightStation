@@ -164,7 +164,8 @@ describe('MediaContentSearch', () => {
 
     expect(dispatch).toHaveBeenCalledWith(
       'plex:685088',
-      { id: 'plex:685088', title: 'Episode 3', type: 'episode' }
+      { id: 'plex:685088', title: 'Episode 3', type: 'episode' },
+      { from: 'search', via: 'tap' }
     );
     expect(info).toHaveBeenCalledWith('dispatch', {
       contentId: 'plex:685088',
@@ -244,7 +245,7 @@ describe('MediaContentSearch', () => {
       render(<MediaContentSearch />);
       fireEvent.click(screen.getByTestId('pick-container'));
 
-      expect(dispatch).toHaveBeenCalledWith('plex:663508', expect.objectContaining({ id: 'plex:663508' }));
+      expect(dispatch).toHaveBeenCalledWith('plex:663508', expect.objectContaining({ id: 'plex:663508' }), { from: 'search', via: 'tap' });
       expect(playContainerAsQueue).not.toHaveBeenCalled();
     });
 

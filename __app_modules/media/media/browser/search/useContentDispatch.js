@@ -254,9 +254,15 @@ export function useContentDispatch() {
     // Looking is not watching: a playable item OPENS (its detail page, with
     // the art, the facts and a ▶ that names where it will play). Nothing
     // starts until that ▶, or a row's own ▶, is pressed on purpose.
-    mediaLog.itemOpened({ contentId: id, via: opts.via ?? 'tap' });
-    if (opts.replaceHistoryEntry) push('detail', { contentId: id }, { replaceEntry: true });
-    else push('detail', { contentId: id });
+    // Opened from search (`opts.from: 'search'`): the info view lands on its
+    // PLAY (a second Enter is that button's own activation) and Back returns
+    // to the same results (useReturnFromSearchDetail).
+    mediaLog.itemOpened({ contentId: id, via: opts.via ?? 'tap', ...(opts.from ? { from: opts.from } : {}) });
+    const detailParams = opts.from === 'search'
+      ? { contentId: id, focusPlay: true, from: 'search' }
+      : { contentId: id };
+    if (opts.replaceHistoryEntry) push('detail', detailParams, { replaceEntry: true });
+    else push('detail', detailParams);
     return 'detail';
   }, [push, targetIds, queue, controller, runAction, confirmLocal]);
 
