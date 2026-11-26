@@ -38,7 +38,8 @@ public class KeptIndexTest {
         assertFalse(KeptIndex.fits(4096, 4_000_000_000L, 100_000_000L));
         assertTrue(KeptIndex.fits(0, Long.MAX_VALUE / 2, 1));
         assertEquals("1.2 GB", KeptIndex.size(1_234_000_000L));
-        assertEquals("1 MB", KeptIndex.size(10));
+        assertEquals("under 1 MB", KeptIndex.size(10));
+        assertEquals("nothing is not rounded up to a megabyte", "0 MB", KeptIndex.size(0));
     }
 
     @Test public void failuresAndWaitingAreSaid() throws Exception {

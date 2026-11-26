@@ -72,6 +72,14 @@ public final class DownloadsActivity extends Activity {
         if (keep != null && !keep.isEmpty() && saved == null) KeepFlow.start(this, keep);
     }
 
+    /** Opened again while showing (a Keep from the Play tab, the notification): the new request is acted on. */
+    @Override protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        String keep = intent == null ? null : intent.getStringExtra(EXTRA_KEEP);
+        if (keep != null && !keep.isEmpty()) KeepFlow.start(this, keep);
+    }
+
     @Override protected void onResume() {
         super.onResume();
         KeepStore.get(this).refresh();
@@ -144,7 +152,8 @@ public final class DownloadsActivity extends Activity {
             if (KeptIndex.DOWNLOADING.equals(s) || KeptIndex.CHECKING.equals(s) || KeptIndex.REMOVING.equals(s)
                     || KeptIndex.UPDATING.equals(s) || KeptIndex.QUEUED.equals(s)) moving = true;
         }
-        main.postDelayed(tick, moving ? 2_000 : 10_000);
+        // Until the store has read the limit, redrawn each second so the room line is the real one.
+        main.postDelayed(tick, !store.rulesKnown ? 1_000 : moving ? 2_000 : 10_000);
     }
 
     private View row(KeepStore store, JSONObject k) {

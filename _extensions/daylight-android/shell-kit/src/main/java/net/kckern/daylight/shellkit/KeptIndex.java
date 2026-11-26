@@ -211,6 +211,8 @@ public final class KeptIndex {
     }
 
     public static String size(long bytes) {
+        if (bytes <= 0) return "0 MB";
+        if (bytes < 500_000L) return "under 1 MB";
         if (bytes >= 1_000_000_000L) return String.format(Locale.US, "%.1f GB", bytes / 1e9);
         return Math.max(1, Math.round(bytes / 1e6)) + " MB";
     }

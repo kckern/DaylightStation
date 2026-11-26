@@ -109,6 +109,8 @@ final class KeepStore {
     private volatile long capMb = 4096;
     private volatile boolean onCellular, removeFinished;
     private volatile long removeFinishedAfterMs = KeepRules.DAY_MS;
+    /** The payload's download rules have been read (the limit shown is then the real one). */
+    volatile boolean rulesKnown;
 
     static synchronized KeepStore get(Context context) {
         if (instance == null) instance = new KeepStore(context.getApplicationContext());
@@ -234,6 +236,7 @@ final class KeepStore {
                 prefs.edit().putString("location.setting", loc).apply();
                 Log.i(TAG, "keep: download location set to " + loc + " (next start; kept items download again there)");
             }
+            rulesKnown = true;
             boolean c = onCellular;
             main.post(() -> manager.setRequirements(requirements(c)));
         } catch (Exception keepDefaults) { /* Wi-Fi only */ }
@@ -262,8 +265,11 @@ final class KeepStore {
         catch (RuntimeException unknown) { return 0; }
     }
 
+    /** Bytes of kept audio on the phone (downloads; not the cache's own index files). */
     long keptBytes() {
-        try { return cache.getCacheSpace(); } catch (RuntimeException e) { return 0; }
+        long n = 0;
+        for (Download d : downloads().values()) n += Math.max(0, d.getBytesDownloaded());
+        return n;
     }
 
     /** The limit that applies: the setting, or free space minus 2 GB, whichever is smaller. */
@@ -1267,8 +1273,13 @@ final class KeepStore {
         return "";
     }
 
+    /**
+     * Through the service started in the foreground, so it shows the grouped notification and
+     * keeps going with the app closed; where Android refuses a foreground start (from the
+     * background, Android 12+) straight to the manager, run by the job (KeepJob).
+     */
     private void add(DownloadRequest r) {
-        try { DownloadService.sendAddDownload(app, KeepService.class, r, false); }
+        try { DownloadService.sendAddDownload(app, KeepService.class, r, true); }
         catch (RuntimeException notNow) { main.post(() -> manager.addDownload(r)); }
     }
 

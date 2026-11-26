@@ -605,7 +605,7 @@ public final class MediaServiceCapability implements Capability {
     }
 
     /** How long a play of a kept item waits for home's word on where it was. */
-    static final long PLACE_WAIT_MS = 1_000;
+    static final long PLACE_WAIT_MS = 500;
 
     /**
      * A kept collection answered from the phone, with the request's own choices (a picked
@@ -746,6 +746,7 @@ public final class MediaServiceCapability implements Capability {
             Object id = ids.opt(i);
             mediaIds.add(id instanceof String ? (String) id : null);
         }
+        long began = android.os.SystemClock.elapsedRealtime();
         Resolver.Resolved r = null;
         Resolver.Resolved offline = mediaIds.size() == 1 ? Offline.resolve(mediaIds.get(0), kept(), positions()) : null;
         // A kept item plays from the phone first, always: home is asked only for its place
@@ -770,6 +771,10 @@ public final class MediaServiceCapability implements Capability {
         }
         JSONArray tracks = new JSONArray();
         for (Track t : r.tracks) tracks.put(t.toJson());
+        try {
+            android.util.Log.i("Daylight-Media", "play answered " + (offline != null ? "from the phone" : "by home") + " in "
+                    + (android.os.SystemClock.elapsedRealtime() - began) + " ms");
+        } catch (Throwable jvmTest) { /* no android.util.Log in a JVM test */ }
         String first = mediaIds.isEmpty() ? null : mediaIds.get(0);
         if (first != null && first.startsWith("c:") && !r.tracks.isEmpty()) rememberList(first.substring(2));
         return new Outcome(200, Replies.ok().put("tracks", tracks).put("startIndex", r.startIndex)
