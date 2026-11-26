@@ -1084,14 +1084,12 @@ public class NowPlayingActivity extends Activity {
         backdropFade = new View(this);
         root.addView(backdropFade, new FrameLayout.LayoutParams(-1, -1));
 
-        ScrollView scroll = new ScrollView(this);
-        scroll.setFillViewport(true);
-        scroll.setVerticalScrollBarEnabled(false);
+        // No outer scroll: the stage takes the height the rows below leave, so lyrics and a
+        // long queue scroll inside it and the transport never leaves the screen.
         LinearLayout col = new LinearLayout(this);
         col.setOrientation(LinearLayout.VERTICAL);
         col.setPadding(dp(20), dp(4), dp(20), dp(12));
-        scroll.addView(col, new ScrollView.LayoutParams(-1, -1));
-        root.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
+        root.addView(col, new FrameLayout.LayoutParams(-1, -1));
 
         // Top: close, where it plays, and the D-pad for a screen.
         LinearLayout top = new LinearLayout(this);
@@ -1133,7 +1131,7 @@ public class NowPlayingActivity extends Activity {
 
         // The stage: the cover (swipe to skip), the lyrics or the queue.
         stageBox = new FrameLayout(this);
-        stageBox.setMinimumHeight(dp(220));
+        stageBox.setMinimumHeight(dp(96));
         artFrame = new AspectFrame(this);
         art = new ImageView(this);
         art.setScaleType(ImageView.ScaleType.CENTER_CROP);
