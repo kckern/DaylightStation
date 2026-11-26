@@ -277,9 +277,14 @@ export default function WorkPlacard({
    * (2px at 960x540, `ClipBand.measure.test.jsx`). So after the size lands the
    * name is checked as painted and stepped down until it is whole, never below
    * the floor.
+   *
+   * ONLY A FITTED LINE. A line the fit refused comes back at the ceiling and is
+   * cut at every size; stepping it walked 0.25px per render down to the floor
+   * (some 35 renders, again on every layout tick) for nothing.
    */
   useLayoutEffect(() => {
     if (!fit || container) return;
+    if (fit.rejected?.length) return;
     const name = rootRef.current?.querySelector?.('.surround-work-placard__name');
     if (!name || !(name.clientWidth > 0)) return;
     if (name.scrollWidth <= name.clientWidth + 0.5) return;
