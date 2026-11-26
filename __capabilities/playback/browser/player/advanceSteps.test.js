@@ -7,13 +7,25 @@ const fns = () => ({ advance: vi.fn(), singleAdvance: vi.fn() });
 describe('advanceSteps', () => {
   it('moves a queue forward several entries in ONE move (one curtain)', () => {
     const f = fns();
-    advanceSteps(3, { isQueue: true, hasOnDeck: false, ...f });
+    advanceSteps(3, { isQueue: true, hasOnDeck: false, queueLength: 5, ...f });
     expect(f.advance.mock.calls).toEqual([[3]]);
+  });
+
+  it('steps one at a time when the move reaches the end of the queue', () => {
+    const f = fns();
+    advanceSteps(3, { isQueue: true, hasOnDeck: false, queueLength: 3, ...f });
+    expect(f.advance.mock.calls).toEqual([[], [], []]);
+  });
+
+  it('steps one at a time when the queue length is unknown', () => {
+    const f = fns();
+    advanceSteps(2, { isQueue: true, hasOnDeck: false, ...f });
+    expect(f.advance.mock.calls).toEqual([[], []]);
   });
 
   it('steps one at a time while an on-deck item is waiting (it takes the first step)', () => {
     const f = fns();
-    advanceSteps(2, { isQueue: true, hasOnDeck: true, ...f });
+    advanceSteps(2, { isQueue: true, hasOnDeck: true, queueLength: 5, ...f });
     expect(f.advance.mock.calls).toEqual([[], []]);
   });
 

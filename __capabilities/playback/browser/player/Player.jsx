@@ -2568,7 +2568,13 @@ const Player = forwardRef(function Player(props, ref) {
     // Several entries forward is one move (one curtain); see advanceSteps.js.
     advance: (count = 1) => {
       ownerStoppedRef.current = false;
-      advanceSteps(count, { isQueue, hasOnDeck: Boolean(onDeck), advance, singleAdvance });
+      advanceSteps(count, {
+        isQueue,
+        hasOnDeck: Boolean(onDeck),
+        queueLength: Array.isArray(playQueue) ? playQueue.length : null,
+        advance,
+        singleAdvance,
+      });
     },
     // Original content time is opt-in; legacy transport getCurrentTime stays native.
     getContentTime: () => readContentPosition(_getMediaElFallback()?.currentTime, nowPlayingRef.current?.item?.contentTimeline),
@@ -2705,7 +2711,7 @@ const Player = forwardRef(function Player(props, ref) {
         fromContentId: effectiveMeta?.contentId ?? effectiveMeta?.assetId ?? null,
       }, { level: 'info' });
     },
-  }), [recoveryIdentity, externalRecoveryIdentity, acceptRecoveryIntent, beginRecoveryVisit, isQueue, isShuffle, shuffleOn, repeatMode, advance, singleAdvance, rawJumpTo, sessionVolume, sessionPlaybackRate, setOwnerVolume, setOwnerPlaybackRate, effectiveMeta?.assetId, effectiveMeta?.contentId, resilienceControllerRef, withTransport, queueSnapshot, playerInstanceId, queueShader, issueOwnerRevision, adoptQueueSnapshot, applyQueueSnapshot, setTargetTimeSeconds, setShader, setShaderUserCycled, inspectRendererBoundaryRequest, beginRendererBoundary, stopOwner, playOwner, pauseOwner, toggleOwner, seekOwner, currentTrackState, forceSinglePlayerRemount, adoptSessionSnapshot, retryHeldPlayback, onDeck]);
+  }), [recoveryIdentity, externalRecoveryIdentity, acceptRecoveryIntent, beginRecoveryVisit, isQueue, isShuffle, shuffleOn, repeatMode, advance, singleAdvance, rawJumpTo, sessionVolume, sessionPlaybackRate, setOwnerVolume, setOwnerPlaybackRate, effectiveMeta?.assetId, effectiveMeta?.contentId, resilienceControllerRef, withTransport, queueSnapshot, playerInstanceId, queueShader, issueOwnerRevision, adoptQueueSnapshot, applyQueueSnapshot, setTargetTimeSeconds, setShader, setShaderUserCycled, inspectRendererBoundaryRequest, beginRendererBoundary, stopOwner, playOwner, pauseOwner, toggleOwner, seekOwner, currentTrackState, forceSinglePlayerRemount, adoptSessionSnapshot, retryHeldPlayback, onDeck, playQueue]);
 
   useEffect(() => () => {
     clearRemountTimer();
