@@ -33,7 +33,10 @@ final class QueueMapper {
         if (item == null || !"audio".equals(Json.str(item, "mediaType"))) return null;
         String id = id(item);
         String url;
-        try { url = backend.absolute(Json.str(item, "mediaUrl")); }
+        String raw = Json.str(item, "mediaUrl");
+        // A Plex stream's offset= starts it server-side; the phone seeks instead (resumeMs).
+        if (raw.contains(PLEX_STREAM)) raw = withoutParam(raw, "offset");
+        try { url = backend.absolute(raw); }
         catch (RuntimeException notConfigured) { return null; }
         if (id.isEmpty() || url == null) return null;
         // The Plex proxy mints a new client for every request unless the URL names a
@@ -61,16 +64,33 @@ final class QueueMapper {
     /**
      * Where the backend says to resume, in milliseconds; 0 for the beginning. A play
      * response says resume_position; a queue item says resumePosition beside resumable.
-     * Both are seconds. A Plex stream URL of a resumed item already starts at the
-     * offset, and is not sought again.
+     * Both are seconds. The player always seeks there itself: an audio stream is the file
+     * (byte ranges), and a server-side start (an older backend's offset= on the URL, which
+     * fromItem strips) would make the player's clock, and every progress report, count
+     * from 0 instead of the real place.
      */
     static long resumeMs(JSONObject item) {
         if (item == null) return 0;
         long at = Json.seconds(item, "resume_position");
         if (at == 0 && item.optBoolean("resumable", false)) at = Json.seconds(item, "resumePosition");
-        if (at == 0 || hasParam(Json.str(item, "mediaUrl"), "offset")) return 0;
+        String mediaUrl = Json.str(item, "mediaUrl");
+        // Another stream (a signed one) that starts at its offset is not sought again.
+        if (at == 0 || (!mediaUrl.contains(PLEX_STREAM) && hasParam(mediaUrl, "offset"))) return 0;
         long duration = Json.seconds(item, "duration");
         return duration > 0 && at >= duration ? 0 : at;
+    }
+
+    /** {@code url} without the query parameter {@code name}; unchanged when it has none. */
+    static String withoutParam(String url, String name) {
+        if (url == null) return null;
+        int q = url.indexOf('?');
+        if (q < 0) return url;
+        StringBuilder kept = new StringBuilder();
+        for (String pair : url.substring(q + 1).split("&")) {
+            if (pair.isEmpty() || pair.equals(name) || pair.startsWith(name + "=")) continue;
+            kept.append(kept.length() == 0 ? "" : "&").append(pair);
+        }
+        return kept.length() == 0 ? url.substring(0, q) : url.substring(0, q + 1) + kept;
     }
 
     private static boolean hasParam(String url, String name) {

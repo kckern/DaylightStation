@@ -515,6 +515,15 @@ targets are Media3 sessions behind one `MediaController`:
   the view waits 4 s before following again. Plain lyrics are text to scroll. They
   work the same with a screen as the target, so the phone follows what the living
   room sings.
+- **Fine scrubbing.** On an item of 30 minutes or more, press and hold the seek bar
+  (0.4 s, a haptic tick): it zooms to a window around the finger, a tenth of the length
+  between 2 and 10 minutes (`FineScrub`), shown as a band with ticks at its ends; drag
+  within it, the times beside it say where it lands, and release seeks there. A 5-hour
+  book goes from about 15 s per pixel to about 2 s.
+- **Resume** always seeks on the phone to the backend's resume position; a Plex stream's
+  server-side `offset=` is dropped (it made the player's clock, and so every progress
+  report, count from 0). A play request the backend did not answer (a restart) is tried
+  once more after 2 s.
 - **The position** drawn under the cover glides: between the player's reports it
   counts on, and a report less than a second off is absorbed over at least 400 ms
   instead of jumping (`PositionClock`). A seek is always sent from the player's own

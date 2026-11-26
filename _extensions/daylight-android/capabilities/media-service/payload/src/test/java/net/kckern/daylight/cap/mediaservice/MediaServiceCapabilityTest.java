@@ -396,8 +396,9 @@ public class MediaServiceCapabilityTest {
         api.responses.put("queue plex:20", "{\"items\":[]}");
 
         JSONObject saved = post("/media/resolve", "{\"ids\":[\"p:plex:99\"]}");
-        assertEquals("https://kiosk.example" + proxied + "&offset=30",
-                saved.getJSONArray("tracks").getJSONObject(0).getString("url"));
+        // The phone seeks itself: the server-side offset is dropped, the position kept.
+        assertEquals("https://kiosk.example" + proxied, saved.getJSONArray("tracks").getJSONObject(0).getString("url"));
+        assertEquals(30_000, saved.getLong("startPositionMs"));
 
         JSONObject explicit = post("/media/resolve",
                 "{\"ids\":[\"p:plex:11\",\"p:plex:99\"],\"startIndex\":1,\"explicitPosition\":true}");
@@ -413,7 +414,7 @@ public class MediaServiceCapabilityTest {
 
         JSONObject fallback = post("/media/resolve",
                 "{\"ids\":[\"c:plex:20\",\"p:plex:99\"],\"startIndex\":0,\"explicitPosition\":true}");
-        assertEquals("https://kiosk.example" + proxied + "&offset=30",
+        assertEquals("https://kiosk.example" + proxied,
                 fallback.getJSONArray("tracks").getJSONObject(0).getString("url"));
         assertFalse(fallback.getBoolean("selectionResolved"));
     }

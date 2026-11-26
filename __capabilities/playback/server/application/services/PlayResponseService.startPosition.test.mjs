@@ -29,4 +29,12 @@ describe('PlayResponseService.startPositionFor', () => {
     expect(svc.toPlayResponse(film, at).resume_position ?? 0).toBe(0);
     expect(svc.startPositionFor(book, { ...at, playhead: 12 })).toBe(0);
   });
+  it('never puts a server-side offset on an audio stream (the player seeks; its clock stays true)', () => {
+    const book = { id: 'plex:727120', resumable: true, mediaUrl: '/api/v1/proxy/plex/stream/727120', mediaType: 'audio', duration: 17800 };
+    const film = { ...book, mediaType: 'dash_video' };
+    const at = { contentId: 'plex:727120', playhead: 404, duration: 17800 };
+    expect(svc.toPlayResponse(book, at).mediaUrl).toBe('/api/v1/proxy/plex/stream/727120');
+    expect(svc.toPlayResponse(book, at).resume_position).toBe(404);
+    expect(svc.toPlayResponse(film, at).mediaUrl).toBe('/api/v1/proxy/plex/stream/727120?offset=404');
+  });
 });
