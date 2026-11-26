@@ -277,7 +277,7 @@ final class PlayInbox {
             else {
                 try {
                     JSONObject params = command.optJSONObject("params");
-                    String title = Json.first(command.optString("title", ""), params == null ? "" : params.optString("title", ""));
+                    String title = Json.first(params == null ? "" : params.optString("title", ""), command.optString("title", ""));
                     if ("keep".equals(kind)) keeper.keep(contentId, title);
                     else keeper.unkeep(contentId);
                     ok = true;

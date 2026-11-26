@@ -97,6 +97,8 @@ public class PhoneHomeActivity extends Activity {
 
     @Override protected void onStart() {
         super.onStart();
+        // Opened: kept downloads catch up (after an update, a reboot), kept lists re-sync online.
+        keepJob("resync-open", "");
         NowPlayingNote.listen(nowChanged);
         observingNow = true;
         drawNowStrip();
@@ -598,7 +600,6 @@ public class PhoneHomeActivity extends Activity {
     private final Runnable keptTick = this::fillKept;
 
     private void addKept() {
-        if (online()) keepJob("resync-open", "");
         keptBox = new LinearLayout(this);
         keptBox.setOrientation(LinearLayout.VERTICAL);
         column.addView(keptBox);

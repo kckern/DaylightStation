@@ -721,7 +721,6 @@ final class KeepStore {
 
     /** Runs downloads from a job (KeepScheduler) while they last, at most {@code maxMs}; {@code more} hears whether to go on later. */
     void runDownloads(long maxMs, Consumer<Boolean> more) {
-        io.execute(() -> syncOnce(false));
         // The foreground service, when Android allows it here (it shows the notification).
         main.post(() -> {
             try { DownloadService.start(app, KeepService.class); }
@@ -991,6 +990,7 @@ final class KeepStore {
             Set<String> covers = new HashSet<>();
             int notMet = manager.getNotMetRequirements();
             boolean globallyPaused = manager.getDownloadsPaused() && !KeepRules.SD_MISSING.equals(location);
+            long free = freeBytes(), limit = limitBytes();
             for (int i = 0; i < items.length(); i++) {
                 JSONObject k = items.getJSONObject(i);
                 String cid = k.optString("contentId");
@@ -1040,7 +1040,7 @@ final class KeepStore {
                 if (!reason.isEmpty() && f.failed > 0) e.put("reason", reason);
                 if (k.has("art")) { e.put("art", k.optString("art")); covers.add(k.optString("art")); }
                 index.put(e);
-                report.put(reportItem(e));
+                report.put(reportItem(e, free, limit));
             }
             // Kept while away, and being checked: shown, and told to the web.
             JSONArray away = pending();
@@ -1050,16 +1050,21 @@ final class KeepStore {
                 JSONObject e = new JSONObject().put("contentId", cid).put("title", "").put("trackIds", new JSONArray())
                         .put("done", 0).put("total", 0).put("failed", 0).put("bytes", 0).put("state", KeptIndex.WAITING_HOME);
                 index.put(e);
-                report.put(reportItem(e));
+                report.put(reportItem(e, free, limit));
             }
             long now = System.currentTimeMillis();
             for (String key : new ArrayList<>(prefs.getAll().keySet())) {
                 if (!key.startsWith("checking.")) continue;
                 if (now - KeepRules.notAfterNow(prefs.getLong(key, 0), now) > 120_000) { prefs.edit().remove(key).apply(); continue; }
-                index.put(new JSONObject().put("contentId", key.substring(9)).put("title", "").put("trackIds", new JSONArray())
-                        .put("done", 0).put("total", 0).put("failed", 0).put("bytes", 0).put("state", KeptIndex.CHECKING));
+                JSONObject e = new JSONObject().put("contentId", key.substring(9)).put("title", "").put("trackIds", new JSONArray())
+                        .put("done", 0).put("total", 0).put("failed", 0).put("bytes", 0).put("state", KeptIndex.CHECKING);
+                index.put(e);
+                report.put(reportItem(e, free, limit));
             }
             KeptIndex.write(app.getFilesDir(), index, capMb);
+            // Something unfinished: a persisted job keeps watch, so a reboot, an update or the
+            // process going away resumes it by itself (a minute after, on any network).
+            if (!allReady(index)) KeepJob.scheduleRetry(app);
             net.kckern.daylight.shellkit.PlaylistArtwork.keepOnly(covers);
             if (networkAllowsNow()) for (String c : covers) net.kckern.daylight.shellkit.PlaylistArtwork.keep(c);
             try { media.keepsReport(report, WAIT_MS); } catch (Exception later) { /* the next refresh */ }
@@ -1068,13 +1073,21 @@ final class KeepStore {
         }
     }
 
-    private static JSONObject reportItem(JSONObject e) throws Exception {
+    /**
+     * One item for the web (POST /device/:id/keeps): the phone's own state name and words, its
+     * tracks (so the web can match a track to the album holding it), sizes and the room.
+     */
+    private JSONObject reportItem(JSONObject e, long free, long limit) throws Exception {
         String state = e.optString("state");
-        JSONObject o = new JSONObject().put("contentId", e.optString("contentId")).put("state", KeptIndex.reportState(state))
-                .put("done", e.optInt("done")).put("total", e.optInt("total")).put("bytes", e.optLong("bytes"));
+        JSONObject o = new JSONObject().put("contentId", e.optString("contentId")).put("state", state)
+                .put("done", e.optInt("done")).put("total", e.optInt("total")).put("failed", e.optInt("failed"))
+                .put("bytes", e.optLong("bytes")).put("totalBytes", e.optLong("expectedBytes"))
+                .put("neededBytes", e.optLong("needBytes")).put("finished", e.optBoolean("finished"))
+                .put("freeBytes", free).put("limitBytes", limit)
+                .put("trackIds", e.optJSONArray("trackIds") == null ? new JSONArray() : e.optJSONArray("trackIds"));
         if (!e.optString("title").isEmpty()) o.put("title", e.optString("title"));
         // The phone's own words, so the web says exactly what the phone says.
-        if (!KeptIndex.READY.equals(state)) o.put("reason", KeptIndex.describe(e));
+        o.put("reason", e.has("reason") && !KeptIndex.READY.equals(state) ? e.optString("reason") : KeptIndex.describe(e));
         return o;
     }
 
@@ -1088,6 +1101,16 @@ final class KeepStore {
             total += e.optInt("total");
         }
         return new int[] { items, done, total };
+    }
+
+    /** Every item ready, or waiting on something only the person or the phone can change (room, a pause, a card). */
+    private static boolean allReady(JSONArray index) {
+        for (int i = 0; i < index.length(); i++) {
+            String s = index.optJSONObject(i).optString("state");
+            if (!(KeptIndex.READY.equals(s) || KeptIndex.PAUSED.equals(s) || KeptIndex.NEEDS_ROOM.equals(s)
+                    || KeptIndex.NOT_AVAILABLE.equals(s) || KeptIndex.PARTLY_READY.equals(s))) return false;
+        }
+        return true;
     }
 
     private boolean allReady() {

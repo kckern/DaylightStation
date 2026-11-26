@@ -67,16 +67,18 @@ public final class KeepJob extends JobService {
             return;
         }
         int id = params.getJobId();
+        // Whatever woke it, the job then runs the downloads while they last (the process stays
+        // up for them), then is rescheduled if they are not done.
+        Runnable thenRun = () -> store.runDownloads(RUN_MS, more -> jobFinished(params, more));
         if (id == RESUME_ID) {
-            store.runDownloads(RUN_MS, more -> jobFinished(params, more));
+            thenRun.run();
         } else if (id == VERIFY_ID) {
-            store.verifyAll(() -> jobFinished(params, false));
+            store.verifyAll(thenRun);
         } else if (id >= ACTION_BASE && id < ACTION_BASE + ACTION_SLOTS) {
             PersistableBundle x = params.getExtras();
-            store.action(x.getString("action", ""), x.getString("contentId", ""), x.getString("mediaId", ""),
-                    () -> jobFinished(params, false));
+            store.action(x.getString("action", ""), x.getString("contentId", ""), x.getString("mediaId", ""), thenRun);
         } else {
-            store.sync(id == DAILY_ID, () -> jobFinished(params, false));
+            store.sync(id == DAILY_ID, thenRun);
         }
     }
 
