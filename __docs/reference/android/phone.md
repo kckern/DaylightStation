@@ -687,7 +687,13 @@ backend until the phone acks them; the keep's title is `params.title`, its conte
 (`POST /api/v1/device/<id>/keeps`, lifecycle states such as `checking`, `waiting-wifi`,
 `downloading`, `partly-ready`, `ready`, `damaged`), and the web shows what it says.
 Progress kept offline is sent with `observedAt` (when it was heard): a report older than
-the stored last play never moves the place. Contract:
+the stored last play never moves the place. Each Plex audio item in the play answer
+(`GET /api/v1/play/plex/<id>`, top level) and the queue answer
+(`GET /api/v1/queue/plex/<id>`, each `items[]` entry, top level) carries `fileVersion`,
+`"<partId>:<updatedAt>"` from the part its stream resolves to
+(`/library/parts/<partId>/<updatedAt>/file.*`), read from metadata already fetched (no
+extra Plex call); it is absent when unknown. A kept track whose `fileVersion` changed at
+home is a new file (lifecycle spec §3.5). Contract:
 `__docs/reference/media/media-app-technical.md` §4.12.
 
 ### Choosing playlists on the phone

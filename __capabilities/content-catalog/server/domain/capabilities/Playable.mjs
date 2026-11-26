@@ -53,6 +53,9 @@ export class PlayableItem extends Item {
     this.resume = props.resume || false;
     this.active = props.active !== false; // defaults to true
     this.storagePath = props.storagePath ?? null;
+    // Which file the audio is ("<partId>:<updatedAt>" for Plex), when the source knows:
+    // a phone that kept the track re-downloads when it changes. Omitted otherwise.
+    if (props.fileVersion) this.fileVersion = String(props.fileVersion);
   }
 
   /**
