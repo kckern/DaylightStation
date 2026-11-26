@@ -142,6 +142,11 @@ window.__plateFit = { fitPlate, plateStyle };
   });
   return page.evaluate(({ plateLine, shortLine }) => {
     const plate = document.querySelector('[data-testid="surround-work-placard"]');
+    // MIRRORED FROM WorkPlacard.jsx, which runs in React and cannot be loaded
+    // here: the short_title fallback (its fitPlate layout effect) and the
+    // painted-line check (THE PAINTED LINE HAS THE LAST WORD: FONT_STEP_PX
+    // steps, never below the floor, skipped for a refused line). A change to
+    // either rule there has to be copied here, or this test checks the old one.
     // WorkPlacard's rule: the whole line, or the short title when the whole
     // line cannot be set even at the floor.
     let plateFit = window.__plateFit.fitPlate(plate, [plateLine]);
@@ -158,7 +163,7 @@ window.__plateFit = { fitPlate, plateStyle };
     const name = plate.querySelector('.surround-work-placard__name');
     // WorkPlacard's painted-line check: step down until the painted name is whole.
     const STEP = 0.25;
-    while (name && plateFit && name.scrollWidth > name.clientWidth + 0.5 && plateFit.fontPx - STEP >= plateFit.floorPx) {
+    while (name && plateFit && !plateFit.rejected.length && name.scrollWidth > name.clientWidth + 0.5 && plateFit.fontPx - STEP >= plateFit.floorPx) {
       plateFit = { ...plateFit, fontPx: Number((plateFit.fontPx - STEP).toFixed(2)) };
       plate.style.setProperty('--plate-size', `${plateFit.fontPx}px`);
     }

@@ -632,8 +632,12 @@ of the footer: over the picture, the clock off the screen, "Next, from" cut at
 the top. The budget is the room from the footer's top to the frame's bottom,
 less the footer's padding (the christmas garland's reserve) and any other band
 regions. A bottom region's numeric `height` is a floor that grows with its
-content, so the band's own box is never the budget. The title's size is found
-between 1.75rem and a 0.875rem floor so the title column fits in at most two
+content, so the band's own box is never the budget. Up next is fitted first:
+the grid gives it `fit-content` and the title the rest, so the title's width
+depends on Up next's size, while Up next's fit depends only on the budget.
+Fitted the other way round, the title was measured against the last clip's Up
+next and wrapped past its lines when this clip's Up next grew back. The title's
+size is then found between 1.75rem and a 0.875rem floor so the title column fits in at most two
 lines, then three if it must, and past that it is clamped at three lines with
 `surround.clip-band.unfittable` (warn). Every candidate size forces a layout, so
 `fitDown` binary-searches 1px steps plus the floor itself (a handful of
@@ -664,10 +668,12 @@ resolved against `assetBase` like a composer portrait (the Tabernacle logo is
 domain's `_composer.yml`). Title, year and performers are not repeated: the
 poster prints them and the plate (`Title · Year`, for a dated performance with
 no provenance line) names them. A single work's plate line is fitted like a
-container's (`fitPlate`, 2.05rem down to 1.5rem) rather than cut by the ellipsis
-at full size. The painted line is checked after the size lands and stepped down
+container's (`fitPlate`) rather than cut by the ellipsis
+at full size: 32.8px down to 24px (`PLATE_CEILING_PX`, `PLATE_FLOOR_PX` in
+`fit.js`; 2.05rem and 1.5rem at the 16px root, but fixed px, they do not scale
+with the root). The painted line is checked after the size lands and stepped down
 if the name is still cut (three spans can set wider than the one measured
-string). A line that cannot be set whole even at the floor headlines the piece's
+string); a line the fit refused is left alone, since it is cut at every size. A line that cannot be set whole even at the floor headlines the piece's
 `short_title` instead (authored on the LIBRARY work,
 `content/library/<domain>/.../<work>.yml`, beside `title` and `year`; the store
 builds `piece` from the work file, and a `short_title` in a surround sidecar is
