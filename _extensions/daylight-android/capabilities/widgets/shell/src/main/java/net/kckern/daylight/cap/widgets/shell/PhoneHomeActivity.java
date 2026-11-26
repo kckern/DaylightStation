@@ -10,6 +10,7 @@ import android.content.SharedPreferences;
 import android.content.pm.ShortcutInfo;
 import android.content.pm.ShortcutManager;
 import android.graphics.Bitmap;
+import net.kckern.daylight.shellkit.NowPlayingNote;
 import net.kckern.daylight.shellkit.PlaylistArtwork;
 import android.graphics.drawable.Icon;
 import android.net.Uri;
@@ -91,6 +92,8 @@ public class PhoneHomeActivity extends Activity {
 
     @Override protected void onStart() {
         super.onStart();
+        NowPlayingNote.listen(nowChanged);
+        drawNowStrip();
         if (!launcherPicker) {
             observingPlacement = true;
             placements.prefs.registerOnSharedPreferenceChangeListener(placementChanged);
@@ -99,6 +102,7 @@ public class PhoneHomeActivity extends Activity {
     }
 
     @Override protected void onStop() {
+        NowPlayingNote.unlisten(nowChanged);
         observingPlacement = false;
         placements.prefs.unregisterOnSharedPreferenceChangeListener(placementChanged);
         timer.removeCallbacks(placementTimeout);
@@ -270,9 +274,55 @@ public class PhoneHomeActivity extends Activity {
         pageHost = new android.widget.FrameLayout(this);
         pageHost.setBackgroundColor(t.background);
         root.addView(pageHost, new LinearLayout.LayoutParams(-1, 0, 1));
+        nowStrip = null;
+        if (!launcherPicker) {
+            nowStrip = new LinearLayout(this);
+            root.addView(nowStrip, new LinearLayout.LayoutParams(-1, -2));
+            drawNowStrip();
+        }
         setContentView(root);
         page = buildPage();
         pageHost.addView(page);
+    }
+
+    private LinearLayout nowStrip;
+    private final NowPlayingNote.Listener nowChanged = () -> runOnUiThread(this::drawNowStrip);
+
+    /**
+     * "Playing on Office · A song" along the bottom while something plays here or on a
+     * screen this phone is driving; a tap opens Now playing on that target. Gone when
+     * nothing does (JellyBox's playing-elsewhere strip).
+     */
+    private void drawNowStrip() {
+        if (nowStrip == null || isDestroyed()) return;
+        NowPlayingNote.Entry now = NowPlayingNote.current();
+        Intent open = new Intent().setClassName(this, NOW_PLAYING);
+        boolean can = getPackageManager().resolveActivity(open, 0) != null;
+        nowStrip.removeAllViews();
+        nowStrip.setVisibility(now == null || !can ? View.GONE : View.VISIBLE);
+        if (now == null || !can) return;
+        nowStrip.setGravity(Gravity.CENTER_VERTICAL);
+        nowStrip.setMinimumHeight(dp(56));
+        nowStrip.setPadding(dp(16), dp(6), dp(8), dp(6));
+        nowStrip.setBackground(t.pressable(new android.graphics.drawable.ColorDrawable(t.surfaceVariant)));
+        android.widget.ImageView mark = new android.widget.ImageView(this);
+        mark.setImageResource(now.playing ? android.R.drawable.ic_media_play : android.R.drawable.ic_media_pause);
+        mark.setImageTintList(android.content.res.ColorStateList.valueOf(t.primary));
+        nowStrip.addView(mark, new LinearLayout.LayoutParams(dp(22), dp(22)));
+        LinearLayout words = new LinearLayout(this);
+        words.setOrientation(LinearLayout.VERTICAL);
+        words.setPadding(dp(12), 0, dp(8), 0);
+        TextView what = t.text(this, now.title, Type.BODY, t.ink, true);
+        what.setMaxLines(1);
+        what.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        words.addView(what);
+        String where = "local".equals(now.target) ? "On this phone" : "Playing on " + now.targetName;
+        words.addView(t.text(this, now.playing ? where : where + " · paused", Type.LABEL, t.inkMuted, false));
+        nowStrip.addView(words, new LinearLayout.LayoutParams(0, -2, 1));
+        nowStrip.addView(t.text(this, "›", Type.HEADLINE, t.inkMuted, false));
+        nowStrip.setContentDescription((now.playing ? "" : "Paused: ") + now.title + ", " + where + ". Open Now playing");
+        final String target = now.target;
+        nowStrip.setOnClickListener(v -> startActivity(new Intent(open).putExtra("target", target)));
     }
 
     /** One page: the section the selected tab names, in its own scrolling view. */

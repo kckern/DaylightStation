@@ -10,6 +10,8 @@ import android.os.SystemClock;
 import android.util.Log;
 
 import androidx.media3.common.Player;
+
+import net.kckern.daylight.shellkit.NowPlayingNote;
 import androidx.media3.session.MediaSession;
 import androidx.media3.session.MediaSessionService;
 import androidx.media3.session.SessionCommand;
@@ -104,6 +106,7 @@ public class RemoteControlService extends MediaSessionService {
         player.addListener(new Player.Listener() {
             @Override public void onEvents(Player p, Player.Events events) {
                 if (p.getPlayWhenReady()) markActive();
+                note(p);
             }
         });
 
@@ -231,9 +234,25 @@ public class RemoteControlService extends MediaSessionService {
         if (player == null || !player.getPlayWhenReady()) stopSelf();
     }
 
+    /** The device the home's "Playing on" strip was last told about. */
+    private String noted;
+
+    /** Tells the home's "Playing on" strip what this screen plays (in process only). */
+    private void note(Player p) {
+        String device = prefs == null ? null : prefs.getString(EXTRA_DEVICE, null);
+        if (device == null) return;
+        if (noted != null && !noted.equals(device)) NowPlayingNote.update(noted, "", "", false, SystemClock.elapsedRealtime());
+        noted = device;
+        CharSequence title = p.getMediaItemCount() == 0 ? null : p.getMediaMetadata().title;
+        boolean playing = p.getPlayWhenReady() && p.getPlaybackState() == Player.STATE_READY;
+        NowPlayingNote.update(device, prefs.getString(EXTRA_NAME, device), title == null ? "" : title.toString(),
+                playing, SystemClock.elapsedRealtime());
+    }
+
     @Override
     public void onDestroy() {
         main.removeCallbacksAndMessages(null);
+        if (noted != null) NowPlayingNote.update(noted, "", "", false, SystemClock.elapsedRealtime());
         if (session != null) { session.release(); session = null; }
         if (player != null) { player.release(); player = null; }
         if (io != null) { io.shutdown(); io = null; }
