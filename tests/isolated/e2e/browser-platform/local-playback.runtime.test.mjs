@@ -621,7 +621,7 @@ test('Media hands a disappearing Now Playing destination control to the header o
   await expect(phoneDestination).toBeFocused();
 
   await page.setViewportSize({ width: 768, height: 850 });
-  const headerDestination = page.getByTestId('cast-target-chip');
+  const headerDestination = page.getByTestId('search-destination-chip');
   await expect(headerDestination).toBeFocused();
   const before = await clock();
   await expect.poll(clock).toBeGreaterThan(before);
@@ -641,7 +641,7 @@ test('Media hands an open Now Playing destination picker to the header on deskto
   await localOption.focus();
 
   await page.setViewportSize({ width: 768, height: 850 });
-  await expect(page.getByTestId('cast-target-chip')).toBeFocused();
+  await expect(page.getByTestId('search-destination-chip')).toBeFocused();
   const before = await clock();
   await expect.poll(clock).toBeGreaterThan(before);
 });
@@ -661,7 +661,7 @@ test('Media hands picker Close focus to the header when the Now Playing modal di
   await expect(close).toBeFocused();
 
   await page.setViewportSize({ width: 768, height: 850 });
-  await expect(page.getByTestId('cast-target-chip')).toBeFocused();
+  await expect(page.getByTestId('search-destination-chip')).toBeFocused();
   const before = await clock();
   await expect.poll(clock).toBeGreaterThan(before);
 });

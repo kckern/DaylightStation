@@ -155,8 +155,12 @@ export function useDestinationLabel() {
   };
 }
 
-/** @param {{ compact?: boolean }} props - `compact`: the phone's narrow search row. */
-export function DestinationChip({ compact = false } = {}) {
+/**
+ * @param {{ compact?: boolean, controlRef?: React.Ref }} props - `compact`: the phone's
+ *   narrow search row. `controlRef`: the shell's destination-control ref, so focus
+ *   leaving a vanished phone destination control (Now Playing on resize) lands here.
+ */
+export function DestinationChip({ compact = false, controlRef = null } = {}) {
   const aim = useContext(CastTargetContext);
   const fleet = useContext(FleetContext);
   const identity = useContext(ClientIdentityContext);
@@ -181,6 +185,7 @@ export function DestinationChip({ compact = false } = {}) {
   return (
     <>
       <UnstyledButton
+        ref={controlRef}
         data-testid="search-destination-chip"
         className="media-destination-chip"
         data-here={here || undefined}

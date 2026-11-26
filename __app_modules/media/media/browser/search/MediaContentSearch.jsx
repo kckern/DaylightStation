@@ -47,7 +47,7 @@ import "./Search.scss";
 
 // `destinationWrapper`: a component the chip is wrapped in — the desktop dock
 // passes FirstUseCard so the first-use naming prompt points at the chip.
-export function MediaContentSearch({ inputRef: suppliedInputRef, destinationWrapper: DestinationWrapper = null }) {
+export function MediaContentSearch({ inputRef: suppliedInputRef, destinationWrapper: DestinationWrapper = null, destinationControlRef = null }) {
   const ownInputRef = useRef(null);
   const inputRef = suppliedInputRef ?? ownInputRef;
   // How the last pick was made, for the log: Enter in the box, else a tap.
@@ -88,8 +88,8 @@ export function MediaContentSearch({ inputRef: suppliedInputRef, destinationWrap
   const { cycle: cycleDestination } = useDestinationCycle();
   const handleTabKey = useCallback((dir) => cycleDestination(dir, 'tab'), [cycleDestination]);
   const destinationChip = DestinationWrapper
-    ? <DestinationWrapper><DestinationChip /></DestinationWrapper>
-    : <DestinationChip />;
+    ? <DestinationWrapper><DestinationChip controlRef={destinationControlRef} /></DestinationWrapper>
+    : <DestinationChip controlRef={destinationControlRef} />;
   // The header's destination control is in use: keep this search open (FIND.1b).
   const { active: destinationInteractionActive } = useDestinationInteraction();
 

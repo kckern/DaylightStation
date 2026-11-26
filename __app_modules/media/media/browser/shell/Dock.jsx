@@ -61,7 +61,7 @@ export function Dock({ onOpenSearch, searchInputRef, launcherRef, destinationCon
           at 1200px before this fix). Mobile hides `.media-search-bar`
           directly by its own class (mobile-only rule below), not via a
           wrapper. */}
-      <MediaContentSearch inputRef={searchInputRef} destinationWrapper={isPhone ? null : FirstUseCard} />
+      <MediaContentSearch inputRef={searchInputRef} destinationWrapper={isPhone ? null : FirstUseCard} destinationControlRef={isPhone ? null : destinationControlRef} />
       <FleetIndicator />
       <SettingsMenu onResetSession={openStartFresh} />
       <StartFreshDialog open={startFreshOpen} onClose={() => setStartFreshOpen(false)} />

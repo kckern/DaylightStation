@@ -80,6 +80,20 @@ beforeEach(() => {
 });
 
 describe('DestinationChip', () => {
+  it('hands its button to the shell control ref, so focus leaving a vanished destination control lands on it', () => {
+    const controlRef = React.createRef();
+    render(
+      <MantineProvider>
+        <FleetContext.Provider value={fleetValue()}>
+          <CastTargetProvider>
+            <DestinationChip controlRef={controlRef} />
+          </CastTargetProvider>
+        </FleetContext.Provider>
+      </MantineProvider>
+    );
+    expect(controlRef.current).toBe(chip());
+  });
+
   // ── The chip names where a film's ▶ goes, in every state ──
   it('nothing learned, nothing aimed: "▶ Choose a screen", and a film ▶ asks', () => {
     render(tree(fleetValue()));
