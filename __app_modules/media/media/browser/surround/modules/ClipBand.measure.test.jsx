@@ -211,9 +211,11 @@ describe('the clip band, measured: a medley sets inside the room under the pictu
     page = await browser.newPage();
   }, 60000);
 
+  // Closing Chromium can take past the default 20s hook limit when the whole
+  // suite runs in parallel; the close is cleanup, not a test.
   afterAll(async () => {
     await browser?.close();
-  });
+  }, 60000);
 
   const cases = FLEET.flatMap((screen) => [64, 'fill'].map((bandHeight) => ({ ...screen, bandHeight })));
 
