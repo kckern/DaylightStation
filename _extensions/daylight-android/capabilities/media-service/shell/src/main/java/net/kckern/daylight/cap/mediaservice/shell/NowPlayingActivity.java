@@ -79,11 +79,27 @@ public class NowPlayingActivity extends Activity {
     private static final String PREFS = "daylight.nowplaying";
     private static final int INK = 0xff14382f, GREEN = 0xff125b47, PAPER = 0xfff4f7f4, MUTED = 0xff7b8c85, LINE = 0xffdfe7e2;
     private static final int QUEUE_ROWS = 100;
-    private static final long LONG_FORM_MS = 20 * 60_000L;
 
     private static final class Screen {
-        final String id, name;
-        Screen(String id, String name) { this.id = id; this.name = name; }
+        final String id, name, type;
+        Screen(String id, String name, String type) { this.id = id; this.name = name; this.type = type; }
+    }
+
+    /** The registry's device type as an icon: a picker row says what kind of thing it plays on. */
+    static int iconFor(String type, String name) {
+        if (type == null) type = "";
+        if (type.equals("speaker")) {
+            return name != null && name.toLowerCase(Locale.ROOT).contains("headset")
+                    ? R.drawable.daylight_np_headphones : R.drawable.daylight_np_speaker;
+        }
+        if (type.contains("tablet")) return R.drawable.daylight_np_tablet;
+        return R.drawable.daylight_np_tv;
+    }
+
+    private int targetIcon(String id) {
+        if (LOCAL.equals(id)) return R.drawable.daylight_np_phone;
+        for (Screen s : screens) if (s.id.equals(id)) return iconFor(s.type, s.name);
+        return iconFor(prefs().getString("type:" + id, ""), nameOf(id));
     }
 
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -109,7 +125,8 @@ public class NowPlayingActivity extends Activity {
     private ImageButton more, playPause, prev, next, leftEdge, rightEdge;
     private TextView leftEdgeNumber, rightEdgeNumber;
     private FrameLayout leftEdgeBox, rightEdgeBox;
-    private LinearLayout upNextRow;
+    private LinearLayout upNextRow, times;
+    private View upNextRule;
 
     @Override protected void onCreate(Bundle saved) {
         super.onCreate(saved);
@@ -187,7 +204,7 @@ public class NowPlayingActivity extends Activity {
                 JSONArray items = reply.optJSONArray("items");
                 for (int i = 0; items != null && i < items.length(); i++) {
                     JSONObject s = items.getJSONObject(i);
-                    found.add(new Screen(s.getString("id"), s.optString("name", s.getString("id"))));
+                    found.add(new Screen(s.getString("id"), s.optString("name", s.getString("id")), s.optString("type", "")));
                 }
                 if (!reply.optBoolean("ok", false)) problem = "Screens unavailable";
             } catch (Exception unavailable) {
@@ -197,6 +214,9 @@ public class NowPlayingActivity extends Activity {
             main.post(() -> {
                 screens.clear();
                 screens.addAll(found);
+                SharedPreferences.Editor e = prefs().edit();
+                for (Screen sc : found) e.putString("type:" + sc.id, sc.type);
+                e.apply();
                 screensProblem = p;
                 if (!LOCAL.equals(target)) targetName = nameOf(target);
                 renderTargets();
@@ -279,12 +299,27 @@ public class NowPlayingActivity extends Activity {
 
     // ── what it shows ────────────────────────────────────────────────────────
 
-    /** Long items (talks, films, a share) seek; music shuffles. No length counts as long. */
+    /**
+     * Long items (talks, courses, films, a share) seek; music shuffles. The same rule as the
+     * phone's session and the car (CarControls.longForm: from a household list, or 20 minutes
+     * or more), so this screen and the notification agree. A screen's item with no length
+     * (a live stream, a share still being fetched) counts as long.
+     */
     private boolean longForm() {
         MediaController c = controller;
         if (c == null || c.getMediaItemCount() == 0) return false;
         long d = c.getDuration();
-        return d == C.TIME_UNSET || d >= LONG_FORM_MS;
+        if (remote() && d == C.TIME_UNSET) return true;
+        return CarControls.longForm(NodeItems.listId(c.getCurrentMediaItem()), d);
+    }
+
+    /**
+     * Next for a long item on this phone: the session withholds track skips there (a car's
+     * skip becomes a 10 s jump), and offers the next item as its NEXT_TRACK command.
+     */
+    private boolean nextByCommand() {
+        return !remote() && longForm() && controller != null && !can(Player.COMMAND_SEEK_TO_NEXT)
+                && controller.isSessionCommandAvailable(new SessionCommand(CarControls.NEXT_ACTION, Bundle.EMPTY));
     }
 
     private void render() {
@@ -306,12 +341,12 @@ public class NowPlayingActivity extends Activity {
         status.setText(line);
         status.setVisibility(line.isEmpty() ? View.GONE : View.VISIBLE);
 
-        boolean playing = c != null && c.getPlayWhenReady();
+        boolean playing = active(c);
         playPause.setImageResource(playing ? R.drawable.daylight_np_pause : R.drawable.daylight_np_play);
         playPause.setContentDescription(playing ? "Pause" : "Play");
-        enable(playPause, can(Player.COMMAND_PLAY_PAUSE));
-        enable(prev, can(Player.COMMAND_SEEK_TO_PREVIOUS));
-        enable(next, can(Player.COMMAND_SEEK_TO_NEXT));
+        enable(playPause, hasItem && can(Player.COMMAND_PLAY_PAUSE));
+        enable(prev, hasItem && can(Player.COMMAND_SEEK_TO_PREVIOUS));
+        enable(next, hasItem && (can(Player.COMMAND_SEEK_TO_NEXT) || (nextByCommand() && c.hasNextMediaItem())));
 
         if (longForm()) {
             edge(leftEdge, leftEdgeNumber, R.drawable.daylight_np_replay, "Back 10 seconds", true, can(Player.COMMAND_SEEK_BACK), false);
@@ -320,19 +355,30 @@ public class NowPlayingActivity extends Activity {
             boolean shuffled = c != null && c.getShuffleModeEnabled();
             int mode = c == null ? Player.REPEAT_MODE_OFF : c.getRepeatMode();
             edge(leftEdge, leftEdgeNumber, R.drawable.daylight_np_shuffle, shuffled ? "Shuffle, on" : "Shuffle, off",
-                    false, can(Player.COMMAND_SET_SHUFFLE_MODE), shuffled);
+                    false, hasItem && can(Player.COMMAND_SET_SHUFFLE_MODE), shuffled);
             edge(rightEdge, rightEdgeNumber,
                     mode == Player.REPEAT_MODE_ONE ? R.drawable.daylight_np_repeat_one : R.drawable.daylight_np_repeat,
                     mode == Player.REPEAT_MODE_ONE ? "Repeat one" : mode == Player.REPEAT_MODE_ALL ? "Repeat all" : "Repeat, off",
-                    false, can(Player.COMMAND_SET_REPEAT_MODE), mode != Player.REPEAT_MODE_OFF);
+                    false, hasItem && can(Player.COMMAND_SET_REPEAT_MODE), mode != Player.REPEAT_MODE_OFF);
         }
-        enable(more, can(Player.COMMAND_STOP) || can(Player.COMMAND_CHANGE_MEDIA_ITEMS) || longForm());
+        enable(more, hasItem && (can(Player.COMMAND_STOP) || can(Player.COMMAND_CHANGE_MEDIA_ITEMS) || longForm()));
 
         renderUpNext();
-        renderArtwork(hasItem ? meta.artworkUri : null);
+        renderArtwork(hasItem ? meta.artworkUri : null, hasItem);
         renderTargets();
         if (queueSheet != null && queueSheet.isShowing()) fillQueue((LinearLayout) queueSheet.findViewById(QUEUE_LIST));
         tickPosition();
+    }
+
+    /**
+     * Whether play/pause should read "pause": the player means to play AND holds something
+     * loaded. A stopped player keeps playWhenReady, so that alone would show pause on a
+     * stopped screen.
+     */
+    private static boolean active(Player c) {
+        if (c == null || !c.getPlayWhenReady()) return false;
+        int state = c.getPlaybackState();
+        return state == Player.STATE_READY || state == Player.STATE_BUFFERING;
     }
 
     /** One of the two buttons beside the skips: a toggle tinted by its state, or a 10 s jump. */
@@ -356,28 +402,48 @@ public class NowPlayingActivity extends Activity {
             seek.setProgress(known ? (int) Math.min(position, duration) : 0);
         }
         boolean any = c != null && c.getMediaItemCount() > 0;
+        // Nothing to scrub: no bar, no times.
+        seek.setVisibility(any ? View.VISIBLE : View.INVISIBLE);
+        times.setVisibility(any ? View.VISIBLE : View.INVISIBLE);
         elapsed.setText(any ? clock(dragging ? seek.getProgress() : position) : "");
         remaining.setText(known ? "−" + clock(Math.max(0, duration - (dragging ? seek.getProgress() : position))) : "");
         if (c != null && c.isPlaying()) main.postDelayed(ticker, 500);
         else if (c != null) main.postDelayed(ticker, 1500);
     }
 
-    private void renderArtwork(Uri uri) {
-        String key = uri == null ? "" : uri.toString();
+    /**
+     * The picture, in its own shape. With none, the box says so plainly: a note for an item
+     * that has no art, and a short band with the target's icon when nothing plays, instead
+     * of a large empty square.
+     */
+    private void renderArtwork(Uri uri, boolean hasItem) {
+        String key = (uri == null ? "" : uri.toString()) + "|" + hasItem + "|" + target;
         if (key.equals(shownArtwork)) return;
         shownArtwork = key;
-        art.setImageBitmap(null);
-        setArtHeight(1f);
-        if (key.isEmpty()) return;
+        placeholder(hasItem ? R.drawable.daylight_np_note : targetIcon(target), hasItem ? 1f : 0.4f);
+        if (uri == null) return;
+        String url = uri.toString();
         io.execute(() -> {
-            Bitmap bitmap = PlaylistArtwork.load(key, 900);
+            Bitmap bitmap = PlaylistArtwork.load(url, 900);
             main.post(() -> {
                 if (!key.equals(shownArtwork) || bitmap == null) return;
+                art.setImageTintList(null);
+                art.setPadding(0, 0, 0, 0);
+                art.setScaleType(ImageView.ScaleType.CENTER_CROP);
                 art.setImageBitmap(bitmap);
                 // A video's still is wide, an album cover square: the box takes the picture's shape.
                 setArtHeight(bitmap.getWidth() > bitmap.getHeight() * 1.2f ? 9f / 16f : 1f);
             });
         });
+    }
+
+    private void placeholder(int icon, float ratio) {
+        art.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        art.setImageResource(icon);
+        art.setImageTintList(ColorStateList.valueOf(MUTED));
+        int pad = Math.round(((LinearLayout.LayoutParams) art.getLayoutParams()).width * ratio * 0.34f);
+        art.setPadding(pad, pad, pad, pad);
+        setArtHeight(ratio);
     }
 
     private void setArtHeight(float ratio) {
@@ -391,6 +457,7 @@ public class NowPlayingActivity extends Activity {
         MediaController c = controller;
         int count = c == null ? 0 : c.getMediaItemCount();
         upNextRow.setVisibility(count > 0 ? View.VISIBLE : View.GONE);
+        upNextRule.setVisibility(count > 0 ? View.VISIBLE : View.GONE);
         if (count == 0) return;
         int nextIndex = c.getNextMediaItemIndex();
         if (nextIndex == C.INDEX_UNSET || nextIndex >= count) {
@@ -436,7 +503,9 @@ public class NowPlayingActivity extends Activity {
         if (w != null) {
             w.setBackgroundDrawableResource(android.R.color.transparent);
             w.setGravity(Gravity.BOTTOM);
-            w.setLayout(-1, Math.round(getResources().getDisplayMetrics().heightPixels * 0.7f));
+            int rows = controller == null ? 1 : Math.max(1, Math.min(QUEUE_ROWS, controller.getMediaItemCount()));
+            int fit = dp(80) + rows * dp(53);
+            w.setLayout(-1, Math.min(fit, Math.round(getResources().getDisplayMetrics().heightPixels * 0.7f)));
         }
         sheet.setOnDismissListener(d -> { if (queueSheet == sheet) queueSheet = null; });
         queueSheet = sheet;
@@ -450,7 +519,7 @@ public class NowPlayingActivity extends Activity {
         Timeline timeline = c == null ? Timeline.EMPTY : c.getCurrentTimeline();
         int count = timeline.getWindowCount();
         int current = c == null ? -1 : c.getCurrentMediaItemIndex();
-        boolean playing = c != null && c.getPlayWhenReady();
+        boolean playing = active(c);
         boolean jump = can(Player.COMMAND_SEEK_TO_MEDIA_ITEM), change = can(Player.COMMAND_CHANGE_MEDIA_ITEMS);
         Timeline.Window window = new Timeline.Window();
         if (count == 0) list.addView(text("The queue is empty", 15, MUTED));
@@ -493,7 +562,7 @@ public class NowPlayingActivity extends Activity {
 
     /** The target button: which player this screen drives. */
     private void renderTargets() {
-        targetIcon.setImageResource(remote() ? R.drawable.daylight_np_tv : R.drawable.daylight_np_phone);
+        targetIcon.setImageResource(targetIcon(target));
         targetLabel.setText(targetName);
     }
 
@@ -515,7 +584,7 @@ public class NowPlayingActivity extends Activity {
             row.setMinimumHeight(dp(52));
             row.setPaddingRelative(dp(12), 0, dp(12), 0);
             ImageView kind = new ImageView(this);
-            kind.setImageResource(LOCAL.equals(id) ? R.drawable.daylight_np_phone : R.drawable.daylight_np_tv);
+            kind.setImageResource(targetIcon(id));
             kind.setImageTintList(ColorStateList.valueOf(on ? GREEN : INK));
             row.addView(kind, new LinearLayout.LayoutParams(dp(24), dp(24)));
             TextView t = text(label, 16, on ? GREEN : INK);
@@ -552,7 +621,7 @@ public class NowPlayingActivity extends Activity {
         menu.setOnMenuItemClickListener(item -> {
             if (controller == null) return true;
             switch (item.getItemId()) {
-                case 1: controller.stop(); break;
+                case 1: stop(); break;
                 case 2: confirmClear(null); break;
                 case 3: controller.setShuffleModeEnabled(!controller.getShuffleModeEnabled()); break;
                 case 4: cycleRepeat(); break;
@@ -561,6 +630,16 @@ public class NowPlayingActivity extends Activity {
             return true;
         });
         menu.show();
+    }
+
+    /**
+     * On this phone, the session's own Stop (what the car and the notification use): it also
+     * clears the queue and the widget. A screen's Stop is the player command.
+     */
+    private void stop() {
+        SessionCommand own = new SessionCommand(CarControls.STOP_ACTION, Bundle.EMPTY);
+        if (!remote() && controller.isSessionCommandAvailable(own)) controller.sendCustomCommand(own, Bundle.EMPTY);
+        else controller.stop();
     }
 
     private String repeatWord() {
@@ -592,9 +671,11 @@ public class NowPlayingActivity extends Activity {
      */
     @Override public boolean onKeyDown(int keyCode, KeyEvent event) {
         boolean up = keyCode == KeyEvent.KEYCODE_VOLUME_UP, down = keyCode == KeyEvent.KEYCODE_VOLUME_DOWN;
-        if ((up || down) && remote() && can(Player.COMMAND_ADJUST_DEVICE_VOLUME)) {
-            if (up) controller.increaseDeviceVolume(0); else controller.decreaseDeviceVolume(0);
+        if ((up || down) && remote() && can(Player.COMMAND_SET_DEVICE_VOLUME_WITH_FLAGS)) {
+            // The level is worked out from the one before and set outright, so what the line
+            // says, the player's placeholder and what the screen is asked for are one number.
             int level = Math.max(0, Math.min(100, controller.getDeviceVolume() + (up ? 1 : -1) * ScreenCommands.VOLUME_STEP));
+            controller.setDeviceVolume(level, 0);
             volumeLine = "Volume " + level + " on " + targetName;
             main.removeCallbacks(clearVolumeLine);
             main.postDelayed(clearVolumeLine, 1500);
@@ -675,7 +756,7 @@ public class NowPlayingActivity extends Activity {
         LinearLayout.LayoutParams seekLp = new LinearLayout.LayoutParams(-1, -2);
         seekLp.topMargin = dp(16);
         col.addView(seek, seekLp);
-        LinearLayout times = new LinearLayout(this);
+        times = new LinearLayout(this);
         times.setPadding(dp(16), 0, dp(16), 0);
         elapsed = text("", 13, MUTED);
         remaining = text("", 13, MUTED);
@@ -690,12 +771,15 @@ public class NowPlayingActivity extends Activity {
         leftEdgeBox = edgeBox(true);
         prev = icon(R.drawable.daylight_np_previous, "Previous", INK, () -> controller.seekToPrevious());
         playPause = icon(R.drawable.daylight_np_play, "Play", Color.WHITE, () -> {
-            if (controller.getPlayWhenReady()) controller.pause();
+            if (active(controller)) controller.pause();
             else { if (controller.getPlaybackState() == Player.STATE_IDLE) controller.prepare(); controller.play(); }
         });
         playPause.setBackground(round(GREEN, 36));
         playPause.setPadding(dp(18), dp(18), dp(18), dp(18));
-        next = icon(R.drawable.daylight_np_next, "Next", INK, () -> controller.seekToNext());
+        next = icon(R.drawable.daylight_np_next, "Next", INK, () -> {
+            if (nextByCommand()) controller.sendCustomCommand(new SessionCommand(CarControls.NEXT_ACTION, Bundle.EMPTY), Bundle.EMPTY);
+            else controller.seekToNext();
+        });
         rightEdgeBox = edgeBox(false);
         transport.addView(leftEdgeBox, new LinearLayout.LayoutParams(0, dp(56), 1));
         transport.addView(prev, new LinearLayout.LayoutParams(0, dp(56), 1));
@@ -732,10 +816,10 @@ public class NowPlayingActivity extends Activity {
         upNextRow.setContentDescription("Open the queue");
         LinearLayout.LayoutParams upLp = new LinearLayout.LayoutParams(-1, -2);
         upLp.topMargin = dp(20);
-        View rule = new View(this);
-        rule.setBackgroundColor(LINE);
-        col.addView(rule, new LinearLayout.LayoutParams(-1, 1));
-        ((LinearLayout.LayoutParams) rule.getLayoutParams()).topMargin = dp(20);
+        upNextRule = new View(this);
+        upNextRule.setBackgroundColor(LINE);
+        col.addView(upNextRule, new LinearLayout.LayoutParams(-1, 1));
+        ((LinearLayout.LayoutParams) upNextRule.getLayoutParams()).topMargin = dp(20);
         col.addView(upNextRow, new LinearLayout.LayoutParams(-1, -2));
 
         setContentView(scroll);

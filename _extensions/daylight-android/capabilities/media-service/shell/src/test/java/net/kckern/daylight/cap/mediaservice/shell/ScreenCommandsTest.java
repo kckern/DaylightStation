@@ -112,4 +112,13 @@ public class ScreenCommandsTest {
         assertEquals("12:05", NowPlayingActivity.clock(725_000));
         assertEquals("1:02:03", NowPlayingActivity.clock(3_723_000));
     }
+
+    @Test public void aPickerRowsIconFollowsTheRegistryType() {
+        assertEquals(R.drawable.daylight_np_tv, NowPlayingActivity.iconFor("shield-tv", "Living Room TV"));
+        assertEquals(R.drawable.daylight_np_tv, NowPlayingActivity.iconFor("linux-pc", "Office Screen"));
+        assertEquals(R.drawable.daylight_np_tablet, NowPlayingActivity.iconFor("android-tablet", "Portal"));
+        assertEquals(R.drawable.daylight_np_headphones, NowPlayingActivity.iconFor("speaker", "Red musiCozy Headset"));
+        assertEquals(R.drawable.daylight_np_speaker, NowPlayingActivity.iconFor("speaker", "10-SYNC Speaker"));
+        assertEquals(R.drawable.daylight_np_tv, NowPlayingActivity.iconFor("", null));
+    }
 }

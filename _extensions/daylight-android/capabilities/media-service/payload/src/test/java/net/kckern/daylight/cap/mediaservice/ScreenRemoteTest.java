@@ -31,7 +31,7 @@ public class ScreenRemoteTest {
     /** The same rule as the web fleet: content control or fleet: true. Only id and name leave. */
     @Test public void screensAreTheDevicesWithContentControlOrAFleetFlag() throws Exception {
         body = "{\"devices\":{"
-                + "\"office-tv\":{\"name\":\"Office Screen\",\"content_control\":{\"provider\":\"x\"},\"host\":\"10.0.0.5\"},"
+                + "\"office-tv\":{\"name\":\"Office Screen\",\"type\":\"linux-pc\",\"content_control\":{\"provider\":\"x\"},\"host\":\"10.0.0.5\"},"
                 + "\"garage-tv\":{\"fleet\":true},"
                 + "\"phone\":{},"
                 + "\"printer\":{\"name\":\"Printer\",\"type\":\"laser-printer\"},"
@@ -40,13 +40,17 @@ public class ScreenRemoteTest {
         assertEquals("GET https://home.example/api/v1/device/config", calls.get(0));
         assertEquals(2, reply.getJSONArray("items").length());
         Map<String, String> names = new java.util.HashMap<>();
+        Map<String, String> types = new java.util.HashMap<>();
         for (int i = 0; i < 2; i++) {
             JSONObject item = reply.getJSONArray("items").getJSONObject(i);
-            assertEquals(2, item.length());
+            assertEquals(3, item.length());
             names.put(item.getString("id"), item.getString("name"));
+            types.put(item.getString("id"), item.getString("type"));
         }
         assertEquals("Office Screen", names.get("office-tv"));
         assertEquals("garage-tv", names.get("garage-tv"));
+        assertEquals("linux-pc", types.get("office-tv"));
+        assertEquals("", types.get("garage-tv"));
         assertFalse("hosts never leave the payload", reply.toString().contains("10.0.0.5"));
     }
 

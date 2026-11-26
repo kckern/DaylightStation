@@ -51,7 +51,7 @@ final class ScreenRemote {
     /**
      * The screens a session can be controlled on: the registry's devices with content
      * control or a fleet flag, the same rule as the web fleet (fleet/useDevices.js).
-     * Only the id and the name leave here; the registry also holds hosts and auth refs.
+     * Only the id, the name and the type leave here; the registry also holds hosts and auth refs.
      */
     JSONObject screens() throws Exception {
         Http.Reply r = http.get(url.apply("/api/v1/device/config"));
@@ -66,7 +66,10 @@ final class ScreenRemote {
                 boolean surface = cfg.opt("content_control") instanceof JSONObject || cfg.optBoolean("fleet", false);
                 if (!surface) continue;
                 String label = cfg.optString("name", "");
-                items.put(new JSONObject().put("id", id).put("name", label.isEmpty() ? id : label));
+                // The registry's device type (shield-tv, speaker, android-tablet) picks the picker's icon.
+                String type = cfg.optString("type", "");
+                items.put(new JSONObject().put("id", id).put("name", label.isEmpty() ? id : label)
+                        .put("type", type.matches("[a-z0-9-]{1,32}") ? type : ""));
             }
         }
         return Replies.ok().put("items", items);

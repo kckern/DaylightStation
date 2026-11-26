@@ -62,6 +62,8 @@ final class ScreenPlayer extends SimpleBasePlayer {
     private String name = "";
     private ScreenSnapshot snap = ScreenSnapshot.unreachable();
     private long snapAt;
+    /** The screen says it plays but its position has not moved between two answers. */
+    private boolean stalled;
     private long generation;
     private boolean reading;
     private String commandLine = "";
@@ -122,6 +124,9 @@ final class ScreenPlayer extends SimpleBasePlayer {
     }
 
     private void apply(ScreenSnapshot answer) {
+        ScreenSnapshot.Entry before = snap.currentEntry(), now = answer.currentEntry();
+        stalled = "playing".equals(answer.state) && "playing".equals(snap.state) && before != null && now != null
+                && before.queueItemId.equals(now.queueItemId) && answer.positionMs == snap.positionMs;
         snap = answer;
         snapAt = SystemClock.elapsedRealtime();
         invalidateState();
@@ -178,7 +183,9 @@ final class ScreenPlayer extends SimpleBasePlayer {
     /** The screen's position carried forward while it plays; capped at the item's length. */
     private PositionSupplier position() {
         long at = snap.positionMs;
-        boolean moving = "playing".equals(snap.state) && snap.online();
+        // Carried forward only while the screen's own reports move; a screen stuck at one
+        // position is shown stuck, not ticking up and snapping back at every answer.
+        boolean moving = "playing".equals(snap.state) && snap.online() && !stalled;
         if (moving) at += SystemClock.elapsedRealtime() - snapAt;
         ScreenSnapshot.Entry current = snap.currentEntry();
         if (current != null && current.durationMs > 0) at = Math.min(at, current.durationMs);

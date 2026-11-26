@@ -136,7 +136,8 @@ final class ScreenSnapshot {
             case NOT_ON: return screenName + " is not on";
             case UNREACHABLE: return "Can't reach home";
             case IDLE: return "Nothing playing on " + screenName;
-            default: return note;
+            // A note says why playback stopped ("Paused by Phone"); while the screen plays it is history.
+            default: return "playing".equals(state) ? "" : note;
         }
     }
 

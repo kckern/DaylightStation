@@ -33,6 +33,7 @@ public class ScreenSnapshotTest {
         assertEquals("off", s.repeat);
         assertEquals("Replaced by Automation", s.note);
         assertTrue(s.online());
+        assertEquals("a note is history while the screen plays", "", s.statusLine("Office"));
     }
 
     @Test public void anOffScreenKeepsItsLastItemButIsNotOnline() throws Exception {
@@ -71,5 +72,12 @@ public class ScreenSnapshotTest {
         assertEquals(2, s.entries.size());
         assertEquals(0, s.current);
         assertEquals("Brief", s.currentEntry().title);
+    }
+
+    @Test public void aPausedScreenSaysWhoPausedIt() throws Exception {
+        ScreenSnapshot s = ScreenSnapshot.parse(new JSONObject("{\"ok\":true,\"status\":200,\"snapshot\":{\"state\":\"paused\","
+                + "\"currentItem\":{\"contentId\":\"plex:1\",\"title\":\"A\"},\"position\":1,"
+                + "\"controls\":{\"notes\":[{\"label\":\"Paused by Phone\",\"at\":\"2026-11-26T06:37:00Z\"}]}}}"));
+        assertEquals("Paused by Phone", s.statusLine("Office"));
     }
 }
