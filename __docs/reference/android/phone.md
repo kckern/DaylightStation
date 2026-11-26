@@ -331,7 +331,7 @@ bookmark, its action and its place among the shortcuts and widget buttons.
 ## `one-tap-actions`
 
 An action is defined once, as a settings line, and shown four ways. Settings
-`actions.1` to `actions.12`, each `id|label|icon|target`; the label is at most 25
+`actions.1` to `actions.16`, each `id|label|icon|target`; the label is at most 25
 characters.
 
 | Target | Does |
@@ -341,6 +341,7 @@ characters.
 | `input:<kind>:<destination id>` | A quick input: `input:voice:journal` opens the recorder (another tap shows the current draft), `input:text:journal-note` opens the text screen, `input:photo:meal-photo` opens the camera. In a build with no `quick-input` it is a stand-in that opens the app at `actions.memoFallbackPath` and `GET /actions` marks it `placeholder: true`. A per-device test fails a phone build where that is so, or where an action names a destination that is not configured or does not take its kind |
 | `memo:new` | The earlier name of `input:voice:journal`. Still accepted |
 | `media:<contentId>` | Plays that household item natively (`media-service`) |
+| `player:[target]` | Opens Now playing (`media-service`): `player:` on the last target it showed, `player:local` on this phone, `player:<device id>` as the remote for that screen (`player:office-tv`). The phone's `actions.14` is `now-playing\|Now playing\|play\|player:` |
 | `api:/api/...` | Sends an empty `POST` to that backend path and shows the outcome |
 | `location:share` | A placeholder. A tap shows "Location sharing is not built yet" and does nothing else; `GET /actions` marks it `placeholder: true`. See "On my way" below |
 
@@ -449,10 +450,53 @@ natively and answers "Could not start playback"; it plays in the web view.
 
 The installed service asks the payload through the `media` `PayloadPort`, in
 process, as JSON: `browse`, `resolve`, `event`, and, from the play service,
-`action`. It hands back media ids and nothing
+`action`, and the three screen-remote ops below. It hands back media ids and nothing
 else. The same three are routes (`GET /media/browse`, `POST /media/resolve`,
 `POST /media/event`) and `GET /media/status` gives `{lastReportAtMs, lastError,
 reports, problems}`; on the phone nothing serves them to anyone.
+
+### Now playing and the screen remote
+
+One player screen for this phone's own playback and for a screen's session (the
+living-room TV, the office). The strip at the top picks the target: **This phone**,
+then every screen in the household registry with content control or `fleet: true`
+(the web fleet's rule). The rest of the screen is the same either way, because both
+targets are Media3 sessions behind one `MediaController`:
+
+| Piece | Installed (shell half) | Payload |
+|---|---|---|
+| `NowPlayingActivity` (not exported) | Art, title, status line, seek bar, previous / back 10 / play-pause / forward 10 / next, Stop, Shuffle, Repeat, volume, the queue (tap an entry to jump, × removes, Clear asks first). A control is enabled only when the target's player makes its command available | Opens it on a `media/now-playing?target=` link (a `player:` action) |
+| `RemoteControlService`, a Media3 `MediaSessionService` (not exported, session id `screen-remote`) | A second session beside `DaylightMediaService`, holding a `ScreenPlayer`. Its notification and lock-screen card drive the screen; it reports remote playback (0–100), so the phone's volume keys set the screen's volume while it is the active session | — |
+| `ScreenPlayer`, a `SimpleBasePlayer` | The screen's snapshot as a Media3 player: its queue by `queueItemId`, its position carried forward while it plays. Every call becomes one command (`ScreenCommands`); its future completes after the session is read again, so the controls settle on what the screen did | `screens`, `screen-session`, `screen-command` (`ScreenRemote`): `GET /api/v1/device/config`, `GET /api/v1/device/<id>/session`, and the transport, queue, shuffle, repeat and volume routes of `__docs/reference/media/media-app-technical.md` §4 |
+
+- **The screen owns its session.** The phone keeps no copy of it: it shows the
+  screen's last answer. A command the screen did not confirm (502) shows "Not
+  confirmed by Office Screen" for 8 s; an off screen (503 or 409) "Office Screen is
+  off" with its last item; a screen not heard from since the backend started (404)
+  "… is not on"; no backend "Can't reach home". The newest screen note ("Paused by
+  Phone") shows otherwise.
+- **Attribution.** Commands carry `origin.name` from `media.remoteName` (default
+  `Phone`), so the screen's notes name the phone.
+- **Reading.** Every second while Now playing is on view, every 5 s while the screen
+  plays, every 15 s otherwise; after 10 minutes of the screen not playing and nobody
+  watching, it stops until a command or a viewer comes back. Swiping the app away
+  stops the remote unless the screen is playing.
+- **Thumbnails** become URLs on the backend's own origin in the payload; any other
+  value is dropped.
+- **Where it opens.** Setup's Play tab ("Now playing"), a `player:` action, and a tap
+  on either media notification (the phone's own now opens Now playing on This phone,
+  not the web view).
+- **Not here.** Adding to a screen's queue, sleep timers, countdowns, audio and
+  subtitle tracks, and Put it back stay in the Media web app's Remote. Video still
+  does not play natively on the phone.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `media.remoteName` | `Phone` | How a screen's notes name this device (at most 80 characters) |
+
+Logs: `adb logcat -s Daylight-Media` shows `remote screen <id>`, `remote command
+<kind> <action> -> <status> <code>`, `remote resting` and `now playing target <id>`.
+No title or content id is logged.
 
 ### What a car's now-playing card shows
 

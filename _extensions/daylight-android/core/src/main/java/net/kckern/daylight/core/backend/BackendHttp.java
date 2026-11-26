@@ -58,7 +58,15 @@ public final class BackendHttp implements Http {
     }
 
     @Override public Reply postJson(String url, String json) throws IOException {
-        HttpURLConnection c = open(url, "POST", READ_MS);
+        return sendJson("POST", url, json);
+    }
+
+    @Override public Reply putJson(String url, String json) throws IOException {
+        return sendJson("PUT", url, json);
+    }
+
+    private Reply sendJson(String method, String url, String json) throws IOException {
+        HttpURLConnection c = open(url, method, READ_MS);
         byte[] bytes = (json == null ? "{}" : json).getBytes(StandardCharsets.UTF_8);
         c.setDoOutput(true);
         c.setRequestProperty("Content-Type", "application/json");

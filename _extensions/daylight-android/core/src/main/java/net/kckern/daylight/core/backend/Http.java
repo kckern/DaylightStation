@@ -51,6 +51,11 @@ public interface Http {
 
     Reply postJson(String url, String json) throws IOException;
 
+    /** PUT with a JSON body. Fakes that never send one need not implement it. */
+    default Reply putJson(String url, String json) throws IOException {
+        throw new IOException("PUT not supported");
+    }
+
     /**
      * @throws NotSentException                 the body was not (wholly) written
      * @throws java.net.SocketTimeoutException  the body was written and no answer came in time

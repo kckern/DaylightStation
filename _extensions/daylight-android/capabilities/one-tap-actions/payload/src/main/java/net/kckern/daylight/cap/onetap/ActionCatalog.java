@@ -20,6 +20,8 @@ import java.util.regex.Pattern;
  *   input:<kind>:<dest> a quick input (voice, text or photo) to a configured destination
  *   input:status       open capture status
  *   media:<contentId>   play natively
+ *   player:[target]     the Now playing screen: player: (the last target), player:local
+ *                       (this phone) or player:<device id> (a screen's remote)
  *   api:/api/...        an empty POST to that backend path, and a message with the outcome
  *   location:share      "On my way": a reserved slot. It says the feature is not built yet
  *                       and does nothing else (no permission, no request, no state)
@@ -28,7 +30,7 @@ import java.util.regex.Pattern;
  * arrives in a link, an intent or from a page can add one or change what one does.
  */
 final class ActionCatalog {
-    enum Kind { OPEN, BOOKMARK, MEMO, INPUT, MEDIA, API, LOCATION }
+    enum Kind { OPEN, BOOKMARK, MEMO, INPUT, MEDIA, PLAYER, API, LOCATION }
 
     static final class Action {
         final String id;
@@ -53,7 +55,7 @@ final class ActionCatalog {
                 case BOOKMARK: return "bookmark";
                 case MEMO: return "memo";
                 case INPUT: return "input";
-                case MEDIA: return "media";
+                case MEDIA: case PLAYER: return "media";
                 default: return null;
             }
         }
@@ -64,6 +66,7 @@ final class ActionCatalog {
                 case BOOKMARK: case MEMO: return value;
                 case INPUT: return "status".equals(value) ? value : value.substring(0, value.indexOf(':'));
                 case MEDIA: return "play";
+                case PLAYER: return "now-playing";
                 default: return "";
             }
         }
@@ -73,6 +76,7 @@ final class ActionCatalog {
             Map<String, String> query = new LinkedHashMap<>();
             if (kind == Kind.OPEN) query.put("path", value);
             if (kind == Kind.MEDIA) query.put("id", value);
+            if (kind == Kind.PLAYER && !value.isEmpty()) query.put("target", value);
             if (kind == Kind.INPUT && !"status".equals(value)) query.put("to", value.substring(value.indexOf(':') + 1));
             return query;
         }
@@ -85,6 +89,8 @@ final class ActionCatalog {
     /** An API path: segments of unreserved characters, and an optional plain query. */
     private static final Pattern API_PATH = Pattern.compile("/api(/[A-Za-z0-9._~-]+)+/?(\\?[A-Za-z0-9._~&=,:-]*)?");
     /** What a quick input is, and the id of where it goes. Whether that destination exists is the quick-input capability's to say. */
+    /** A screen's device id, as the household registry spells them (office-tv). */
+    private static final Pattern DEVICE = Pattern.compile("[a-z0-9][a-z0-9-]{0,63}");
     private static final Pattern INPUT = Pattern.compile("(voice|text|photo):[a-z][a-z0-9-]{0,31}");
     private final List<Action> actions;
 
@@ -182,6 +188,11 @@ final class ActionCatalog {
             case "media":
                 if (!CONTENT_ID.matcher(rest).matches()) throw new IllegalArgumentException("media: needs a content id such as plex:12345");
                 return new Action(id, label, icon, Kind.MEDIA, rest);
+            case "player":
+                if (!rest.isEmpty() && !"local".equals(rest) && !DEVICE.matcher(rest).matches()) {
+                    throw new IllegalArgumentException("player: needs nothing, local, or a screen's device id");
+                }
+                return new Action(id, label, icon, Kind.PLAYER, rest);
             case "location":
                 if (!"share".equals(rest)) throw new IllegalArgumentException("location: only 'share' is supported");
                 return new Action(id, label, icon, Kind.LOCATION, rest);
@@ -192,7 +203,7 @@ final class ActionCatalog {
                 }
                 return new Action(id, label, icon, Kind.API, rest);
             default:
-                throw new IllegalArgumentException("unknown target; use open:, bookmark:, memo:, input:, media:, api: or location:");
+                throw new IllegalArgumentException("unknown target; use open:, bookmark:, memo:, input:, media:, player:, api: or location:");
         }
     }
 }

@@ -630,6 +630,25 @@ with `quick_input.share` in the devices file) and a screen nobody is watching.
 8. With the phone offline (VPN off), share a video, wait 11 minutes, reconnect: the
    share is refused as stale and parked; nothing plays.
 
+## F5. Now playing and the screen remote
+
+Needs shell 115 or later and a screen that is on (the office screen is the easiest).
+
+1. Open Daylight, the **Play** tab, **Now playing**. The strip reads **This phone**, then
+   the screens. With nothing playing on the phone it says "Nothing playing on this phone".
+2. Share a short video to the office screen (F4). In Now playing tap the office screen's
+   chip: the title, art and position match the screen within a second; the queue lists
+   the share.
+3. Pause, play, back 10, forward 10 and drag the seek bar: each lands on the screen, and
+   the screen's note reads "Paused by Phone" after the pause. `remote command transport
+   pause -> 200` is in `adb logcat -s Daylight-Media`.
+4. Lock the phone. The lock screen shows the screen's card; play/pause there drives the
+   screen. The volume keys change the screen's volume (Now playing shows the level).
+5. Turn the screen off (or unplug it). Within 15 s Now playing says "Office Screen is
+   off", greys the controls and keeps the last item.
+6. Play something on the phone (a Drive playlist), tap the media notification: Now
+   playing opens on **This phone** with the phone's queue.
+
 ## G. Notifications
 
 1. With an input waiting (F7), tap the notice: a message says how many are being

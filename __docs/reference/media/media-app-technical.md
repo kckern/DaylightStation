@@ -1125,7 +1125,7 @@ Mutates the remote session's queue.
 | `play-next` | `{ contentId, commandId }` | Insert after current item. |
 | `add-up-next` | `{ contentId, commandId }` | Append to Up Next sub-queue. |
 | `add` | `{ contentId, commandId }` | Append to end. |
-| `reorder` | `{ from, to, commandId }` OR `{ items: queueItemId[], commandId }` | Move one item or replace ordering. |
+| `reorder` | `{ from, to, commandId }` OR `{ items: queueItemId[], commandId }` | Move one item or replace ordering. `from` and `to` are queueItemIds, not indices: the router refuses anything but non-empty strings. |
 | `remove` | `{ queueItemId, commandId }` | Remove an item. |
 | `jump` | `{ queueItemId, commandId }` | Jump to a specific queue item. |
 | `clear` | `{ commandId }` | Clear entire queue. |

@@ -310,6 +310,11 @@ export const EXPECTED_COMPONENTS = {
   'receiver androidx.media3.session.MediaButtonReceiver': { exported: true, permission: null },
   // Started by this app only, when the payload has accepted a keyed media link.
   'activity net.kckern.daylight.cap.mediaservice.shell.PlayActivity': { exported: false, permission: null },
+  // The phone as a remote for a screen's session: a second Media3 session, bound by this
+  // app's Now playing screen only; the system reaches it through its notification.
+  'service net.kckern.daylight.cap.mediaservice.shell.RemoteControlService': { exported: false, permission: null, foregroundServiceType: ['mediaPlayback'] },
+  // The Now playing screen: opened by this app only (setup, a player: action, the notifications).
+  'activity net.kckern.daylight.cap.mediaservice.shell.NowPlayingActivity': { exported: false, permission: null },
   // Started by this app only: a widget button's immutable PendingIntent and a tile, with
   // one action id that the payload resolves against the configured and pinned actions.
   'service net.kckern.daylight.cap.mediaservice.shell.PlayActionService': { exported: false, permission: null, foregroundServiceType: ['mediaPlayback'] },

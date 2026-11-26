@@ -45,6 +45,29 @@
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
 
+        <!-- Not exported: the phone as a remote for one screen's session (a second Media3
+             session beside the one above). Bound by this app's Now playing screen; the
+             system reaches it only through its media notification. The action lets a
+             SessionToken find it; with exported="false" no other app can bind it. -->
+        <service
+            android:name="net.kckern.daylight.cap.mediaservice.shell.RemoteControlService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+            </intent-filter>
+        </service>
+
+        <!-- Not exported: the Now playing screen, for this phone's playback or a screen's.
+             Opened by this app only: the setup screen, a player: one-tap action through the
+             payload, and both media notifications. -->
+        <activity
+            android:name="net.kckern.daylight.cap.mediaservice.shell.NowPlayingActivity"
+            android:exported="false"
+            android:label="Now playing"
+            android:launchMode="singleTop"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+
         <!-- Not exported: started by this app only, when the payload has accepted a keyed
              media link. No window of its own. -->
         <activity

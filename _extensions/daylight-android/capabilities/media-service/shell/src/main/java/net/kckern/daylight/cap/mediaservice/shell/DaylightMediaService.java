@@ -192,13 +192,13 @@ public class DaylightMediaService extends MediaLibraryService {
                         () -> SurfaceCache.get(this, ControllerPins.KEY), DaylightMediaService::stopPlayback)
                         .withDrivingRadio(radio, this::cancelRadioHandoff));
         builder.setCustomLayout(CarControls.layout(false));
-        // A tap on the media notification opens this app's own window. Nothing from a
-        // controller is in the intent.
-        Intent open = getPackageManager().getLaunchIntentForPackage(getPackageName());
-        if (open != null) {
-            builder.setSessionActivity(PendingIntent.getActivity(this, 0, open,
-                    PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
-        }
+        // A tap on the media notification opens the Now playing screen on this phone's
+        // playback. Nothing from a controller is in the intent.
+        Intent open = new Intent(this, NowPlayingActivity.class)
+                .putExtra(NowPlayingActivity.EXTRA_TARGET, NowPlayingActivity.LOCAL)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        builder.setSessionActivity(PendingIntent.getActivity(this, 0, open,
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
         session = builder.build();
         radioPrefs = getSharedPreferences(DrivingRadioSettings.PLAYLIST_PREFS, MODE_PRIVATE);
         radioPrefs.registerOnSharedPreferenceChangeListener(driveChanged);
