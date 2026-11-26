@@ -253,6 +253,17 @@ export function SinglePlayer(props = {}) {
   // and play info is fetched once the intro lets go. Contract:
   // __docs/reference/content/content-playback.md (intro slot).
   const introHoldsRequest = !isReady && intro?.holdRequest === true;
+  // An intro whose title cannot come (a shared video that failed, or was lost)
+  // abandons the play: the Player advances past it, once, as for an item that
+  // will not play. The intro has already shown why.
+  const introAbandons = !isReady && intro?.abandon === true;
+  const abandonedRef = useRef(null);
+  useEffect(() => {
+    if (!introAbandons || abandonedRef.current === effectiveContentId) return;
+    abandonedRef.current = effectiveContentId;
+    playbackLog('intro-abandoned', { contentId: effectiveContentId }, { level: 'warn' });
+    advance?.();
+  }, [introAbandons, effectiveContentId, advance]);
 
   const readVideoInfo = useCallback(async (isCurrent, signal) => {
     setIsReady(false);

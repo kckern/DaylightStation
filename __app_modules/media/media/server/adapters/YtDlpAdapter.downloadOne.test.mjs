@@ -99,7 +99,7 @@ describe('YtDlpAdapter.downloadOne', () => {
     });
     const adapter = new YtDlpAdapter({ logger: quiet(), spawn });
     const result = await adapter.downloadOne('u', { outputPath: '/m/x.mp4' });
-    expect(result).toEqual({ kind: 'failed', error: 'ERROR: [youtube] abc: Video unavailable' });
+    expect(result).toEqual({ kind: 'failed', error: 'ERROR: [youtube] abc: Video unavailable', reason: 'unavailable' });
     expect(FileIO.deleteFile).toHaveBeenCalledWith('/m/x.mp4');
   });
 
@@ -110,7 +110,28 @@ describe('YtDlpAdapter.downloadOne', () => {
     const pending = adapter.downloadOne('u', { outputPath: '/m/x.mp4', signal: ctrl.signal });
     await new Promise((r) => setTimeout(r, 5));
     ctrl.abort();
-    expect(await pending).toEqual({ kind: 'failed', error: 'cancelled' });
+    expect(await pending).toEqual({ kind: 'failed', error: 'cancelled', reason: 'cancelled' });
     expect(calls[0].child.kill).toHaveBeenCalledWith('SIGKILL');
+  });
+
+  it('a video the length or size filter skipped (exit 0, no file) is too large', async () => {
+    FileIO.fileExists.mockReturnValueOnce(false);
+    const { spawn } = fakeSpawn((child) => child.emit('close', 0));
+    const adapter = new YtDlpAdapter({ logger: quiet(), spawn });
+    expect(await adapter.downloadOne('u', { outputPath: '/m/x.mp4' })).toEqual({ kind: 'failed', error: 'too large or too long to fetch', reason: 'too_large' });
+  });
+
+  it('gives up when nothing has come for the stall time', async () => {
+    const { spawn, calls } = fakeSpawn(() => {});
+    const adapter = new YtDlpAdapter({ logger: quiet(), spawn });
+    const out = await adapter.downloadOne('u', { outputPath: '/m/x.mp4', stallMs: 20 });
+    expect(out).toMatchObject({ kind: 'failed', reason: 'stalled' });
+    expect(calls[0].child.kill).toHaveBeenCalledWith('SIGKILL');
+  });
+
+  it('asks yt-dlp to skip videos too long or too large', () => {
+    const argv = buildSingleDownloadArgs('u', { outputPath: '/x.mp4' });
+    expect(argv[argv.indexOf('--match-filter') + 1]).toMatch(/^duration <= \d+$/);
+    expect(argv).toContain('--max-filesize');
   });
 });

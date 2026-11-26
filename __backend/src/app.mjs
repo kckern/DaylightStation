@@ -2797,6 +2797,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       configService,
       contentRegistry,
       rootLogger,
+      env: process.env,
       screens: {
         load: (deviceId, query) => wakeAndLoadService.execute(deviceId, query),
         stop: (deviceId) => sessionControlService.transport(deviceId, { action: 'stop', commandId: `share-stop-${Date.now()}` }),

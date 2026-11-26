@@ -6,6 +6,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
+import { Readable } from 'node:stream';
 import { createShareRouter } from './share.mjs';
 import { ShareRouter } from '../application/ShareRouter.mjs';
 import { createShareQuickInputs } from '../application/shareQuickInputs.mjs';
@@ -13,15 +14,19 @@ import { sharePolicy } from '../domain/sharePolicy.mjs';
 
 const nullLogger = { debug() {}, info() {}, warn() {}, error() {} };
 
-function build({ devices = { phone: { quick_input: { share: ['user_1'] } } } } = {}) {
+function build({ devices = { phone: { quick_input: { share: ['user_1'] } } }, now = Date.now() } = {}) {
   const handler = {
     kind: 'video',
     matches: (url) => url.startsWith('https://video.example/'),
     accept: vi.fn(({ target }) => ({ kind: 'video', provider: 'example', jobId: 's000000000001', target })),
-    status: (id) => (id === 's000000000001' ? { id, state: 'downloading', progress: 0.4 } : null),
+    status: async (id) => (id === 's000000000001' ? { id, state: 'downloading', progress: 0.4 } : null),
+    media: async (id) => (id === 's000000000001' ? {
+      size: 10, mimeType: 'video/mp4',
+      open: (range) => Readable.from([Buffer.from('0123456789'.slice(range ? range.start : 0, range ? range.end + 1 : 10))]),
+    } : null),
   };
   const policy = sharePolicy({ default_target: 'livingroom-tv', targets: { 'livingroom-tv': { label: 'Living room TV' }, 'office-tv': { label: 'Office' } } });
-  const router = new ShareRouter({ handlers: [handler], logger: nullLogger });
+  const router = new ShareRouter({ handlers: [handler], logger: nullLogger, clock: () => now });
   const ledgerFiles = new Map();
   const endpoints = createShareQuickInputs({
     router,
@@ -39,12 +44,15 @@ function build({ devices = { phone: { quick_input: { share: ['user_1'] } } } } =
   return { app, handler };
 }
 
-const share = (app, path, text, { id = 'in_1', device = 'fleet:phone' } = {}) => request(app)
-  .post(`${path}?user=user_1`)
-  .set('Content-Type', 'text/plain; charset=utf-8')
-  .set('X-Daylight-Device', device)
-  .set('X-Daylight-Input-Id', id)
-  .send(text);
+const share = (app, path, text, { id = 'in_1', device = 'fleet:phone', recordedAt = null } = {}) => {
+  const req = request(app)
+    .post(`${path}?user=user_1`)
+    .set('Content-Type', 'text/plain; charset=utf-8')
+    .set('X-Daylight-Device', device)
+    .set('X-Daylight-Input-Id', id);
+  if (recordedAt != null) req.set('X-Daylight-Recorded-At', String(recordedAt));
+  return req.send(text);
+};
 
 describe('share routes', () => {
   it('routes a shared link to the default target and answers the receipt the phone checks', async () => {
@@ -89,5 +97,26 @@ describe('share routes', () => {
     expect((await request(app).get('/api/v1/share/jobs/s000000000001')).body).toMatchObject({ state: 'downloading', progress: 0.4 });
     expect((await request(app).get('/api/v1/share/jobs/s999999999999')).status).toBe(404);
     expect((await request(app).get('/api/v1/share/jobs/bad')).status).toBe(400);
+  });
+
+  it('refuses a share made long ago (queued while the phone was offline)', async () => {
+    const now = Date.now();
+    const { app, handler } = build({ now });
+    const res = await share(app, '/api/v1/share/text', 'https://video.example/v/1', { recordedAt: now - 11 * 60_000 });
+    expect(res.status).toBe(422);
+    expect(handler.accept).not.toHaveBeenCalled();
+    const fresh = await share(app, '/api/v1/share/text', 'https://video.example/v/1', { id: 'in_2', recordedAt: now - 60_000 });
+    expect(fresh.status).toBe(200);
+  });
+
+  it('streams a fetched video with Range, and 404s one not fetched', async () => {
+    const { app } = build();
+    const whole = await request(app).get('/api/v1/share/jobs/s000000000001/media');
+    expect(whole.status).toBe(200);
+    expect(whole.headers['content-type']).toMatch(/video\/mp4/);
+    const part = await request(app).get('/api/v1/share/jobs/s000000000001/media').set('Range', 'bytes=2-4');
+    expect(part.status).toBe(206);
+    expect(part.headers['content-range']).toBe('bytes 2-4/10');
+    expect((await request(app).get('/api/v1/share/jobs/s999999999999/media')).status).toBe(404);
   });
 });
