@@ -52,6 +52,8 @@ public final class MediaServiceCapability implements Capability {
     static final String PLAY_ON_TARGET = "media.playOnTarget";
     /** Downloads kept on this phone: the most they may take (MB; 0 for no cap), and whether mobile data may be used. */
     static final String DOWNLOAD_CAP_MB = "media.downloadCapMb";
+    /** Crossfade between songs on this phone, seconds (0 = off): the household default; the person's choice in Now playing wins. */
+    static final String CROSSFADE_SEC = "media.crossfadeSec";
     static final String DOWNLOAD_ON_CELLULAR = "media.downloadOnCellular";
     /** A kept book is removed a day after it is finished (with Undo for a day). Off by default. */
     static final String REMOVE_FINISHED = "media.removeFinished";
@@ -137,6 +139,7 @@ public final class MediaServiceCapability implements Capability {
         core.settings().declare(PAGE_SIZE, SettingsRegistry.Type.INTEGER, 50, SettingsRegistry.range(10, 200));
         core.settings().declare(PLAY_ON_TARGET, SettingsRegistry.Type.BOOLEAN, false, null);
         core.settings().declare(DOWNLOAD_CAP_MB, SettingsRegistry.Type.INTEGER, 4096, SettingsRegistry.range(0, 512_000));
+        core.settings().declare(CROSSFADE_SEC, SettingsRegistry.Type.INTEGER, 4, SettingsRegistry.range(0, 12));
         core.settings().declare(DOWNLOAD_ON_CELLULAR, SettingsRegistry.Type.BOOLEAN, false, null);
         core.settings().declare(REMOVE_FINISHED, SettingsRegistry.Type.BOOLEAN, false, null);
         core.settings().declare(REMOVE_FINISHED_AFTER, SettingsRegistry.Type.INTEGER, 1440, SettingsRegistry.range(1, 100_000));
@@ -325,6 +328,9 @@ public final class MediaServiceCapability implements Capability {
                 return new Outcome(200, Replies.ok().put("status", inbox == null ? "none" : inbox.status())
                         .put("deviceId", inbox == null ? "" : inbox.deviceId()).put("installId", inbox == null ? "" : inbox.installId())
                         .put("homeDown", health.down(clock.getAsLong())));
+            }
+            if ("playerRules".equals(op)) {
+                return new Outcome(200, Replies.ok().put("crossfadeSec", (Integer) core.settings().get(CROSSFADE_SEC)));
             }
             if ("downloadRules".equals(op)) {
                 return new Outcome(200, Replies.ok().put("capMb", (Integer) core.settings().get(DOWNLOAD_CAP_MB))

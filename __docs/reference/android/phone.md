@@ -476,7 +476,7 @@ targets are Media3 sessions behind one `MediaController`:
 
 | Piece | Installed (shell half) | Payload |
 |---|---|---|
-| `NowPlayingActivity` (not exported) | Laid out after Plexamp (ops:docs/superpowers/specs/2026-11-26-phone-player-parity-design.md). Top: close, the target (its icon and name, ▾ opens **Play on** with the current one checked) and, for a screen, the D-pad. The **stage** holds the cover (square, or 16:9 for a video still; swipe it left for next, right for previous, with a haptic tick), or the **lyrics** or the **queue** in its place (Back returns to the cover). Under it the **seek bar is the track's loudness** (Plex's analysis, as bars; a plain line when there is none), elapsed on the left and remaining on the right (tap: the length; remembered). Then artist, title (bold) and album (year), centred, and the audio quality ("FLAC · 24-bit · 96 kHz", "MP3 · 256 kbps · 44.1 kHz") when the backend knows it. One transport row: previous, play/pause in a disc of the cover's color, next; an item of 20 minutes or more adds back 10 / forward 10 at its ends. One icon row: queue, lyrics (enabled only when the track has lyrics), shuffle, ⋮ (Sleep timer on this phone, Stop, Clear queue), repeat, output (opens **Play on**). The page takes its colors from the cover (`CoverColor`, `DaylightTheme.withAccent`) over a soft copy of it. With a screen as the target the volume keys set the screen's volume and show the level for a moment. The status line shows only when something is wrong, or a sleep timer is set. A control is enabled only when the target's player makes its command available. It opens as a sheet rising from the bottom, and the down chevron or Back drops it. **Play on** says what each player is doing (Off, Nothing playing, the title); an off player is greyed and can't be picked. A screen with nothing on it shows **Play something on <screen>** in the stage: Continue listening and your playlists, one tap starting it there (the payload's `screen-command` `load`, i.e. `GET /api/v1/device/<id>/load?play|queue=…&deferredRetry=0`, as the web's Play on), and Browse on the screen through the D-pad. An off screen offers this phone or another screen instead | Opens it on a `media/now-playing?target=` link (a `player:` action); `track-levels` and `track-lyrics` read `GET /api/v1/track/levels/<source>/<id>?samples=N` and `GET /api/v1/track/lyrics/<source>/<id>` (none, or an older backend's 404, is "none": the strip is a line and the button is off) |
+| `NowPlayingActivity` (not exported) | Laid out after Plexamp (ops:docs/superpowers/specs/2026-11-26-phone-player-parity-design.md). Top: close, the target (its icon and name, ▾ opens **Play on** with the current one checked) and, for a screen, the D-pad. The **stage** holds the cover (square, or 16:9 for a video still; swipe it left for next, right for previous, with a haptic tick), or the **lyrics** or the **queue** in its place (Back returns to the cover). Under it the **seek bar is the track's loudness** (Plex's analysis, as bars; a plain line when there is none), elapsed on the left and remaining on the right (tap: the length; remembered). Then artist, title (bold) and album (year), centred, and the audio quality ("FLAC · 24-bit · 96 kHz", "MP3 · 256 kbps · 44.1 kHz") when the backend knows it. One transport row: previous, play/pause in a disc of the cover's color, next; an item of 20 minutes or more adds back 10 / forward 10 at its ends. One icon row: queue, lyrics (enabled only when the track has lyrics), shuffle, ⋮ (Sleep timer and Crossfade on this phone, Stop, Clear queue), repeat, output (opens **Play on**). The page takes its colors from the cover (`CoverColor`, `DaylightTheme.withAccent`) over a soft copy of it. With a screen as the target the volume keys set the screen's volume and show the level for a moment. The status line shows only when something is wrong, or a sleep timer is set. A control is enabled only when the target's player makes its command available. It opens as a sheet rising from the bottom, and the down chevron or Back drops it. **Play on** says what each player is doing (Off, Nothing playing, the title); an off player is greyed and can't be picked. A screen with nothing on it shows **Play something on <screen>** in the stage: Continue listening and your playlists, one tap starting it there (the payload's `screen-command` `load`, i.e. `GET /api/v1/device/<id>/load?play|queue=…&deferredRetry=0`, as the web's Play on), and Browse on the screen through the D-pad. An off screen offers this phone or another screen instead | Opens it on a `media/now-playing?target=` link (a `player:` action); `track-levels` and `track-lyrics` read `GET /api/v1/track/levels/<source>/<id>?samples=N` and `GET /api/v1/track/lyrics/<source>/<id>` (none, or an older backend's 404, is "none": the strip is a line and the button is off) |
 | `RemoteControlService`, a Media3 `MediaSessionService` (not exported, session id `screen-remote`) | A second session beside `DaylightMediaService`, holding a `ScreenPlayer`. Its notification and lock-screen card drive the screen; it reports remote playback (0–100), so the phone's volume keys set the screen's volume while it is the active session | — |
 | `ScreenPlayer`, a `SimpleBasePlayer` | The screen's snapshot as a Media3 player: its queue by `queueItemId`, its position carried forward while it plays. Every call becomes one command (`ScreenCommands`); its future completes after the session is read again, so the controls settle on what the screen did | `screens`, `screen-session`, `screen-command` (`ScreenRemote`): `GET /api/v1/device/config`, `GET /api/v1/device/<id>/session`, and the transport, queue, shuffle, repeat and volume routes of `__docs/reference/media/media-app-technical.md` §4 |
 
@@ -563,6 +563,32 @@ targets are Media3 sessions behind one `MediaController`:
   `net.kckern.daylight.media.SLEEP` with `minutes`, -1 for the end of the item), so it
   holds with Now playing closed; stopping playback or clearing the queue cancels it.
   Over its last minute the volume fades to 10%, then it pauses and the volume returns.
+- **Crossfade between songs** (⋮ → Crossfade, this phone only; `CrossfadeEngine`, rules in
+  `Crossfade`). Off, 2, 4, 6, 8 or 12 s; the person's choice is kept on the phone
+  (`daylight.player` prefs) and wins over the household default `media.crossfadeSec` (4).
+  Music only: never for long-form (books, talks: `CarControls.longForm`) on either side,
+  never inside an album played in order (shuffle off and the next track from the same
+  album title and artist: a plain gapless transition), never across a track shorter than
+  twice the fade, never at the end of the queue or on repeat-one, never while a sleep
+  timer is set, and never planned once playback is inside the last fade + 2.5 s (a seek
+  into the end plays to the end). A manual skip is a 150 ms cut, never a fade; a skip
+  during a fade ends it. How it runs: the session's ExoPlayer stays the one truth for the
+  queue, notification, car and progress; a private **tail** ExoPlayer (no audio focus of
+  its own) is prepared 15 s ahead with the outgoing song at the fade point, started there
+  by a `PlayerMessage` on the main player while the main player moves to the next item
+  silently, then the two ramp on an equal-power curve (cos/sin, 25 steps a second). Pause,
+  a call, headphones unplugged, a seek, a skip, an error or a stop end the fade at once
+  (the incoming song at full level, the tail released). The tail starts a little late on
+  any device; that delay is learned from each fade (`crossfadeTailLeadMs`, 0–400 ms) and
+  the copy is placed that much later so the outgoing music carries on without a gap. Both
+  sides keep their loudness level and the sleep timer's fade. Now playing, the
+  notification and the car show the incoming song from the start of the fade. The
+  outgoing song is reported **finished** (position = its length). Kept songs fade from the
+  download cache. Logs: `crossfade: plan for …`, `crossfade: start …`, `crossfade: middle
+  p=… out=… in=…`, `crossfade: done|ended early (…)`; telemetry `crossfade.done`,
+  `crossfade.skipped{reason}`, `crossfade.ended_early{reason}`. Known limit: an audio
+  duck during a fade lowers only the incoming song. Spec:
+  ops:docs/superpowers/specs/2026-11-26-phone-crossfade.md.
 - **The phone home's Play tab** is not a library to browse. **Continue listening**: long
   audio started and not finished, newest first (payload op `continue` over
   `GET /api/v1/media/household/recent`: audio, 20 minutes or more, 30 s in, under 97%),
@@ -1093,6 +1119,7 @@ removed.
 
 | Setting | Default | Meaning |
 |---|---|---|
+| `media.crossfadeSec` | 4 | Crossfade between songs on this phone, seconds (0–12, 0 = off): the household default; the person's choice in Now playing's ⋮ wins |
 | `media.downloadCapMb` | 4096 | The most downloads may take, in MB (0 for no cap). The limit that applies is never more than the free space minus 2 GB |
 | `media.downloadOnCellular` | false | Whether downloads may use mobile data. Off: they wait for Wi-Fi (Use mobile data once lets what is waiting go now) |
 | `media.removeFinished` | false | Remove a kept book a day after it is finished, with Undo for a day |
