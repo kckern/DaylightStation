@@ -7,6 +7,7 @@ import {
   newAppPage, gotoMedia, warmMedia,
 } from './lib/receivers.mjs';
 import { goArea, openSearch, resultRow } from './lib/search.mjs';
+import { aimAt, aimLabel } from './lib/aim.mjs';
 
 // The play and line-up verbs, at the aim, on every surface. Aim = a real
 // mounted receiver (acceptance-media), read back through its own published
@@ -24,13 +25,6 @@ test.beforeEach(async ({ request, baseURL }) => { await resetHouseholdAt(request
 
 const queueIds = async (request, id = A) => (await receiverState(request, id))?.queue?.items?.map((item) => item.contentId) ?? [];
 const currentId = async (request, id = A) => (await receiverState(request, id))?.currentItem?.contentId ?? null;
-
-async function aimAt(page, deviceId) {
-  await page.getByTestId('cast-target-chip').click();
-  await page.getByTestId(`cast-target-checkbox-${deviceId}`).check();
-  await page.getByTestId('cast-target-chip').click();
-  await expect(page.getByTestId('cast-popover')).toBeHidden();
-}
 
 async function setup(browser, request) {
   const receiver = await openReceiver(browser, request, A);
@@ -140,7 +134,7 @@ test('[PLAY.5a/AC1][PLAY.5a/AC2][PLAY.6a/AC1][PLACE.1a/AC3] Play next puts items
   await expectQueue([ITEM.DISCLOSURE, ITEM.ARRIVAL, ITEM.HOSPITAL, ITEM.FAITH, ITEM.KEEPY, leafId], 'Add from browsing');
 
   // The aim read the same afterwards, and the verbs never touched this device.
-  await expect(page.getByTestId('destination-control-name')).toContainText(A_NAME);
+  expect(await aimLabel(page)).toBe(A_NAME);
   expect(await page.locator('video').count()).toBe(0);
   await done();
 });

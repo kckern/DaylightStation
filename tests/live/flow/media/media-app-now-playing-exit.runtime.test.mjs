@@ -30,6 +30,9 @@ test.describe('MediaApp — NowPlaying exit', () => {
     await expect(page.getByTestId('now-playing-view')).toBeHidden({ timeout: 5000 });
   });
 
+  // The header "Playing on" popover is the phone's; wider screens have the search box chip.
+  test.describe('phone destination popover', () => {
+  test.use({ viewport: { width: 390, height: 844 } });
   test('Escape with cast popover open closes only the popover, not NowPlaying', async ({ page }) => {
     await startPlayback(page);
     await page.getByTestId('cast-target-chip').click();
@@ -38,5 +41,6 @@ test.describe('MediaApp — NowPlaying exit', () => {
     await expect(page.getByTestId('cast-popover')).toBeHidden({ timeout: 2000 });
     // NowPlaying should still be visible (Escape did not pop the view)
     await expect(page.getByTestId('now-playing-view')).toBeVisible();
+  });
   });
 });

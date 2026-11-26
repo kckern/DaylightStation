@@ -5,6 +5,8 @@ import path from 'node:path';
 import { markFirstUseDone } from './lib/firstUse.mjs';
 import { resetHouseholdAt } from './lib/household.mjs';
 import { isPhone } from './lib/mediaDriver.mjs';
+import { aimAt } from './lib/aim.mjs';
+import { playResult } from './lib/search.mjs';
 
 // Finding and starting things (P0 features), against the acceptance server's
 // seeded household, its virtual receiver (a REAL mounted screen page) and the
@@ -77,10 +79,7 @@ async function typeSearch(page, text) {
 
 /** Aim at the virtual receiver from the desktop header chip. */
 async function aimAtReceiver(page) {
-  await page.getByTestId('cast-target-chip').click();
-  await page.getByTestId(`cast-target-checkbox-${DEVICE}`).check();
-  await page.getByTestId('cast-target-chip').click();
-  await expect(page.getByTestId('cast-popover')).toBeHidden();
+  await aimAt(page, DEVICE);
 }
 
 for (const [size, viewport] of Object.entries(VIEWPORTS)) {
@@ -128,7 +127,7 @@ for (const { kind, query, id, title } of [
   await page.keyboard.press('Escape');
   // Tap: it shows on THIS device even though the receiver is aimed.
   await search.fill(query);
-  await page.getByTestId(`combobox-option-${id}`).click();
+  await playResult(page, page.getByTestId(`combobox-option-${id}`));
   await expect(page.getByTestId('mini-player-open-nowplaying')).toContainText(title, { timeout: 60000 });
   expect(loads, 'a photo tap is not sent to the aimed screen').toHaveLength(0);
   expect((await state(request))?.currentItem?.contentId ?? null).not.toBe(id);

@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { markFirstUseDone } from './lib/firstUse.mjs';
+import { playResultHere } from './lib/search.mjs';
 
 test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 
@@ -12,7 +13,7 @@ test('NowPlaying hand-off shows truthful aim plus explicit move/keep choices', a
   await search.fill('lonesome');
   const option = page.getByRole('option').filter({ hasText: 'Lonesome' }).first();
   await expect(option).toBeVisible({ timeout: 15000 });
-  await option.click();
+  await playResultHere(page, option); // a row only opens the info view; PLAY plays
   await expect(page.getByTestId('mini-toggle')).toBeVisible({ timeout: 15000 });
 
   // Open NowPlaying view

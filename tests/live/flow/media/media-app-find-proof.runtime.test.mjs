@@ -1,10 +1,9 @@
 import { test, expect } from '@playwright/test';
 import { resetHouseholdAt } from './lib/household.mjs';
 import { A, A_NAME, ITEM, VIEWPORTS, newAppPage, gotoMedia, warmMedia, openReceiver, stopReceiver, receiverState } from './lib/receivers.mjs';
-import {
-  isPhone, goArea, openSearch, closeSearch, resultRows, resultRow, rowPicture, searchSurface, waitForSearchSettled, whereAmI,
-} from './lib/search.mjs';
+import { isPhone, goArea, openSearch, closeSearch, resultRows, resultRow, rowPicture, searchSurface, waitForSearchSettled, whereAmI, playResultHere } from './lib/search.mjs';
 import { startSseServer, streamItem } from './lib/sseServer.mjs';
+import { aimAt } from './lib/aim.mjs';
 
 // FIND — search, results states, browse, details. Real catalog (the acceptance
 // server's read-only Plex passthrough), real mounted receiver where a screen is
@@ -112,14 +111,11 @@ test('[FIND.1a/AC3] search looks and behaves the same at every size, and while a
       await page.getByTestId('picker-submit').click();
       await closeSearch(page, vp).catch(() => {});
     } else {
-      await page.getByTestId('cast-target-chip').click();
-      await page.getByTestId(`cast-target-checkbox-${A}`).check();
-      await page.getByTestId('cast-target-chip').click();
-      await expect(page.getByTestId('cast-popover')).toBeHidden();
+      await aimAt(page, A);
     }
     const aimed = await signature(page, vp);
     expect(aimed, `${label}: search while aimed at ${A_NAME}`).toEqual(local);
-    await expect(isPhone(vp) ? page.getByTestId('search-mode').getByTestId('destination-line-name') : page.getByTestId('destination-control-name')).toContainText(A_NAME);
+    await expect(isPhone(vp) ? page.getByTestId('search-mode').getByTestId('destination-line-name') : page.getByTestId('search-destination-chip')).toContainText(A_NAME);
     await closeSearch(page, vp);
     // Steering: open that screen's controls (its Remote), search from there: still the same search.
     await goArea(page, vp, 'fleet');
@@ -167,7 +163,7 @@ for (const [label, vp] of Object.entries(VIEWPORTS)) {
     await verb('Add to Queue');
     await retained('Add');
     // Play here (tap the result).
-    await row.click();
+    await playResultHere(page, row); // a row only opens the info view; PLAY plays
     await retained('Play');
     await expect(page.locator('video').first()).toBeAttached({ timeout: 60000 });
     await context.close();
@@ -377,10 +373,7 @@ test('[FIND.8a/AC3][FIND.8a/AC4] details offer the same play and line-up actions
   const { context, page } = await newAppPage(browser, VIEWPORTS.laptop);
   await gotoMedia(page);
   // Aim at the receiver and let it play something; details of another item must not disturb it.
-  await page.getByTestId('cast-target-chip').click();
-  await page.getByTestId(`cast-target-checkbox-${A}`).check();
-  await page.getByTestId('cast-target-chip').click();
-  await expect(page.getByTestId('cast-popover')).toBeHidden();
+  await aimAt(page, A);
   const { startOn } = await import('./lib/receivers.mjs');
   await startOn(request, A, ITEM.HOSPITAL, { queue: [ITEM.KEEPY] });
   const before = await receiverState(request, A);
@@ -426,10 +419,7 @@ test('[FIND.8b/AC1][FIND.8b/AC4] a tap plays a playable item at the aim (with Un
   const vp = VIEWPORTS.laptop;
   const { context, page } = await newAppPage(browser, vp);
   await gotoMedia(page);
-  await page.getByTestId('cast-target-chip').click();
-  await page.getByTestId(`cast-target-checkbox-${A}`).check();
-  await page.getByTestId('cast-target-chip').click();
-  await expect(page.getByTestId('cast-popover')).toBeHidden();
+  await aimAt(page, A);
 
   // Search: a collection (a show) opens; nothing starts.
   const input = await openSearch(page, vp);

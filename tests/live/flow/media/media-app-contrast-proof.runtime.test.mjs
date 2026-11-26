@@ -70,7 +70,7 @@ for (const [label, vp] of Object.entries(VIEWPORTS)) {
     await check('home: first tile menu button', '[data-testid^="home-tile-"][data-testid$="-more"]');
     if (vp.width >= 600) {
       await check('dock: search field', '[data-testid="media-search-bar"] input');
-      await check('dock: destination control', '[data-testid="cast-target-chip"]');
+      await check('dock: destination chip (in the search box)', '[data-testid="search-destination-chip"]');
     } else {
       await check('dock: search launcher', '[data-testid="media-search-launcher"]');
     }

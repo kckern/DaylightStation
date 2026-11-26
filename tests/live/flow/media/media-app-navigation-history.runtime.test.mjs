@@ -3,6 +3,7 @@ import { markFirstUseDone } from './lib/firstUse.mjs';
 
 test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 import { revealBrowseRow } from '../../../_lib/mediaBrowseScroll.mjs';
+import { playResult } from './lib/search.mjs';
 
 test.setTimeout(120000);
 
@@ -31,12 +32,11 @@ async function startLocalPlaybackFromBrowse(page, surface) {
     await page.getByTestId('media-search-launcher').click();
     const input = page.getByTestId('search-mode-input');
     await input.fill('arrival');
-    await page.getByTestId('search-mode-result-plex:55854').click();
-    await page.getByTestId('search-mode-close').click();
+    await playResult(page, page.getByTestId('search-mode-result-plex:55854'));
   } else {
     const input = page.getByRole('textbox', { name: 'Search media…', exact: true });
     await input.fill('arrival');
-    await page.getByTestId('combobox-option-plex:55854').click();
+    await playResult(page, page.getByTestId('combobox-option-plex:55854'));
   }
   await expect(page.getByTestId('mini-player-open-nowplaying')).toBeVisible({ timeout: 30000 });
   await page.getByTestId('mini-player-open-nowplaying').click();

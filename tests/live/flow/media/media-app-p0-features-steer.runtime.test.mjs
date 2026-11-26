@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { markFirstUseDone } from './lib/firstUse.mjs';
+import { aimAt } from './lib/aim.mjs';
 
 // Steering a screen from anywhere (P0 features), against a REAL mounted virtual
 // receiver (a screen page) and the real Media app:
@@ -116,9 +117,7 @@ test('[RELY.5a/AC4] laptop: a skip the steered screen makes on its own is report
   // the way a person adds: aim at the screen, Add to queue.
   await sendFromHouseRow(page, 'hospital', HOSPITAL);
   await expect.poll(async () => (await state(request))?.state, { timeout: 120000 }).toBe('playing');
-  await page.getByTestId('cast-target-chip').click();
-  await page.getByTestId(`cast-target-checkbox-${DEVICE}`).check();
-  await page.getByTestId('cast-target-chip').click();
+  await aimAt(page, DEVICE);
   const search = page.getByRole('textbox', { name: 'Search media…' });
   for (const [query, id] of [['faith', FAITH], ['keepy uppy', KEEPY_UPPY]]) {
     await search.fill(query);

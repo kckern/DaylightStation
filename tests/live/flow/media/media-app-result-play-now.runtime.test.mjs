@@ -1,5 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { markFirstUseDone } from './lib/firstUse.mjs';
+import { aimAt, aimHere } from './lib/aim.mjs';
+import { playResult } from './lib/search.mjs';
 
 test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 
@@ -59,18 +61,14 @@ function searchSurface(page, isPhone) {
 }
 
 // The destination is read and changed where it lives: the destination line inside the phone's
-// search surface, the header's "Playing on <name>" control everywhere else.
+// search surface, the search box's "▶ <name>" destination chip everywhere else.
 const destinationName = (page, isPhone) => (isPhone
   ? searchSurface(page, true).getByTestId('destination-line-name')
-  : page.getByTestId('destination-control-name'));
+  : page.getByTestId('search-destination-chip'));
 
 async function setDestination(page, isPhone, targetId) {
   if (!isPhone) {
-    await page.getByTestId('cast-target-chip').click();
-    const target = page.getByTestId(`cast-target-checkbox-${targetId ?? 'acceptance-media'}`);
-    if (targetId) await target.check(); else await target.uncheck();
-    await page.getByTestId('cast-target-chip').click();
-    await expect(page.getByTestId('cast-popover')).toBeHidden();
+    if (targetId) await aimAt(page, targetId); else await aimHere(page);
     return;
   }
   await searchSurface(page, isPhone).getByTestId('destination-line').click();
@@ -131,19 +129,14 @@ async function runResultPlayNowJourney({ context, page: sender }, chooseExplicit
     const response = await fetch('/api/v1/device/acceptance-media/receiver-ready');
     return response.ok && (await response.json()).ready;
   }), { timeout: 30000 }).toBe(true);
-  await expect(sender.getByTestId('cast-target-chip')).toBeVisible({ timeout: 30000 });
-  await sender.getByTestId('cast-target-chip').click();
-  await expect(sender.getByTestId('cast-target-checkbox-acceptance-media')).toBeVisible();
-  if (chooseExplicitFork) await sender.getByTestId('cast-mode-fork').check();
-  await sender.getByTestId('cast-target-checkbox-acceptance-media').check();
-  await sender.getByTestId('cast-target-chip').click();
-  await expect(sender.getByTestId('cast-popover')).toBeHidden();
+  await aimAt(sender, 'acceptance-media', { fork: chooseExplicitFork });
 
   const mediaSearch = sender.getByRole('textbox', { name: 'Search media…' });
   await mediaSearch.fill('arrival');
   const arrival = sender.getByTestId('combobox-option-plex:55854');
   await expect(arrival).toBeVisible({ timeout: 30000 });
-  await arrival.click();
+  // A row only opens the info view; PLAY plays.
+  await playResult(sender, arrival);
   await expect.poll(() => loads.length, { timeout: 10000 }).toBe(1);
   const native = receiver.locator('.video-player video');
   await expect(native).toBeVisible({ timeout: 60000 });
@@ -334,7 +327,7 @@ for (const [surface, viewport, isPhone] of surfaces) {
     await assertSearchIdentity(sender, input, isPhone, id);
 
     await setDestination(sender, isPhone, 'acceptance-media');
-    await expect(destinationName(sender, isPhone)).toHaveText(/^(Playing on )?Acceptance receiver/);
+    await expect(destinationName(sender, isPhone)).toHaveText(/^(Playing on |▶ )?Acceptance receiver/);
     await assertSearchIdentity(sender, input, isPhone, id);
     const remotePlayActions = await resultActionIdentity(sender, id);
     await assertSearchIdentity(sender, input, isPhone, id);
@@ -413,7 +406,7 @@ for (const [surface, viewport, isPhone] of surfaces) {
     await expect(sender.getByTestId(`result-more-${id}`)).toBeVisible({ timeout: 30000 });
     await assertSearchIdentity(sender, input, isPhone, id);
     await setDestination(sender, isPhone, null);
-    await expect(destinationName(sender, isPhone)).toHaveText(/^(Playing on )?(This device|this device)/);
+    await expect(destinationName(sender, isPhone)).toHaveText(/^(Playing on |▶ )?(This device|this device)/);
     await assertSearchIdentity(sender, input, isPhone, id);
     const localPlayActions = await resultActionIdentity(sender, id);
     await assertSearchIdentity(sender, input, isPhone, id);

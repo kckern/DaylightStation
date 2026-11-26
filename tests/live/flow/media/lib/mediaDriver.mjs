@@ -1,5 +1,6 @@
 // Ordinary-input helpers shared by the accessibility / persona journeys.
 import { expect } from '@playwright/test';
+import { aimHere } from './aim.mjs';
 
 export async function freshPage(page, path = '/media') {
   await page.addInitScript(() => {
@@ -49,17 +50,21 @@ export async function searchFor(page, text) {
   }
 }
 
-/** Search for Arrival and tap the movie to play it here; leaves the handle up. */
+/**
+ * Search for Arrival and play it here; leaves the handle up. Aims at This
+ * device first so PLAY reads "Play here". Selecting the row only opens the
+ * info view; PLAY starts it.
+ */
 export async function playArrivalHere(page) {
+  await aimHere(page);
   await searchFor(page, 'Arrival');
-  if (isPhone(page)) {
-    await page.getByTestId('search-mode-results').getByText('Arrival', { exact: true }).first().click();
-    await page.getByRole('button', { name: 'Close search' }).click();
-  } else {
-    const option = page.getByRole('option').filter({ hasText: 'Arrival' }).filter({ hasText: 'Movie' });
-    await expect(option).toHaveCount(1, { timeout: 15000 });
-    await option.click();
-    await page.keyboard.press('Escape');
-  }
+  const row = isPhone(page)
+    ? page.getByTestId('search-mode-results').getByText('Arrival', { exact: true }).first()
+    : page.getByRole('option').filter({ hasText: 'Arrival' }).filter({ hasText: 'Movie' });
+  if (!isPhone(page)) await expect(row).toHaveCount(1, { timeout: 15000 });
+  await row.click();
+  const play = page.getByTestId('detail-play-now');
+  await expect(play).toBeVisible({ timeout: 30000 });
+  await play.click();
   await expect(page.getByTestId('mini-player-open-nowplaying')).toContainText('Arrival', { timeout: 30000 });
 }

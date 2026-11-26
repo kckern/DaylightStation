@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { playResultHere } from './lib/search.mjs';
 
 test.use({ viewport: { width: 1440, height: 900 }, trace: 'retain-on-failure', actionTimeout: 10000 });
 test.setTimeout(90000);
@@ -95,7 +96,7 @@ test.describe('Media M0 Move safety', () => {
     await page.goto('/media');
 
     const { option } = await findArrivalOption(page);
-    await option.click();
+    await playResultHere(page, option); // a row only opens the info view; PLAY plays
     await expect(page.getByTestId('mini-player-open-nowplaying')).toBeVisible({ timeout: 30000 });
     await page.getByTestId('mini-player-open-nowplaying').click();
     await expect(page.getByTestId('now-playing-view')).toBeVisible();
@@ -170,7 +171,7 @@ test.describe('Media M0 Move safety', () => {
 
       await page.goto('/media');
       const { option } = await findArrivalOption(page);
-      await option.click();
+      await playResultHere(page, option); // a row only opens the info view; PLAY plays
       await expect(page.getByTestId('mini-player-open-nowplaying')).toBeVisible({ timeout: 30000 });
       await page.getByTestId('mini-player-open-nowplaying').click();
 

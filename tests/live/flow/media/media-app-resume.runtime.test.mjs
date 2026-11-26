@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { markFirstUseDone } from './lib/firstUse.mjs';
 import { resetHouseholdAt } from './lib/household.mjs';
+import { aimAt } from './lib/aim.mjs';
 
 test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 test.beforeEach(async ({ request, baseURL }) => { await resetHouseholdAt(request, baseURL); });
@@ -63,11 +64,7 @@ test.describe('MediaApp — paused restore after reload', () => {
     await expect(page.getByTestId('queue-repeat')).toHaveText('Repeat all');
 
     // Aim at the virtual receiver (never commanded in this journey).
-    await page.getByTestId('cast-target-chip').click();
-    await page.getByTestId('cast-mode-fork').check();
-    await page.getByTestId('cast-target-checkbox-acceptance-media').check();
-    await page.getByTestId('cast-target-chip').click();
-    await expect(page.getByTestId('cast-popover')).toBeHidden();
+    await aimAt(page, 'acceptance-media', { fork: true });
     const aim = page.getByRole('button', { name: /^Playing on Acceptance receiver/ });
     await expect(aim.first()).toBeVisible();
 

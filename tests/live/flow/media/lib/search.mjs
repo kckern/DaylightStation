@@ -1,6 +1,7 @@
 // Search helpers shared by journeys: one vocabulary for the phone's full-screen
 // SearchMode and the tablet/laptop dock combobox. Ordinary input only.
 import { expect } from '@playwright/test';
+import { aimHere } from './aim.mjs';
 
 export const isPhone = (vp) => vp.width < 600;
 
@@ -64,4 +65,22 @@ export async function whereAmI(page) {
     // Browse: the collection I am inside (its breadcrumb); other areas have no single heading.
     heading: document.querySelector('.browse-crumb--current')?.textContent?.trim() ?? null,
   }));
+}
+
+/**
+ * Play a search result the way the app now has it: selecting a row (click,
+ * tap or Enter) only OPENS the info view with focus on PLAY; PLAY starts it.
+ * Never rely on a row click to start playback.
+ */
+export async function playResult(page, row) {
+  await row.click();
+  const play = page.getByTestId('detail-play-now');
+  await expect(play, 'selecting a result opens its info view (nothing plays yet)').toBeVisible({ timeout: 30000 });
+  await play.click();
+}
+
+/** playResult after choosing This device on purpose, for journeys that play locally (nothing else aimed). */
+export async function playResultHere(page, row) {
+  await aimHere(page);
+  await playResult(page, row);
 }

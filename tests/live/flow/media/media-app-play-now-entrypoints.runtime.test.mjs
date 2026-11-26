@@ -1,6 +1,8 @@
 import { test, expect } from '@playwright/test';
 import { revealBrowseRow } from '../../../_lib/mediaBrowseScroll.mjs';
 import { resetHouseholdAt } from './lib/household.mjs';
+import { aimAt } from './lib/aim.mjs';
+import { playResult } from './lib/search.mjs';
 test.beforeEach(async ({ request, baseURL }) => { await resetHouseholdAt(request, baseURL); });
 
 test.use({ viewport: { width: 1440, height: 900 }, trace: 'retain-on-failure' });
@@ -30,22 +32,17 @@ async function prepareQueuedArrival({ context, sender }) {
   // virtual receiver is aimed; the test never seeds app storage.
   const search = sender.getByRole('textbox', { name: 'Search media…' });
   await search.fill('arrival');
-  await sender.getByTestId('combobox-option-plex:55854').click();
+  await playResult(sender, sender.getByTestId('combobox-option-plex:55854'));
   const localVideo = sender.locator('.video-player video');
   await expect(localVideo).toBeVisible({ timeout: 60000 });
   await expect.poll(() => localVideo.evaluate(video => video.readyState >= 2 && video.currentTime > 0), { timeout: 30000 })
     .toBe(true);
 
-  await expect(sender.getByTestId('cast-target-chip')).toBeVisible({ timeout: 30000 });
-  await sender.getByTestId('cast-target-chip').click();
-  await expect(sender.getByTestId('cast-target-checkbox-acceptance-media')).toBeVisible();
-  await sender.getByTestId('cast-target-checkbox-acceptance-media').check();
-  await sender.getByTestId('cast-target-chip').click();
-  await expect(sender.getByTestId('cast-popover')).toBeHidden();
+  await aimAt(sender, 'acceptance-media');
 
   // Seed the actual receiver with Arrival plus the queued Disclosure tail.
   await search.fill('arrival');
-  await sender.getByTestId('combobox-option-plex:55854').click();
+  await playResult(sender, sender.getByTestId('combobox-option-plex:55854'));
   await expect.poll(() => loads.length, { timeout: 10000 }).toBe(1);
   const native = receiver.locator('.video-player video');
   await expect(native).toBeVisible({ timeout: 60000 });

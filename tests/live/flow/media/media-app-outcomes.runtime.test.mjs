@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { markFirstUseDone } from './lib/firstUse.mjs';
+import { aimAt } from './lib/aim.mjs';
 
 test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 
@@ -10,13 +11,7 @@ test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 test.use({ viewport: { width: 1440, height: 900 }, trace: 'retain-on-failure' });
 
 async function aimAtReceiver(sender) {
-  await expect(sender.getByTestId('cast-target-chip')).toBeVisible({ timeout: 30000 });
-  await sender.getByTestId('cast-target-chip').click();
-  await expect(sender.getByTestId('cast-target-checkbox-acceptance-media')).toBeVisible();
-  await sender.getByTestId('cast-mode-fork').check();
-  await sender.getByTestId('cast-target-checkbox-acceptance-media').check();
-  await sender.getByTestId('cast-target-chip').click();
-  await expect(sender.getByTestId('cast-popover')).toBeHidden();
+  await aimAt(sender, 'acceptance-media', { fork: true });
 }
 
 async function receiverReady(sender) {

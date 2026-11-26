@@ -6,7 +6,7 @@ test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 test.use({ viewport: { width: 390, height: 844 }, trace: 'retain-on-failure', actionTimeout: 10000 });
 test.setTimeout(90000);
 
-test('[PLACE.2a/AC2][PLACE.2a/AC3][PLACE.2a/AC5] remembered aim expires after two idle hours, including reload', async ({ page }) => {
+test('[PLACE.2a/AC2][PLACE.2a/AC3][PLACE.2a/AC5] remembered aim is sticky: still there after two idle hours, including reload', async ({ page }) => {
   const commands = [];
   await page.route('**/api/v1/device/**', async route => {
     const request = route.request();
@@ -30,15 +30,16 @@ test('[PLACE.2a/AC2][PLACE.2a/AC3][PLACE.2a/AC5] remembered aim expires after tw
   await page.getByTestId('media-search-launcher').click();
   await expect(searchMode.getByTestId('destination-line-name')).toContainText('Acceptance receiver');
   await page.clock.fastForward(2 * 60 * 60 * 1000 + 1000);
-  await expect(searchMode.getByTestId('destination-line-name')).toHaveText(/This device/);
+  // Sticky: nothing expires the aim.
+  await expect(searchMode.getByTestId('destination-line-name')).toContainText('Acceptance receiver');
   await page.reload();
   await expect(page.getByTestId('media-search-launcher')).toBeVisible({ timeout: 30000 });
   await page.getByTestId('media-search-launcher').click();
-  await expect(page.getByTestId('search-mode').getByTestId('destination-line-name')).toHaveText(/This device/);
-  expect(commands, 'Aim expiry must not issue playback commands').toEqual([]);
+  await expect(page.getByTestId('search-mode').getByTestId('destination-line-name')).toContainText('Acceptance receiver');
+  expect(commands, 'A long-idle aim must not issue playback commands').toEqual([]);
 });
 
-test('[PLACE.2a/AC5] a closed app restores a remote aim before two idle hours and starts locally after two', async ({ context, page }) => {
+test('[PLACE.2a/AC5] a closed app restores a remote aim, and still does after more than two idle hours (sticky)', async ({ context, page }) => {
   const startedAt = new Date('2026-09-19T12:00:00.000Z');
   const beforeExpiryAt = new Date(startedAt.getTime() + (2 * 60 * 60 * 1000) - 1);
   const receiverTargetId = 'acceptance-media';
@@ -97,11 +98,11 @@ test('[PLACE.2a/AC5] a closed app restores a remote aim before two idle hours an
   await afterExpiry.goto('/media');
   await expect(afterExpiry.getByTestId('media-search-launcher')).toBeVisible({ timeout: 30000 });
   await afterExpiry.getByTestId('media-search-launcher').click();
-  await expect(afterExpiry.getByTestId('search-mode').getByTestId('destination-line-name')).toHaveText(/This device/);
-  // The provider expires persisted aims during initialization, while its
-  // effect writes the cleared state after mount. Read storage only as evidence
-  // after the ordinary UI has established the user-visible contract.
+  await expect(afterExpiry.getByTestId('search-mode').getByTestId('destination-line-name')).toContainText('Acceptance receiver');
+  // Nothing expires a persisted aim. Read storage only as evidence after the
+  // ordinary UI has established the user-visible contract: still the screen.
   const afterExpiryAfterOpen = await readClockAndAim(afterExpiry);
+  expect(afterExpiryAfterOpen.aim?.targetIds).toEqual([receiverTargetId]);
   expect(commands, 'Aim persistence must not issue playback commands').toEqual([]);
   await test.info().attach('ac5-clock-evidence.json', {
     body: JSON.stringify({ beforeClose, beforeExpiryFirstLayout, afterKnownRenewal, afterExpiryAfterOpen }),

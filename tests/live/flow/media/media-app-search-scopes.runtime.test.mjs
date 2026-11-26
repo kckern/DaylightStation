@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { markFirstUseDone } from './lib/firstUse.mjs';
+import { aimAt, aimHere } from './lib/aim.mjs';
 
 test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 
@@ -96,11 +97,8 @@ const destinationName = (page, isPhone) => (isPhone
 
 async function setDestination(page, isPhone, targetId) {
   if (!isPhone) {
-    await page.getByTestId('cast-target-chip').click();
-    const target = page.getByTestId(`cast-target-checkbox-${targetId ?? 'acceptance-media'}`);
-    if (targetId) await target.check(); else await target.uncheck();
-    await page.getByTestId('cast-target-chip').click();
-    await expect(page.getByTestId('cast-popover')).toBeHidden();
+    // The search box chip: cycle to the screen, or to This device.
+    if (targetId) await aimAt(page, targetId); else await aimHere(page);
     return;
   }
   await searchSurface(page, isPhone).getByTestId('destination-line').click();
@@ -179,7 +177,7 @@ for (const [surface, viewport, isPhone] of surfaces) {
     await expect(destinationName(page, isPhone)).toHaveText(/^(▶ )?(This device|this device)/);
 
     await setDestination(page, isPhone, 'acceptance-media');
-    await expect(destinationName(page, isPhone)).toHaveText(/^(Playing on )?Acceptance receiver/);
+    await expect(destinationName(page, isPhone)).toHaveText(/^(▶ |Playing on )?Acceptance receiver/);
     expect({
       query: await input.inputValue(),
       scope: await scopeChip(page, isPhone, selectable.key).getAttribute('aria-pressed'),

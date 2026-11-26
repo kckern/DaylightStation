@@ -4,6 +4,7 @@ import { markFirstUseDone } from './lib/firstUse.mjs';
 test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 import { revealBrowseRow } from '../../../_lib/mediaBrowseScroll.mjs';
 import { resetHouseholdAt } from './lib/household.mjs';
+import { aimAt, aimHere } from './lib/aim.mjs';
 test.beforeEach(async ({ request, baseURL }) => { await resetHouseholdAt(request, baseURL); });
 
 // FIND.1b's result-row More → Play Now journey already proves Search locally
@@ -102,10 +103,7 @@ async function setReceiverAim(page, phone) {
     await expect(searchSurface.getByTestId('destination-line-name')).toHaveText(/^Playing on Acceptance receiver/);
     return;
   }
-  await page.getByTestId('cast-target-chip').click();
-  await page.getByTestId('cast-target-checkbox-acceptance-media').check();
-  await page.getByTestId('cast-target-chip').click();
-  await expect(page.getByTestId('cast-popover')).toBeHidden();
+  await aimAt(page, 'acceptance-media');
 }
 async function setLocalAim(page, phone) {
   if (phone) {
@@ -118,10 +116,7 @@ async function setLocalAim(page, phone) {
     await expect(searchSurface.getByTestId('destination-line-name')).toHaveText(/^Playing on This device/);
     return closeSearch(page, true);
   }
-  await page.getByTestId('cast-target-chip').click();
-  await page.getByTestId('cast-target-checkbox-acceptance-media').uncheck();
-  await page.getByTestId('cast-target-chip').click();
-  await expect(page.getByTestId('cast-popover')).toBeHidden();
+  await aimHere(page);
 }
 
 async function prepare({ context, sender, phone }) {

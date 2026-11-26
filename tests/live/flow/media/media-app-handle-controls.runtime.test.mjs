@@ -3,6 +3,8 @@ import { test, expect } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { aimAt } from './lib/aim.mjs';
+import { playResult } from './lib/search.mjs';
 
 // Batch B — the handle and the one controls surface, against REAL mounted
 // screen pages served by `tests/_lib/media-redesign-server.mjs` (BASE_URL):
@@ -249,14 +251,10 @@ test('PLAY.10a/AC2 — with Add only on, Play from this device is added and says
   const page = await context.newPage();
   await gotoMedia(page);
   // Aim at the receiver with the ordinary chip, then Play a search result.
-  await expect(page.getByTestId('cast-target-chip')).toBeVisible({ timeout: 30000 });
-  await page.getByTestId('cast-target-chip').click();
-  await page.getByTestId('cast-mode-fork').check();
-  await page.getByTestId(`cast-target-checkbox-${A}`).check();
-  await page.getByTestId('cast-target-chip').click();
+  await aimAt(page, A, { fork: true });
   const search = page.getByRole('textbox', { name: 'Search media…' });
   await search.fill('Keepy Uppy');
-  await page.getByTestId(`combobox-option-${EP_KEEPY}`).click();
+  await playResult(page, page.getByTestId(`combobox-option-${EP_KEEPY}`));
   const tray = page.getByTestId('dispatch-tray');
   await expect(tray).toContainText(`Added Keepy Uppy to ${A_NAME} (Add only is on)`, { timeout: 60000 });
   await expect(tray).toContainText(/2nd in line/);
@@ -312,7 +310,7 @@ test('STEER.1b/AC7 — Add to this queue opens the one search pointed at that sc
     await searchMode.getByTestId('search-mode-input').fill('Keepy Uppy');
     await expect(searchMode.getByTestId(`search-mode-result-${EP_KEEPY}`)).toBeVisible({ timeout: 30000 });
     await shot(page, `add-to-this-queue-${label}`);
-    await searchMode.getByTestId(`search-mode-result-${EP_KEEPY}`).click();
+    await searchMode.getByTestId(`search-mode-result-${EP_KEEPY}`).click(); // add-to-queue mode: a tap adds (no info view)
     await expect(searchMode).toBeHidden({ timeout: 10000 });
     await expect(page.getByTestId('peek-panel')).toBeVisible();
     await expect(page.getByTestId('dispatch-tray')).toContainText(`Added Keepy Uppy to ${A_NAME}`, { timeout: 60000 });
@@ -407,7 +405,7 @@ test('PLACE.4a — several screens: labelled, aim names both, same-room drift wa
 
   // Play: one record per screen, both start (PLACE.4a/AC3–AC4).
   await searchMode.getByTestId('search-mode-input').fill('Disclosure Day');
-  await searchMode.getByTestId(`search-mode-result-${DISCLOSURE}`).click();
+  await playResult(page, searchMode.getByTestId(`search-mode-result-${DISCLOSURE}`));
   const tray = page.getByTestId('dispatch-tray');
   await expect(tray).toContainText(`Playing on ${A_NAME}`, { timeout: 90000 });
   await expect(tray).toContainText(`Playing on ${B_NAME}`, { timeout: 90000 });

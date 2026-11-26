@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { playResultHere } from './lib/search.mjs';
 
 // Explicit operational probe, not a short movie seek or full story verdict.
 test.use({ viewport: { width: 1440, height: 900 }, trace: 'on', actionTimeout: 10000 });
@@ -54,7 +55,7 @@ test('verified 60fps source sustains virtual playback under the selected branch 
     await expect(result).toHaveCount(1, { timeout: 15000 });
     // Verify exact catalog identity before issuing the ordinary Play tap.
     await expect(result.locator('[data-testid="result-more-plex:675677"]')).toHaveCount(1);
-    await result.click();
+    await playResultHere(page, result); // a row only opens the info view; PLAY plays
     await page.getByTestId('mini-player-open-nowplaying').click();
     const video = page.getByTestId('now-playing-host').locator('video');
     await expect(video).toHaveCount(1, { timeout: 30000 });

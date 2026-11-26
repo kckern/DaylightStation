@@ -1,5 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { markFirstUseDone } from './lib/firstUse.mjs';
+import { aimAt } from './lib/aim.mjs';
+import { playResultHere } from './lib/search.mjs';
 
 test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 
@@ -45,16 +47,13 @@ async function startArrival(context, sender, phone) {
     input = searchMode.getByTestId('search-mode-input');
     result = searchMode.getByTestId('search-mode-result-plex:55854');
   } else {
-    await sender.getByTestId('cast-target-chip').click();
-    await sender.getByTestId('cast-mode-fork').check();
-    await sender.getByTestId('cast-target-checkbox-acceptance-media').check();
-    await sender.getByTestId('cast-target-chip').click();
+    await aimAt(sender, 'acceptance-media', { fork: true });
     input = sender.getByRole('textbox', { name: 'Search media…' });
     result = sender.getByTestId('combobox-option-plex:55854');
   }
   await input.fill('arrival');
   await expect(result).toBeVisible({ timeout: 30000 });
-  await result.click();
+  await playResultHere(sender, result); // a row only opens the info view; PLAY plays
   const native = receiver.locator('.video-player video');
   await expect(native).toHaveCount(1);
   await expect.poll(() => native.evaluate(element => element.readyState >= 2 && !element.paused && element.currentTime > 0),

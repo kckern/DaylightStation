@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { getAppPort } from '../../../_lib/configHelper.mjs';
+import { playResultHere } from './lib/search.mjs';
 
 // Player features (P2) against a REAL mounted screen page and the real Media
 // app, run on `tests/_lib/media-redesign-server.mjs` (BASE_URL): the one
@@ -424,7 +425,7 @@ async function addMusicBehind(sender) {
   await picker.getByRole('textbox', { name: 'Search music…' }).fill('Faith');
   const option = sender.getByTestId(`combobox-option-${FAITH}`);
   await expect(option).toBeVisible({ timeout: 30000 });
-  await option.click();
+  await playResultHere(sender, option); // a row only opens the info view; PLAY plays
 }
 
 test.describe('Music behind a slideshow (PLAY.9a)', () => {

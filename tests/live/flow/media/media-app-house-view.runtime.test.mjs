@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { HOUSE_FIXTURE_TITLE } from '../../../_lib/media-house-fixture.mjs';
+import { playResult } from './lib/search.mjs';
 
 // House view, naming, screen admin and routine history (Media P1/P2 batch C)
 // against a REAL mounted virtual receiver and the REAL house router/services.
@@ -164,8 +165,7 @@ test('STEER.11a on the handle: Pause all / Resume all reaches this device and th
     // And something playing here, so the handle is up.
     await phone.page.getByTestId('media-search-launcher').click();
     await phone.page.getByTestId('search-mode-input').fill(HOUSE_FIXTURE_TITLE.query);
-    await phone.page.getByTestId(`search-mode-result-${HOUSE_FIXTURE_TITLE.id}`).click();
-    await phone.page.getByTestId('search-mode-close').click();
+    await playResult(phone.page, phone.page.getByTestId(`search-mode-result-${HOUSE_FIXTURE_TITLE.id}`));
     const native = phone.page.locator('.video-player video');
     await expect.poll(() => native.evaluate(v => !v.paused && v.currentTime > 0).catch(() => false), { timeout: 90000 }).toBe(true);
     const menu = phone.page.getByTestId('mini-house-menu');

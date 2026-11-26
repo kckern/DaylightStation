@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { aimAt } from './lib/aim.mjs';
 
 // Requires `media-redesign-server.mjs`: its local EventBus/device composition
 // is the only permitted receiver. This test has no route interception and no
@@ -19,13 +20,7 @@ test('ordinary aimed Play then Queue reaches the virtual screen receiver and tru
     const response = await fetch('/api/v1/device/acceptance-media/receiver-ready');
     return response.ok && (await response.json()).ready;
   }), { timeout: 30000 }).toBe(true);
-  await expect(sender.getByTestId('cast-target-chip')).toBeVisible({ timeout: 30000 });
-  await sender.getByTestId('cast-target-chip').click();
-  await expect(sender.getByTestId('cast-target-checkbox-acceptance-media')).toBeVisible();
-  await sender.getByTestId('cast-mode-fork').check();
-  await sender.getByTestId('cast-target-checkbox-acceptance-media').check();
-  await sender.getByTestId('cast-target-chip').click();
-  await expect(sender.getByTestId('cast-popover')).toBeHidden();
+  await aimAt(sender, 'acceptance-media', { fork: true });
 
   const mediaSearch = sender.getByRole('textbox', { name: 'Search media…' });
   await mediaSearch.fill('arrival');

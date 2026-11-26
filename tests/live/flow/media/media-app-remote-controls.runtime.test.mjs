@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { markFirstUseDone } from './lib/firstUse.mjs';
+import { aimAt, aimHere, aimLabel } from './lib/aim.mjs';
 
 test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 
@@ -109,13 +110,7 @@ async function startArrivalJourney(context, sender, {
     searchInput = sender.getByTestId('search-mode-input');
     result = sender.getByTestId(`search-mode-result-${media.contentId}`);
   } else {
-    await expect(sender.getByTestId('cast-target-chip')).toBeVisible({ timeout: 30000 });
-    await sender.getByTestId('cast-target-chip').click();
-    await expect(sender.getByTestId('cast-target-checkbox-acceptance-media')).toBeVisible();
-    await sender.getByTestId('cast-mode-fork').check();
-    await sender.getByTestId('cast-target-checkbox-acceptance-media').check();
-    await sender.getByTestId('cast-target-chip').click();
-    await expect(sender.getByTestId('cast-popover')).toBeHidden();
+    await aimAt(sender, 'acceptance-media', { fork: true });
     searchInput = sender.getByRole('textbox', { name: 'Search media…' });
     result = sender.getByTestId(`combobox-option-${media.contentId}`);
   }
@@ -301,13 +296,9 @@ async function runSteerConfirmationJourney(context, sender, {
       await expect(searchMode.getByTestId('destination-line-name')).toHaveText(/^Playing on This device/);
       return;
     }
-    await sender.getByTestId('cast-target-chip').click();
-    const acceptanceTarget = sender.getByTestId('cast-target-checkbox-acceptance-media');
-    await expect(acceptanceTarget).toBeChecked();
-    await acceptanceTarget.uncheck();
-    await expect(acceptanceTarget).not.toBeChecked();
-    await sender.getByTestId('cast-target-chip').click();
-    await expect(sender.getByTestId('cast-popover')).toBeHidden();
+    expect(await aimLabel(sender)).toBe('Acceptance receiver');
+    await aimHere(sender);
+    expect(await aimLabel(sender)).toBe('This device');
   };
   const { receiver, native } = await startArrivalJourney(context, sender, {
     mobile,

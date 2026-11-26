@@ -1,5 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { markFirstUseDone } from './lib/firstUse.mjs';
+import { playResultHere, playResult } from './lib/search.mjs';
+import { aimHere } from './lib/aim.mjs';
 
 test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 
@@ -103,6 +105,7 @@ async function playMovie(page) {
   page.on('response', observeMint);
   await test.step('Find and start the movie with ordinary user input', async () => {
     if (device === 'phone') {
+      await aimHere(page);
       await expect(page.getByTestId('media-search-launcher')).toBeVisible({ timeout: 30000 });
       await page.getByTestId('media-search-launcher').click();
       const search = page.getByRole('dialog', { name: 'Search media', exact: true });
@@ -110,9 +113,8 @@ async function playMovie(page) {
       await search.getByRole('button', { name: 'Video', exact: true }).click();
       const result = search.getByTestId('search-mode-results').getByText(title, { exact: true });
       await expect(result).toHaveCount(1, { timeout: 15000 });
-      await result.click();
-      await expect(search).toBeVisible();
-      await page.getByTestId('search-mode-close').click();
+      // A row opens the info view (leaving the search); PLAY plays.
+      await playResult(page, result);
       await page.getByTestId('mini-player-open-nowplaying').click();
       return;
     }
@@ -125,7 +127,7 @@ async function playMovie(page) {
     // matching result normally; the actual video checks below remain required.
     const result = page.getByRole('option').filter({ hasText: title }).first();
     await expect(result).toBeVisible({ timeout: 15000 });
-    await result.click();
+    await playResultHere(page, result); // a row only opens the info view; PLAY plays
     await page.getByTestId('mini-player-open-nowplaying').click();
   });
   const video = page.getByTestId('now-playing-host').locator('video');
@@ -356,20 +358,20 @@ test('[STEER.2a/AC3] expanded audio keeps its actual node while showing artwork 
   });
   await page.goto('/media');
   if (device === 'phone') {
+    await aimHere(page);
     await page.getByTestId('media-search-launcher').click();
     const search = page.getByRole('dialog', { name: 'Search media', exact: true });
     await search.getByRole('searchbox', { name: 'Search media', exact: true }).fill(audioTitle);
     const result = search.getByTestId(`search-mode-result-${audioId}`);
     await expect(result).toBeVisible({ timeout: 15000 });
-    await result.click();
-    await page.getByTestId('search-mode-close').click();
+    await playResult(page, result);
   } else {
     const search = page.getByRole('textbox', { name: 'Search media…' });
     await expect(search).toBeVisible({ timeout: 30000 });
     await search.fill(audioTitle);
     const result = page.getByRole('option').filter({ has: page.getByTestId(`result-more-${audioId}`) });
     await expect(result).toHaveCount(1, { timeout: 15000 });
-    await result.click();
+    await playResultHere(page, result); // a row only opens the info view; PLAY plays
   }
   await page.getByTestId('mini-player-open-nowplaying').click();
 
@@ -495,7 +497,7 @@ test('[PLAY.1a] selecting another title does not restart the previously paused m
   // Actual new video playback below is required, not merely title selection.
   const second = page.getByRole('option').filter({ hasText: secondTitle }).first();
   await expect(second).toBeVisible({ timeout: 15000 });
-  await second.click();
+  await playResultHere(page, second); // a row only opens the info view; PLAY plays
   const nextVideo = page.getByTestId('now-playing-host').locator('video');
   await expect.poll(() => nextVideo.evaluate((el, priorSource) => el.currentSrc !== priorSource
     && !el.paused && el.readyState >= 2 && el.currentTime > 0, oldSource), { timeout: 30000 }).toBe(true);

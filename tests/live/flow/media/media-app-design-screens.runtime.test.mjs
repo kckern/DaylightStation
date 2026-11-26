@@ -38,13 +38,12 @@ test.describe('MediaApp — design screenshots', () => {
     await snap(page, '03-result-actions');
     await page.keyboard.press('Escape');
 
-    // 04 destination picker open — the header "Playing on" control.
+    // 04 destination chip — the search box's "▶ <where>" chip, one click along its cycle
+    // (the header "Playing on" control is the phone's).
     await page.keyboard.press('Escape');
-    await page.getByTestId('cast-target-chip').click();
-    await page.waitForSelector('[data-testid="cast-popover"]');
+    await page.getByTestId('search-destination-chip').click();
     await page.waitForTimeout(200);
-    await snap(page, '04-cast-picker-open');
-    await page.keyboard.press('Escape');
+    await snap(page, '04-destination-chip');
 
     // 05 search empty state — stub SSE to return instant empty complete so Immich
     // results don't prevent the empty state from appearing.

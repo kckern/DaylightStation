@@ -6,7 +6,8 @@ import {
   A, A_NAME, ITEM, VIEWPORTS, call, receiverState, openReceiver, startOn, stopReceiver, resetControls,
   newAppPage, gotoMedia, warmMedia, openRemote,
 } from './lib/receivers.mjs';
-import { openSearch, resultRow, closeSearch } from './lib/search.mjs';
+import { openSearch, resultRow, closeSearch, playResult } from './lib/search.mjs';
+import { aimAt, aimHere } from './lib/aim.mjs';
 
 // PLACE 6/7/8 — moving playback between this device and a screen, and the
 // aim label that says what the next tap will do. Real mounted receiver; a
@@ -20,13 +21,15 @@ test.beforeEach(async ({ request, baseURL }) => { await resetHouseholdAt(request
 const vp = VIEWPORTS.laptop;
 const rowWith = (page, text) => page.locator('[data-testid^="dispatch-row-"]').filter({ hasText: text });
 
-async function playHere(page, id, text) {
-  const input = await openSearch(page, vp);
+async function playHere(page, id, text, viewport = vp) {
+  // A row only opens the info view and nothing is aimed on a fresh device: choose This
+  // device, then PLAY from the info view.
+  await aimHere(page);
+  const input = await openSearch(page, viewport);
   await input.fill('');
   await input.fill(text);
-  await expect(resultRow(page, vp, id)).toBeVisible({ timeout: 40000 });
-  await resultRow(page, vp, id).click();
-  await closeSearch(page, vp);
+  await expect(resultRow(page, viewport, id)).toBeVisible({ timeout: 40000 });
+  await playResult(page, resultRow(page, viewport, id));
   await expect(page.getByTestId('mini-player-open-nowplaying')).toContainText(text, { timeout: 40000 });
 }
 
@@ -38,13 +41,6 @@ async function addHere(page, id, text) {
   await page.getByTestId(`result-more-${id}`).click();
   await page.getByRole('menuitem', { name: 'Add to Queue', exact: true }).click();
   await closeSearch(page, vp);
-}
-
-async function aimAt(page, deviceId) {
-  await page.getByTestId('cast-target-chip').click();
-  await page.getByTestId(`cast-target-checkbox-${deviceId}`).check();
-  await page.getByTestId('cast-target-chip').click();
-  await expect(page.getByTestId('cast-popover')).toBeHidden();
 }
 
 test('[PLACE.7a/AC2] Move to this device from another screen\'s controls: this device starts the same item at the same moment with the same queue, the other screen stops, and a confirmation says it moved', async ({ browser, request }) => {
@@ -175,9 +171,12 @@ test('[PLACE.8a/AC3][PLACE.6a/AC4] hand-off from Now Playing with "Move playback
 
 test('[PLACE.6a/AC1][PLACE.6a/AC3] while this device plays and the aim is another screen, the aim label says what the next tap will do and I can change it there; my usual choice is remembered and shown before I confirm', async ({ browser, request }) => {
   const receiver = await openReceiver(browser, request, A);
-  const { context, page } = await newAppPage(browser, vp);
+  // The move/keep-playing mode is chosen in the phone header's destination control (the
+  // desktop search chip has no mode switch), so this journey runs at phone width.
+  const phoneVp = VIEWPORTS.phone;
+  const { context, page } = await newAppPage(browser, phoneVp);
   await gotoMedia(page);
-  await playHere(page, ITEM.FAITH, 'Faith');
+  await playHere(page, ITEM.FAITH, 'Faith', phoneVp);
   await aimAt(page, A);
   // Usual choice (move): said before any tap.
   const behavior = page.getByTestId('aim-behavior').first();

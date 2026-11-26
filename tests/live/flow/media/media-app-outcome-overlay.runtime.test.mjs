@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { markFirstUseDone } from './lib/firstUse.mjs';
+import { playArrivalHere } from './lib/mediaDriver.mjs';
 
 // Owner rule (PR-6 / RELY.1a): an outcome notice never takes page space or
 // moves the page, and never covers the mini player's controls. Measured with
@@ -30,21 +31,8 @@ for (const [size, viewport] of SIZES) {
       // phone sits over the notice's Undo; this journey is about the notice, not naming.
       await markFirstUseDone(page);
       await page.goto('/media');
-      if (size === 'phone') {
-        await expect(page.getByTestId('media-search-launcher')).toBeVisible({ timeout: 30000 });
-        await page.getByTestId('media-search-launcher').click();
-        await page.getByRole('searchbox', { name: 'Search media', exact: true }).fill('Arrival');
-        await page.getByTestId('search-mode-results').getByText('Arrival', { exact: true }).first().click();
-        await page.getByRole('button', { name: 'Close search' }).click();
-      } else {
-        const search = page.getByRole('textbox', { name: 'Search media…' });
-        await expect(search).toBeVisible({ timeout: 30000 });
-        await search.fill('Arrival');
-        const option = page.getByRole('option').filter({ hasText: 'Arrival' }).filter({ hasText: 'Movie' });
-        await expect(option).toHaveCount(1, { timeout: 15000 });
-        await option.click();
-        await page.keyboard.press('Escape');
-      }
+      // Aims here, searches, opens the info view and presses PLAY (a row only opens it).
+      await playArrivalHere(page);
       await expect(page.getByTestId('mini-player-open-nowplaying')).toContainText('Arrival', { timeout: 30000 });
       // The play's own quiet confirmation is up, with its Undo.
       const row = page.locator('[data-testid^="dispatch-row-"]').filter({ hasText: 'Playing Arrival here' });

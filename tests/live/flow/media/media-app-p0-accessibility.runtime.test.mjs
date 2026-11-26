@@ -23,9 +23,10 @@ for (const [size, viewport] of SIZES) {
       const phone = isPhone(page);
       expect(await offscreenControls(page, [
         phone ? '[data-testid="media-search-launcher"]' : '[data-testid="media-search-bar"] input, input[placeholder="Search media…"]',
-        // The destination control is the header's always-present control; the house
-        // indicator appears only while something plays, so it is not a fixed fixture.
-        '[data-testid="cast-target-chip"]', '[data-testid="settings-menu-trigger"]',
+        // The destination control is always present: the phone header's control, or on
+        // wider screens the chip inside the search box. The house indicator appears only
+        // while something plays, so it is not a fixed fixture.
+        phone ? '[data-testid="cast-target-chip"]' : '[data-testid="search-destination-chip"]', '[data-testid="settings-menu-trigger"]',
         phone ? '[data-testid="app-tab-home"]' : '[data-testid="app-nav-home"]',
         phone ? '[data-testid="app-tab-fleet"]' : '[data-testid="app-nav-fleet"]',
       ])).toEqual([]);
@@ -339,8 +340,8 @@ for (const [size, viewport] of SIZES) {
       // Open Now Playing: its aim line is the arm's-length label.
       await page.getByTestId('mini-player-open-nowplaying').click();
       await expect(page.getByTestId('queue-panel')).toBeVisible({ timeout: 15000 });
-      // The phone repeats the aim inside Now Playing (thumb reach); wider screens read it from the header control.
-      const aimSel = isPhone(page) ? '[data-testid="destination-line"]' : '[data-testid="destination-control-name"]';
+      // The phone repeats the aim inside Now Playing (thumb reach); wider screens read it from the search box's destination chip.
+      const aimSel = isPhone(page) ? '[data-testid="destination-line"]' : '[data-testid="search-destination-chip"]';
       for (const sel of [aimSel, '[data-testid="queue-shuffle"]']) {
         const r = await contrastOf(page, sel);
         if (r.missing) { failures.push(`${sel} not found`); continue; }
@@ -348,7 +349,7 @@ for (const [size, viewport] of SIZES) {
       }
       const aim = isPhone(page)
         ? page.locator('.now-playing-view').getByTestId('destination-line')
-        : page.getByTestId('destination-control-name');
+        : page.getByTestId('search-destination-chip');
       await expect(aim).toHaveCount(1);
       const fontSize = await aim.evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
       if (fontSize < 14) failures.push(`aim label font-size ${fontSize}px`);

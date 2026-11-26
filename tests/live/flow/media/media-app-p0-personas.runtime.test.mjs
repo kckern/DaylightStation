@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { HOUSE_FIXTURE_TITLE } from '../../../_lib/media-house-fixture.mjs';
 import { smallTargets, noHorizontalScroll } from './lib/a11yProbe.mjs';
+import { aimAt, aimHere } from './lib/aim.mjs';
 
 // Task 8 — interaction budgets (NF-TAP) counted from real pointer input, and
 // the persona walkthroughs (taxonomy 4.2) on a phone and a laptop against the
@@ -58,6 +59,9 @@ async function newDevice(browser, viewport, name) {
     await page.goto('/media', { waitUntil: 'domcontentloaded' });
     if (await page.getByTestId('media-shell').waitFor({ state: 'visible', timeout: 40000 }).then(() => true, () => false)) break;
   }
+  // A row only opens the info view and the destination never expires: begin with This
+  // device chosen on purpose (sticky), so a ▶ plays here unless a journey aims elsewhere.
+  await aimHere(page);
   return { context, page, phone: viewport.width < 600 };
 }
 
@@ -77,6 +81,8 @@ async function typeQuery(d) {
     await expect(d.page.getByTestId(`combobox-option-${FIXTURE.id}`)).toBeVisible({ timeout: 30000 });
   }
 }
+// Selecting a row only opens its info view; the row's ▶ is the one-tap play.
+const playRow = (d) => d.page.getByTestId(`result-play-now-${FIXTURE.id}`).click();
 const resultRow = (d) => d.page.getByTestId(d.phone ? `search-mode-result-${FIXTURE.id}` : `combobox-option-${FIXTURE.id}`);
 const closeSearch = async (d) => { if (d.phone) await d.page.getByTestId('search-mode-close').click(); else await d.page.keyboard.press('Escape'); };
 const aimScope = (d) => d.page.getByTestId('search-mode');
@@ -90,17 +96,12 @@ const aimAtReceiver = async (d) => {
     await d.page.getByTestId('picker-submit').click();
     return;
   }
-  await d.page.getByTestId('cast-target-chip').click();
-  await d.page.getByTestId('cast-target-checkbox-acceptance-media').check();
-  await d.page.getByTestId('cast-target-chip').click();
-  await expect(d.page.getByTestId('cast-popover')).toBeHidden();
+  await aimAt(d.page, 'acceptance-media');
 };
 const aimBackHere = async (d) => {
   if (d.phone) { await aimScope(d).getByTestId('destination-line').click(); await d.page.getByTestId('picker-this-device').click(); return; }
-  await d.page.getByTestId('cast-target-chip').click();
-  await d.page.getByTestId('cast-target-checkbox-acceptance-media').uncheck();
+  await aimHere(d.page);
 };
-const closeAimPopover = async (d) => { if (!d.phone && await d.page.getByTestId('cast-popover').isVisible()) await d.page.getByTestId('cast-target-chip').click(); };
 const nativePlaying = (page) => page.locator('.video-player video').evaluate((v) => !v.paused && v.currentTime > 0).catch(() => false);
 
 for (const [size, viewport] of Object.entries(VIEWPORTS)) {
@@ -110,7 +111,7 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
       try {
         await typeQuery(d);
         await resetTaps(d.page);
-        await resultRow(d).click();
+        await playRow(d);
         expect(await taps(d.page), 'NF-TAP-01 typed name -> playing at the aim').toBe(1);
         if (d.phone) await closeSearch(d); else await d.page.keyboard.press('Escape');
         await expect.poll(() => nativePlaying(d.page), { timeout: 90000 }).toBe(true);
@@ -125,7 +126,7 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
           await expect(d.page.getByTestId('media-mini-player')).toHaveCount(0, { timeout: 20000 }).catch(() => {});
           // Play again so the queue exists for the next budget.
           await typeQuery(d);
-          await resultRow(d).click();
+          await playRow(d);
           if (d.phone) await closeSearch(d); else await d.page.keyboard.press('Escape');
           await expect.poll(() => nativePlaying(d.page), { timeout: 90000 }).toBe(true);
         }
@@ -208,8 +209,9 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
         await aimBackHere(d);
         const aimBackTaps = await taps(d.page);
         await expect(aimName(d)).toContainText(d.phone ? 'This device' : /this device|Tap budget/i, { timeout: 10000 });
-        expect(aimBackTaps, 'NF-TAP-06 aim back at this device').toBe(2);
-        await closeAimPopover(d);
+        // Phone: open the sheet + pick (2). Search box chip: one click per cycle step, This device is the last, so at most two from a screen.
+        if (d.phone) expect(aimBackTaps, 'NF-TAP-06 aim back at this device').toBe(2);
+        else expect(aimBackTaps, 'NF-TAP-06 aim back at this device').toBeLessThanOrEqual(2);
         if (d.phone) await closeSearch(d);
 
         // NF-TAP-08: something plays on the screen and here; Pause all from the handle.
@@ -271,7 +273,7 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
         await typeQuery(d);
         await shot(page, `seeker-results-${size}`);
         await usable(page, 'seeker results');
-        await resultRow(d).click();
+        await playRow(d);
         await closeSearch(d);
         await expect.poll(() => nativePlaying(page), { timeout: 90000 }).toBe(true);
         await shot(page, `seeker-playing-${size}`);
@@ -299,7 +301,7 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
         await expect(aimName(d)).toContainText('Acceptance receiver');
         if (!d.phone) await typeQuery(d);
         await shot(page, `sender-aimed-${size}`);
-        await resultRow(d).click();
+        await playRow(d);
         await expect.poll(async () => (await stateOf(request, DEVICE))?.state, { timeout: 120000 }).toMatch(/playing|loading|buffering/);
         await shot(page, `sender-sent-${size}`);
         await closeSearch(d);
@@ -308,7 +310,6 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
         if (d.phone) await typeQuery(d);
         await aimBackHere(d);
         await expect(aimName(d)).toContainText(d.phone ? 'This device' : /this device|Persona/i);
-        await closeAimPopover(d);
         if (d.phone) await closeSearch(d);
       });
 
@@ -348,8 +349,9 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
         await usable(page, 'fixer dialog');
         await page.getByTestId('confirm-ok').click();
         await expect(page.getByTestId('mini-player-open-nowplaying')).toHaveCount(0, { timeout: 30000 });
+        await aimHere(page);
         await typeQuery(d);
-        await resultRow(d).click();
+        await playRow(d);
         await closeSearch(d);
         const undo = page.getByTestId('item-action-undo');
         await expect(undo).toBeVisible({ timeout: 15000 });

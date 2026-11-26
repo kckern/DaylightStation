@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { playResult } from './lib/search.mjs';
 
 test.use({ trace: 'retain-on-failure' });
 
@@ -22,7 +23,7 @@ test('HOUSE.2b: two browser devices agree on the local player title and state', 
     await observer.clock.install({ time: new Date() });
     await observer.goto('/media', { waitUntil: 'domcontentloaded' });
     await input.fill('arrival');
-    await sender.getByTestId('combobox-option-plex:55854').click();
+    await playResult(sender, sender.getByTestId('combobox-option-plex:55854'));
 
     const native = sender.locator('.video-player video');
     await expect(native).toBeVisible({ timeout: 60000 });

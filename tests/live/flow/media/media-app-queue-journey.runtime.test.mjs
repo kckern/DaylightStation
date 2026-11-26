@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { markFirstUseDone } from './lib/firstUse.mjs';
 import { installFakeClock } from './lib/fakeClock.mjs';
+import { playResultHere } from './lib/search.mjs';
 
 test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 
@@ -85,7 +86,7 @@ test('[RELY.4a/AC1][RELY.4a/AC2] Undo restores the previous paused native positi
   await search.fill(title);
   const result = page.getByRole('option').filter({ hasText: title }).filter({ hasText: 'Movie' });
   await expect(result).toHaveCount(1, { timeout: 15000 });
-  await result.click();
+  await playResultHere(page, result); // a row only opens the info view; PLAY plays
   await page.getByTestId('mini-player-open-nowplaying').click();
   const video = page.getByTestId('now-playing-host').locator('video');
   await expect.poll(() => video.evaluate(el => !el.paused && el.readyState >= 2), { timeout: 90000 }).toBe(true);
@@ -125,7 +126,7 @@ test('[RELY.4a/AC1][RELY.4a/AC2] Undo restores the previous paused native positi
 
   await research(other);
   await expect(next).toHaveCount(1, { timeout: 15000 });
-  await next.click();
+  await playResultHere(page, next); // a row only opens the info view; PLAY plays
   await expect(page.getByTestId(priorVisit)).toHaveCount(0);
   await expect(page.getByTestId(tailVisit)).toBeVisible();
   // Undo is offered at tap time: do not wait out its window for a decoder.
@@ -219,7 +220,7 @@ test('[PLAY.6a/AC1][STEER.8a/AC2] add without interrupting, then jump to a same-
   await search.fill(title);
   const result = page.getByRole('option').filter({ hasText: title }).filter({ hasText: 'Movie' });
   await expect(result).toHaveCount(1, { timeout: 15000 });
-  await result.click();
+  await playResultHere(page, result); // a row only opens the info view; PLAY plays
   await page.getByTestId('mini-player-open-nowplaying').click();
   const video = page.getByTestId('now-playing-host').locator('video');
   await expect(video).toHaveCount(1, { timeout: 30000 });
@@ -264,7 +265,7 @@ test('[PLAY.6a/AC1][STEER.8a/AC2] add without interrupting, then jump to a same-
   await search.fill(nextTitle);
   const nextResult = page.getByRole('option').filter({ hasText: nextTitle }).filter({ hasText: 'Movie' });
   await expect(nextResult).toHaveCount(1, { timeout: 15000 });
-  await nextResult.click();
+  await playResultHere(page, nextResult); // a row only opens the info view; PLAY plays
   await expect.poll(() => video.evaluate((el, priorSource) => el.currentSrc !== priorSource
     && !el.paused && !el.seeking && el.readyState >= 2, restartedSource), {
     timeout: 30000, message: 'An ordinary different title must play after the same-title restart',
@@ -280,7 +281,7 @@ test('[PLAY.6a/AC2] Add keeps the actual playing video advancing without pause o
   await search.fill(title);
   const result = page.getByRole('option').filter({ hasText: title }).filter({ hasText: 'Movie' });
   await expect(result).toHaveCount(1, { timeout: 15000 });
-  await result.click();
+  await playResultHere(page, result); // a row only opens the info view; PLAY plays
   await page.getByTestId('mini-player-open-nowplaying').click();
   const video = page.getByTestId('now-playing-host').locator('video');
   await expect(video).toHaveCount(1, { timeout: 30000 });

@@ -1,5 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { markFirstUseDone } from './lib/firstUse.mjs';
+import { aimAt, aimLabel } from './lib/aim.mjs';
+import { playResult } from './lib/search.mjs';
 
 test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 
@@ -39,7 +41,7 @@ async function chooseAcceptanceTarget(page, surface) {
 }
 
 for (const [label, viewport, surface] of surfaces) {
-  test(`[PLACE.2a/AC1-3] ${label}: aim changes, follows navigation/reload, then expires after two idle hours`, async ({ page }) => {
+  test(`[PLACE.2a/AC1-3] ${label}: aim changes, follows navigation/reload, then stays sticky after two idle hours`, async ({ page }) => {
     await page.setViewportSize(viewport);
     await page.clock.install();
     const deviceCommands = [];
@@ -72,11 +74,8 @@ for (const [label, viewport, surface] of surfaces) {
       await expect(browseHeader.getByTestId('destination-line-name')).toContainText('Acceptance');
       await page.getByTestId('browse-crumb-home').click();
     } else {
-      // The dock chip is another live view of the same shared target state.
-      await page.getByTestId('cast-target-chip').click();
-      await expect(page.getByTestId('cast-target-checkbox-acceptance-media')).toBeChecked();
-      await page.keyboard.press('Escape');
-      await expect(page.getByTestId('cast-popover')).toBeHidden();
+      // The search box chip is another live view of the same shared target state.
+      await expect.poll(() => aimLabel(page)).toBe('Acceptance receiver');
       await page.getByTestId('browse-crumb-home').click();
     }
 
@@ -85,9 +84,7 @@ for (const [label, viewport, surface] of surfaces) {
       await expect(page.getByTestId('media-search-launcher')).toBeVisible({ timeout: 30000 });
       await openDestinationSurface(page, surface);
     } else {
-      await page.getByTestId('cast-target-chip').click();
-      await expect(page.getByTestId('cast-target-checkbox-acceptance-media')).toBeChecked();
-      await page.keyboard.press('Escape');
+      await expect.poll(() => aimLabel(page)).toBe('Acceptance receiver');
       await openDestinationSurface(page, surface);
     }
     const reopenedSurface = surface === 'phone'
@@ -96,26 +93,25 @@ for (const [label, viewport, surface] of surfaces) {
     await expect(reopenedSurface.getByTestId('destination-line-name')).toContainText('Acceptance');
 
     await page.clock.fastForward(2 * 60 * 60 * 1000 + 1000);
-    await expect(reopenedSurface.getByTestId('destination-line-name')).toHaveText(/This device/);
+    // Sticky: nothing expires the aim, two hours later it is still the screen.
+    await expect(reopenedSurface.getByTestId('destination-line-name')).toContainText('Acceptance');
     await page.reload();
     if (surface === 'phone') {
       await expect(page.getByTestId('media-search-launcher')).toBeVisible({ timeout: 30000 });
       await openDestinationSurface(page, surface);
     } else {
-      await page.getByTestId('cast-target-chip').click();
-      await expect(page.getByTestId('cast-target-checkbox-acceptance-media')).not.toBeChecked();
-      await page.keyboard.press('Escape');
+      await expect.poll(() => aimLabel(page)).toBe('Acceptance receiver');
       await openDestinationSurface(page, surface);
     }
-    const expiredSurface = surface === 'phone'
+    const stickySurface = surface === 'phone'
       ? page.getByTestId('search-mode')
       : page.getByTestId('browse-dispatch-header');
-    await expect(expiredSurface.getByTestId('destination-line-name')).toHaveText(/This device/);
-    expect(deviceCommands, 'Changing, persisting, and expiring aim must not issue device commands').toEqual([]);
+    await expect(stickySurface.getByTestId('destination-line-name')).toContainText('Acceptance');
+    expect(deviceCommands, 'Changing, persisting, and a long idle must not issue device commands').toEqual([]);
   });
 }
 
-test('[PLACE.2a/AC4] the two-hour clock stays suspended while matching sent playback is active', async ({ context, page: sender }) => {
+test('[PLACE.2a/AC4] the aim is sticky after two hours, with sent playback active or not', async ({ context, page: sender }) => {
   const receiver = await context.newPage();
   await sender.clock.install();
   await sender.goto('/media', { waitUntil: 'domcontentloaded' });
@@ -125,14 +121,12 @@ test('[PLACE.2a/AC4] the two-hour clock stays suspended while matching sent play
     return response.ok && (await response.json()).ready;
   }), { timeout: 30000 }).toBe(true);
 
-  await sender.getByTestId('cast-target-chip').click();
-  await sender.getByTestId('cast-mode-fork').check();
-  await sender.getByTestId('cast-target-checkbox-acceptance-media').check();
-  await sender.getByTestId('cast-target-chip').click();
+  await aimAt(sender, 'acceptance-media', { fork: true });
 
   const search = sender.getByRole('textbox', { name: 'Search media…' });
   await search.fill('arrival');
-  await sender.getByTestId('combobox-option-plex:55854').click();
+  // A row opens the info view; only PLAY plays.
+  await playResult(sender, sender.getByTestId('combobox-option-plex:55854'));
   const native = receiver.locator('.video-player video');
   await expect(native).toBeVisible({ timeout: 60000 });
   await expect.poll(() => native.evaluate(element => element.readyState >= 2
@@ -145,9 +139,6 @@ test('[PLACE.2a/AC4] the two-hour clock stays suspended while matching sent play
     now: Date.now(),
     aim: JSON.parse(localStorage.getItem('media-app.cast-target')),
   }));
-  await expect.poll(async () => Number.isFinite((await readAim()).aim?.exemptionStartedAt), {
-    timeout: 30000,
-  }).toBe(true);
   const before = await readAim();
   const receiverTime = await native.evaluate(element => element.currentTime);
 
@@ -158,10 +149,7 @@ test('[PLACE.2a/AC4] the two-hour clock stays suspended while matching sent play
   const after = await readAim();
   expect(after.now - before.now).toBeGreaterThanOrEqual(2 * 60 * 60 * 1000);
   expect(after.aim?.targetIds).toEqual(['acceptance-media']);
-  expect(after.aim?.exemptionStartedAt).toEqual(expect.any(Number));
-  await sender.getByTestId('cast-target-chip').click();
-  await expect(sender.getByTestId('cast-target-checkbox-acceptance-media')).toBeChecked();
-  await sender.getByTestId('cast-target-chip').click();
+  await expect.poll(() => aimLabel(sender), { timeout: 30000 }).toBe('Acceptance receiver');
   await test.info().attach('active-aim-clock-evidence.json', {
     body: JSON.stringify({ before, after, receiverTime }),
     contentType: 'application/json',

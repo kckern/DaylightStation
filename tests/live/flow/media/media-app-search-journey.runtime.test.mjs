@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { markFirstUseDone } from './lib/firstUse.mjs';
+import { aimHere } from './lib/aim.mjs';
 
 test.use({ viewport: { width: 390, height: 844 }, trace: 'retain-on-failure', actionTimeout: 10000 });
 test.setTimeout(90000);
@@ -16,10 +17,11 @@ test.afterEach(async ({ page }) => {
   if (await stop.isVisible()) await stop.click();
 });
 
-test('[FIND.1a/AC5] phone Play keeps search words and narrowing while actual media starts', async ({ page }) => {
+test('[FIND.1a/AC5] phone a row opens the info view (nothing plays) and only PLAY starts actual media', async ({ page }) => {
   const title = process.env.MEDIA_ACCEPTANCE_TITLE || 'Disclosure Day';
   await markFirstUseDone(page);
   await page.goto('/media');
+  await aimHere(page); // PLAY then reads "Play here"
   await expect(page.getByTestId('media-search-launcher')).toBeVisible({ timeout: 30000 });
   await page.getByTestId('media-search-launcher').click();
   const search = page.getByRole('dialog', { name: 'Search media', exact: true });
@@ -38,10 +40,11 @@ test('[FIND.1a/AC5] phone Play keeps search words and narrowing while actual med
   await expect(input).toHaveValue(title);
   await expect(search.getByRole('button', { name: 'Video', exact: true })).toHaveAttribute('aria-pressed', 'true');
 
+  // Selecting the row only opens its info view (nothing plays); PLAY plays.
   await result.click();
-  await expect(search, 'Play must leave search open so the next item can be chosen').toBeVisible();
-  await expect(input).toHaveValue(title);
-  await expect(search.getByRole('button', { name: 'Video', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('detail-play-now'), 'a row opens the info view with PLAY').toBeVisible({ timeout: 30000 });
+  await expect(page.locator('video'), 'selecting a result must not start playback').toHaveCount(0);
+  await page.getByTestId('detail-play-now').click();
   const video = page.locator('video');
   await expect(video).toHaveCount(1, { timeout: 30000 });
   await expect.poll(() => video.evaluate(el => !el.paused && el.readyState >= 2 && el.currentTime > 0), {

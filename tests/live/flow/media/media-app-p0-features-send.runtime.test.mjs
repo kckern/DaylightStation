@@ -4,6 +4,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { markFirstUseDone } from './lib/firstUse.mjs';
 import { searchFor, isPhone } from './lib/mediaDriver.mjs';
+import { aimAt } from './lib/aim.mjs';
+import { playResult } from './lib/search.mjs';
 
 // Sending something to another screen while this device plays (P0 features):
 //   PLACE.6a/AC2  item-level Play on… asks Move or Keep, pre-set to the remembered choice
@@ -164,12 +166,10 @@ test('[HOUSE.2a/AC2+AC4, PLACE.7a/AC1+AC2] the house row\'s Move here brings tha
     // The screen plays Hospital with Keepy Uppy queued behind it, built the way a person would:
     // aim at the screen, play one, add the next.
     await openMedia(sender, '/media');
-    await sender.getByTestId('cast-target-chip').click();
-    await sender.getByTestId(`cast-target-checkbox-${DEVICE}`).check();
-    await sender.getByTestId('cast-target-chip').click();
+    await aimAt(sender, DEVICE);
     const search = sender.getByRole('textbox', { name: 'Search media…' });
     await search.fill('hospital');
-    await sender.getByTestId(`combobox-option-${HOSPITAL}`).click();
+    await playResult(sender, sender.getByTestId(`combobox-option-${HOSPITAL}`));
     await expect.poll(async () => (await state(request))?.currentItem?.contentId, { timeout: 120000 }).toBe(HOSPITAL);
     await expect.poll(async () => (await state(request))?.state, { timeout: 120000 }).toBe('playing');
     await search.fill('keepy uppy');
