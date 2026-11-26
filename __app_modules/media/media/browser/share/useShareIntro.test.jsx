@@ -12,7 +12,7 @@ vi.mock('../../../../../frontend/src/lib/api.mjs', () => ({
 
 class FakeImage { set src(v) { this._src = v; setTimeout(() => this.onload?.(), 0); } get src() { return this._src; } }
 
-const { useShareIntro, shareJobIdOf } = await import('./useShareIntro.jsx');
+const { useShareIntro, shareJobIdOf, SHARE_FAILED_SHOW_MS } = await import('./useShareIntro.jsx');
 const job = (state, progress) => ({ status: 200, body: { id: 's000000000001', state, progress, provenance: { provider: 'example', logo: '/api/v1/provenance/logo/example', accent: null } } });
 
 describe('useShareIntro', () => {
@@ -39,5 +39,24 @@ describe('useShareIntro', () => {
     const { result } = renderHook(() => useShareIntro({ media: { assetId: 'share:s000000000001' } }));
     await waitFor(() => expect(result.current.status).toBe('ready'));
     expect(result.current.holdRequest).toBe(true);
+  });
+
+  it('lets go for a streaming share (the last fallback)', async () => {
+    answers.push(job('streaming', 1));
+    const { result } = renderHook(() => useShareIntro({ media: { assetId: 'share:s000000000001' } }));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(result.current.holdRequest).toBe(false);
+  });
+
+  it('abandons the play after showing a failed share', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      answers.push(job('failed', 0.2));
+      const { result } = renderHook(() => useShareIntro({ media: { assetId: 'share:s000000000001' } }));
+      await waitFor(() => expect(result.current.status).toBe('ready'));
+      expect(result.current.abandon).toBe(false);
+      await vi.advanceTimersByTimeAsync(SHARE_FAILED_SHOW_MS + 50);
+      await waitFor(() => expect(result.current.abandon).toBe(true));
+    } finally { vi.useRealTimers(); }
   });
 });

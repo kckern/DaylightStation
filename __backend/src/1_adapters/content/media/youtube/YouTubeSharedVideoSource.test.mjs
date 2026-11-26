@@ -30,17 +30,42 @@ describe('youtubeVideoIdFrom', () => {
 });
 
 describe('YouTubeSharedVideoSource', () => {
+  const chain = () => ({
+    fetch: vi.fn(async () => ({ kind: 'downloaded', title: 't', duration: 1, media: {} })),
+    stored: vi.fn(async () => ({ title: 'k', duration: 2, media: {} })),
+    cancel: vi.fn(async () => {}),
+  });
+
   it('recognises a link as the youtube provider and its id', () => {
-    const source = new YouTubeSharedVideoSource({ downloader: { downloadOne: vi.fn() } });
+    const source = new YouTubeSharedVideoSource({ fetcher: chain() });
     expect(source.recognize('https://youtu.be/dQw4w9WgXcQ')).toEqual({ provider: 'youtube', sourceId: 'dQw4w9WgXcQ' });
     expect(source.recognize('https://example.com/x')).toBeNull();
   });
 
   it('fetches from the watch URL rebuilt from the id, never the shared text', async () => {
-    const downloadOne = vi.fn(async () => ({ kind: 'downloaded', filePath: '/x.mp4', title: 't', duration: 1 }));
-    const source = new YouTubeSharedVideoSource({ downloader: { downloadOne } });
-    await source.fetch('dQw4w9WgXcQ', { outputPath: '/x.mp4' });
-    expect(downloadOne).toHaveBeenCalledWith('https://www.youtube.com/watch?v=dQw4w9WgXcQ', { outputPath: '/x.mp4' });
-    expect(await source.fetch('bad id!', {})).toEqual({ kind: 'failed', error: 'not a YouTube video id' });
+    const fetcher = chain();
+    const source = new YouTubeSharedVideoSource({ fetcher });
+    await source.fetch('dQw4w9WgXcQ', { name: 's000000000001' });
+    expect(fetcher.fetch).toHaveBeenCalledWith('https://www.youtube.com/watch?v=dQw4w9WgXcQ', expect.objectContaining({ name: 's000000000001', signal: expect.any(AbortSignal) }));
+    expect(await source.fetch('bad id!', {})).toMatchObject({ kind: 'failed' });
+  });
+
+  it('cancel aborts its running fetch and cancels in the chain', async () => {
+    const fetcher = chain();
+    let seen;
+    fetcher.fetch.mockImplementation(async (_u, { signal }) => { seen = signal; await new Promise((r) => setTimeout(r, 5)); return { kind: 'failed', reason: 'cancelled' }; });
+    const source = new YouTubeSharedVideoSource({ fetcher });
+    const pending = source.fetch('dQw4w9WgXcQ', { name: 's000000000001' });
+    await source.cancel('s000000000001');
+    await pending;
+    expect(seen.aborted).toBe(true);
+    expect(fetcher.cancel).toHaveBeenCalledWith('s000000000001');
+  });
+
+  it('names its provider for a stored video, and streams from youtube:<id> as the last fallback', async () => {
+    const source = new YouTubeSharedVideoSource({ fetcher: chain() });
+    expect(await source.stored('s000000000001')).toMatchObject({ provider: 'youtube', title: 'k' });
+    expect(source.streamContentId('dQw4w9WgXcQ')).toBe('youtube:dQw4w9WgXcQ');
+    expect(source.streamContentId('bad')).toBeNull();
   });
 });

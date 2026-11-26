@@ -57,6 +57,7 @@ vi.mock("../../../../../frontend/src/lib/api.mjs", () => ({
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import mediaLog from "../logging/mediaLog.js";
 import { DispatchTargetPicker } from "./DispatchTargetPicker.jsx";
+import { habitsStore } from "../habits/mediaHabits.js";
 
 // Wrap with a LocalSessionContext whose controller reports active local
 // playback — this is what makes useLocalPlaybackActive (and therefore the
@@ -360,7 +361,8 @@ describe('DispatchTargetPicker — several screens (PLACE.4a)', () => {
     expect(screen.queryByTestId('picker-drift-warning')).toBeNull();
     fireEvent.click(screen.getByTestId('picker-device-den-speaker'));
     expect(await screen.findByTestId('picker-drift-warning')).toHaveTextContent(
-      'Living Room TV and Den speaker are both in Living Room — they start together but can drift apart, and you may hear it.',
+      // Screens are listed by name (a stable order), so the warning names them that way.
+      'Den speaker and Living Room TV are both in Living Room — they start together but can drift apart, and you may hear it.',
     );
     expect(mediaLog.aimDriftWarned).toHaveBeenCalledWith(expect.objectContaining({ state: 'shown', rooms: ['Living Room'] }));
   });
@@ -382,5 +384,40 @@ describe('DispatchTargetPicker — several screens (PLACE.4a)', () => {
     expect(screen.getByTestId('picker-drift-warning')).toHaveTextContent('neighbouring rooms (Den and Living Room)');
     expect(screen.getByTestId('picker-device-den-speaker')).toHaveAttribute('aria-pressed', 'true');
     expect(DaylightAPI).not.toHaveBeenCalled();
+  });
+});
+
+describe('DispatchTargetPicker — only the screens that can take it, the usual one first', () => {
+  beforeEach(() => {
+    fleetDevices = [
+      { id: 'livingroom-tv', name: 'Living Room TV', type: 'shield-tv', content_control: { type: 'fully' } },
+      { id: 'speaker-red', name: 'Red Headset', type: 'speaker', fleet: true },
+      { id: 'garage-tv', name: 'Garage Gym TV', type: 'linux-pc', fleet: true },
+      { id: 'office-tv', name: 'Office Screen', type: 'linux-pc', content_control: { type: 'websocket' } },
+    ];
+  });
+
+  const film = { contentId: 'plex:775444', title: 'Sonic the Hedgehog', type: 'movie', format: 'video' };
+  const song = { contentId: 'plex:565457', title: 'Marble Zone', type: 'track', format: 'audio' };
+  const offered = () => screen.getAllByTestId(/^picker-device-[^s]/).map((el) => el.dataset.testid.replace('picker-device-', ''))
+    .filter((id) => !id.startsWith('status-'));
+
+  it('a film never lists a headset, and a display that takes no content is never listed', () => {
+    render(<DispatchTargetPicker source={{ play: film.contentId, title: film.title, itemAction: { kind: 'playNow', item: film } }} />);
+    expect(offered()).toEqual(['livingroom-tv', 'office-tv']);
+  });
+
+  it('a song lists the headsets too', () => {
+    render(<DispatchTargetPicker source={{ play: song.contentId, title: song.title, itemAction: { kind: 'playNow', item: song } }} />);
+    expect(screen.getByTestId('picker-device-speaker-red')).toBeInTheDocument();
+    expect(screen.queryByTestId('picker-device-garage-tv')).toBeNull();
+  });
+
+  it('lists the screen this browser last played films on first, then by name, and a pick teaches it', async () => {
+    habitsStore().recordScreen('video', ['office-tv']);
+    render(<DispatchTargetPicker source={{ play: film.contentId, title: film.title, itemAction: { kind: 'playNow', item: film } }} />);
+    expect(offered()).toEqual(['office-tv', 'livingroom-tv']);
+    fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
+    await waitFor(() => expect(habitsStore().screenFor('video')).toEqual(['livingroom-tv']));
   });
 });

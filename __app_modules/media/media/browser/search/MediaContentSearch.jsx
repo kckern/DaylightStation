@@ -23,7 +23,7 @@
 // behavior change) that light up ResultRowActions on the container ▶ and
 // leaf ⋯ respectively, wired to the exact same playContainerAsQueue /
 // applyResultRowVerb plumbing SearchMode uses.
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { ContentCombobox } from "../../../../../__capabilities/content-catalog/browser/picker.mjs";
 import { useSearchContext } from "./useSearchContext.js";
 import { ScopeChips } from "./ScopeChips.jsx";
@@ -33,11 +33,14 @@ import { useSessionController } from "../controller/useSessionController.js";
 import { useNav } from "../shell/NavProvider.jsx";
 import { collapseResultEditions } from "./collapseResultEditions.js";
 import { applyResultRowVerb } from "./resultRowVerbs.js";
+import { isContainer } from "../../../../../__capabilities/content-catalog/browser/combobox-state.mjs";
 import { useRowLabels } from "./useRowLabels.js";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import mediaLog from "../logging/mediaLog.js";
 import { ItemDestinationPicker } from "../actions/ItemDestinationPicker.jsx";
 import { useHouseholdResultActions } from "../household/useHouseholdResultActions.js";
+import { usePlayDestination } from "../habits/usePlayDestination.js";
+import { rankByHabits } from "../habits/mediaHabits.js";
 import "./Search.scss";
 
 export function MediaContentSearch({ inputRef }) {
@@ -48,7 +51,29 @@ export function MediaContentSearch({ inputRef }) {
   const { extraActions, runHousehold } = useHouseholdResultActions();
   const { queue } = useSessionController('local');
   const { push } = useNav();
+  const { scoresFor, rememberedFor, recordPick } = usePlayDestination();
+  const lastRankedRef = useRef(null);
   const log = useMemo(() => getLogger().child({ component: 'media-content-search' }), []);
+  // The words the list on screen was ranked for: a pick is remembered
+  // against them (a row opened or played is what those words meant).
+  const queryRef = useRef('');
+  // A remembered pick holds row 1 from the first keystroke (drawn from what
+  // was kept of it) in the catalog-wide scope only — a narrowed scope shows
+  // only what the search returns for it.
+  const wholeCatalog = currentScopeKey == null || currentScopeKey === scopes[0]?.key;
+  const transformResults = useCallback((results, { query = '', searching = false } = {}) => {
+    queryRef.current = query;
+    const collapsed = collapseResultEditions(results);
+    const scores = scoresFor(query);
+    const ranked = // A placeholder only while sources are still answering: a search that
+    // settles without the item (gone from the library) shows what it found.
+    rankByHabits(collapsed, scores, wholeCatalog && searching ? rememberedFor(query) : null);
+    if (ranked !== collapsed && lastRankedRef.current !== query) {
+      lastRankedRef.current = query;
+      mediaLog.habitResultsRanked({ textLength: query.trim().length, boosted: scores.size });
+    }
+    return ranked;
+  }, [scoresFor, rememberedFor, wholeCatalog]);
   // The header's destination control is in use: keep this search open (FIND.1b).
   const { active: destinationInteractionActive } = useDestinationInteraction();
 
@@ -57,6 +82,7 @@ export function MediaContentSearch({ inputRef }) {
   const handleChange = useCallback((id, item) => {
     if (!id) return; // clear/empty commits are no-ops for a transient picker
     log.info('select', { contentId: id, title: item?.title ?? null, type: item?.type ?? null });
+    recordPick(queryRef.current, { ...item, id }, 'open');
     // `route` is 'peek' | 'cast' | 'browse' | 'local' — without it, a selection that went
     // to the wrong surface is invisible in the logs. It records the routing
     // INTENT, not the outcome: the cast dispatch is async and unawaited, so a
@@ -65,7 +91,7 @@ export function MediaContentSearch({ inputRef }) {
     const route = dispatch(id, item);
     log.info('dispatch', { contentId: id, route });
     return route;
-  }, [dispatch, log]);
+  }, [dispatch, log, recordPick]);
 
   // Trailing ▶ on a container row: send the whole thing to the current
   // destination. Its outcome is reported by useContentDispatch through the
@@ -74,6 +100,13 @@ export function MediaContentSearch({ inputRef }) {
     const id = item?.id;
     if (!id) return;
     log.info('select', { contentId: id, title: item?.title ?? null, type: item?.type ?? null, verb: 'playAll' });
+    recordPick(queryRef.current, item, 'play');
+    // A playable row's own ▶: play it where the ▶ says.
+    if (!isContainer(item)) {
+      const route = dispatchLeafVerb('playNow', id, item);
+      log.info('dispatch', { contentId: id, route, verb: 'play' });
+      return;
+    }
     // FIND.8b/AC2: with a part under way the inline play IS "Continue S2E7".
     const cont = continueFor(item);
     if (cont) {
@@ -84,7 +117,7 @@ export function MediaContentSearch({ inputRef }) {
     }
     const route = playContainerAsQueue(id, item);
     log.info('dispatch', { contentId: id, route, verb: 'playAll' });
-  }, [playContainerAsQueue, dispatchLeafVerb, continueFor, log]);
+  }, [playContainerAsQueue, dispatchLeafVerb, continueFor, log, recordPick]);
 
   // Trailing ⋯ on a leaf row: Play Now / Play Next / Up Next / Add to Queue
   // / Open detail.
@@ -92,14 +125,16 @@ export function MediaContentSearch({ inputRef }) {
     const id = item?.id;
     if (!id) return;
     log.info('row_action', { contentId: id, action });
+    if (['playNow', 'playHere', 'playOn', 'detail', 'details'].includes(action)) recordPick(queryRef.current, item, action);
     if (runHousehold(action, item)) return;
+    if (action === 'playHere') { dispatchLeafVerb('playNow', id, item, { targetIds: [] }); return; }
     if (action === 'playOn' || action === 'addOn') { setOneShotAction({ kind: action, item }); return; }
     if (action !== 'detail' && action !== 'details') {
       dispatchLeafVerb(action === 'upNext' ? 'playFirst' : action, id, item);
       return;
     }
     applyResultRowVerb('detail', item, { queue, push });
-  }, [queue, push, log, dispatchLeafVerb, runHousehold]);
+  }, [queue, push, log, dispatchLeafVerb, runHousehold, recordPick]);
 
   return (
     <div data-testid="media-search-bar" className="media-search-bar">
@@ -114,7 +149,7 @@ export function MediaContentSearch({ inputRef }) {
             onPlayAll={handlePlayAll}
             onMore={handleMore}
             onAction={({ kind, item }) => handleMore(kind, item)}
-            transformResults={collapseResultEditions}
+            transformResults={transformResults}
             resultExtraActions={extraActions}
             resultRowLabels={rowLabelsFor}
             placeholder="Search media…"
@@ -134,7 +169,8 @@ export function MediaContentSearch({ inputRef }) {
             appResults
             allowFreeform={false}
             retainQueryOnEscape
-            retainPlayableSelection
+            // No retainPlayableSelection: picking a playable row OPENS it (its
+            // detail page), so the list closes like any navigation does.
             onClose={resetScope}
             // A one-shot Play on… / Add on… picker is a destination choice made FOR this search: its
             // modal takes focus, which must not read as leaving the search (FIND.1a/AC5).

@@ -14,13 +14,14 @@ import { isCollection } from "./useItemVerbs.jsx";
 import { isShowItem } from "../search/showOn.js";
 import { usePressHoldOffer } from "../../../../../frontend/src/lib/ui/usePressHoldOffer.js";
 import mediaLog from "../logging/mediaLog.js";
+import { usePlayDestination } from "../habits/usePlayDestination.js";
 
 // PLAY.5a/AC3: Play next, and — on press and hold — "At the very front".
-function PlayNextItems({ testId, fire }) {
+function PlayNextItems({ testId, fire, on = '' }) {
   const { offered, bind, guardClick } = usePressHoldOffer({ onOffered: () => mediaLog.playNextHoldOffered({ surface: 'item-menu' }) });
   return (
     <>
-      <Menu.Item data-testid={`${testId}-verb-playNext`} closeMenuOnClick={!offered} {...bind} onClick={guardClick(fire('playNext'))}>Play next</Menu.Item>
+      <Menu.Item data-testid={`${testId}-verb-playNext`} closeMenuOnClick={!offered} {...bind} onClick={guardClick(fire('playNext'))}>{`Play next${on}`}</Menu.Item>
       {offered && (
         <Menu.Item data-testid={`${testId}-verb-playNextFront`} onClick={(event) => { mediaLog.playNextFrontChosen({ surface: 'item-menu' }); fire('playFirst')(event); }}>At the very front</Menu.Item>
       )}
@@ -48,6 +49,10 @@ export function ItemMenu({
   const quality = usePlaybackQuality();
   const triggerRef = useRef(null);
   const collection = isCollection(item);
+  // The menu's plays and queue verbs go where the tile's ▶ goes; say so.
+  const { labelsFor, destinationFor } = usePlayDestination();
+  const elsewhere = destinationFor(item).targetIds.length > 0;
+  const on = elsewhere ? ` on ${labelsFor(item).short}` : '';
   const fire = (kind) => (event) => { event?.stopPropagation?.(); onVerb(kind); };
   const openQuality = event => {
     event.stopPropagation();
@@ -77,11 +82,12 @@ export function ItemMenu({
       {continueLabel && (
         <Menu.Item data-testid={`${testId}-verb-continue`} onClick={fire('continue')}>{continueLabel}</Menu.Item>
       )}
-      <Menu.Item data-testid={`${testId}-verb-playNow`} onClick={fire('playNow')}>Play now</Menu.Item>
+      <Menu.Item data-testid={`${testId}-verb-playNow`} onClick={fire('playNow')}>{elsewhere ? labelsFor(item).sentence : 'Play now'}</Menu.Item>
+      {elsewhere && <Menu.Item data-testid={`${testId}-verb-playHere`} onClick={fire('playHere')}>Play here</Menu.Item>}
       {collection && <Menu.Item data-testid={`${testId}-verb-shuffle`} onClick={fire('shuffle')}>Shuffle</Menu.Item>}
-      <PlayNextItems testId={testId} fire={fire} />
-      <Menu.Item data-testid={`${testId}-verb-playFirst`} onClick={fire('playFirst')}>Play first</Menu.Item>
-      <Menu.Item data-testid={`${testId}-verb-add`} onClick={fire('add')}>Add to queue</Menu.Item>
+      <PlayNextItems testId={testId} fire={fire} on={on} />
+      <Menu.Item data-testid={`${testId}-verb-playFirst`} onClick={fire('playFirst')}>{`Play first${on}`}</Menu.Item>
+      <Menu.Item data-testid={`${testId}-verb-add`} onClick={fire('add')}>{`Add to queue${on}`}</Menu.Item>
       <Menu.Item data-testid={`${testId}-verb-playOn`} onClick={fire('playOn')}>{isShowItem(item) ? 'Show on…' : 'Play on…'}</Menu.Item>
       <Menu.Item data-testid={`${testId}-verb-addOn`} onClick={fire('addOn')}>Add on…</Menu.Item>
       {quality && supportsQualityOverrides(item) && <Menu.Item onClick={openQuality}>Quality…</Menu.Item>}

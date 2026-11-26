@@ -98,7 +98,7 @@ describe('SearchMode real combobox retention', () => {
     const input = await screen.findByTestId('search-mode-input');
     fireEvent.change(input, { target: { value: 'Disclosure Day' } });
     fireEvent.click(await screen.findByTestId('scope-chip-video'));
-    fireEvent.click(await screen.findByTestId('search-mode-result-plex:697368'));
+    fireEvent.click(await screen.findByTestId('result-play-all-plex:697368'));
 
     expect(controller.getSnapshot()).toMatchObject({
       state: 'loading',

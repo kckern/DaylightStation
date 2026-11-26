@@ -578,17 +578,22 @@ export function useContentCombobox({
     if (!searchSettled || searchAttemptRef.current !== attempt || attempt.logged) return;
     attempt.logged = true;
     const erroredSources = (sourceErrors || []).map((e) => e.source);
+    // Count from the transport's own results: a fast search can settle in
+    // the same render its results arrive, before they reach the machine, and
+    // the machine-side counts then read 0 for a search that found plenty
+    // (every scoped search logged "0 results" that way through 2026-11).
+    const delivered = Math.max(rawResults.length, rawResultCount);
     log.info('search.settled', {
       textLength: attempt.text.length,
-      resultCount: stateRef.current.results.length,
-      rawResultCount,
+      resultCount: Math.max(stateRef.current.results.length, Math.min(delivered, RENDER_CAP)),
+      rawResultCount: delivered,
       sourceErrors: erroredSources,
       scopeKey: scopeKey ?? null,
     });
     for (const { source, error } of sourceErrors || []) {
       log.warn('search.source_error', { source, error: String(error?.message ?? error) });
     }
-  }, [attempt, searchSettled, sourceErrors, rawResultCount, scopeKey, log]);
+  }, [attempt, searchSettled, sourceErrors, rawResults, rawResultCount, scopeKey, log]);
 
   // ── Empty-settle recovery ladder (Task 5 retry + Task 11 / D5 widening) ──
   //
@@ -650,10 +655,13 @@ export function useContentCombobox({
     scopeKey, scopeLabel, streamSearch, retryStream, doBatchSearch, log,
   ]);
 
-  const commit = useCallback((reason) => {
+  // `visibleResults`: the list as the person sees it, when the surface reorders
+  // or collapses results (transformResults). The highlight indexes THAT list,
+  // so Enter must pick from it, not from the raw order underneath.
+  const commit = useCallback((reason, visibleResults = null) => {
     const s = stateRef.current;
     const decision = decideCommit({
-      reason, search: s.search, value: s.value, results: s.results,
+      reason, search: s.search, value: s.value, results: Array.isArray(visibleResults) ? visibleResults : s.results,
       highlightIdx: s.highlight.idx, userNavigated: s.highlight.userNavigated,
       selectContainers, searchSettled: searchSettledRef.current, isContainer,
       allowFreeform,

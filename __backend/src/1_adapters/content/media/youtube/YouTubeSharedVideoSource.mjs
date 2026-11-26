@@ -1,7 +1,8 @@
 /**
  * YouTubeSharedVideoSource — the share router's YouTube source
  * (ISharedVideoSource): recognises a YouTube video link in shared text and
- * fetches the video with yt-dlp.
+ * fetches the video through the fetch chain (the VPN fetch service, then the
+ * app's own yt-dlp). When it cannot be fetched, it streams from `youtube:<id>`.
  *
  * Only the 11-character video id is kept from a shared link. The fetch URL is
  * rebuilt from that id (`YouTubeVideoId.watchUrl`), so the shared text never
@@ -41,13 +42,18 @@ export function youtubeVideoIdFrom(url) {
 }
 
 export class YouTubeSharedVideoSource extends ISharedVideoSource {
-  #downloader;
+  #fetcher;
+  #running = new Map();
 
-  /** @param {{ downloader: { downloadOne(url: string, options: object): Promise<object> } }} deps - the yt-dlp adapter */
-  constructor({ downloader }) {
+  /**
+   * @param {object} deps
+   * @param {{ fetch(url, options), stored(name), cancel(name) }} deps.fetcher - the fetch chain
+   *   (FailoverVideoFetcher: the VPN fetch service, then the app's own yt-dlp)
+   */
+  constructor({ fetcher }) {
     super();
-    if (!downloader?.downloadOne) throw new Error('YouTubeSharedVideoSource requires a downloader');
-    this.#downloader = downloader;
+    if (!fetcher?.fetch) throw new Error('YouTubeSharedVideoSource requires a fetcher');
+    this.#fetcher = fetcher;
   }
 
   recognize(url) {
@@ -57,8 +63,30 @@ export class YouTubeSharedVideoSource extends ISharedVideoSource {
 
   async fetch(sourceId, options = {}) {
     const id = idOrNull(sourceId);
-    if (!id) return { kind: 'failed', error: 'not a YouTube video id' };
-    return this.#downloader.downloadOne(id.watchUrl, options);
+    if (!id) return { kind: 'failed', error: 'not a YouTube video id', reason: 'error' };
+    const ctrl = new AbortController();
+    this.#running.set(options.name, ctrl);
+    try {
+      return await this.#fetcher.fetch(id.watchUrl, { ...options, signal: ctrl.signal });
+    } finally {
+      this.#running.delete(options.name);
+    }
+  }
+
+  async stored(name) {
+    const held = await this.#fetcher.stored?.(name);
+    return held ? { provider: YOUTUBE_PROVIDER, ...held } : null;
+  }
+
+  async cancel(name) {
+    this.#running.get(name)?.abort();
+    await this.#fetcher.cancel?.(name);
+  }
+
+  /** The last fallback: the `youtube:` content source streams the same video (Piped, yt-dlp stream, embed). */
+  streamContentId(sourceId) {
+    const id = idOrNull(sourceId);
+    return id ? `youtube:${id.value}` : null;
   }
 }
 

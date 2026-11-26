@@ -9,8 +9,8 @@
 // out). With nothing to suggest the page leads into Browse.
 //
 // Every item has the whole verb set (⋯) and follows the one tap rule: a
-// collection's picture (or title) opens it; a playable item's picture plays it
-// at the aim. Rows share one left edge, scroll sideways with a hidden
+// picture (or title) opens the item — a collection's list, an item's detail
+// page — and the small ▶ disc on the art plays it where the disc says. Rows share one left edge, scroll sideways with a hidden
 // scrollbar and, with a pointer, step with ‹ › at the heading's right end.
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { ActionIcon, Button, Group, Stack, Title } from '@mantine/core';
@@ -32,11 +32,12 @@ import {
   toItem, formatLeft, spotLine, differingSpots, whereLine, playedAtLabel, nowOnScreenIds, bareScreenId,
 } from "../household/householdModel.js";
 import { useFavourites, householdResourceLogger } from "../household/useHousehold.js";
-import { useItemVerbs, isCollection } from "../household/useItemVerbs.jsx";
+import { useItemVerbs } from "../household/useItemVerbs.jsx";
 import { useMoveHere } from "../household/useMoveHere.js";
 import { useStartingOn } from "../cast/useStartingOn.js";
 import { ItemMenu } from "../household/ItemMenu.jsx";
 import { FleetContext } from "../fleet/FleetProvider.jsx";
+import { usePlayDestination } from "../habits/usePlayDestination.js";
 import "./Home.scss";
 
 export const DEGRADED_RELOAD_MS = 10_000;
@@ -259,6 +260,9 @@ export function HomeView() {
   useRetryDegradedResource(recent, deviceId);
   const favourites = useFavourites();
   const { run, overlays, nameFor } = useItemVerbs();
+  const { labelsFor, destinationFor } = usePlayDestination();
+  // The tile's ▶ names its screen, the same words the detail page's Play uses.
+  const playLabelFor = (item, title) => labelsFor(item, { verb: `Play ${title}` }).sentence;
   const { startingOnFor } = useStartingOn();
   const { goToArea } = useNav();
 
@@ -292,7 +296,6 @@ export function HomeView() {
     if (!item) return null;
     const title = presentTitle(raw) ?? item.title ?? 'Untitled';
     const entry = carryById.get(item.id) ?? null;
-    const collection = isCollection(item);
     const favourite = favourites.has(item.id);
     const testId = tileTestId(rowId, item.id);
     const big = rowId === 'favourites';
@@ -309,9 +312,13 @@ export function HomeView() {
         testId={testId}
         meta={startingOnFor(item.id) ?? tileMeta(rowId, raw, entry, nameFor, { editionCount: group?.editions.length ?? 1 })}
         progress={percent}
-        // FIND.12b: a favourite's picture opens it; elsewhere the tap rule.
-        onPicture={() => run(big ? 'open' : 'tap', item, { entry })}
-        pictureLabel={big || collection ? `Open ${title}` : `Play ${title}`}
+        // A tile's picture is a look: it opens the item (or its list). The ▶
+        // disc is the one deliberate play, aimed where it says.
+        onPicture={() => run('open', item, { entry, via: 'tile' })}
+        pictureLabel={`Open ${title}`}
+        onPlay={() => run('playNow', item, { entry })}
+        playLabel={playLabelFor(item, title)}
+        playElsewhere={destinationFor(item).targetIds.length > 0}
         onVerb={kind => (kind === 'continue' && cont ? run('playNow', cont) : run(kind, item, { entry }))}
         favourite={favourite}
         watched={entry ? entry.finished === true : null}
@@ -368,7 +375,6 @@ export function HomeView() {
             const title = presentTitle(entry) ?? item.title ?? 'Untitled';
             const screens = nowOnIds.get(item.id);
             const where = screens?.length ? `Now on ${nameFor(screens[0])}` : whereLine(entry, nameFor);
-            const collection = isCollection(item);
             const editionItems = editions.length > 1 ? editions.map(toItem).filter(Boolean) : null;
             const base = [playedAtLabel(entry.plays?.[0]?.startedAt ?? entry.lastPlayed), where].filter(Boolean).join(' · ');
             const label = editionsLabel(editions.length);
@@ -381,8 +387,11 @@ export function HomeView() {
                 testId={tileTestId('recent', item.id)}
                 meta={meta || null}
                 progress={progressPercent(entry.percent ?? null, entry.finished === true)}
-                onPicture={() => run('tap', item, { entry })}
-                pictureLabel={collection ? `Open ${title}` : `Play ${title}`}
+                onPicture={() => run('open', item, { entry, via: 'tile' })}
+                pictureLabel={`Open ${title}`}
+                onPlay={() => run('playNow', item, { entry })}
+                playLabel={playLabelFor(item, title)}
+                playElsewhere={destinationFor(item).targetIds.length > 0}
                 onVerb={kind => run(kind, item, { entry })}
                 favourite={favourites.has(item.id)}
                 watched={entry.finished === true}

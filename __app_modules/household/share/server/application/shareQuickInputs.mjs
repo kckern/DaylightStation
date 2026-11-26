@@ -23,7 +23,7 @@ export function shareTextHandler({ router, target }) {
   return {
     process: async (input) => {
       const text = input.body.toString('utf8');
-      const result = router.route({ text, target, username: input.username });
+      const result = router.route({ text, target, username: input.username, capturedAt: input.capturedAt });
       if (!result.routed) return { nothing: 'unusable_input' };
       return { state: {}, summary: { share: result.summary } };
     },

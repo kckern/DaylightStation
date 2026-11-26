@@ -1,22 +1,23 @@
 import { ItemQualityButton } from "../quality/PlaybackQualityButtons.jsx";
 // frontend/src/modules/Media/browse/DetailView.jsx
-// One item, all its actions: artwork, description, Play Now / Play Next /
-// Up Next / Add / Cast.
+// One item, all its actions: artwork, description, then ONE primary play
+// that names where it goes ("▶ Play on Office Screen" — the aim, else the
+// screen this browser learned for this kind of thing, else "here"), with
+// Play here / Play on… beside it for the other places, then the queue verbs.
+// Opening this page never plays anything: it is where a look lands.
 import React, { useState } from 'react';
 import { Stack, Title, Text, Button, Group, Image } from '@mantine/core';
-import { IconPlayerPlayFilled, IconPlayerTrackNext, IconRowInsertTop, IconPlaylistAdd } from '@tabler/icons-react';
+import { IconPlayerPlayFilled, IconPlayerTrackNext, IconRowInsertTop, IconPlaylistAdd, IconCast } from '@tabler/icons-react';
 import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import { EmptyState } from '@/lib/ui/states.jsx';
 import { useRetryRegion } from '@/lib/ui/useRetryRegion.js';
 import { LoadErrorLine } from "../shared/LoadErrorLine.jsx";
 import { useContentInfo } from "./useContentInfo.js";
 import { useContentDispatch } from "../search/useContentDispatch.js";
-import { CastButton } from "../cast/CastButton.jsx";
 import { useNav } from "../shell/NavProvider.jsx";
 import Skeleton from '@/lib/ui/Skeleton.jsx';
 import { isContainer } from "../../../../../__capabilities/content-catalog/browser/combobox-state.mjs";
 import { ItemDestinationPicker } from "../actions/ItemDestinationPicker.jsx";
-import { DestinationLine } from "../cast/DestinationLine.jsx";
 import { useItemVerbs } from "../household/useItemVerbs.jsx";
 import { useFavourites, useHouseholdEntry } from "../household/useHousehold.js";
 import { spotsSummary, formatLeft, whereLine } from "../household/householdModel.js";
@@ -25,6 +26,7 @@ import { useStartingOn } from "../cast/useStartingOn.js";
 import { usePressHoldOffer } from "../../../../../frontend/src/lib/ui/usePressHoldOffer.js";
 import mediaLog from "../logging/mediaLog.js";
 import { resultSubtitle } from "../search/resultPresentation.js";
+import { usePlayDestination } from "../habits/usePlayDestination.js";
 
 export function DetailView({ contentId }) {
   const [oneShot, setOneShot] = useState(null);
@@ -33,6 +35,7 @@ export function DetailView({ contentId }) {
   const { dispatchLeafVerb } = useContentDispatch();
   const { pop, backDestination } = useNav();
   const { run, overlays, nameFor } = useItemVerbs();
+  const { destinationFor, labelsFor } = usePlayDestination();
   const favourites = useFavourites();
   const { entry, pending: pendingResume } = useHouseholdEntry(contentId);
   // PLAY.5a/AC3: pressing and holding Play Next offers "At the very front".
@@ -73,6 +76,11 @@ export function DetailView({ contentId }) {
     // FIND.8a/AC2: what kind of thing it is and how long, in words ("Movie · 1 hr 56 min").
     const facts = resultSubtitle(detailItem);
     const description = info.description || info.metadata?.summary || null;
+    // Where Play, Shuffle and the queue verbs go (the aim, else the usual
+    // screen for this kind of thing, else here) — named on the page.
+    const where = destinationFor(detailItem);
+    const elsewhere = where.targetIds.length > 0;
+    const whereName = elsewhere ? labelsFor(detailItem).short : null;
 
     body = (
       <>
@@ -84,18 +92,27 @@ export function DetailView({ contentId }) {
         {description && <Text c="dimmed">{description}</Text>}
         {progress && <Text size="sm" data-testid="detail-progress">{progress}</Text>}
         {startingOn && <Text size="sm" data-testid="detail-starting" role="status">{startingOn}</Text>}
-        <DestinationLine surface="detail" />
         <Group className="detail-actions" gap="sm">
-          <ItemQualityButton item={detailItem} />
           <Button
             data-testid="detail-play-now"
-            leftSection={<IconPlayerPlayFilled size={18} />}
+            leftSection={elsewhere ? <IconCast size={18} /> : <IconPlayerPlayFilled size={18} />}
             loading={!collection && pendingResume}
             onClick={() => (collection ? dispatchLeafVerb('playNow', contentId, detailItem) : run('playNow', detailItem, { entry }))}
           >
-            Play Now
+            {labelsFor(detailItem).sentence}
           </Button>
-          {isContainer(detailItem) && <Button variant="default" onClick={() => dispatchLeafVerb('shuffle', contentId, detailItem)}>Shuffle</Button>}
+          {elsewhere && (
+            <Button
+              data-testid="detail-play-here"
+              variant="default"
+              onClick={() => dispatchLeafVerb('playNow', contentId, detailItem, { targetIds: [] })}
+            >
+              Play here
+            </Button>
+          )}
+          <Button variant="default" data-testid="detail-play-on" onClick={() => setOneShot({ kind: 'playOn', item: detailItem })}>Play on…</Button>
+          <ItemQualityButton item={detailItem} />
+          {isContainer(detailItem) && <Button variant="default" onClick={() => dispatchLeafVerb('shuffle', contentId, detailItem)}>{elsewhere ? `Shuffle on ${whereName}` : 'Shuffle'}</Button>}
           <Button data-testid="detail-play-next" variant="default" leftSection={<IconPlayerTrackNext size={16} />}
                   {...playNextHold.bind}
                   onClick={playNextHold.guardClick(() => dispatchLeafVerb('playNext', contentId, detailItem))}>
@@ -115,10 +132,14 @@ export function DetailView({ contentId }) {
                   onClick={() => dispatchLeafVerb('add', contentId, detailItem)}>
             Add to Queue
           </Button>
-          <CastButton contentId={contentId} title={info.title ?? null} item={detailItem} />
           <Button variant="default" onClick={() => setOneShot({ kind: 'addOn', item: detailItem })}>Add on…</Button>
           <Button variant="default" data-testid="detail-show-briefly" onClick={() => setOneShot({ kind: 'showBrieflyOn', item: detailItem })}>Show briefly on…</Button>
         </Group>
+        {elsewhere && (
+          <Text size="sm" c="dimmed" data-testid="detail-queue-where">
+            Play Next, Play First and Add to Queue go to {whereName}.
+          </Text>
+        )}
         <Group className="detail-actions" gap="sm">
           <Button
             data-testid="detail-favourite"

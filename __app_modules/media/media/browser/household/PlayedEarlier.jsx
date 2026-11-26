@@ -91,9 +91,9 @@ export function PlayedEarlier({ screenId, currentContentId = null }) {
                 <UnstyledButton
                   className="played-earlier-main"
                   data-testid={`${testId}-play`}
-                  aria-label={`Play ${title}`}
+                  aria-label={`Open ${title}`}
                   aria-description={context || undefined}
-                  onClick={() => run('tap', item)}
+                  onClick={() => run('open', item, { via: 'played-earlier' })}
                 >
                   {row.thumbnail
                     ? <img className="played-earlier-thumb" src={row.thumbnail} alt="" loading="lazy" />

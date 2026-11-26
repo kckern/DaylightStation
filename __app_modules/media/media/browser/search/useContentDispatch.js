@@ -10,17 +10,14 @@
 // (playContainerAsQueue), wired from the row's trailing button — never an
 // implicit side effect of tapping the row.
 //
-// `dispatch(id, item)` — tap/select precedence:
+// `dispatch(id, item)` — what a TAP does (looking, never watching):
 //   1. CONTAINER (any item.isContainer/itemType/type) → push the full browse
-//      view (contentIdToBrowsePath). This is checked FIRST, above peek and
-//      the cast chip, so it wins regardless of what's aimed. Browsing is a
-//      pure navigation — it never touches any device's playback — so this
-//      is also safe for the peek (remote-control) case: opening a show's
-//      episode list on the canvas doesn't stop whatever the peeked device
-//      is doing.
-//   2. a cast target aimed via the dock's chip, leaf → cast there in the
-//      chip's mode.
-//   3. otherwise, leaf → play locally, replacing the queue.
+//      view (contentIdToBrowsePath). Browsing is a pure navigation — it never
+//      touches any device's playback.
+//   2. a camera or single photo → shows on this device (FIND.8b/AC3).
+//   3. a playable leaf → OPENS its detail page. It never plays: playing is
+//      the deliberate ▶ (a row's ▶, a tile's play disc, Detail's Play), which
+//      goes where it says — see habits/playDestination.js.
 // Returns which branch it took so callers can log the destination.
 //
 // `playContainerAsQueue(id, item, { shuffle })` — the ▶ verb, container rows
@@ -67,6 +64,7 @@ import { FleetContext } from "../fleet/FleetProvider.jsx";
 import { isShowItem } from "./showOn.js";
 import { usePlaybackQuality } from "../quality/PlaybackQualityProvider.jsx";
 import mediaLog from "../logging/mediaLog.js";
+import { usePlayDestination } from "../habits/usePlayDestination.js";
 
 // Screens that apply an item action's start position: Media sessions (named
 // browsers, and screens commanded over the websocket). Others load by URL and
@@ -78,6 +76,13 @@ function honoursStartPosition(targetId, devices) {
   return device?.content_control?.type === 'websocket';
 }
 
+// Every verb without a one-off destination goes where the ▶ says: the aim,
+// else the screen this browser usually plays that kind of thing on, else
+// here. Queue edits follow it too — after "Play on Office Screen", Play Next
+// belongs in the Office Screen's queue, not this device's idle one. Only
+// plays that START something teach where things are watched.
+const PLAY_KINDS = new Set(['playNow', 'shuffle']);
+
 const LOCAL_KIND = { playNow: 'play', shuffle: 'shuffle', add: 'add', playNext: 'playNext', playFirst: 'playFirst' };
 
 export function useContentDispatch() {
@@ -88,6 +93,7 @@ export function useContentDispatch() {
   const quality = usePlaybackQuality();
   const peek = useContext(PeekContext);
   const fleetDevices = useContext(FleetContext)?.devices ?? null;
+  const { destinationFor, recordPlay } = usePlayDestination({ aimIds: targetIds });
 
   // A local action's outcome: one quiet record naming the item "here".
   const confirmLocal = useCallback((kind, input) => recordLocal?.({
@@ -130,17 +136,28 @@ export function useContentDispatch() {
     const resumedFrom = kind !== 'playNow' ? null
       : Number.isFinite(opts.startAt) ? (opts.startAt > 0 ? opts.startAt : null)
         : (Number.isFinite(opts.resumedFrom) && opts.resumedFrom > 0 ? opts.resumedFrom : null);
-    const honoured = targetIds.length === 0 || targetIds.every(id => honoursStartPosition(id, fleetDevices));
-    const resume = resumedFrom != null && honoured ? { startOver: true, resumedFrom } : {};
     const operationId = createOperationId();
     // `opts.targetIds`: a one-off destination for this action only (Add to
-    // this queue, STEER.1b/AC7) — the aim itself is never read or changed.
-    const actionTargets = Array.isArray(opts.targetIds) ? opts.targetIds : targetIds;
+    // this queue, STEER.1b/AC7; Play here) — the aim itself is never read or
+    // changed. A play with no one-off destination goes where its ▶ said.
+    const explicit = Array.isArray(opts.targetIds);
+    const played = !explicit ? destinationFor(item) : null;
+    const actionTargets = explicit ? opts.targetIds : (played ? played.targetIds : targetIds);
+    const oneOff = explicit || played?.source === 'learned';
     const remote = actionTargets.length > 0;
+    const honoured = actionTargets.every(target => honoursStartPosition(target, fleetDevices));
+    const resume = resumedFrom != null && honoured ? { startOver: true, resumedFrom } : {};
+    if (PLAY_KINDS.has(kind)) {
+      if (!opts.noLearn) recordPlay(item, actionTargets);
+      mediaLog.playSent({
+        contentId: id, kind, targetIds: actionTargets,
+        source: explicit ? 'chosen' : (played?.source ?? 'aim'),
+      });
+    }
     const destination = remote ? {
       id: actionTargets.join(','),
       execute: command => {
-        castTo(actionTargets, opts.targetIds ? 'fork' : mode, id, item?.title, {
+        castTo(actionTargets, oneOff ? 'fork' : mode, id, item?.title, {
           verb: ['add', 'playNext', 'playFirst'].includes(kind) ? 'queue' : 'play',
           shuffle: kind === 'shuffle', itemAction: command, ...resume,
         });
@@ -189,7 +206,7 @@ export function useContentDispatch() {
       if (!remote) resolveLocal?.(attemptId, { phase: 'failed', reason: error?.message ?? 'Could not apply action' });
     });
     return remote ? 'cast' : 'local';
-  }, [targetIds, mode, castTo, controller, queue, config, peek, recordLocal, resolveLocal, confirmLocal, fleetDevices, quality]);
+  }, [targetIds, mode, castTo, controller, queue, config, peek, recordLocal, resolveLocal, confirmLocal, fleetDevices, quality, destinationFor, recordPlay]);
 
   // `opts.replaceHistoryEntry` is for a caller that is itself occupying the
   // current history entry and is about to close: the mobile Search Mode. Its
@@ -220,22 +237,21 @@ export function useContentDispatch() {
     // whatever is aimed; "Show on…" is how it goes to another screen.
     if (item && isShowItem(item)) {
       mediaLog.shownHere({ contentId: id, aimed: targetIds.length });
-      if (controller) return runAction('playNow', id, item, { targetIds: [] });
+      // Showing a camera here is looking, not a choice of where films play.
+      if (controller) return runAction('playNow', id, item, { targetIds: [], noLearn: true });
       const input = resultToQueueInput({ ...item, id }) ?? { contentId: id, title, thumbnail: item?.thumbnail ?? null };
       queue.playNow(input, { clearRest: true });
       confirmLocal('playNow', input);
       return 'local';
     }
-    if (controller || Object.keys(quality?.getOverrides(id) ?? {}).length) return runAction('playNow', id, item);
-    if (targetIds.length > 0) {
-      castTo(targetIds, mode, id, title);
-      return 'cast';
-    }
-    const input = { contentId: id, title, thumbnail: item?.thumbnail ?? null };
-    queue.playNow(input, { clearRest: true });
-    confirmLocal('playNow', input);
-    return 'local';
-  }, [push, targetIds, mode, queue, castTo, controller, runAction, confirmLocal, quality]);
+    // Looking is not watching: a playable item OPENS (its detail page, with
+    // the art, the facts and a ▶ that names where it will play). Nothing
+    // starts until that ▶, or a row's own ▶, is pressed on purpose.
+    mediaLog.itemOpened({ contentId: id, via: opts.via ?? 'tap' });
+    if (opts.replaceHistoryEntry) push('detail', { contentId: id }, { replaceEntry: true });
+    else push('detail', { contentId: id });
+    return 'detail';
+  }, [push, targetIds, queue, controller, runAction, confirmLocal]);
 
   // Explicit leaf actions from the ResultRow ⋯ menu share the aimed-target
   // route without inheriting selection's clearRest policy: More → Play Now
@@ -246,8 +262,9 @@ export function useContentDispatch() {
     if (!['playNow', 'add', 'playNext', 'playFirst', 'shuffle'].includes(kind)) return undefined;
     if (controller || Object.keys(quality?.getOverrides(id) ?? {}).length || !['playNow', 'add'].includes(kind)) return runAction(kind, id, item, opts);
     const title = item?.title ?? null;
-    if (targetIds.length > 0) {
-      castTo(targetIds, mode, id, title, { verb: verb === 'add' ? 'queue' : 'play' });
+    const dest = Array.isArray(opts.targetIds) ? { targetIds: opts.targetIds, source: 'chosen' } : destinationFor(item);
+    if (dest.targetIds.length > 0) {
+      castTo(dest.targetIds, dest.source === 'aim' ? mode : 'fork', id, title, { verb: verb === 'add' ? 'queue' : 'play' });
       return 'cast';
     }
     const input = (item && resultToQueueInput({ ...item, id: item.id ?? id }))
@@ -256,7 +273,7 @@ export function useContentDispatch() {
     else queue.add(input);
     confirmLocal(verb === 'playNow' ? 'playNow' : 'add', input);
     return 'local';
-  }, [targetIds, mode, queue, castTo, controller, runAction, confirmLocal, quality]);
+  }, [mode, queue, castTo, controller, runAction, confirmLocal, quality, destinationFor]);
 
   // The ▶ verb on a container row: explicitly send the WHOLE container to
   // the current destination, replacing the queue. Same destination
@@ -269,8 +286,9 @@ export function useContentDispatch() {
     const { shuffle = false } = opts;
     if (controller || Object.keys(quality?.getOverrides(id) ?? {}).length) return runAction(shuffle ? 'shuffle' : 'playNow', id, { ...item, itemType: 'container' }, { collection: true });
     const title = item?.title ?? null;
-    if (targetIds.length > 0) {
-      castTo(targetIds, mode, id, title, { shuffle });
+    const dest = destinationFor(item);
+    if (dest.targetIds.length > 0) {
+      castTo(dest.targetIds, dest.source === 'aim' ? mode : 'fork', id, title, { shuffle });
       return 'cast';
     }
     const input = (item && resultToQueueInput({ ...item, id: item.id ?? id }))
@@ -283,7 +301,7 @@ export function useContentDispatch() {
     queue.playNow(input, { clearRest: true });
     confirmLocal(shuffle ? 'shuffle' : 'playNow', input);
     return 'local';
-  }, [targetIds, mode, queue, config, castTo, controller, runAction, confirmLocal, quality]);
+  }, [mode, queue, config, castTo, controller, runAction, confirmLocal, quality, destinationFor]);
 
   // The + verb on a container row (Task 15): append the WHOLE container to
   // the current destination's queue instead of replacing it. Same
@@ -293,8 +311,9 @@ export function useContentDispatch() {
   const addContainerToQueue = useCallback((id, item) => {
     if (controller || Object.keys(quality?.getOverrides(id) ?? {}).length) return runAction('add', id, { ...item, itemType: 'container' });
     const title = item?.title ?? null;
-    if (targetIds.length > 0) {
-      castTo(targetIds, mode, id, title, { verb: 'queue' });
+    const dest = destinationFor(item);
+    if (dest.targetIds.length > 0) {
+      castTo(dest.targetIds, dest.source === 'aim' ? mode : 'fork', id, title, { verb: 'queue' });
       return 'cast';
     }
     const input = (item && resultToQueueInput({ ...item, id: item.id ?? id }))
@@ -302,7 +321,7 @@ export function useContentDispatch() {
     queue.add(input);
     confirmLocal('add', input);
     return 'local';
-  }, [targetIds, mode, queue, castTo, controller, runAction, confirmLocal, quality]);
+  }, [mode, queue, castTo, controller, runAction, confirmLocal, quality, destinationFor]);
 
   // Add to this queue (STEER.1b/AC7, RQ-STEER-22): one addition to one
   // screen's queue — a leaf or a whole container — without touching the aim.

@@ -235,7 +235,21 @@ describe('SearchMode history × dispatch', () => {
     expect(top.params.containerItem).toMatchObject({ id: 'plex:663508' });
   });
 
-  it('a leaf Play mutates playback while SearchMode and its marker stay open', async () => {
+  it('a leaf tap is a look: it opens the detail page in the marker entry\'s place and plays nothing', async () => {
+    comboState = { search: 'bluey', results: [LEAF] };
+    const backSpy = vi.spyOn(window.history, 'back');
+
+    render(<Harness />);
+    fireEvent.click(await screen.findByTestId('search-mode-result-plex:685088'));
+
+    expect(screen.queryByTestId('search-mode')).not.toBeInTheDocument();
+    expect(probe()).toHaveAttribute('data-view', 'detail');
+    expect(backSpy).not.toHaveBeenCalled();
+    expect(window.history.state.mediaNavStack.map((e) => e.view)).toEqual(['home', 'detail']);
+    expect(queuePlayNow).not.toHaveBeenCalled();
+  });
+
+  it('a leaf\'s own ▶ mutates playback while SearchMode and its marker stay open', async () => {
     comboState = { search: 'bluey', results: [LEAF] };
     const pushSpy = vi.spyOn(window.history, 'pushState');
     const backSpy = vi.spyOn(window.history, 'back');
@@ -244,14 +258,13 @@ describe('SearchMode history × dispatch', () => {
     await screen.findByTestId('search-mode-result-plex:685088');
     expect(pushSpy).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByTestId('search-mode-result-plex:685088'));
+    fireEvent.click(screen.getByTestId('result-play-all-plex:685088'));
 
-    // Leaf -> play locally: playback changes, but navigation does not.
-    // Search therefore retains ownership of its original marker.
-    expect(queuePlayNow).toHaveBeenCalledWith(
-      expect.objectContaining({ contentId: 'plex:685088' }),
-      { clearRest: true }
-    );
+    // Leaf ▶ -> play locally: playback changes, but navigation does not.
+    // Search therefore retains ownership of its original marker. (This
+    // harness has only the queue facade, whose explicit Play Now keeps the
+    // tail — the same verb as ⋯ Play Now.)
+    expect(queuePlayNow).toHaveBeenCalledWith(expect.objectContaining({ contentId: 'plex:685088' }));
     expect(localController.getSnapshot()).toMatchObject({
       state: 'loading',
       currentItem: { contentId: 'plex:685088', title: 'Bluey' },
@@ -309,7 +322,7 @@ describe('SearchMode history × dispatch', () => {
     const { rerender } = render(<Harness />);
     await waitFor(() => expect(screen.getByTestId('destination-line-name')).toHaveTextContent('Living Room TV'));
 
-    fireEvent.click(await screen.findByTestId('search-mode-result-plex:685088'));
+    fireEvent.click(await screen.findByTestId('result-play-all-plex:685088'));
     expect(screen.getByTestId('search-mode')).toBeInTheDocument();
     await waitFor(() => expect(dispatchToTarget).toHaveBeenCalledWith(expect.objectContaining({
       targetIds: ['livingroom-tv'],
@@ -332,7 +345,7 @@ describe('SearchMode history × dispatch', () => {
     const { rerender } = render(<Harness />);
     await waitFor(() => expect(screen.getByTestId('destination-line-name')).toHaveTextContent('Living Room TV'));
 
-    fireEvent.click(await screen.findByTestId('search-mode-result-plex:685088'));
+    fireEvent.click(await screen.findByTestId('result-play-all-plex:685088'));
     expect(screen.getByTestId('search-mode')).toBeInTheDocument();
     await act(async () => { await dispatchResult; });
     dispatches.set('dispatch-2', { status: 'failed', error: 'receiver unavailable' });

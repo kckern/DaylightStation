@@ -165,6 +165,7 @@ export function createApiRouter(config) {
     '/donow': 'donow',
     '/content-filter': 'content-filter',
     '/provenance': 'provenance',
+    '/share': 'share',  // Share router: the phone's share sheet — see __docs/reference/core/share.md
     '/wikipedia': 'wikipedia',
     '/shutdown': 'shutdown',
     '/supervision': 'supervision',

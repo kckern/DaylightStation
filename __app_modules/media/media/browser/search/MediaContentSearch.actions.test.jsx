@@ -106,7 +106,7 @@ describe('MediaContentSearch action-menu retention', () => {
 
   afterEach(() => vi.unstubAllGlobals());
 
-  it('keeps the exact query open after the ordinary playable-row action completes', async () => {
+  it('picking a playable row opens it (the list closes like any navigation) and plays nothing', async () => {
     const { controller } = renderSearch();
     const input = screen.getByRole('textbox', { name: 'Search media…' });
     fireEvent.focus(input);
@@ -116,8 +116,7 @@ describe('MediaContentSearch action-menu retention', () => {
 
     expect(controller.getSnapshot().currentItem.contentId).toBe('plex:existing');
     expect(dispatchContent).toHaveBeenCalledWith('plex:697368', expect.objectContaining({ title: 'Disclosure Day' }));
-    expect(input).toHaveValue('Disclosure Day');
-    expect(screen.getByRole('listbox')).toBeVisible();
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
   });
 
   it('keeps the query after pointer More → Add finishes portal dismissal', async () => {

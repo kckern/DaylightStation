@@ -32,3 +32,12 @@ if (typeof globalThis.localStorage === 'undefined') {
     key: (i) => Array.from(store.keys())[i] ?? null,
   };
 }
+
+// The Media app learns per browser (habits/mediaHabits.js: which result was
+// picked for which words, which screen a play went to). A test must start
+// from a browser that has learned nothing, or one test's play would steer the
+// next one's ▶.
+import { afterEach as afterEachTest } from 'vitest';
+afterEachTest(() => {
+  try { globalThis.localStorage?.removeItem('media-app.habits'); } catch { /* no storage */ }
+});

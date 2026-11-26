@@ -1,7 +1,8 @@
 // frontend/src/modules/Media/browse/BrowseView.jsx
 // Hierarchical catalog browse over the List API. Containers drill (whole row
-// navigates); a playable row plays at the current aim and exposes Detail as
-// a distinct trailing action. List-API
+// navigates); a playable row OPENS its detail page (a look) and plays only
+// from its own trailing ▶, which names where it plays ("▶ Office Screen" —
+// habits/playDestination.js). List-API
 // containers are addressed by id, not accumulated path, so the breadcrumb is
 // Home / [Back] / current label — never a raw id.
 //
@@ -12,7 +13,7 @@
 // own nested-drill handler below) carries the tapped item along, so a
 // container-level browse view opens with a Play / Shuffle / Queue header
 // (icons, not unicode glyphs — see Task 16), all three acting on the WHOLE
-// container against the visible destination (DestinationLine). Root/category
+// container; Play names where it plays, like every other ▶. Root/category
 // browse levels (Home's source/mediaType cards, the plain "Browse" nav item)
 // never pass a containerItem, so the header stays absent there — nothing
 // single to play.
@@ -29,7 +30,6 @@ import { useNav } from "../shell/NavProvider.jsx";
 import { useContentDispatch } from "../search/useContentDispatch.js";
 import { isContainer } from "../../../../../__capabilities/content-catalog/browser/combobox-state.mjs";
 import { LoadErrorLine } from "../shared/LoadErrorLine.jsx";
-import { DestinationLine } from "../cast/DestinationLine.jsx";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import Skeleton from '@/lib/ui/Skeleton.jsx';
 import { Button } from '@/lib/ui/Button.jsx';
@@ -42,6 +42,7 @@ import { sourceIconFor, dedupeSourceRows } from "./sourceIcons.jsx";
 import { sourceRootPresentation } from "../search/resultPresentation.js";
 import { useDismissLayer } from "@/lib/ui/dismiss/useDismissLayer.js";
 import { useHouseholdResultActions } from "../household/useHouseholdResultActions.js";
+import { usePlayDestination } from "../habits/usePlayDestination.js";
 
 function splitPath(path) {
   if (!path) return [];
@@ -105,6 +106,20 @@ export function BrowseView({
   const { push, replace, pop, depth, backDestination } = useNav();
   const { dispatchLeafVerb, playContainerAsQueue, addContainerToQueue } = useContentDispatch();
   const { extraActions, runHousehold } = useHouseholdResultActions();
+  const { labelsFor, destinationFor } = usePlayDestination();
+  // A row's ▶ and its ⋯ Play say where they play, the same words as search.
+  const rowLabelsFor = (row) => {
+    const { short, sentence } = labelsFor(row);
+    const elsewhere = destinationFor(row).targetIds.length > 0;
+    return {
+      playElsewhere: elsewhere,
+      play: short,
+      playTitle: row.title ? sentence.replace(/^Play/, `Play ${row.title}`) : sentence,
+      playNow: sentence,
+      playHere: elsewhere ? 'Play here' : null,
+      queueWhere: elsewhere ? short : null,
+    };
+  };
   const log = useMemo(() => getLogger().child({ component: 'browse-view' }), []);
   const { regionProps, retry } = useRetryRegion(reload, loading);
   const rootRef = regionProps.ref;
@@ -235,7 +250,7 @@ export function BrowseView({
               className="browse-dispatch-btn browse-dispatch-btn--primary"
               onClick={() => runHeaderVerb('play', playContainerAsQueue)}
             >
-              <IconPlayerPlay size={16} aria-hidden="true" /> Play
+              <IconPlayerPlay size={16} aria-hidden="true" /> {labelsFor(containerItem).sentence}
             </button>
             <button
               type="button"
@@ -243,7 +258,7 @@ export function BrowseView({
               className="browse-dispatch-btn"
               onClick={() => runHeaderVerb('shuffle', (id, item) => playContainerAsQueue(id, item, { shuffle: true }))}
             >
-              <IconArrowsShuffle size={16} aria-hidden="true" /> Shuffle
+              <IconArrowsShuffle size={16} aria-hidden="true" /> {destinationFor(containerItem).targetIds.length > 0 ? `Shuffle on ${labelsFor(containerItem).short}` : 'Shuffle'}
             </button>
             <button
               type="button"
@@ -251,10 +266,9 @@ export function BrowseView({
               className="browse-dispatch-btn"
               onClick={() => runHeaderVerb('queue', addContainerToQueue)}
             >
-              <IconPlus size={16} aria-hidden="true" /> Queue
+              <IconPlus size={16} aria-hidden="true" /> {destinationFor(containerItem).targetIds.length > 0 ? `Queue on ${labelsFor(containerItem).short}` : 'Queue'}
             </button>
           </div>
-          <DestinationLine surface="browse-header" />
         </div>
       )}
 
@@ -284,17 +298,17 @@ export function BrowseView({
                   subtitle={sourceRootPresentation(row).subtitle}
                   thumbnail={row.thumbnail}
                   leading={row.thumbnail ? null : sourceIconFor(row)}
-                  testId={rowIsContainer ? `browse-open-${id}` : `result-play-now-${id}`}
+                  testId={`browse-open-${id}`}
                   focusId={id}
-                  onTap={() => rowIsContainer ? openContainer(row, id) : dispatchLeafVerb('playNow', id, row)}
-                  onPlayAll={rowIsContainer && !isSourceRow ? () => playContainerAsQueue(id, row) : null}
-                  onDetails={rowIsContainer ? null : () => openDetail(id)}
-                  detailsTestId={rowIsContainer ? null : `browse-detail-${id}`}
+                  onTap={() => rowIsContainer ? openContainer(row, id) : openDetail(id)}
+                  onPlayAll={isSourceRow ? null : () => (rowIsContainer ? playContainerAsQueue(id, row) : dispatchLeafVerb('playNow', id, row))}
+                  rowLabels={isSourceRow ? null : rowLabelsFor({ ...row, id })}
                   extraActions={extraActions}
                   onMenuOpenChange={setRowMenuOpen}
                   onAction={action => {
                   if (runHousehold(action.kind, { ...row, id })) return;
-                  if (['playOn', 'addOn'].includes(action.kind)) setOneShot(action);
+                  if (action.kind === 'playHere') dispatchLeafVerb('playNow', id, row, { targetIds: [] });
+                  else if (['playOn', 'addOn'].includes(action.kind)) setOneShot(action);
                   else if (action.kind === 'details') openDetail(id);
                   else dispatchLeafVerb(action.kind, id, row);
                   }}

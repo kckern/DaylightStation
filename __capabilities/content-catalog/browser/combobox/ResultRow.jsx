@@ -6,9 +6,11 @@
 // depend on hidden state (aimed cast target, peek view). Task 14 (spec D6)
 // fixes that with one rule, enforced here in ONE place:
 //
-//   Playable leaf   -> tap dispatches PLAY NOW to the current destination.
-//                      Trailing ⋯ opens the four queue verbs (Play Now /
-//                      Play Next / Play First / Add to Queue) + Open detail.
+//   Playable leaf   -> tap does whatever the caller's onTap says (Media: it
+//                      OPENS the item — looking is not watching). A caller
+//                      that names a play (rowLabels.play) gets a labelled ▶;
+//                      trailing ⋯ opens the queue verbs (Play Now / Play Next
+//                      / Play First / Add to Queue) + Open detail.
 //   Container       -> tap ALWAYS browses into it — never an accidental
 //                      queue blowaway, regardless of an aimed cast target.
 //                      Trailing ▶ is the explicit "send the whole thing"
@@ -27,7 +29,7 @@
 // Media/search/resultRowVerbs.js).
 import React from 'react';
 import { ActionIcon, Button, Menu } from '@mantine/core';
-import { IconPlayerPlay, IconDotsVertical } from '@tabler/icons-react';
+import { IconPlayerPlay, IconCast, IconDotsVertical } from '@tabler/icons-react';
 import { isContainer } from "./comboboxMachine.js";
 import { usePressHoldOffer } from "../../../../frontend/src/lib/ui/usePressHoldOffer.js";
 
@@ -50,7 +52,9 @@ function CatalogMoreMenu({ trigger, dropdownProps, children, ...menuProps }) {
  */
 export function ResultRowActions({
   item, isContainerItem, onPlayAll, onDetails, detailsTestId, onMore, onAction, testId, extraActions = null,
-  playLabel = null, playOnLabel = null, MoreMenu = CatalogMoreMenu, moreTriggerRef: suppliedMoreTriggerRef,
+  playLabel = null, playTitle = null, playElsewhere = false, playOnLabel = null, playNowLabel = null, playHereLabel = null,
+  queueWhere = null,
+  MoreMenu = CatalogMoreMenu, moreTriggerRef: suppliedMoreTriggerRef,
   onMoreMenuPointerDown, onMoreMenuChange, onMoreMenuAction, onMoreMenuTriggerFocus, onMoreBoundaryBlur,
 }) {
   const container = isContainerItem ?? (item ? isContainer(item) : false);
@@ -70,7 +74,12 @@ export function ResultRowActions({
       data-testid={`result-play-all-${idPart}`}
       onMouseDown={(e) => e.preventDefault()}
       onClick={(e) => { e.preventDefault(); e.stopPropagation(); onPlayAll(); }}
-      leftSection={<IconPlayerPlay size={14} aria-hidden />}
+      // A play that leaves this device shows the cast mark, so even an
+      // icon-only ▶ (phones) says "to a screen" vs "here".
+      leftSection={playElsewhere ? <IconCast size={14} aria-hidden /> : <IconPlayerPlay size={14} aria-hidden />}
+      data-plays-elsewhere={playElsewhere ? 'true' : undefined}
+      title={playTitle ?? undefined}
+      aria-label={playTitle ?? undefined}
       {...extra}
     >
       {playLabel}
@@ -129,6 +138,10 @@ export function ResultRowActions({
       </button>
     )}
     {container && onAction && onPlayAll && playLabel && playAll()}
+    {/* A playable leaf's own ▶ (callers that name it: Media's "▶ Office
+        Screen"). Without a label a leaf keeps only its ⋯ — zero change for
+        every other caller. */}
+    {!container && onPlayAll && playLabel && playAll()}
     {container && onAction && onPlayAll && !playLabel && <ActionIcon size="sm" variant="subtle" aria-label="Play as queue" data-testid={`result-play-all-${idPart}`}
       onMouseDown={event => event.preventDefault()} onClick={event => { event.preventDefault(); event.stopPropagation(); onPlayAll(); }}><IconPlayerPlay size={16} /></ActionIcon>}
     {(onMore || onAction) && (
@@ -173,14 +186,15 @@ export function ResultRowActions({
         'data-testid': `result-more-menu-${idPart}`,
       }}
     >
-        <Menu.Item data-testid={`result-action-playNow-${idPart}`} onClick={fire('playNow')}>Play Now</Menu.Item>
+        <Menu.Item data-testid={`result-action-playNow-${idPart}`} onClick={fire('playNow')}>{playNowLabel ?? 'Play Now'}</Menu.Item>
+        {onAction && playHereLabel && <Menu.Item data-testid={`result-action-playHere-${idPart}`} onClick={fire('playHere')}>{playHereLabel}</Menu.Item>}
         {container && onAction && <Menu.Item onClick={fire('shuffle')}>Shuffle</Menu.Item>}
-        <Menu.Item data-testid={`result-action-playNext-${idPart}`} closeMenuOnClick={!hold.offered} {...hold.bind} onClick={hold.guardClick(fire('playNext'))}>Play Next</Menu.Item>
+        <Menu.Item data-testid={`result-action-playNext-${idPart}`} closeMenuOnClick={!hold.offered} {...hold.bind} onClick={hold.guardClick(fire('playNext'))}>{queueWhere ? `Play Next on ${queueWhere}` : 'Play Next'}</Menu.Item>
         {hold.offered && (
           <Menu.Item data-testid={`result-action-playNextFront-${idPart}`} onClick={fire('upNext')}>At the very front</Menu.Item>
         )}
-        <Menu.Item data-testid={`result-action-upNext-${idPart}`} onClick={fire('upNext')}>{onAction ? 'Play First' : 'Up Next'}</Menu.Item>
-        <Menu.Item data-testid={`result-action-add-${idPart}`} onClick={fire('add')}>Add to Queue</Menu.Item>
+        <Menu.Item data-testid={`result-action-upNext-${idPart}`} onClick={fire('upNext')}>{onAction ? (queueWhere ? `Play First on ${queueWhere}` : 'Play First') : 'Up Next'}</Menu.Item>
+        <Menu.Item data-testid={`result-action-add-${idPart}`} onClick={fire('add')}>{queueWhere ? `Add to Queue on ${queueWhere}` : 'Add to Queue'}</Menu.Item>
         {onAction && <Menu.Item data-testid={`result-action-playOn-${idPart}`} onClick={fire('playOn')}>{playOnLabel ?? 'Play on…'}</Menu.Item>}
         {onAction && <Menu.Item onClick={fire('addOn')}>Add on…</Menu.Item>}
         <Menu.Divider />
@@ -258,7 +272,8 @@ export function ResultRow({ item, title, subtitle, thumbnail, leading = null, on
         <ResultRowActions
           item={item} isContainerItem={container} onPlayAll={onPlayAll} onDetails={onDetails} detailsTestId={detailsTestId}
           onMore={onMore} onAction={onAction} testId={idPart} extraActions={extraActions}
-          playLabel={rowLabels?.play ?? null} playOnLabel={rowLabels?.playOn ?? null}
+          playLabel={rowLabels?.play ?? null} playTitle={rowLabels?.playTitle ?? null} playElsewhere={!!rowLabels?.playElsewhere} playOnLabel={rowLabels?.playOn ?? null}
+          playNowLabel={rowLabels?.playNow ?? null} playHereLabel={rowLabels?.playHere ?? null} queueWhere={rowLabels?.queueWhere ?? null}
           MoreMenu={MoreMenu} moreTriggerRef={moreTriggerRef} onMoreMenuChange={onMenuOpenChange}
         />
       </span>

@@ -93,6 +93,12 @@ export function buildProbeArgs(url, opts = {}) {
  * Fields yt-dlp does not know print as `NA`. null for any other line.
  */
 export const SINGLE_PROGRESS_PREFIX = 'share-progress';
+/** Longest video a single fetch takes (3 h); longer ones are streamed. */
+export const SINGLE_MAX_DURATION_S = 3 * 3600;
+/** Largest stream a single fetch takes; larger ones are streamed. */
+export const SINGLE_MAX_FILESIZE = '6G';
+/** No new bytes (or output) for this long and the single fetch is given up. */
+export const SINGLE_STALL_MS = 90_000;
 export function parseSingleProgressLine(line) {
   const text = String(line || '').trim();
   if (!text.startsWith(`${SINGLE_PROGRESS_PREFIX}|`)) return null;
@@ -152,6 +158,10 @@ export function buildSingleDownloadArgs(url, { outputPath, maxHeight = 1080 } = 
     '--progress', // --print implies --quiet; keep the progress lines
     '--no-part',
     '--concurrent-fragments', '4',
+    // A video too long or too large to fetch is skipped (exit 0, no file): the
+    // share then streams it instead.
+    '--match-filter', `duration <= ${SINGLE_MAX_DURATION_S}`,
+    '--max-filesize', SINGLE_MAX_FILESIZE,
     '-f', `bv*[vcodec^=avc1][height<=${h}]+ba[ext=m4a]/b[ext=mp4][height<=${h}]/bv*[height<=${h}]+ba/b`,
     '--merge-output-format', 'mp4',
     '--remux-video', 'mp4',
@@ -636,7 +646,7 @@ export class YtDlpAdapter extends IVideoSourceGateway {
    * @returns {Promise<{kind: 'downloaded', filePath: string, title: string|null, duration: number|null}|{kind: 'failed', error: string}>}
    */
   downloadOne(url, options = {}) {
-    const { outputPath, maxHeight = 1080, onProgress = null, timeoutMs = 900000, signal = null } = options;
+    const { outputPath, maxHeight = 1080, onProgress = null, timeoutMs = 900000, stallMs = SINGLE_STALL_MS, signal = null } = options;
     const argv = buildSingleDownloadArgs(url, { outputPath, maxHeight });
     ensureDir(path.dirname(outputPath));
     const progress = new SingleDownloadProgress();
@@ -650,6 +660,7 @@ export class YtDlpAdapter extends IVideoSourceGateway {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
+        clearInterval(stall);
         signal?.removeEventListener?.('abort', onAbort);
         if (result.kind === 'failed') {
           for (const p of [outputPath, `${outputPath}.part`]) { try { if (fileExists(p)) deleteFile(p); } catch { /* swept later */ } }
@@ -661,7 +672,13 @@ export class YtDlpAdapter extends IVideoSourceGateway {
       };
       const child = this.#spawn('yt-dlp', argv, { stdio: ['ignore', 'pipe', 'pipe'] });
       const timer = setTimeout(() => { child.kill('SIGKILL'); finish({ kind: 'failed', error: `timeout after ${timeoutMs}ms` }); }, timeoutMs);
-      const onAbort = () => { child.kill('SIGKILL'); finish({ kind: 'failed', error: 'cancelled' }); };
+      const onAbort = () => { child.kill('SIGKILL'); finish({ kind: 'failed', error: 'cancelled', reason: 'cancelled' }); };
+      let lastMove = Date.now();
+      const stall = setInterval(() => {
+        if (Date.now() - lastMove < stallMs) return;
+        child.kill('SIGKILL');
+        finish({ kind: 'failed', error: `no progress for ${Math.round(stallMs / 1000)}s`, reason: 'stalled' });
+      }, Math.min(5000, stallMs));
       signal?.addEventListener?.('abort', onAbort, { once: true });
       let buffer = '';
       child.stdout.on('data', (chunk) => {
@@ -670,6 +687,7 @@ export class YtDlpAdapter extends IVideoSourceGateway {
         while ((nl = buffer.indexOf('\n')) >= 0) {
           const line = buffer.slice(0, nl);
           buffer = buffer.slice(nl + 1);
+          lastMove = Date.now();
           const tick = parseSingleProgressLine(line);
           if (tick) { onProgress?.(progress.update(tick)); continue; }
           if (line.startsWith('share-done|')) {
@@ -679,15 +697,20 @@ export class YtDlpAdapter extends IVideoSourceGateway {
           }
         }
       });
-      child.stderr.on('data', (chunk) => { stderrTail = (stderrTail + chunk.toString()).slice(-600); });
+      child.stderr.on('data', (chunk) => { lastMove = Date.now(); stderrTail = (stderrTail + chunk.toString()).slice(-600); });
       child.on('error', (error) => finish({ kind: 'failed', error: error.message }));
       child.on('close', (code) => {
         if (code === 0 && fileExists(outputPath)) {
           finish({ kind: 'downloaded', filePath: outputPath, title: done?.title ?? null, duration: done?.duration ?? null });
           return;
         }
+        // Exit 0 with no file: the length or size filter skipped it.
+        if (code === 0) {
+          finish({ kind: 'failed', error: 'too large or too long to fetch', reason: 'too_large' });
+          return;
+        }
         const reason = (stderrTail.match(/ERROR:[^\n]*/) || [])[0] || `yt-dlp exited ${code}`;
-        finish({ kind: 'failed', error: reason.slice(0, 300) });
+        finish({ kind: 'failed', error: reason.slice(0, 300), reason: /unavailable|private video|removed|members-only|sign in/i.test(reason) ? 'unavailable' : 'error' });
       });
     });
   }

@@ -366,3 +366,55 @@ describe('FileAdapter', () => {
   // sourced via the configService injection pathway (see constructor at
   // __backend/src/1_adapters/content/media/files/FileAdapter.mjs:71-72).
 });
+
+// Search walks the media tree without blocking (one readdir per directory,
+// entry types from the readdir — no stat per entry). Same matches as before:
+// names and directory names, media files only, `.`/`_` skipped, the default
+// exclusion honoured, and a symlink followed to what it points at.
+describe('FileAdapter search walk', () => {
+  let root;
+  let adapter;
+
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'file-search-'));
+    const write = (rel) => {
+      fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true });
+      fs.writeFileSync(path.join(root, rel), '');
+    };
+    write('audio/sonic/green-hill.mp3');        // only its folder's name matches
+    write('audio/notes/sonic-readme.txt');     // not media: never a result
+    write('video/fitness/sonic-ride.mp4');      // excluded by default
+    write('games/deep/a/b/sonic-boom.png');
+    write('_inbox/sonic-draft.mp3');            // `_` dirs are skipped
+    write('.cache/sonic.mp3');                  // dot dirs are skipped
+    fs.mkdirSync(path.join(root, 'linked-target'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'linked-target', 'sonic-linked.mp3'), '');
+    fs.symlinkSync(path.join(root, 'linked-target'), path.join(root, 'games', 'link'));
+    adapter = new FileAdapter({ mediaBasePath: root });
+  });
+
+  afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  test('finds matching media files and directories, nothing skipped or excluded', async () => {
+    const { items } = await adapter.search({ text: 'sonic', take: 50 });
+    const ids = items.map(i => i.id).sort();
+    expect(ids).toEqual(expect.arrayContaining([
+      'files:audio/sonic',
+      'files:games/deep/a/b/sonic-boom.png',
+      'files:games/link/sonic-linked.mp3',
+    ]));
+    expect(ids.some(id => id.includes('readme'))).toBe(false);
+    expect(ids.some(id => id.includes('fitness'))).toBe(false);
+    expect(ids.some(id => id.includes('_inbox') || id.includes('.cache'))).toBe(false);
+  });
+
+  test('the excluded footage is reachable when asked for explicitly', async () => {
+    const { items } = await adapter.search({ text: 'sonic', take: 50, includeExcluded: true });
+    expect(items.map(i => i.id)).toContain('files:video/fitness/sonic-ride.mp4');
+  });
+
+  test('stops at the limit', async () => {
+    const { items } = await adapter.search({ text: 'sonic', take: 2 });
+    expect(items.length).toBe(2);
+  });
+});

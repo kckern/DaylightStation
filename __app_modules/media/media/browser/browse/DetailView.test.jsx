@@ -19,10 +19,11 @@ vi.mock("../controller/useSessionController.js", () => ({
   useSessionController: () => ({ queue: { playNow: queuePlayNow, playNext: vi.fn(), addUpNext: vi.fn(), add: vi.fn() } }),
 }));
 vi.mock("../cast/CastButton.jsx", () => ({ CastButton: () => null }));
-vi.mock("../cast/DestinationLine.jsx", () => ({ DestinationLine: () => <div data-testid="detail-aim">Aim: This device</div> }));
 vi.mock("../shell/NavProvider.jsx", () => ({ useNav: () => ({ pop, backDestination }) }));
 
 import { DetailView } from "./DetailView.jsx";
+import { FleetContext } from "../fleet/FleetProvider.jsx";
+import { habitsStore } from "../habits/mediaHabits.js";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -97,13 +98,23 @@ describe('DetailView Play Now', () => {
     expect(dispatchLeafVerb).toHaveBeenCalledWith('playNow', 'plex:685088', expect.any(Object));
   });
 
-  it('keeps the visible aim beside every detail-page playback verb', () => {
+  it('names where its one primary Play goes: here, when nothing is aimed or learned', () => {
     render(<MantineProvider><DetailView contentId="plex:685088" /></MantineProvider>);
-    expect(screen.getByTestId('detail-aim')).toHaveTextContent('Aim: This device');
+    expect(screen.getByTestId('detail-play-now')).toHaveTextContent('Play here');
+    // Already here: no second "Play here".
+    expect(screen.queryByTestId('detail-play-here')).toBeNull();
     expect(screen.getByTestId('detail-play-now')).toBeVisible();
     expect(screen.getByTestId('detail-play-next')).toBeVisible();
     expect(screen.getByTestId('detail-up-next')).toBeVisible();
     expect(screen.getByTestId('detail-add')).toBeVisible();
+  });
+  it('plays on the screen this browser learned for films, and still offers Play here', () => {
+    habitsStore().recordScreen('video', ['office-tv']);
+    const fleet = { devices: [{ id: 'office-tv', name: 'Office Screen', type: 'linux-pc', content_control: { type: 'websocket' } }], identity: { deviceId: 'browser:me' } };
+    render(<MantineProvider><FleetContext.Provider value={fleet}><DetailView contentId="plex:685088" /></FleetContext.Provider></MantineProvider>);
+    expect(screen.getByTestId('detail-play-now')).toHaveTextContent('Play on Office Screen');
+    fireEvent.click(screen.getByTestId('detail-play-here'));
+    expect(dispatchLeafVerb).toHaveBeenLastCalledWith('playNow', 'plex:685088', expect.objectContaining({ id: 'plex:685088' }), { targetIds: [] });
   });
   it('offers explicit Shuffle beside collection Play', () => {
     contentState.info = { title: 'Album', type: 'album' };

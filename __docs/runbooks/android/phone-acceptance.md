@@ -624,9 +624,11 @@ with `quick_input.share` in the devices file) and a screen nobody is watching.
 5. Share, then tap Cancel: nothing is queued. The same with the back button.
 6. Force-stop the app, then share: the window says "Getting ready…" briefly, then
    shows the destinations.
-7. Share a video that YouTube refuses (a private one): the TV shows the scene, the
-   lines pull back, the screen stops after about 8 s, and a notification says the
-   share did not play.
+7. Share a private (unavailable) video: the TV shows the scene, the lines pull back,
+   the screen goes back to what it showed after about 5 s, and a notification says
+   the share did not play.
+8. With the phone offline (VPN off), share a video, wait 11 minutes, reconnect: the
+   share is refused as stale and parked; nothing plays.
 
 ## G. Notifications
 

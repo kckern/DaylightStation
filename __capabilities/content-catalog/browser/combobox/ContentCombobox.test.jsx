@@ -183,7 +183,7 @@ describe('ContentCombobox (hook wiring)', () => {
     renderCombobox({ value: 'plex:123' });
 
     fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
-    expect(currentHook.commit).toHaveBeenCalledWith('enter');
+    expect(currentHook.commit).toHaveBeenCalledWith('enter', expect.any(Array)); // the visible list rides along
     // The component must not short-circuit any pick/dismiss itself.
     expect(currentHook.select).not.toHaveBeenCalled();
     expect(currentHook.drill).not.toHaveBeenCalled();
@@ -525,7 +525,7 @@ describe('ContentCombobox (hook wiring)', () => {
     expect(hookArgs.selectContainers).toBe(true);
 
     fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
-    expect(currentHook.commit).toHaveBeenCalledWith('enter');
+    expect(currentHook.commit).toHaveBeenCalledWith('enter', expect.any(Array)); // the visible list rides along
     // Component performs no direct pick — decideCommit owns select-vs-drill.
     expect(currentHook.select).not.toHaveBeenCalled();
     expect(currentHook.drill).not.toHaveBeenCalled();
@@ -547,7 +547,7 @@ describe('ContentCombobox (hook wiring)', () => {
     expect(hookArgs.selectContainers).toBe(false);
 
     fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
-    expect(currentHook.commit).toHaveBeenCalledWith('enter');
+    expect(currentHook.commit).toHaveBeenCalledWith('enter', expect.any(Array)); // the visible list rides along
     expect(currentHook.drill).not.toHaveBeenCalled();
     expect(currentHook.select).not.toHaveBeenCalled();
   });
@@ -568,7 +568,7 @@ describe('ContentCombobox (hook wiring)', () => {
     renderCombobox();
 
     fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
-    expect(currentHook.commit).toHaveBeenCalledWith('enter');
+    expect(currentHook.commit).toHaveBeenCalledWith('enter', expect.any(Array)); // the visible list rides along
     // The Enter handler never closes on its own — commit owns close semantics,
     // and 'open' closes nothing. The option rows must still be rendered.
     expect(currentHook.handleClose).not.toHaveBeenCalled();

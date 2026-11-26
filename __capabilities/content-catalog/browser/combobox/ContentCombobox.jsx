@@ -183,7 +183,10 @@ export function ContentCombobox({
   const mode = state.mode;
   const isBrowse = mode === Modes.BROWSE;
   const isEditing = mode !== Modes.DISPLAY;
-  const items = isBrowse ? state.browse.items : (transformResults ? transformResults(state.results) : state.results);
+  // `transformResults(results, { query, searching })`: callers may reorder or collapse
+  // what is shown (Media: collapse editions, then put what this person picked
+  // for these words before last time first). The query is the box's text.
+  const items = isBrowse ? state.browse.items : (transformResults ? transformResults(state.results, { query: state.search ?? '', searching: isSearching }) : state.results);
   const search = state.search;
   const breadcrumbs = state.browse.breadcrumbs;
   const pagination = state.browse.pagination;
@@ -398,7 +401,9 @@ export function ContentCombobox({
     }
     if (e.key === 'Enter') {
       e.preventDefault();
-      commit('enter');   // decideCommit owns pick/render/literal/open; may keep the dropdown open
+      // Search results may be reordered/collapsed for display: Enter picks from
+      // the list as shown. Browse levels keep their own path (unchanged).
+      commit('enter', isBrowse ? null : items);   // decideCommit owns pick/render/literal/open; may keep the dropdown open
       return;
     }
     if (e.key === 'Escape' && isEditing) {
@@ -654,7 +659,12 @@ export function ContentCombobox({
               onAction={onAction}
               extraActions={resultExtraActions}
               playLabel={resultRowLabels?.(item)?.play ?? null}
+              playTitle={resultRowLabels?.(item)?.playTitle ?? null}
+              playElsewhere={!!resultRowLabels?.(item)?.playElsewhere}
               playOnLabel={resultRowLabels?.(item)?.playOn ?? null}
+              playNowLabel={resultRowLabels?.(item)?.playNow ?? null}
+              playHereLabel={resultRowLabels?.(item)?.playHere ?? null}
+              queueWhere={resultRowLabels?.(item)?.queueWhere ?? null}
               onMoreMenuPointerDown={handleMoreMenuPointerDown}
               onMoreMenuChange={handleMoreMenuChange}
               onMoreMenuAction={handleMoreMenuAction}

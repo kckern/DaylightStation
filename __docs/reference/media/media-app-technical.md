@@ -2482,6 +2482,11 @@ dot-delimited namespaces. Every event SHOULD include `clientId`,
 |---|---|---|---|
 | `media-app.mounted` | info | App mounts. | `clientId`, `displayName`, `viewport{width,height}`, `orientation`, `devicePixelRatio` |
 | `media-app.unmounted` | info | App unmounts. | — |
+| `item.opened` | info | A tap opened a playable item's detail page (a look — nothing played). | `contentId`, `via` (`tap`, `tile`, `open`, `played-earlier`) |
+| `play.sent` | info | A deliberate play started (row ▶, tile ▶, detail Play, Play here, a queue start). | `contentId`, `kind` (`playNow`\|`shuffle`), `targetIds` (`[]` = here), `source` (`aim`\|`learned`\|`here`\|`chosen`) |
+| `habit.pick-recorded` | info | A result opened or played from a search was remembered against its words. | `contentId`, `textLength`, `via` |
+| `habit.screen-recorded` | info | A deliberate play taught where this kind of thing is watched. | `kind` (`video`\|`audio`), `targetIds` |
+| `habit.results-ranked` | debug | Search results were reordered by what was picked before. | `textLength`, `boosted` |
 | `session.created` | info | New local session started. | `sessionId`, `contentId` |
 | `session.reset` | info | User explicitly reset session. | — |
 | `session.resumed` | info | Session restored from localStorage. | `sessionId`, `resumedPosition` |
@@ -2616,6 +2621,7 @@ Two related traps, both fixed and both worth not re-introducing:
 | `media-app.url-command-token` | Dedup token for URL-command processing. | string. |
 | `media-scope-recents` | Last 5 scope keys that produced results. | `string[]`. |
 | `media-scope-favorites` | Starred scope keys. | `string[]`. |
+| `media-app.habits` | What this browser learned from deliberate acts (media-app.md "Looking and watching"): which result was picked for which words, which screen the last play of each kind went to. Read by search ranking and every ▶ label. | `{ v: 1, picks: { "<normalized words>": { at, items: [{ id, title, item: { id, title, thumbnail, source, type, mediaType, itemType, metadata: { type } }, count, at }] } }, screens: { video\|audio: { choices: [{ targetIds: string[], count, at }] } } }` — at most 200 word sets × 6 items and 6 screen choices per kind; both fade by half every 30 days; the strongest choice names the ▶ (the first release's `{ targetIds, at }` reads as one choice). Unreadable or other-version values are ignored. |
 
 ### 11.2 `PersistedSession` shape
 
