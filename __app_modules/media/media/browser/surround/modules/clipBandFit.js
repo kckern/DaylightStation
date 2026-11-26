@@ -30,7 +30,12 @@
  *   failed; the floor is left applied.
  */
 export function fitDown({ ceilPx, floorPx, stepPx = 1, apply, ok }) {
-  if (!(ceilPx > 0) || !(floorPx > 0) || floorPx > ceilPx) return { px: ceilPx, fits: true };
+  if (!(ceilPx > 0) || !(floorPx > 0) || floorPx > ceilPx) {
+    // Nothing to search, but the element may still carry an earlier clip's
+    // size: set the ceiling so it does not stay.
+    if (ceilPx > 0) apply(ceilPx);
+    return { px: ceilPx, fits: true };
+  }
   // The ceiling goes in as given: rounding it could set type larger than the
   // stylesheet's (26.8375 -> 26.84).
   const sizes = [ceilPx];

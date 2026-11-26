@@ -82,6 +82,22 @@ describe('fitDown', () => {
     expect(fitDown({ ceilPx: 14, floorPx: 14, apply: () => {}, ok: ok(10) })).toEqual({ px: 14, fits: false });
     expect(measured).toBe(2);
   });
+
+  it('applies the ceiling when the range is degenerate, so an earlier clip\'s size does not stay', () => {
+    // A floor above the ceiling: nothing to search, but a stale inline size
+    // from the last clip must not survive.
+    const applied = [];
+    const r = fitDown({ ceilPx: 16, floorPx: 20, apply: (px) => applied.push(px), ok: () => false });
+    expect(r).toEqual({ px: 16, fits: true });
+    expect(applied).toEqual([16]);
+  });
+
+  it('applies nothing when there is no ceiling to apply', () => {
+    const applied = [];
+    fitDown({ ceilPx: 0, floorPx: 12, apply: (px) => applied.push(px), ok: () => true });
+    fitDown({ ceilPx: NaN, floorPx: 12, apply: (px) => applied.push(px), ok: () => true });
+    expect(applied).toEqual([]);
+  });
 });
 
 describe('lineCount', () => {

@@ -150,8 +150,10 @@ export default function ClipBand({ data = null, position = 0, logger = null }) {
   const nextWork = elsewhere ? smartQuotes(nextWorkLabel(next)) : null;
   const step = Number.isInteger(next?.step) && next.step > 0 ? next.step : null;
 
+  // `step` is a dep because the chevron comes and goes with it, and the chevron
+  // changes Up next's width (and so the title's column).
   useBandFit({
-    bandRef, titleRef, headingRef, nextTextRef, log, deps: [title, nextTitle, nextWork, elsewhere],
+    bandRef, titleRef, headingRef, nextTextRef, log, deps: [title, nextTitle, nextWork, elsewhere, step],
   });
 
   const goNext = useCallback(() => {
