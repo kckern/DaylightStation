@@ -496,7 +496,7 @@ public class PhoneHomeActivity extends Activity {
         back.setContentDescription("Back to setup");
         header.addView(back, dp(48), dp(48));
         TextView heading = label("Drive playlists", 24, INK);
-        heading.setAccessibilityHeading(true);
+        if (android.os.Build.VERSION.SDK_INT >= 28) heading.setAccessibilityHeading(true); // API 28; the phone floor is 26
         header.addView(heading, new LinearLayout.LayoutParams(0, -2, 1));
         TextView add = PlaylistPicker.text(this, "+ Add", 15, android.graphics.Color.WHITE, true);
         add.setGravity(Gravity.CENTER);

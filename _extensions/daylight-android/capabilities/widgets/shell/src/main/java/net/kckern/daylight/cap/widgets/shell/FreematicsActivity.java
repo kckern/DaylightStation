@@ -124,6 +124,9 @@ public final class FreematicsActivity extends Activity {
         forget.setVisibility(saved ? View.VISIBLE : View.GONE);
     }
 
+    // BLUETOOTH_CONNECT is checked first (canConnect, else requested) and a refusal is a
+    // SecurityException, a RuntimeException the try below catches. Lint cannot see either.
+    @android.annotation.SuppressLint("MissingPermission")
     private void proceed() {
         if (adapter == null) return;
         if (!canConnect()) {
@@ -224,6 +227,9 @@ public final class FreematicsActivity extends Activity {
         connectSaved();
     }
 
+    // BLUETOOTH_CONNECT is checked first (canConnect, else requested) and a refusal is a
+    // SecurityException, a RuntimeException the try below catches. Lint cannot see either.
+    @android.annotation.SuppressLint("MissingPermission")
     private void connectSaved() {
         main.removeCallbacks(retry);
         if (!visible || selecting || savedAddress().isEmpty()) return;

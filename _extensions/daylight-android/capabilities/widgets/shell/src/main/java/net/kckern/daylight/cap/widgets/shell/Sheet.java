@@ -90,7 +90,7 @@ final class Sheet {
         TextView heading = PlaylistPicker.text(activity, title, 20, PlaylistPicker.COLOR_INK, true);
         heading.setMaxLines(2);
         heading.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        heading.setAccessibilityHeading(true);
+        if (android.os.Build.VERSION.SDK_INT >= 28) heading.setAccessibilityHeading(true); // API 28; the phone floor is 26
         text.addView(heading);
         if (subtitle != null && !subtitle.isEmpty()) {
             TextView sub = PlaylistPicker.text(activity, subtitle, 13, PlaylistPicker.COLOR_GREEN, false);
@@ -107,7 +107,7 @@ final class Sheet {
     /** A plain heading, for a sheet with no cover. */
     Sheet heading(String title, String subtitle) {
         TextView heading = PlaylistPicker.text(activity, title, 20, PlaylistPicker.COLOR_INK, true);
-        heading.setAccessibilityHeading(true);
+        if (android.os.Build.VERSION.SDK_INT >= 28) heading.setAccessibilityHeading(true); // API 28; the phone floor is 26
         body.addView(heading);
         if (subtitle != null && !subtitle.isEmpty()) {
             TextView sub = PlaylistPicker.text(activity, subtitle, 14, PlaylistPicker.COLOR_INK, false);

@@ -126,6 +126,17 @@ public final class MergedManifestCheck {
     private static final String[] COMPONENTS = { "activity", "activity-alias", "service", "receiver", "provider" };
     /** Manifest attributes that put a window over the lock screen or wake the screen for it. */
     private static final String[] LOCK_SCREEN_ATTRIBUTES = { "showWhenLocked", "turnScreenOn", "showOnLockScreen" };
+    /**
+     * The only windows of a personal build allowed over the lock screen (showWhenLocked, not the
+     * other two): the capture path a quick-settings tile starts without an unlock. They write into
+     * a private queue and show nothing already saved; the link activity is the visible hop that
+     * starts them. The same list as OVER_LOCK_ALLOWED in tools/verify-lib.mjs.
+     */
+    private static final java.util.Set<String> OVER_LOCK_ALLOWED = new java.util.HashSet<>(java.util.Arrays.asList(
+            "net.kckern.daylight.cap.notifications.shell.LinkActivity",
+            "net.kckern.daylight.cap.quickinput.shell.RecordActivity",
+            "net.kckern.daylight.cap.quickinput.shell.MealCameraActivity",
+            "net.kckern.daylight.cap.quickinput.shell.PhotoCaptureActivity"));
 
     /** The exact list of a device with control.bind none. */
     private static void personalRules(Document doc, PersonalBuild.Expectation want, List<String> out) {
@@ -154,6 +165,7 @@ public final class MergedManifestCheck {
                 }
                 // The site, a recording screen, a draft being typed: all of it is behind the lock.
                 for (String attribute : LOCK_SCREEN_ATTRIBUTES) {
+                    if ("showWhenLocked".equals(attribute) && OVER_LOCK_ALLOWED.contains(e.getAttributeNS(ANDROID, "name"))) continue;
                     if ("true".equals(e.getAttributeNS(ANDROID, attribute))) {
                         out.add(e.getAttributeNS(ANDROID, "name") + " declares android:" + attribute
                                 + ": nothing of a personal device shows over the lock screen");
