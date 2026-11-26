@@ -350,16 +350,18 @@ describe('SearchMode', () => {
     );
     const input = await screen.findByTestId('search-mode-input');
     const chip = () => screen.getByTestId('search-destination-chip');
+    // Unaimed, the chip already names the learned screen; Tab moves on from it.
+    expect(chip()).toHaveTextContent('▶ Office Screen');
     expect(fireEvent.keyDown(input, { key: 'Tab' })).toBe(false);
-    expect(chip()).toHaveTextContent('▶ Office Screen');
-    fireEvent.keyDown(input, { key: 'Tab' });
     expect(chip()).toHaveTextContent('▶ Living Room TV');
+    expect(mediaLog.searchDestinationCycled).toHaveBeenCalledWith({ from: 'unaimed', to: 'livingroom-tv', via: 'tab' });
+    fireEvent.keyDown(input, { key: 'Tab' });
+    expect(chip()).toHaveTextContent('▶ This device');
     fireEvent.keyDown(input, { key: 'Tab', shiftKey: true });
-    expect(chip()).toHaveTextContent('▶ Office Screen');
-    expect(mediaLog.searchDestinationCycled).toHaveBeenCalledWith({ from: 'unaimed', to: 'office-tv', via: 'tab' });
+    expect(chip()).toHaveTextContent('▶ Living Room TV');
     // A tap on the chip cycles too.
     fireEvent.click(chip());
-    expect(chip()).toHaveTextContent('▶ Living Room TV');
+    expect(chip()).toHaveTextContent('▶ This device');
     expect(screen.getByTestId('search-mode')).toBeInTheDocument();
   });
 

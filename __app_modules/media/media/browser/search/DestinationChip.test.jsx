@@ -100,7 +100,7 @@ describe('DestinationChip', () => {
   it('learned screen, cycled to This device: a film ▶ plays here, not on the learned screen', () => {
     habitsStore().recordScreen('video', ['office-tv']);
     render(tree(fleetValue()));
-    fireEvent.click(screen.getByTestId('cycle-back')); // unaimed → last = This device
+    fireEvent.click(screen.getByTestId('cycle-back')); // Office Screen (shown) → previous = This device
     expect(chip()).toHaveTextContent('▶ This device');
     expect(screen.getByTestId('film-source')).toHaveTextContent('here');
     expect(screen.getByTestId('film-targets')).toHaveTextContent('');
@@ -109,22 +109,42 @@ describe('DestinationChip', () => {
     expect(JSON.parse(localStorage.getItem(CAST_TARGET_KEY))).toMatchObject({ targetIds: [], here: true });
   });
 
-  it('Tab from the unaimed state goes to the first entry of the cycle', () => {
+  it('unaimed on the learned screen: a step moves on from the entry shown (every step changes the label)', () => {
     habitsStore().recordScreen('video', ['office-tv']);
     render(tree(fleetValue()));
-    fireEvent.click(chip());
     expect(chip()).toHaveTextContent('▶ Office Screen');
-    expect(screen.getByTestId('aim-probe')).toHaveTextContent('office-tv');
-    expect(mediaLog.searchDestinationCycled).toHaveBeenCalledWith({ from: 'unaimed', to: 'office-tv', via: 'click' });
+    fireEvent.click(chip());
+    expect(chip()).toHaveTextContent('▶ Living Room TV');
+    expect(screen.getByTestId('aim-probe')).toHaveTextContent('livingroom-tv');
+    expect(mediaLog.searchDestinationCycled).toHaveBeenCalledWith({ from: 'unaimed', to: 'livingroom-tv', via: 'click' });
+  });
+
+  it('unaimed on the learned screen: a step back wraps to the previous entry', () => {
+    habitsStore().recordScreen('video', ['office-tv']);
+    render(tree(fleetValue()));
+    fireEvent.click(screen.getByTestId('cycle-back'));
+    expect(chip()).toHaveTextContent('▶ This device');
+    expect(screen.getByTestId('film-source')).toHaveTextContent('here');
+  });
+
+  it('when ▶ would ask: a step goes to the first entry, a step back to the last', () => {
+    const { unmount } = render(tree(fleetValue()));
+    expect(chip()).toHaveTextContent('▶ Choose a screen');
+    fireEvent.click(chip());
+    expect(chip()).toHaveTextContent('▶ Living Room TV');
+    unmount();
+    localStorage.clear();
+    render(tree(fleetValue()));
+    expect(chip()).toHaveTextContent('▶ Choose a screen');
+    fireEvent.click(screen.getByTestId('cycle-back'));
+    expect(chip()).toHaveTextContent('▶ This device');
   });
 
   it('a click walks the cycle: usual film screen, the others by name, then This device', () => {
     habitsStore().recordScreen('video', ['livingroom-tv']);
     render(tree(fleetValue({ devices: [office, livingRoom, { id: 'bedroom-tv', name: 'Bedroom TV', type: 'shield-tv' }] })));
 
-    fireEvent.click(chip());
-    expect(chip()).toHaveTextContent('▶ Living Room TV');
-    expect(screen.getByTestId('aim-probe')).toHaveTextContent('livingroom-tv');
+    expect(chip()).toHaveTextContent('▶ Living Room TV'); // the usual film screen, unaimed
     fireEvent.click(chip());
     expect(chip()).toHaveTextContent('▶ Bedroom TV');
     fireEvent.click(chip());
@@ -132,6 +152,9 @@ describe('DestinationChip', () => {
     fireEvent.click(chip());
     expect(chip()).toHaveTextContent('▶ This device');
     expect(screen.getByTestId('aim-probe')).toHaveTextContent('');
+    fireEvent.click(chip());
+    expect(chip()).toHaveTextContent('▶ Living Room TV');
+    expect(screen.getByTestId('aim-probe')).toHaveTextContent('livingroom-tv');
   });
 
   it('without a learned film screen the screens go by name', () => {

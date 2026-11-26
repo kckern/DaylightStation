@@ -30,12 +30,17 @@ const HERE_LABEL = 'This device';
 const ASK_LABEL = 'Choose a screen';
 const FILM = Object.freeze({ type: 'movie' });
 
-/** What ▶ does for a film with nothing chosen: the learned screen, here, or ask. */
+/**
+ * What ▶ does for a film with nothing chosen: the learned screen, here, or
+ * ask. `shownIds` is the cycle entry the label names (null when ▶ asks), so a
+ * step moves on from what the chip shows and always changes it.
+ */
 function unaimedDestination(usual) {
   if (usual.source === 'learned') {
-    return { targetIds: NO_IDS, label: usual.devices.map((d) => deviceName(d)).join(' + '), unaimed: true, stale: false };
+    return { targetIds: NO_IDS, shownIds: usual.targetIds, label: usual.devices.map((d) => deviceName(d)).join(' + '), unaimed: true, stale: false };
   }
-  return { targetIds: NO_IDS, label: usual.source === 'here' ? HERE_LABEL : ASK_LABEL, unaimed: true, stale: false };
+  if (usual.source === 'here') return { targetIds: NO_IDS, shownIds: NO_IDS, label: HERE_LABEL, unaimed: true, stale: false };
+  return { targetIds: NO_IDS, shownIds: null, label: ASK_LABEL, unaimed: true, stale: false };
 }
 
 /**
@@ -91,13 +96,19 @@ export function useDestinationCycle() {
   const cycle = useCallback((dir = 1, via = 'tab') => {
     if (!setTargets) return false;
     const step = dir === -1 ? -1 : 1;
-    // From nothing chosen, Tab goes to the first entry (Shift+Tab the last).
-    const next = current.unaimed
+    // Every step changes the label: from the entry the chip shows (the
+    // learned screen, This device), or — when ▶ would ask — to the first
+    // entry (Shift+Tab: the last).
+    const from = current.unaimed ? current.shownIds : current.targetIds;
+    const next = from == null
       ? order[step === 1 ? 0 : order.length - 1]
-      : nextDestination(order, current.targetIds, step);
+      : nextDestination(order, from, step);
     setTargets(next.targetIds, { here: next.targetIds.length === 0 });
-    const from = current.unaimed && !current.stale ? 'unaimed' : aimKey(targetIds);
-    mediaLog.searchDestinationCycled({ from, to: aimKey(next.targetIds), via });
+    mediaLog.searchDestinationCycled({
+      from: current.unaimed && !current.stale ? 'unaimed' : aimKey(targetIds),
+      to: aimKey(next.targetIds),
+      via,
+    });
     return true;
   }, [setTargets, order, current, targetIds]);
 
