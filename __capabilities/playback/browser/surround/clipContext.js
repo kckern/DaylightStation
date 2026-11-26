@@ -25,7 +25,7 @@ export function clipWork(entry) {
   return String(id).split('#')[0] || null;
 }
 
-const describeEntry = (entry) => {
+const describeEntry = (entry, step = null) => {
   if (!entry) return null;
   const piece = entry.surround && typeof entry.surround === 'object' ? entry.surround.piece ?? null : null;
   return {
@@ -35,6 +35,10 @@ const describeEntry = (entry) => {
     // The concert the next clip is from, when its own surround names it.
     workTitle: piece?.title ?? null,
     workYear: piece?.year ?? null,
+    // How many queue moves reach it: 1 for the very next entry, more when a
+    // break sits between (the band names the next CLIP, and a click on it has
+    // to land there, not on the commercial).
+    step,
   };
 };
 
@@ -44,7 +48,7 @@ const describeEntry = (entry) => {
  * @returns {{ segment: {start: number, end: number}, title: string|null,
  *   work: string|null, index: number|null, total: number|null,
  *   next: {title: string|null, subtitle: string|null, work: string|null,
- *     workTitle: string|null, workYear: number|null}|null }|null}
+ *     workTitle: string|null, workYear: number|null, step: number|null}|null }|null}
  *   null when the item is not a clip.
  */
 const isClip = (entry) => {
@@ -74,7 +78,9 @@ export function clipContext(item, handle) {
   // A break between clips (a commercial, a family photo; see the sequence
   // `breaks:` rule) is not what the band means by next: name the next CLIP.
   // With no clip ahead at all, the plain next entry stands.
-  const next = upcoming.find((entry) => isClip(entry)) ?? upcoming[0] ?? null;
+  let nextAt = upcoming.findIndex((entry) => isClip(entry));
+  if (nextAt < 0 && upcoming[0]) nextAt = 0;
+  const next = nextAt >= 0 ? upcoming[nextAt] : null;
 
   return {
     segment: { start: segment.start, end: segment.end },
@@ -84,7 +90,7 @@ export function clipContext(item, handle) {
     work: clipWork(item),
     index,
     total,
-    next: describeEntry(next),
+    next: describeEntry(next, nextAt >= 0 ? nextAt + 1 : null),
   };
 }
 

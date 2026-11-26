@@ -36,6 +36,7 @@ import { changedKeyComponent } from './lib/keyChange.js';
 import { createIdentityChurnCounter } from './lib/identityChurn.js';
 import { getLogger } from '../../../../frontend/src/lib/logging/Logger.js';
 import { OnDeckCard } from './components/OnDeckCard.jsx';
+import { advanceSteps } from './advanceSteps.js';
 import { getPlayerQueueOpRegistry } from './lib/queueOpRegistry.js';
 import { getNaturalEndPolicy } from './lib/naturalEndPolicy.js';
 import { AuxiliaryPlayerContext } from './lib/auxiliaryPlayerContext.js';
@@ -2607,14 +2608,17 @@ const Player = forwardRef(function Player(props, ref) {
     // of the duplicate-completion key so the item's next end is a new end.
     releaseCompletion: () => { completedMediaKeyRef.current = null; },
     toggle: toggleOwner,
-    // Fix 1 (bugbash 3A): Expose advance() for external track skip control
+    // Fix 1 (bugbash 3A): Expose advance() for external track skip control.
+    // Several entries forward is one move (one curtain); see advanceSteps.js.
     advance: (count = 1) => {
       ownerStoppedRef.current = false;
-      const advanceFn = isQueue ? advance : singleAdvance;
-      if (typeof advanceFn === 'function') {
-        if (isQueue && Number(count) < 0) advanceFn(Number(count));
-        else for (let i = 0; i < Math.max(1, count); i++) advanceFn();
-      }
+      advanceSteps(count, {
+        isQueue,
+        hasOnDeck: Boolean(onDeck),
+        queueLength: Array.isArray(playQueue) ? playQueue.length : null,
+        advance,
+        singleAdvance,
+      });
     },
     // Original content time is opt-in; legacy transport getCurrentTime stays native.
     getContentTime: () => readContentPosition(_getMediaElFallback()?.currentTime, nowPlayingRef.current?.item?.contentTimeline),
@@ -2751,7 +2755,7 @@ const Player = forwardRef(function Player(props, ref) {
         fromContentId: effectiveMeta?.contentId ?? effectiveMeta?.assetId ?? null,
       }, { level: 'info' });
     },
-  }), [recoveryIdentity, externalRecoveryIdentity, acceptRecoveryIntent, beginRecoveryVisit, isQueue, isShuffle, shuffleOn, repeatMode, advance, singleAdvance, rawJumpTo, sessionVolume, sessionPlaybackRate, setOwnerVolume, setOwnerPlaybackRate, effectiveMeta?.assetId, effectiveMeta?.contentId, resilienceControllerRef, withTransport, queueSnapshot, playerInstanceId, queueShader, issueOwnerRevision, adoptQueueSnapshot, applyQueueSnapshot, setTargetTimeSeconds, setShader, setShaderUserCycled, inspectRendererBoundaryRequest, beginRendererBoundary, stopOwner, playOwner, pauseOwner, toggleOwner, seekOwner, currentTrackState, forceSinglePlayerRemount, adoptSessionSnapshot, retryHeldPlayback]);
+  }), [recoveryIdentity, externalRecoveryIdentity, acceptRecoveryIntent, beginRecoveryVisit, isQueue, isShuffle, shuffleOn, repeatMode, advance, singleAdvance, rawJumpTo, sessionVolume, sessionPlaybackRate, setOwnerVolume, setOwnerPlaybackRate, effectiveMeta?.assetId, effectiveMeta?.contentId, resilienceControllerRef, withTransport, queueSnapshot, playerInstanceId, queueShader, issueOwnerRevision, adoptQueueSnapshot, applyQueueSnapshot, setTargetTimeSeconds, setShader, setShaderUserCycled, inspectRendererBoundaryRequest, beginRendererBoundary, stopOwner, playOwner, pauseOwner, toggleOwner, seekOwner, currentTrackState, forceSinglePlayerRemount, adoptSessionSnapshot, retryHeldPlayback, onDeck, playQueue]);
 
   useEffect(() => () => {
     clearRemountTimer();

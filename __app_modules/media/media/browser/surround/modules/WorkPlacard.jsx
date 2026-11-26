@@ -48,9 +48,20 @@ import { smartQuotes, trimmed } from "../../../../../../__capabilities/playback/
 import { surroundLogger } from "../../../../../../__capabilities/playback/browser/surround-module-kit.mjs";
 import { segmentAt, isComposedContainer } from "../../../../../../__capabilities/playback/browser/surround-segments.mjs";
 import { placedRailSegments } from "../../../../../../__capabilities/playback/browser/surround-band.mjs";
-import { fitPlate, plateStyle, withheldPlate } from "../../../../../../__capabilities/playback/browser/surround-fit.mjs";
+import { FONT_STEP_PX, fitPlate, plateStyle, withheldPlate } from "../../../../../../__capabilities/playback/browser/surround-fit.mjs";
 import { plateText } from "./plateText.js";
 import "./WorkPlacard.scss";
+
+/**
+ * The year a DATED performance sets on its title line, or null. Only where
+ * nothing else dates it: a work with a provenance line carries its dates there,
+ * and a container's headline is the segment sounding, not the work.
+ */
+function datedYearOf(piece, container) {
+  if (container || piece?.composed) return null;
+  const y = piece?.year;
+  return (typeof y === 'number' || /^\d{4}$/.test(String(y ?? ''))) ? String(y) : null;
+}
 
 /**
  * A line of nothing that still occupies a line.
@@ -129,12 +140,25 @@ export default function WorkPlacard({
   // Every name this plate may ever carry, CURLED, because that is what is
   // painted — a measurement of the straight-quoted original measures a string
   // the screen never shows.
-  const names = useMemo(
-    () => (container
-      ? drawn.map(({ segment: m }) => smartQuotes(trimmed(m?.name))).filter(Boolean)
-      : []),
-    [container, drawn],
-  );
+  //
+  // A single work is fitted too: its one line is the title, with the year when
+  // the plate sets one ("Christmas with Audra McDonald and Peter Graves · 2004"),
+  // and before this it was cut by the ellipsis at the ceiling size while a
+  // smaller size would have set it whole.
+  const datedYear = datedYearOf(piece, container);
+  const names = useMemo(() => {
+    if (container) return drawn.map(({ segment: m }) => smartQuotes(trimmed(m?.name))).filter(Boolean);
+    const work = smartQuotes(trimmed(piece?.title));
+    if (!work) return [];
+    return [datedYear ? `${work} · ${datedYear}` : work];
+  }, [container, drawn, piece?.title, datedYear]);
+  // A single work whose whole line cannot be set even at the floor headlines
+  // its authored `short_title` instead, rather than being cut mid-name.
+  const shortLine = useMemo(() => {
+    const short = container ? '' : smartQuotes(trimmed(piece?.short_title));
+    if (!short || short === names[0]) return null;
+    return datedYear ? `${short} · ${datedYear}` : short;
+  }, [container, piece?.short_title, datedYear, names]);
 
   const rootRef = useRef(null);
   const [fit, setFit] = useState(null);
@@ -194,8 +218,12 @@ export default function WorkPlacard({
   // LAYOUT EFFECT, so the fitted size is committed before the browser paints and
   // the first frame is already the right one.
   useLayoutEffect(() => {
-    if (!container || !names.length) { setFit(null); return undefined; }
-    const next = fitPlate(rootRef.current, names);
+    if (!names.length) { setFit(null); return undefined; }
+    let next = fitPlate(rootRef.current, names);
+    if (next?.rejected?.length && shortLine) {
+      const alt = fitPlate(rootRef.current, [shortLine]);
+      if (alt && !alt.rejected.length) next = { ...alt, short: true, refusedFull: next.rejected };
+    }
     if (!next) {
       if (tries.current >= 20) return undefined;
       tries.current += 1;
@@ -204,6 +232,7 @@ export default function WorkPlacard({
     }
     setFit((prev) => (
       prev
+      && Boolean(prev.short) === Boolean(next.short)
       && prev.fontPx === next.fontPx
       && prev.availPx === next.availPx
       && prev.rejected.length === next.rejected.length
@@ -211,7 +240,7 @@ export default function WorkPlacard({
         ? prev : next
     ));
     return undefined;
-  }, [container, names, layoutTick]);
+  }, [container, names, shortLine, layoutTick]);
 
   /**
    * A name that cannot be set whole at the plate's floor is an AUTHORING
@@ -240,12 +269,48 @@ export default function WorkPlacard({
     });
   }, [rejected, floorPx, availPx, contentId, log]);
 
+  /**
+   * THE PAINTED LINE HAS THE LAST WORD on a dated plate. The fit measures
+   * "Title · 2004" as one run of text; the plate paints it as three spans (the
+   * name, which may take the ellipsis, the mark, the year), and shaping across
+   * span joins can come out a pixel or two wider than the one run measured
+   * (2px at 960x540, `ClipBand.measure.test.jsx`). So after the size lands the
+   * name is checked as painted and stepped down until it is whole, never below
+   * the floor.
+   *
+   * ONLY A FITTED LINE. A line the fit refused comes back at the ceiling and is
+   * cut at every size; stepping it walked 0.25px per render down to the floor
+   * (some 35 renders, again on every layout tick) for nothing.
+   */
+  useLayoutEffect(() => {
+    if (!fit || container) return;
+    if (fit.rejected?.length) return;
+    const name = rootRef.current?.querySelector?.('.surround-work-placard__name');
+    if (!name || !(name.clientWidth > 0)) return;
+    if (name.scrollWidth <= name.clientWidth + 0.5) return;
+    const smaller = Number((fit.fontPx - FONT_STEP_PX).toFixed(2));
+    if (smaller < fit.floorPx) return;
+    setFit((prev) => (prev === fit ? { ...prev, fontPx: smaller } : prev));
+  }, [fit, container]);
+
+  const shortened = Boolean(fit?.short);
+  useEffect(() => {
+    if (!shortened) return;
+    log.info('surround.placard.short-title', {
+      contentId,
+      text: fit.refusedFull?.[0]?.text ?? null,
+      short: shortLine,
+      availPx: fit.availPx,
+    });
+  }, [shortened]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const refusedNames = useMemo(() => withheldPlate(fit), [fit]);
   const refused = Boolean(segment && refusedNames?.has(smartQuotes(trimmed(segment.name))));
 
-  const { title, set } = plateText({
+  const { title: fullTitle, set } = plateText({
     piece, segment, ordinal: index + 1, count: drawn.length, refused,
   });
+  const title = shortened ? trimmed(piece?.short_title) : fullTitle;
 
   useEffect(() => {
     if (!container) return;
@@ -277,9 +342,7 @@ export default function WorkPlacard({
   // title line — "Ring Christmas Bells · 2008". Only where nothing else dates
   // it: a work with a provenance line already carries its dates there, and a
   // container's headline is the segment sounding, not the work.
-  const year = !container && !piece?.composed && (typeof piece?.year === 'number' || /^\d{4}$/.test(String(piece?.year ?? '')))
-    ? String(piece.year)
-    : null;
+  const year = datedYear;
 
   // PERFORMANCE CREDIT — the recording, not the work. Segment-level override
   // wins (a different pianist for one movement), then the piece-level default.
@@ -311,9 +374,7 @@ export default function WorkPlacard({
             <span className="surround-work-placard__year">{year}</span>
           </>
         ) : smartQuotes(title)}
-        {container && (
-          <span className="surround-work-placard__probe" aria-hidden="true" />
-        )}
+        <span className="surround-work-placard__probe" aria-hidden="true" />
       </h2>
       {container && (
         <p className="surround-work-placard__set" data-testid="surround-placard-set">

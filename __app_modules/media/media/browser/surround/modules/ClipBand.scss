@@ -1,15 +1,22 @@
 /* The band under a clip: [piece grid | the piece now playing + its clock] and,
    at the right, what plays next. The title is the band's loudest type and may
    wrap to a second line rather than be cut (the house standard: fit by
-   layout, nothing clipped). */
+   layout, nothing clipped). The SIZES below are ceilings: ClipBand measures
+   (`clipBandFit.js`) and steps the title and Up next down until each sets
+   inside the band's height. */
 .clip-band {
   --clip-cell: 0.55rem;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  /* Up next takes what it needs up to 19rem, and never more than 38% of the
+     band: on a small screen a fixed 19rem took half the band and left the
+     piece now playing (the band's loudest type) a column three words wide. */
+  grid-template-columns: minmax(0, 1fr) fit-content(min(19rem, 38%));
   align-items: center;
   gap: 2rem;
   height: 100%;
-  padding: 0.7rem 1.4rem 0.5rem;
+  /* Slim: a theme centres the band in the footer's slack, so this is a minimum
+     margin, and on a small screen every pixel of it is a line of title. */
+  padding: 0.35rem 1.4rem 0.25rem;
   box-sizing: border-box;
   color: var(--ink, #f3ead6); // data-color: christmas palette fallback (the theme publishes the custom property)
   font-family: var(--surround-body, Georgia, serif);
@@ -52,7 +59,7 @@
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.2rem;
 }
 
 .clip-band__title {
@@ -64,6 +71,17 @@
   font-style: italic;
   line-height: 1.12;
   overflow-wrap: anywhere;
+}
+
+/* The guard for a name no size between the ceiling and the floor could set
+   inside the band (the fit warns `surround.clip-band.unfittable`): three lines,
+   then cut, rather than over the picture and the progress bar. */
+.clip-band__title--clamped {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
 }
 
 .clip-band__progress {
@@ -89,34 +107,79 @@
   background: var(--brass, #c9a24a); // data-color: christmas palette fallback (the theme publishes the custom property)
 }
 
-/* UP NEXT. From the same concert: a label and the name, right-aligned. */
+/* UP NEXT. From the same concert: a label and the name, right-aligned. Every
+   size inside is in em of `.clip-band__next-text`, whose font-size the fit
+   steps down (1rem ceiling) so the whole block scales as one. */
 .clip-band__next {
   min-width: 0;
-  max-width: 19rem;
+  max-height: 100%;
   display: flex;
   align-items: center;
   gap: 0.8rem;
   text-align: right;
 }
 
+/* A button where there is a queue move to make: no chrome of its own, the
+   band's type and colours, a pointer on screens that have one. */
+button.clip-band__next {
+  appearance: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button.clip-band__next--elsewhere {
+  padding-left: 1rem;
+}
+
+@media (hover: hover) {
+  button.clip-band__next:hover .clip-band__next-title {
+    text-decoration: underline;
+    text-decoration-color: var(--brass, #c9a24a); // data-color: christmas palette fallback (the theme publishes the custom property)
+    text-underline-offset: 0.18em;
+  }
+
+  button.clip-band__next:hover .clip-band__next-poster {
+    border-color: var(--brass-lit, #ecd28a); // data-color: christmas palette fallback (the theme publishes the custom property)
+  }
+}
+
+button.clip-band__next:active {
+  opacity: 0.75;
+}
+
 .clip-band__next-text {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.1rem;
+  gap: 0.1em;
+  font-size: 1rem;
 }
 
 .clip-band__next-label {
   color: var(--brass, #c9a24a); // data-color: christmas palette fallback (the theme publishes the custom property)
-  font-size: 0.72rem;
+  font-size: 0.72em;
   letter-spacing: 0.16em;
   text-transform: uppercase;
 }
 
 .clip-band__next-title {
   text-wrap: balance;
-  font-size: 1.05rem;
+  font-size: 1.05em;
   line-height: 1.2;
+}
+
+/* The cue that Up next can be tapped: touch screens have no hover. In em, so
+   it scales with the fit. */
+.clip-band__next-chevron {
+  margin-left: 0.3em;
+  color: var(--brass, #c9a24a); // data-color: christmas palette fallback (the theme publishes the custom property)
+  font-weight: 600;
 }
 
 /* From ANOTHER concert: partitioned behind a gilt rule, with that concert's
@@ -131,15 +194,22 @@
 .clip-band__next-poster {
   flex: 0 0 auto;
   height: 4.4rem;
+  max-height: 100%;
+  box-sizing: border-box; /* the fit's max-height includes the gilt border */
   aspect-ratio: 2 / 3;
   object-fit: cover;
   border: 1px solid var(--brass, #c9a24a); // data-color: christmas palette fallback (the theme publishes the custom property)
   background: #0b2316; // data-color: christmas palette fallback (the theme publishes the custom property)
 }
 
+/* A short band (the fit adds this): the concert's name goes, the poster stays. */
+.clip-band__next--compact .clip-band__next-work {
+  display: none;
+}
+
 .clip-band__next-work {
   color: var(--brass-lit, #ecd28a); // data-color: christmas palette fallback (the theme publishes the custom property)
   font-style: italic;
-  font-size: 0.95rem;
+  font-size: 0.95em;
   line-height: 1.2;
 }
