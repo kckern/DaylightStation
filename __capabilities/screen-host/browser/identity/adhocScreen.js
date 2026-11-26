@@ -73,3 +73,64 @@ export function startScreenAnnounce({ id, name, post, every = ANNOUNCE_EVERY_MS,
   const timer = setIntervalFn(send, every);
   return () => clearIntervalFn(timer);
 }
+
+/** The screen a bare `/screen` (or `/screens`) shows: the built-in ad-hoc one. */
+export const ADHOC_SCREEN_ID = 'adhoc';
+
+/** The screen id for a route: its own, or `adhoc` when the URL names none (`/screen?queue=…`). */
+export function routeScreenId(paramsScreenId) {
+  const id = typeof paramsScreenId === 'string' ? paramsScreenId.trim() : '';
+  return id || ADHOC_SCREEN_ID;
+}
+
+/**
+ * How a screen sits in the browser window. A configured screen keeps its design
+ * resolution, centred on its background (living room, office…). A `fullbleed: true`
+ * screen (the ad-hoc one) is the window: 100vw by 100dvh (100vh where dvh is not known),
+ * no margin, padding, radius or letterboxing, nothing scrolls, and the root ignores any
+ * `resolution:`.
+ */
+export function screenFrame(config) {
+  const fullbleed = config?.fullbleed === true;
+  const res = fullbleed ? null : config?.resolution;
+  const bg = config?.theme?.['screen-bg'] || '#000';
+  const height = fullbleed ? '100dvh' : '100vh';
+  return {
+    fullbleed,
+    viewportClass: fullbleed ? 'screen-viewport screen-viewport--fullbleed' : 'screen-viewport',
+    viewportStyle: {
+      width: '100vw',
+      height,
+      display: 'flex',
+      justifyContent: 'center',
+      alignItems: 'center',
+      overflow: 'hidden',
+      backgroundColor: bg,
+      ...(fullbleed ? { margin: 0, padding: 0, position: 'fixed', inset: 0 } : {}),
+    },
+    rootClassExtra: fullbleed ? ' screen-root--fullbleed' : '',
+    rootSize: {
+      width: res ? `${res.width}px` : '100%',
+      height: res ? `${res.height}px` : '100%',
+      ...(fullbleed ? { margin: 0, padding: 0, borderRadius: 0 } : {}),
+    },
+  };
+}
+
+/**
+ * While a full-bleed screen is shown, the page itself must not scroll or keep a margin:
+ * html and body get overflow hidden and no margin, restored when it goes.
+ */
+export function lockPageScroll(doc) {
+  if (!doc?.documentElement || !doc.body) return () => {};
+  const html = doc.documentElement, body = doc.body;
+  const before = [html.style.overflow, body.style.overflow, body.style.margin, html.style.height, body.style.height];
+  html.style.overflow = 'hidden';
+  body.style.overflow = 'hidden';
+  body.style.margin = '0';
+  html.style.height = '100%';
+  body.style.height = '100%';
+  return () => {
+    [html.style.overflow, body.style.overflow, body.style.margin, html.style.height, body.style.height] = before;
+  };
+}

@@ -92,7 +92,10 @@ layout:
 
 ## Ad-hoc screens: any browser
 
-Any browser can be a screen without a household YAML file: open `/screen/adhoc`.
+Any browser can be a screen without a household YAML file: open `/screen` (or
+`/screen/adhoc`). A bare `/screen` or `/screens` is the ad-hoc screen, so a launch goes
+straight in the URL: `/screen?queue=<list>`, `/screen?play=<content id>`,
+`/screen?open=party-games/charades:fhe`.
 
 - **Config.** `adhoc` is built in (`__capabilities/screen-host/server/application/builtInScreens.mjs`),
   served by `GET /api/v1/screens/adhoc` when the household has no `screens/adhoc.yml` (a
@@ -109,13 +112,21 @@ Any browser can be a screen without a household YAML file: open `/screen/adhoc`.
   (`POST /api/v1/media/screens/announce`) on mount and every 60 s.
 - **Opening an app.** The usual launch paths work: `/screen/adhoc/party-games/charades:fhe`
   or `?open=party-games/charades:fhe`, `?play=`, `?queue=`.
+- **Full-bleed.** The ad-hoc config carries `fullbleed: true` and no `resolution:`. The
+  screen is the browser window: viewport and root `100vw` x `100dvh` (`100vh` where `dvh`
+  is unknown), no margin, padding, radius or letterbox, `overflow: hidden` on the root,
+  html and body (`lockPageScroll`, restored when the screen goes), and video fits whole
+  (`object-fit: contain`, centred on black; `screen-host/browser/fullbleed.css`). It is
+  scoped to `.screen-root--fullbleed` (`screenFrame`): configured screens keep their
+  design resolution, centred, as below. Any screen YAML may set `fullbleed: true`.
 - **Remote control.** The device routes take a browser id (`browser:[A-Za-z0-9_-]{4,64}`;
   anything else that starts `browser:` is refused with 400), so `POST /api/v1/device/browser:<token>/input`
   and `GET /api/v1/device/browser:<token>/session` behave as for a configured screen. The
   phone lists a browser screen seen in the last 2 minutes (or reported online) on its
   Connect tab, and its D-pad drives that page.
 
-Charades on a laptop: `/screen/adhoc/party-games/charades:fhe?name=MacBook`.
+Charades on a laptop: `/screen?open=party-games/charades:fhe&name=MacBook`. A household
+list on any browser: `/screen?queue=dailey-family`.
 
 ## Resolution & Centering
 

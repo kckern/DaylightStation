@@ -2,8 +2,9 @@
  * Screens that exist without a household YAML file. A household file of the same id
  * replaces the built-in one (a household can restyle its ad-hoc screen).
  *
- * `adhoc`: any browser as a screen (`/screen/adhoc`, `/screen/adhoc/party-games/charades`,
- * `?open=`, `?play=`, `?name=MacBook`). Its device is `$browser`: the page puts its own
+ * `adhoc`: any browser as a screen (`/screen`, `/screen?queue=<list>`, `/screen/adhoc`,
+ * `/screen/adhoc/party-games/charades`, `?open=`, `?play=`, `?name=MacBook`). It is
+ * full-bleed: the whole browser window, no design resolution, margin or scrolling. Its device is `$browser`: the page puts its own
  * `browser:<token>` identity there, so remote commands reach that page alone, and it
  * announces itself (with its name) to the household's screen list while open.
  */
@@ -11,7 +12,9 @@ export const BUILT_IN_SCREENS = Object.freeze({
   adhoc: Object.freeze({
     screen: 'adhoc',
     name: 'Ad-hoc screen',
-    route: '/screen/adhoc',
+    route: '/screen',
+    // The window is the screen: no resolution, no letterbox, no margin, no scroll.
+    fullbleed: true,
     websocket: { commands: true, publishState: true, guardrails: { device: '$browser' } },
     theme: {
       'screen-bg': '#10141c',
