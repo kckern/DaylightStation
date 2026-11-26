@@ -2,24 +2,26 @@ package net.kckern.daylight.cap.mediaservice.shell;
 
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.app.Dialog;
 import android.content.ComponentName;
+import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.res.ColorStateList;
 import android.graphics.Bitmap;
-import android.graphics.Color;
-import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.text.TextUtils;
 import android.util.Log;
 import android.view.Gravity;
+import android.view.HapticFeedbackConstants;
 import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.Window;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
@@ -27,7 +29,6 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.PopupMenu;
 import android.widget.ScrollView;
-import android.widget.SeekBar;
 import android.widget.TextView;
 
 import androidx.media3.common.C;
@@ -41,7 +42,11 @@ import androidx.media3.session.SessionToken;
 
 import com.google.common.util.concurrent.ListenableFuture;
 
+import net.kckern.daylight.shellkit.CoverColor;
+import net.kckern.daylight.shellkit.DaylightTheme;
+import net.kckern.daylight.shellkit.DaylightTheme.Type;
 import net.kckern.daylight.shellkit.PlaylistArtwork;
+import net.kckern.daylight.shellkit.ThemeColors;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -59,15 +64,16 @@ import java.util.concurrent.Executors;
  * way. A control is shown or enabled only when the target's player makes its command
  * available: what a target can do is declared there, never guessed here.
  *
- * Layout, from what established players do rather than a card per control (the
- * Jellyfin/Navidrome UI survey, ops:docs/_wip/audits/2026-11-25-player-benchmark-
- * jellyfin-navidrome.md): the target is one button at the top that opens a picker with
- * the current one checked; then art, title, the scrubber, and one primary row with a
- * filled play circle. Music puts shuffle and repeat beside the skips; long items (20 min
- * or more, or no length) put back and forward 10 s there instead. Toggles say their
- * state by tint. Stop and Clear live in the ⋮ menu; the queue opens in a sheet from a
- * "next up" line. A screen's volume is the hardware keys. The status line shows only
- * when something is not right.
+ * Layout, after Plexamp (ops:docs/superpowers/specs/2026-11-26-phone-player-parity-design.md):
+ * a slim top bar (close, where it plays, the D-pad for a screen); the stage, which holds
+ * the cover (swipe it to skip), the lyrics or the queue in its place; the track's
+ * loudness as the seek bar, with elapsed and remaining (tap: total) beside it; artist,
+ * title, album and year, centred; the audio quality; one transport row (previous, a large
+ * play in a disc of the cover's color, next; long items put back and forward 10 s at its
+ * edges); and one row of icons: queue, lyrics, shuffle, more, repeat, output. The page
+ * takes its colors from the cover (CoverColor, DaylightTheme.withAccent) over a soft,
+ * blurred copy of it. A screen's volume is the hardware keys. The status line shows only
+ * when something is not right, or a sleep timer is set.
  *
  * Not exported. Opened by this app only: the setup screen, a "player:" one-tap action
  * (through the payload's media/now-playing link) and both media notifications.
@@ -77,8 +83,10 @@ public class NowPlayingActivity extends Activity {
     static final String EXTRA_TARGET = "target";
     static final String LOCAL = "local";
     private static final String PREFS = "daylight.nowplaying";
-    private static final int INK = 0xff14382f, GREEN = 0xff125b47, PAPER = 0xfff4f7f4, MUTED = 0xff7b8c85, LINE = 0xffdfe7e2;
     private static final int QUEUE_ROWS = 100;
+    private static final int WAVE_SAMPLES = 96;
+
+    private enum Stage { ART, LYRICS, QUEUE }
 
     private static final class Screen {
         final String id, name, type;
@@ -108,6 +116,8 @@ public class NowPlayingActivity extends Activity {
     private ExecutorService io;
     /** Artwork on its own thread: a slow screens list must not hold a cover back. */
     private ExecutorService artIo;
+    /** The waveform and lyrics: never behind a screen poll or a cover. */
+    private ExecutorService detailIo;
     private final Runnable reconnect = this::connect;
     /** While on screen with no controller, connect again after this long (doubling to 15 s). */
     private long reconnectMs = 1000;
@@ -122,15 +132,36 @@ public class NowPlayingActivity extends Activity {
     private MediaController controller;
     private String remoteStatus = "";
     private String volumeLine = "";
-    private boolean dragging;
     private String shownArtwork;
-    private Dialog queueSheet;
 
-    private TextView targetLabel, title, subtitle, status, elapsed, remaining, upNext;
-    private ImageView targetIcon, art;
-    private SeekBar seek;
-    private ImageButton more, playPause, prev, next, leftEdge, rightEdge, padToggle;
-    private LinearLayout body, pad;
+    private DaylightTheme base, theme;
+    private int coverAccent = CoverColor.NONE;
+    private Stage stage = Stage.ART;
+    private final PositionClock clock = new PositionClock();
+    private String clockItem = "";
+    private TrackDetail.TimeDisplay timeDisplay = TrackDetail.TimeDisplay.REMAINING;
+    /** The content id whose waveform, quality and lyrics are loaded (or loading). */
+    private String detailFor = "";
+    private String quality = "";
+    private TrackDetail.Lyrics lyrics = TrackDetail.Lyrics.NONE;
+
+    private FrameLayout root;
+    private ImageView backdrop;
+    private View backdropFade;
+    private TextView targetLabel, title, artistLine, albumLine, qualityLine, status, elapsed, remaining, queueHeading;
+    private ImageView targetIcon, targetCaret, art;
+    private AspectFrame artFrame;
+    private LinearLayout pick, transport, bottom;
+    private WaveformBar wave;
+    private LyricsView lyricsView;
+    private ScrollView queueScroll;
+    private LinearLayout queueBox;
+    private LinearLayout queueList;
+    private ImageButton close, playPause, prev, next, leftEdge, rightEdge, padToggle;
+    private ImageButton queueButton, lyricsButton, shuffleButton, moreButton, repeatButton, outputButton;
+    private TextView leftEdgeNumber, rightEdgeNumber, clearButton;
+    private FrameLayout leftEdgeBox, rightEdgeBox, stageBox;
+    private LinearLayout player, pad;
     private TextView padStatus;
     private boolean padShown;
     /** D-pad presses: one at a time, in order, apart from the player's reads and commands. */
@@ -141,32 +172,36 @@ public class NowPlayingActivity extends Activity {
     /** A press still waiting this long is not sent: a late OK on a menu is worse than none (R5). */
     private static final long PAD_STALE_MS = 2000;
     private static final long PAD_REPEAT_FIRST_MS = 400, PAD_REPEAT_MS = 150;
-    private TextView leftEdgeNumber, rightEdgeNumber;
-    private FrameLayout leftEdgeBox, rightEdgeBox;
-    private LinearLayout upNextRow, times;
-    private View upNextRule;
+    private final List<View> padSurfaces = new ArrayList<>();
+    private TextView okKey, backLabel;
+    private ImageView backIcon;
+    private LinearLayout backKey;
+
+    @Override protected void attachBaseContext(Context base) {
+        super.attachBaseContext(DaylightTheme.wrap(base));
+    }
 
     @Override protected void onCreate(Bundle saved) {
         super.onCreate(saved);
-        io = Executors.newSingleThreadExecutor(r -> {
-            Thread t = new Thread(r, "Daylight-nowplaying");
-            t.setDaemon(true);
-            return t;
-        });
-        padIo = Executors.newSingleThreadExecutor(r -> {
-            Thread t = new Thread(r, "Daylight-nowplaying-pad");
-            t.setDaemon(true);
-            return t;
-        });
-        artIo = Executors.newSingleThreadExecutor(r -> {
-            Thread t = new Thread(r, "Daylight-nowplaying-art");
-            t.setDaemon(true);
-            return t;
-        });
+        io = executor("Daylight-nowplaying");
+        padIo = executor("Daylight-nowplaying-pad");
+        artIo = executor("Daylight-nowplaying-art");
+        detailIo = executor("Daylight-nowplaying-detail");
+        base = DaylightTheme.of(this);
+        theme = base;
+        timeDisplay = TrackDetail.TimeDisplay.of(prefs().getString("time", ""));
         buildViews();
         chooseInitialTarget(getIntent(), saved);
         loadScreens();
         Log.i(TAG, "now playing opened, target " + target);
+    }
+
+    private static ExecutorService executor(String name) {
+        return Executors.newSingleThreadExecutor(r -> {
+            Thread t = new Thread(r, name);
+            t.setDaemon(true);
+            return t;
+        });
     }
 
     @Override protected void onNewIntent(Intent intent) {
@@ -181,6 +216,13 @@ public class NowPlayingActivity extends Activity {
     @Override protected void onSaveInstanceState(Bundle out) {
         super.onSaveInstanceState(out);
         out.putString(EXTRA_TARGET, target);
+        out.putString("stage", stage.name());
+    }
+
+    @Override protected void onRestoreInstanceState(Bundle saved) {
+        super.onRestoreInstanceState(saved);
+        String s = saved.getString("stage", "");
+        for (Stage st : Stage.values()) if (st.name().equals(s)) stage = st;
     }
 
     @Override protected void onStart() {
@@ -201,10 +243,15 @@ public class NowPlayingActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
-        if (io != null) io.shutdownNow();
-        if (artIo != null) artIo.shutdownNow();
-        if (padIo != null) padIo.shutdownNow();
+        for (ExecutorService e : new ExecutorService[] { io, artIo, padIo, detailIo }) if (e != null) e.shutdownNow();
         super.onDestroy();
+    }
+
+    /** Back leaves the lyrics or the queue for the cover before it leaves the screen. */
+    @Override public void onBackPressed() {
+        if (padShown) { showPad(false); return; }
+        if (stage != Stage.ART) { setStage(Stage.ART); return; }
+        super.onBackPressed();
     }
 
     /**
@@ -251,6 +298,7 @@ public class NowPlayingActivity extends Activity {
         connectionLine = "";
         remoteStatus = "";
         shownArtwork = null;
+        clock.reset();
         renderTargets();
         render();
         connect();
@@ -397,22 +445,36 @@ public class NowPlayingActivity extends Activity {
                 && controller.isSessionCommandAvailable(new SessionCommand(CarControls.NEXT_ACTION, Bundle.EMPTY));
     }
 
+    private boolean canSkipNext() {
+        MediaController c = controller;
+        return c != null && c.getMediaItemCount() > 0
+                && (can(Player.COMMAND_SEEK_TO_NEXT) || (nextByCommand() && c.hasNextMediaItem()));
+    }
+
+    private void skipNext() {
+        if (controller == null) return;
+        if (nextByCommand()) controller.sendCustomCommand(new SessionCommand(CarControls.NEXT_ACTION, Bundle.EMPTY), Bundle.EMPTY);
+        else controller.seekToNext();
+    }
+
     private void render() {
         MediaController c = controller;
         MediaMetadata meta = c == null ? MediaMetadata.EMPTY : c.getMediaMetadata();
         boolean hasItem = c != null && c.getMediaItemCount() > 0;
         CharSequence name = meta.title != null ? meta.title : meta.displayTitle;
         title.setText(hasItem && !TextUtils.isEmpty(name) ? name : "Nothing playing");
-        title.setTextColor(hasItem ? INK : MUTED);
+        title.setTextColor(hasItem ? theme.ink : theme.inkMuted);
+        // A screen's player names the screen as the artist; that is the top bar's job.
         CharSequence by = remote() ? null : meta.artist;
-        subtitle.setText(hasItem && !TextUtils.isEmpty(by) ? by : "");
-        subtitle.setVisibility(subtitle.getText().length() == 0 ? View.GONE : View.VISIBLE);
+        show(artistLine, hasItem ? by : null);
+        show(albumLine, hasItem ? albumLine(meta) : null);
 
         String line;
         if (!volumeLine.isEmpty()) line = volumeLine;
         else if (c == null) line = pending != null ? "Connecting…" : connectionLine;
         else if (remote()) line = remoteStatus;
         else line = c.getPlayerError() != null ? "Could not play this" : "";
+        if (line.isEmpty() && !remote()) line = SleepTimer.describeNow();
         status.setText(line);
         status.setVisibility(line.isEmpty() ? View.GONE : View.VISIBLE);
 
@@ -421,33 +483,52 @@ public class NowPlayingActivity extends Activity {
         playPause.setContentDescription(playing ? "Pause" : "Play");
         enable(playPause, hasItem && can(Player.COMMAND_PLAY_PAUSE));
         enable(prev, hasItem && can(Player.COMMAND_SEEK_TO_PREVIOUS));
-        enable(next, hasItem && (can(Player.COMMAND_SEEK_TO_NEXT) || (nextByCommand() && c.hasNextMediaItem())));
+        enable(next, canSkipNext());
 
-        if (longForm()) {
-            edge(leftEdge, leftEdgeNumber, R.drawable.daylight_np_replay, "Back 10 seconds", true, can(Player.COMMAND_SEEK_BACK), false);
-            edge(rightEdge, rightEdgeNumber, R.drawable.daylight_np_forward, "Forward 10 seconds", true, can(Player.COMMAND_SEEK_FORWARD), false);
-        } else {
-            boolean shuffled = c != null && c.getShuffleModeEnabled();
-            int mode = c == null ? Player.REPEAT_MODE_OFF : c.getRepeatMode();
-            edge(leftEdge, leftEdgeNumber, R.drawable.daylight_np_shuffle, shuffled ? "Shuffle, on" : "Shuffle, off",
-                    false, hasItem && can(Player.COMMAND_SET_SHUFFLE_MODE), shuffled);
-            edge(rightEdge, rightEdgeNumber,
-                    mode == Player.REPEAT_MODE_ONE ? R.drawable.daylight_np_repeat_one : R.drawable.daylight_np_repeat,
-                    mode == Player.REPEAT_MODE_ONE ? "Repeat one" : mode == Player.REPEAT_MODE_ALL ? "Repeat all" : "Repeat, off",
-                    false, hasItem && can(Player.COMMAND_SET_REPEAT_MODE), mode != Player.REPEAT_MODE_OFF);
-        }
-        enable(more, hasItem && (can(Player.COMMAND_STOP) || can(Player.COMMAND_CHANGE_MEDIA_ITEMS) || longForm()));
+        boolean jumps = longForm();
+        leftEdgeBox.setVisibility(jumps ? View.VISIBLE : View.INVISIBLE);
+        rightEdgeBox.setVisibility(jumps ? View.VISIBLE : View.INVISIBLE);
+        enable(leftEdgeBox, jumps && can(Player.COMMAND_SEEK_BACK));
+        enable(rightEdgeBox, jumps && can(Player.COMMAND_SEEK_FORWARD));
+
+        boolean shuffled = c != null && c.getShuffleModeEnabled();
+        int mode = c == null ? Player.REPEAT_MODE_OFF : c.getRepeatMode();
+        toggle(shuffleButton, shuffled, hasItem && can(Player.COMMAND_SET_SHUFFLE_MODE), shuffled ? "Shuffle, on" : "Shuffle, off");
+        repeatButton.setImageResource(mode == Player.REPEAT_MODE_ONE ? R.drawable.daylight_np_repeat_one : R.drawable.daylight_np_repeat);
+        toggle(repeatButton, mode != Player.REPEAT_MODE_OFF, hasItem && can(Player.COMMAND_SET_REPEAT_MODE),
+                mode == Player.REPEAT_MODE_ONE ? "Repeat one" : mode == Player.REPEAT_MODE_ALL ? "Repeat all" : "Repeat, off");
+        toggle(queueButton, stage == Stage.QUEUE, hasItem, stage == Stage.QUEUE ? "Hide the queue" : "Queue");
+        toggle(lyricsButton, stage == Stage.LYRICS, hasItem && !lyrics.isEmpty(),
+                lyrics.isEmpty() ? "No lyrics" : stage == Stage.LYRICS ? "Hide the lyrics" : "Lyrics");
+        toggle(outputButton, remote(), true, "Play on: " + targetName);
+        enable(moreButton, hasItem || (!remote() && SleepTimer.isSet()));
+        if (stage == Stage.LYRICS && lyrics.isEmpty()) setStage(Stage.ART);
+        if (!hasItem && stage != Stage.ART) setStage(Stage.ART);
 
         padToggle.setVisibility(remote() ? View.VISIBLE : View.GONE);
-        padToggle.setImageTintList(ColorStateList.valueOf(padShown ? GREEN : INK));
+        padToggle.setImageTintList(ColorStateList.valueOf(padShown ? theme.primary : theme.ink));
         if (!remote() && padShown) showPad(false);
         // On the pad, the screen's own state (off, not on, can't reach home) when no press is being answered.
-        if (padShown && android.os.SystemClock.elapsedRealtime() >= padLineUntil) padStatus.setText(line);
-        renderUpNext();
+        if (padShown && SystemClock.elapsedRealtime() >= padLineUntil) padStatus.setText(line);
+
+        loadDetail(hasItem ? c.getCurrentMediaItem() : null);
         renderArtwork(hasItem ? meta.artworkUri : null, hasItem);
         renderTargets();
-        if (queueSheet != null && queueSheet.isShowing()) fillQueue((LinearLayout) queueSheet.findViewById(QUEUE_LIST));
+        if (stage == Stage.QUEUE) fillQueue();
         tickPosition();
+    }
+
+    private static void show(TextView v, CharSequence text) {
+        v.setText(TextUtils.isEmpty(text) ? "" : text);
+        v.setVisibility(TextUtils.isEmpty(text) ? View.GONE : View.VISIBLE);
+    }
+
+    /** "All Eyez On Me (1996)", the album alone, or the year alone. */
+    private static String albumLine(MediaMetadata meta) {
+        String album = meta.albumTitle == null ? "" : meta.albumTitle.toString();
+        Integer year = meta.releaseYear != null ? meta.releaseYear : meta.recordingYear;
+        if (year == null || year <= 0) return album;
+        return album.isEmpty() ? String.valueOf(year) : album + " (" + year + ")";
     }
 
     /**
@@ -461,50 +542,112 @@ public class NowPlayingActivity extends Activity {
         return state == Player.STATE_READY || state == Player.STATE_BUFFERING;
     }
 
-    /** One of the two buttons beside the skips: a toggle tinted by its state, or a 10 s jump. */
-    private void edge(ImageButton b, TextView number, int icon, String description, boolean jump, boolean on, boolean active) {
-        b.setImageResource(icon);
+    /** A row icon that says its state by tint: the accent when on, muted ink when off. */
+    private void toggle(ImageButton b, boolean on, boolean enabled, String description) {
+        b.setImageTintList(ColorStateList.valueOf(on ? theme.primary : theme.inkMuted));
         b.setContentDescription(description);
-        b.setImageTintList(ColorStateList.valueOf(active ? GREEN : jump ? INK : MUTED));
-        number.setVisibility(jump ? View.VISIBLE : View.GONE);
-        enable((View) b.getParent(), on);
+        b.setSelected(on);
+        enable(b, enabled);
     }
 
     private void tickPosition() {
         main.removeCallbacks(ticker);
         MediaController c = controller;
         long duration = c == null ? C.TIME_UNSET : c.getDuration();
-        long position = c == null ? 0 : Math.max(0, c.getCurrentPosition());
         boolean known = duration != C.TIME_UNSET && duration > 0;
-        seek.setEnabled(known && can(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM));
-        if (!dragging) {
-            seek.setMax(known ? (int) Math.min(Integer.MAX_VALUE, duration) : 1);
-            seek.setProgress(known ? (int) Math.min(position, duration) : 0);
-        }
         boolean any = c != null && c.getMediaItemCount() > 0;
-        // Nothing to scrub: no bar, no times.
-        seek.setVisibility(any ? View.VISIBLE : View.INVISIBLE);
-        times.setVisibility(any ? View.VISIBLE : View.INVISIBLE);
-        elapsed.setText(any ? clock(dragging ? seek.getProgress() : position) : "");
-        remaining.setText(known ? "−" + clock(Math.max(0, duration - (dragging ? seek.getProgress() : position))) : "");
-        if (c != null && c.isPlaying()) main.postDelayed(ticker, 500);
-        else if (c != null) main.postDelayed(ticker, 1500);
+        String item = any && c.getCurrentMediaItem() != null ? c.getCurrentMediaItem().mediaId : "";
+        if (!item.equals(clockItem)) { clock.reset(); clockItem = item; }
+        long now = SystemClock.elapsedRealtime();
+        if (c != null) clock.report(Math.max(0, c.getCurrentPosition()), c.isPlaying(), now);
+        long position = clock.at(now);
+        if (known) position = Math.min(position, duration);
+        wave.setEnabled(known && can(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM));
+        wave.setVisibility(any ? View.VISIBLE : View.INVISIBLE);
+        if (!wave.scrubbing()) {
+            wave.setFraction(known ? position / (float) duration : 0f, clock(position) + (known ? " of " + clock(duration) : ""));
+            elapsed.setText(any ? clock(position) : "");
+            remaining.setText(known ? timeDisplay.right(position, duration) : "");
+        }
+        if (stage == Stage.LYRICS) lyricsView.setPosition(position);
+        if (c != null && c.isPlaying()) main.postDelayed(ticker, stage == Stage.LYRICS ? 100 : 200);
+        else if (c != null) main.postDelayed(ticker, 1000);
     }
 
+    // ── the track's waveform, quality and lyrics ─────────────────────────────
+
+    private void loadDetail(MediaItem item) {
+        String id = item == null ? "" : item.mediaId;
+        if (id == null || id.indexOf(':') <= 0) id = "";
+        if (id.equals(detailFor)) return;
+        detailFor = id;
+        wave.setSamples(null);
+        quality = "";
+        show(qualityLine, null);
+        lyrics = TrackDetail.Lyrics.NONE;
+        lyricsView.setLyrics(lyrics);
+        if (id.isEmpty()) return;
+        final String forId = id;
+        detailIo.execute(() -> {
+            JSONObject levels = ask(() -> media.trackLevels(forId, WAVE_SAMPLES, 8000));
+            main.post(() -> {
+                if (!forId.equals(detailFor)) return;
+                wave.setSamples(TrackDetail.samples(levels));
+                quality = TrackDetail.quality(levels);
+                show(qualityLine, quality);
+            });
+            JSONObject words = ask(() -> media.trackLyrics(forId, 10000));
+            main.post(() -> {
+                if (!forId.equals(detailFor)) return;
+                lyrics = TrackDetail.lyrics(words);
+                lyricsView.setLyrics(lyrics);
+                Log.i(TAG, "now playing detail: lyrics " + (lyrics.isEmpty() ? "none" : lyrics.synced ? "synced" : "plain"));
+                render();
+            });
+        });
+    }
+
+    private interface Call { String run() throws Exception; }
+
+    /** A payload answer, or null when it failed or had none. Missing detail is never an error on screen. */
+    private static JSONObject ask(Call call) {
+        try {
+            JSONObject reply = new JSONObject(call.run());
+            return reply.optBoolean("ok", false) && !reply.optBoolean("none", false) ? reply : null;
+        } catch (Exception unavailable) {
+            Log.i(TAG, "now playing detail unavailable: " + unavailable.getClass().getSimpleName());
+            return null;
+        }
+    }
+
+    // ── the cover ────────────────────────────────────────────────────────────
+
     /**
-     * The picture, in its own shape. With none, the box says so plainly: a note for an item
-     * that has no art, and a short band with the target's icon when nothing plays, instead
-     * of a large empty square.
+     * The picture, in its own shape, its color on the page, and a soft copy of it behind
+     * everything. With none, the box says so plainly: a note for an item that has no art,
+     * and the target's icon when nothing plays.
      */
     private void renderArtwork(Uri uri, boolean hasItem) {
         String key = (uri == null ? "" : uri.toString()) + "|" + hasItem + "|" + target;
         if (key.equals(shownArtwork)) return;
         shownArtwork = key;
-        placeholder(hasItem ? R.drawable.daylight_np_note : targetIcon(target), hasItem ? 1f : 0.4f);
-        if (uri == null) return;
+        placeholder(hasItem ? R.drawable.daylight_np_note : targetIcon(target));
+        if (uri == null) { setAccent(CoverColor.NONE, null); return; }
         String url = uri.toString();
         artIo.execute(() -> {
             Bitmap bitmap = PlaylistArtwork.load(url, 900);
+            int accent = CoverColor.NONE;
+            Bitmap soft = null;
+            if (bitmap != null) {
+                Bitmap small = Bitmap.createScaledBitmap(bitmap, 32, 32, true);
+                int[] px = new int[32 * 32];
+                small.getPixels(px, 0, 32, 0, 0, 32, 32);
+                accent = CoverColor.of(px);
+                // A tiny copy drawn large and filtered is a blur on every Android version.
+                soft = Bitmap.createScaledBitmap(bitmap, 12, 12, true);
+            }
+            int a = accent;
+            Bitmap s = soft;
             main.post(() -> {
                 if (!key.equals(shownArtwork) || bitmap == null) return;
                 art.setImageTintList(null);
@@ -512,138 +655,116 @@ public class NowPlayingActivity extends Activity {
                 art.setScaleType(ImageView.ScaleType.CENTER_CROP);
                 art.setImageBitmap(bitmap);
                 // A video's still is wide, an album cover square: the box takes the picture's shape.
-                setArtHeight(bitmap.getWidth() > bitmap.getHeight() * 1.2f ? 9f / 16f : 1f);
+                artFrame.setRatio(bitmap.getWidth() > bitmap.getHeight() * 1.2f ? 9f / 16f : 1f);
+                setAccent(a, s);
             });
         });
     }
 
-    private void placeholder(int icon, float ratio) {
-        art.setScaleType(ImageView.ScaleType.FIT_CENTER);
+    private void placeholder(int icon) {
+        art.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         art.setImageResource(icon);
-        art.setImageTintList(ColorStateList.valueOf(MUTED));
-        int pad = Math.round(((LinearLayout.LayoutParams) art.getLayoutParams()).width * ratio * 0.34f);
+        art.setImageTintList(ColorStateList.valueOf(theme.inkMuted));
+        int pad = dp(72);
         art.setPadding(pad, pad, pad, pad);
-        setArtHeight(ratio);
+        artFrame.setRatio(1f);
     }
 
-    private void setArtHeight(float ratio) {
-        LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) art.getLayoutParams();
-        int h = Math.round(lp.width * ratio);
-        if (lp.height != h) { lp.height = h; art.setLayoutParams(lp); }
+    private void setAccent(int accent, Bitmap soft) {
+        backdrop.setImageBitmap(soft);
+        backdrop.setVisibility(soft == null ? View.GONE : View.VISIBLE);
+        if (accent == coverAccent) return;
+        coverAccent = accent;
+        theme = base.withAccent(accent);
+        applyTheme();
     }
 
-    /** The line under the controls: what plays next, and a way into the queue. */
-    private void renderUpNext() {
-        MediaController c = controller;
-        int count = c == null ? 0 : c.getMediaItemCount();
-        upNextRow.setVisibility(count > 0 ? View.VISIBLE : View.GONE);
-        upNextRule.setVisibility(count > 0 ? View.VISIBLE : View.GONE);
-        if (count == 0) return;
-        int nextIndex = c.getNextMediaItemIndex();
-        if (nextIndex == C.INDEX_UNSET || nextIndex >= count) {
-            upNext.setText(count == 1 ? "Nothing after this" : "End of the queue");
-        } else {
-            CharSequence t = c.getMediaItemAt(nextIndex).mediaMetadata.title;
-            upNext.setText("Next: " + (t == null ? "" : t));
+    // ── the stage: cover, lyrics or queue ────────────────────────────────────
+
+    private void setStage(Stage s) {
+        if (stage == s) return;
+        stage = s;
+        artFrame.setVisibility(s == Stage.ART ? View.VISIBLE : View.GONE);
+        lyricsView.setVisibility(s == Stage.LYRICS ? View.VISIBLE : View.GONE);
+        queueBox.setVisibility(s == Stage.QUEUE ? View.VISIBLE : View.GONE);
+        if (s == Stage.QUEUE) {
+            fillQueue();
+            scrollQueueToCurrent();
         }
+        Log.i(TAG, "now playing stage " + s.name().toLowerCase(Locale.ROOT));
+        render();
     }
 
-    private final int QUEUE_LIST = View.generateViewId();
-
-    private void openQueue() {
-        if (controller == null) return;
-        Dialog sheet = new Dialog(this);
-        sheet.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        LinearLayout col = new LinearLayout(this);
-        col.setOrientation(LinearLayout.VERTICAL);
-        col.setBackground(round(PAPER, 16));
-        col.setPadding(dp(16), dp(12), dp(8), dp(12));
-
-        LinearLayout head = new LinearLayout(this);
-        head.setGravity(Gravity.CENTER_VERTICAL);
-        TextView heading = text("Queue", 18, INK);
-        heading.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        head.addView(heading, new LinearLayout.LayoutParams(0, -2, 1));
-        TextView clear = text("Clear", 15, GREEN);
-        clear.setPadding(dp(12), dp(10), dp(12), dp(10));
-        clear.setOnClickListener(v -> confirmClear(sheet));
-        clear.setVisibility(can(Player.COMMAND_CHANGE_MEDIA_ITEMS) ? View.VISIBLE : View.GONE);
-        head.addView(clear);
-        col.addView(head);
-
-        ScrollView scroll = new ScrollView(this);
-        LinearLayout list = new LinearLayout(this);
-        list.setOrientation(LinearLayout.VERTICAL);
-        list.setId(QUEUE_LIST);
-        scroll.addView(list);
-        col.addView(scroll, new LinearLayout.LayoutParams(-1, -2));
-        sheet.setContentView(col);
-        fillQueue(list);
-        Window w = sheet.getWindow();
-        if (w != null) {
-            w.setBackgroundDrawableResource(android.R.color.transparent);
-            w.setGravity(Gravity.BOTTOM);
-            int rows = controller == null ? 1 : Math.max(1, Math.min(QUEUE_ROWS, controller.getMediaItemCount()));
-            int fit = dp(80) + rows * dp(53);
-            w.setLayout(-1, Math.min(fit, Math.round(getResources().getDisplayMetrics().heightPixels * 0.7f)));
-        }
-        sheet.setOnDismissListener(d -> { if (queueSheet == sheet) queueSheet = null; });
-        queueSheet = sheet;
-        sheet.show();
-    }
-
-    private void fillQueue(LinearLayout list) {
-        if (list == null) return;
-        list.removeAllViews();
+    private void fillQueue() {
+        queueList.removeAllViews();
         MediaController c = controller;
         Timeline timeline = c == null ? Timeline.EMPTY : c.getCurrentTimeline();
         int count = timeline.getWindowCount();
         int current = c == null ? -1 : c.getCurrentMediaItemIndex();
         boolean playing = active(c);
         boolean jump = can(Player.COMMAND_SEEK_TO_MEDIA_ITEM), change = can(Player.COMMAND_CHANGE_MEDIA_ITEMS);
+        clearButton.setVisibility(change && count > 0 ? View.VISIBLE : View.GONE);
+        queueHeading.setText(count == 0 ? "Queue" : "Queue · " + count);
         Timeline.Window window = new Timeline.Window();
-        if (count == 0) list.addView(text("The queue is empty", 15, MUTED));
+        if (count == 0) queueList.addView(theme.text(this, "The queue is empty", Type.BODY, theme.inkMuted, false));
         for (int i = 0; i < count && i < QUEUE_ROWS; i++) {
             final int index = i;
             MediaItem item = timeline.getWindow(i, window).mediaItem;
             CharSequence name = item.mediaMetadata.title != null ? item.mediaMetadata.title : item.mediaId;
+            CharSequence by = remote() ? null : item.mediaMetadata.artist;
             boolean now = i == current;
             LinearLayout row = new LinearLayout(this);
             row.setGravity(Gravity.CENTER_VERTICAL);
-            row.setMinimumHeight(dp(52));
+            row.setMinimumHeight(dp(56));
+            row.setBackground(theme.pressable(null));
             ImageView mark = new ImageView(this);
             if (now) {
                 mark.setImageResource(playing ? R.drawable.daylight_np_play : R.drawable.daylight_np_pause);
-                mark.setImageTintList(ColorStateList.valueOf(GREEN));
+                mark.setImageTintList(ColorStateList.valueOf(theme.primary));
                 mark.setContentDescription(playing ? "Playing" : "Paused");
             }
             row.addView(mark, new LinearLayout.LayoutParams(dp(28), dp(20)));
-            TextView label = text(name.toString(), 15, now ? GREEN : INK);
-            label.setMaxLines(2);
+            LinearLayout words = new LinearLayout(this);
+            words.setOrientation(LinearLayout.VERTICAL);
+            TextView label = theme.text(this, name.toString(), Type.BODY, now ? theme.primary : theme.ink, now);
+            label.setMaxLines(1);
             label.setEllipsize(TextUtils.TruncateAt.END);
-            if (now) label.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-            row.addView(label, new LinearLayout.LayoutParams(0, -2, 1));
+            words.addView(label);
+            if (!TextUtils.isEmpty(by)) {
+                TextView who = theme.text(this, by, Type.LABEL, theme.inkMuted, false);
+                who.setMaxLines(1);
+                who.setEllipsize(TextUtils.TruncateAt.END);
+                words.addView(who);
+            }
+            row.addView(words, new LinearLayout.LayoutParams(0, -2, 1));
             if (jump && !now) {
                 row.setOnClickListener(v -> { if (controller != null) controller.seekToDefaultPosition(index); });
                 row.setContentDescription("Play " + name);
             }
             if (change) {
-                ImageButton remove = icon(R.drawable.daylight_np_remove, "Remove " + name, MUTED,
+                ImageButton remove = icon(R.drawable.daylight_np_remove, "Remove " + name, theme.inkMuted,
                         () -> controller.removeMediaItem(index));
                 row.addView(remove, new LinearLayout.LayoutParams(dp(44), dp(44)));
             }
-            list.addView(row, new LinearLayout.LayoutParams(-1, -2));
-            View rule = new View(this);
-            rule.setBackgroundColor(LINE);
-            list.addView(rule, new LinearLayout.LayoutParams(-1, 1));
+            queueList.addView(row, new LinearLayout.LayoutParams(-1, -2));
         }
-        if (count > QUEUE_ROWS) list.addView(text("and " + (count - QUEUE_ROWS) + " more", 14, MUTED));
+        if (count > QUEUE_ROWS) queueList.addView(theme.text(this, "and " + (count - QUEUE_ROWS) + " more", Type.LABEL, theme.inkMuted, false));
     }
+
+    private void scrollQueueToCurrent() {
+        int current = controller == null ? 0 : controller.getCurrentMediaItemIndex();
+        queueScroll.post(() -> {
+            View row = queueList.getChildAt(Math.max(0, current - 1));
+            if (row != null) queueScroll.scrollTo(0, row.getTop());
+        });
+    }
+
+    // ── targets, menus ───────────────────────────────────────────────────────
 
     /** The target button: which player this screen drives. */
     private void renderTargets() {
         targetIcon.setImageResource(targetIcon(target));
-        targetLabel.setText(targetName);
+        targetLabel.setText(remote() ? targetName : "This phone");
     }
 
     /** Pick a player: this phone and every screen, the current one checked (Jellyfin's "Play On"). */
@@ -656,7 +777,7 @@ public class NowPlayingActivity extends Activity {
         LinearLayout col = new LinearLayout(this);
         col.setOrientation(LinearLayout.VERTICAL);
         col.setPadding(dp(8), dp(8), dp(8), dp(8));
-        AlertDialog dialog = new AlertDialog.Builder(this).setTitle("Play on").setView(col).create();
+        AlertDialog dialog = new AlertDialog.Builder(this, DaylightTheme.alert()).setTitle("Play on").setView(col).create();
         for (int i = 0; i < ids.size(); i++) {
             String id = ids.get(i), label = names.get(i);
             boolean on = id.equals(target);
@@ -664,18 +785,18 @@ public class NowPlayingActivity extends Activity {
             row.setGravity(Gravity.CENTER_VERTICAL);
             row.setMinimumHeight(dp(52));
             row.setPaddingRelative(dp(12), 0, dp(12), 0);
+            row.setBackground(base.pressable(null));
             ImageView kind = new ImageView(this);
             kind.setImageResource(targetIcon(id));
-            kind.setImageTintList(ColorStateList.valueOf(on ? GREEN : INK));
+            kind.setImageTintList(ColorStateList.valueOf(on ? base.primary : base.ink));
             row.addView(kind, new LinearLayout.LayoutParams(dp(24), dp(24)));
-            TextView t = text(label, 16, on ? GREEN : INK);
+            TextView t = base.text(this, label, Type.BODY, on ? base.primary : base.ink, on);
             t.setPaddingRelative(dp(16), 0, 0, 0);
-            if (on) t.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
             row.addView(t, new LinearLayout.LayoutParams(0, -2, 1));
             if (on) {
                 ImageView check = new ImageView(this);
                 check.setImageResource(R.drawable.daylight_np_check);
-                check.setImageTintList(ColorStateList.valueOf(GREEN));
+                check.setImageTintList(ColorStateList.valueOf(base.primary));
                 row.addView(check, new LinearLayout.LayoutParams(dp(24), dp(24)));
             }
             row.setContentDescription(on ? label + ", playing here" : "Play on " + label);
@@ -683,7 +804,7 @@ public class NowPlayingActivity extends Activity {
             col.addView(row);
         }
         if (!screensProblem.isEmpty()) {
-            TextView note = text(screensProblem, 14, MUTED);
+            TextView note = base.text(this, screensProblem, Type.LABEL, base.inkMuted, false);
             note.setPaddingRelative(dp(12), dp(8), dp(12), 0);
             col.addView(note);
         }
@@ -691,26 +812,40 @@ public class NowPlayingActivity extends Activity {
     }
 
     private void openMore() {
-        PopupMenu menu = new PopupMenu(this, more);
-        if (longForm()) {
-            boolean shuffled = controller != null && controller.getShuffleModeEnabled();
-            if (can(Player.COMMAND_SET_SHUFFLE_MODE)) menu.getMenu().add(0, 3, 0, shuffled ? "Shuffle: on" : "Shuffle: off");
-            if (can(Player.COMMAND_SET_REPEAT_MODE)) menu.getMenu().add(0, 4, 0, "Repeat: " + repeatWord());
-        }
-        if (can(Player.COMMAND_STOP)) menu.getMenu().add(0, 1, 0, remote() ? "Stop on " + targetName : "Stop");
-        if (can(Player.COMMAND_CHANGE_MEDIA_ITEMS) && controller.getMediaItemCount() > 0) menu.getMenu().add(0, 2, 0, "Clear queue");
+        PopupMenu menu = new PopupMenu(this, moreButton);
+        boolean any = controller != null && controller.getMediaItemCount() > 0;
+        if (!remote() && any) menu.getMenu().add(0, 5, 0, SleepTimer.isSet() ? "Sleep timer: " + SleepTimer.describeNow() : "Sleep timer…");
+        else if (!remote() && SleepTimer.isSet()) menu.getMenu().add(0, 5, 0, "Sleep timer: " + SleepTimer.describeNow());
+        if (can(Player.COMMAND_STOP) && any) menu.getMenu().add(0, 1, 0, remote() ? "Stop on " + targetName : "Stop");
+        if (can(Player.COMMAND_CHANGE_MEDIA_ITEMS) && any) menu.getMenu().add(0, 2, 0, "Clear queue");
         menu.setOnMenuItemClickListener(item -> {
             if (controller == null) return true;
             switch (item.getItemId()) {
                 case 1: stop(); break;
-                case 2: confirmClear(null); break;
-                case 3: controller.setShuffleModeEnabled(!controller.getShuffleModeEnabled()); break;
-                case 4: cycleRepeat(); break;
+                case 2: confirmClear(); break;
+                case 5: chooseSleep(); break;
                 default: break;
             }
             return true;
         });
         menu.show();
+    }
+
+    private static final int[] SLEEP_MINUTES = { 0, 15, 30, 45, 60, SleepTimer.END_OF_ITEM };
+
+    /** Pause later: in N minutes or at the end of this item. Set in the phone's session, so it holds with the screen closed. */
+    private void chooseSleep() {
+        String[] labels = { "Off", "15 minutes", "30 minutes", "45 minutes", "1 hour", "At the end of this" };
+        new AlertDialog.Builder(this, DaylightTheme.alert())
+                .setTitle("Sleep timer")
+                .setItems(labels, (d, which) -> {
+                    if (controller == null) return;
+                    Bundle args = new Bundle();
+                    args.putInt(SleepTimer.ARG_MINUTES, SLEEP_MINUTES[which]);
+                    controller.sendCustomCommand(new SessionCommand(SleepTimer.ACTION, Bundle.EMPTY), args);
+                    main.postDelayed(this::render, 200);
+                })
+                .show();
     }
 
     /**
@@ -723,24 +858,19 @@ public class NowPlayingActivity extends Activity {
         else controller.stop();
     }
 
-    private String repeatWord() {
-        int m = controller == null ? Player.REPEAT_MODE_OFF : controller.getRepeatMode();
-        return m == Player.REPEAT_MODE_ONE ? "one" : m == Player.REPEAT_MODE_ALL ? "all" : "off";
-    }
-
     private void cycleRepeat() {
         int m = controller.getRepeatMode();
         controller.setRepeatMode(m == Player.REPEAT_MODE_OFF ? Player.REPEAT_MODE_ALL
                 : m == Player.REPEAT_MODE_ALL ? Player.REPEAT_MODE_ONE : Player.REPEAT_MODE_OFF);
     }
 
-    private void confirmClear(Dialog sheet) {
+    private void confirmClear() {
         if (controller == null) return;
-        new AlertDialog.Builder(this)
+        new AlertDialog.Builder(this, DaylightTheme.alert())
                 .setMessage(remote() ? "Clear the queue on " + targetName + "?" : "Clear the queue?")
                 .setPositiveButton("Clear", (d, w) -> {
                     if (controller != null) controller.clearMediaItems();
-                    if (sheet != null) sheet.dismiss();
+                    setStage(Stage.ART);
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
@@ -771,8 +901,8 @@ public class NowPlayingActivity extends Activity {
     private void showPad(boolean on) {
         padShown = on && remote();
         pad.setVisibility(padShown ? View.VISIBLE : View.GONE);
-        body.setVisibility(padShown ? View.GONE : View.VISIBLE);
-        padToggle.setImageTintList(ColorStateList.valueOf(padShown ? GREEN : INK));
+        player.setVisibility(padShown ? View.GONE : View.VISIBLE);
+        padToggle.setImageTintList(ColorStateList.valueOf(padShown ? theme.primary : theme.ink));
         padToggle.setContentDescription(padShown ? "Show the player" : "Remote control");
         Log.i(TAG, "now playing pad " + (padShown ? "shown" : "hidden") + " for " + target);
     }
@@ -785,10 +915,10 @@ public class NowPlayingActivity extends Activity {
     private void press(String action, String direction) {
         if (!remote()) return;
         final String device = target, name = targetName;
-        final long queuedAt = android.os.SystemClock.elapsedRealtime();
+        final long queuedAt = SystemClock.elapsedRealtime();
         final String what = action + (direction == null ? "" : " " + direction);
         padIo.execute(() -> {
-            if (android.os.SystemClock.elapsedRealtime() - queuedAt > PAD_STALE_MS) {
+            if (SystemClock.elapsedRealtime() - queuedAt > PAD_STALE_MS) {
                 Log.i(TAG, "remote input " + what + " not sent: waited too long");
                 main.post(() -> padLine("Too slow to send; try again"));
                 return;
@@ -814,7 +944,7 @@ public class NowPlayingActivity extends Activity {
     }
 
     private void padLine(String line) {
-        padLineUntil = android.os.SystemClock.elapsedRealtime() + 4000;
+        padLineUntil = SystemClock.elapsedRealtime() + 4000;
         padStatus.setText(line);
         main.removeCallbacks(clearPadStatus);
         main.postDelayed(clearPadStatus, 4000);
@@ -847,25 +977,24 @@ public class NowPlayingActivity extends Activity {
         // Wrapped, so the cross is centred (a vertical LinearLayout would stretch it to the row).
         box.addView(grid, new LinearLayout.LayoutParams(-2, -2));
 
-        LinearLayout back = new LinearLayout(this);
-        back.setGravity(Gravity.CENTER);
-        back.setMinimumHeight(dp(56));
-        back.setPadding(dp(28), 0, dp(28), 0);
-        back.setBackground(round(Color.WHITE, 28));
-        ImageView backIcon = new ImageView(this);
+        backKey = new LinearLayout(this);
+        backKey.setGravity(Gravity.CENTER);
+        backKey.setMinimumHeight(dp(56));
+        backKey.setPadding(dp(28), 0, dp(28), 0);
+        backIcon = new ImageView(this);
         backIcon.setImageResource(R.drawable.daylight_np_back);
-        backIcon.setImageTintList(ColorStateList.valueOf(INK));
-        back.addView(backIcon, new LinearLayout.LayoutParams(dp(22), dp(22)));
-        TextView backLabel = text("Back", 16, INK);
+        backKey.addView(backIcon, new LinearLayout.LayoutParams(dp(22), dp(22)));
+        backLabel = new TextView(this);
+        backLabel.setText("Back");
         backLabel.setPadding(dp(10), 0, 0, 0);
-        back.addView(backLabel);
-        back.setContentDescription("Back");
-        back.setOnClickListener(v -> { tick(v); press("escape", null); });
+        backKey.addView(backLabel);
+        backKey.setContentDescription("Back");
+        backKey.setOnClickListener(v -> { tick(v); press("escape", null); });
         LinearLayout.LayoutParams backLp = new LinearLayout.LayoutParams(-2, -2);
         backLp.topMargin = dp(20);
-        box.addView(back, backLp);
+        box.addView(backKey, backLp);
 
-        padStatus = text("", 14, GREEN);
+        padStatus = new TextView(this);
         padStatus.setGravity(Gravity.CENTER_HORIZONTAL);
         padStatus.setPadding(0, dp(16), 0, 0);
         box.addView(padStatus, new LinearLayout.LayoutParams(-1, -2));
@@ -878,23 +1007,22 @@ public class NowPlayingActivity extends Activity {
         ImageButton b = new ImageButton(this);
         b.setImageResource(icon);
         b.setRotation(rotation);
-        b.setImageTintList(ColorStateList.valueOf(INK));
         b.setScaleType(ImageView.ScaleType.FIT_CENTER);
         b.setPadding(dp(22), dp(22), dp(22), dp(22));
-        b.setBackground(round(Color.WHITE, 48));
         b.setContentDescription(description);
+        padSurfaces.add(b);
         final Runnable[] repeat = new Runnable[1];
         repeat[0] = () -> { press(action, direction); main.postDelayed(repeat[0], PAD_REPEAT_MS); };
         b.setOnTouchListener((v, e) -> {
             switch (e.getActionMasked()) {
-                case android.view.MotionEvent.ACTION_DOWN:
+                case MotionEvent.ACTION_DOWN:
                     v.setPressed(true);
                     tick(v);
                     press(action, direction);
                     main.postDelayed(repeat[0], PAD_REPEAT_FIRST_MS);
                     return true;
-                case android.view.MotionEvent.ACTION_UP:
-                case android.view.MotionEvent.ACTION_CANCEL:
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
                     v.setPressed(false);
                     main.removeCallbacks(repeat[0]);
                     return true;
@@ -908,184 +1036,242 @@ public class NowPlayingActivity extends Activity {
     }
 
     private View okKey() {
-        TextView ok = text("OK", 22, Color.WHITE);
-        ok.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        ok.setGravity(Gravity.CENTER);
-        ok.setBackground(round(GREEN, 48));
-        ok.setContentDescription("OK");
-        ok.setClickable(true);
-        ok.setFocusable(true);
-        ok.setOnClickListener(v -> { tick(v); press("select", null); });
-        return ok;
+        okKey = new TextView(this);
+        okKey.setText("OK");
+        okKey.setGravity(Gravity.CENTER);
+        okKey.setContentDescription("OK");
+        okKey.setClickable(true);
+        okKey.setFocusable(true);
+        okKey.setOnClickListener(v -> { tick(v); press("select", null); });
+        return okKey;
     }
 
     private static void tick(View v) {
-        v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY);
+        v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
     }
 
     // ── layout ───────────────────────────────────────────────────────────────
 
     private void buildViews() {
+        root = new FrameLayout(this);
+        backdrop = new ImageView(this);
+        backdrop.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        backdrop.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        backdrop.setVisibility(View.GONE);
+        root.addView(backdrop, new FrameLayout.LayoutParams(-1, -1));
+        backdropFade = new View(this);
+        root.addView(backdropFade, new FrameLayout.LayoutParams(-1, -1));
+
         ScrollView scroll = new ScrollView(this);
-        scroll.setBackgroundColor(PAPER);
         scroll.setFillViewport(true);
+        scroll.setVerticalScrollBarEnabled(false);
         LinearLayout col = new LinearLayout(this);
         col.setOrientation(LinearLayout.VERTICAL);
-        col.setPadding(dp(20), dp(12), dp(12), dp(24));
-        scroll.addView(col);
+        col.setPadding(dp(20), dp(4), dp(20), dp(12));
+        scroll.addView(col, new ScrollView.LayoutParams(-1, -1));
+        root.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
 
-        // The target, and the ⋮ menu: the only chrome.
+        // Top: close, where it plays, and the D-pad for a screen.
         LinearLayout top = new LinearLayout(this);
         top.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout pick = new LinearLayout(this);
-        pick.setGravity(Gravity.CENTER_VERTICAL);
+        close = icon(R.drawable.daylight_np_expand, "Close", 0, this::finish);
+        close.setOnClickListener(v -> finish());
+        top.addView(close, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        pick = new LinearLayout(this);
+        pick.setGravity(Gravity.CENTER);
         pick.setMinimumHeight(dp(48));
         targetIcon = new ImageView(this);
-        targetIcon.setImageTintList(ColorStateList.valueOf(GREEN));
-        pick.addView(targetIcon, new LinearLayout.LayoutParams(dp(20), dp(20)));
-        targetLabel = text("", 15, GREEN);
-        targetLabel.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        pick.addView(targetIcon, new LinearLayout.LayoutParams(dp(18), dp(18)));
+        targetLabel = new TextView(this);
         targetLabel.setPaddingRelative(dp(8), 0, dp(2), 0);
+        targetLabel.setMaxLines(1);
+        targetLabel.setEllipsize(TextUtils.TruncateAt.END);
         pick.addView(targetLabel);
-        ImageView caret = new ImageView(this);
-        caret.setImageResource(R.drawable.daylight_np_expand);
-        caret.setImageTintList(ColorStateList.valueOf(GREEN));
-        pick.addView(caret, new LinearLayout.LayoutParams(dp(20), dp(20)));
+        targetCaret = new ImageView(this);
+        targetCaret.setImageResource(R.drawable.daylight_np_expand);
+        pick.addView(targetCaret, new LinearLayout.LayoutParams(dp(18), dp(18)));
         pick.setOnClickListener(v -> openTargets());
         pick.setContentDescription("Choose where to play");
         top.addView(pick, new LinearLayout.LayoutParams(0, -2, 1));
-        padToggle = icon(R.drawable.daylight_np_dpad, "Remote control", INK, () -> showPad(!padShown));
+        padToggle = icon(R.drawable.daylight_np_dpad, "Remote control", 0, () -> showPad(!padShown));
         // The pad does not need the player: it may be the only way to reach the screen.
         padToggle.setOnClickListener(v -> showPad(!padShown));
-        top.addView(padToggle, new LinearLayout.LayoutParams(dp(48), dp(48)));
-        more = icon(R.drawable.daylight_np_more, "More", INK, this::openMore);
-        top.addView(more, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        FrameLayout padSlot = new FrameLayout(this);
+        padSlot.addView(padToggle, new FrameLayout.LayoutParams(-1, -1));
+        top.addView(padSlot, new LinearLayout.LayoutParams(dp(48), dp(48)));
         col.addView(top);
+
         // The player, and in its place the D-pad when a screen is driven by hand.
-        body = new LinearLayout(this);
-        body.setOrientation(LinearLayout.VERTICAL);
-        col.addView(body, new LinearLayout.LayoutParams(-1, -2));
+        player = new LinearLayout(this);
+        player.setOrientation(LinearLayout.VERTICAL);
+        col.addView(player, new LinearLayout.LayoutParams(-1, 0, 1));
         pad = buildPad();
         pad.setVisibility(View.GONE);
         col.addView(pad, new LinearLayout.LayoutParams(-1, -2));
 
+        // The stage: the cover (swipe to skip), the lyrics or the queue.
+        stageBox = new FrameLayout(this);
+        stageBox.setMinimumHeight(dp(220));
+        artFrame = new AspectFrame(this);
         art = new ImageView(this);
         art.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        art.setBackground(round(LINE, 12));
         art.setClipToOutline(true);
         art.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        int side = Math.min(getResources().getDisplayMetrics().widthPixels - dp(40), dp(380));
-        LinearLayout.LayoutParams artLp = new LinearLayout.LayoutParams(side, side);
-        artLp.gravity = Gravity.CENTER_HORIZONTAL;
-        artLp.topMargin = dp(8);
-        body.addView(art, artLp);
+        artFrame.addView(art, new FrameLayout.LayoutParams(-1, -1));
+        swipeToSkip(artFrame);
+        stageBox.addView(artFrame, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
+        lyricsView = new LyricsView(this);
+        lyricsView.setSeek(ms -> {
+            if (can(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)) { controller.seekTo(ms); clock.reset(); }
+        });
+        lyricsView.setVisibility(View.GONE);
+        stageBox.addView(lyricsView, new FrameLayout.LayoutParams(-1, -1));
+        queueBox = new LinearLayout(this);
+        queueBox.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout head = new LinearLayout(this);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        queueHeading = new TextView(this);
+        head.addView(queueHeading, new LinearLayout.LayoutParams(0, -2, 1));
+        clearButton = new TextView(this);
+        clearButton.setText("Clear");
+        clearButton.setPadding(dp(12), dp(10), dp(4), dp(10));
+        clearButton.setOnClickListener(v -> confirmClear());
+        head.addView(clearButton);
+        queueBox.addView(head);
+        queueScroll = new ScrollView(this);
+        queueScroll.setVerticalScrollBarEnabled(false);
+        queueList = new LinearLayout(this);
+        queueList.setOrientation(LinearLayout.VERTICAL);
+        queueScroll.addView(queueList);
+        queueBox.addView(queueScroll, new LinearLayout.LayoutParams(-1, 0, 1));
+        queueBox.setVisibility(View.GONE);
+        stageBox.addView(queueBox, new FrameLayout.LayoutParams(-1, -1));
+        player.addView(stageBox, new LinearLayout.LayoutParams(-1, 0, 1));
 
-        title = text("", 22, INK);
-        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        title.setPadding(0, dp(20), dp(8), 0);
-        title.setMaxLines(2);
-        title.setEllipsize(TextUtils.TruncateAt.END);
-        body.addView(title);
-        subtitle = text("", 16, MUTED);
-        subtitle.setMaxLines(1);
-        subtitle.setEllipsize(TextUtils.TruncateAt.END);
-        body.addView(subtitle);
-
-        seek = new SeekBar(this);
-        seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) { if (fromUser) tickPosition(); }
-            @Override public void onStartTrackingTouch(SeekBar bar) { dragging = true; }
-            @Override public void onStopTrackingTouch(SeekBar bar) {
-                dragging = false;
-                if (controller != null && can(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)) controller.seekTo(bar.getProgress());
+        // The seek bar is the track's loudness, with the times at its ends.
+        LinearLayout seekRow = new LinearLayout(this);
+        seekRow.setGravity(Gravity.CENTER_VERTICAL);
+        elapsed = new TextView(this);
+        elapsed.setMinWidth(dp(44));
+        remaining = new TextView(this);
+        remaining.setMinWidth(dp(44));
+        remaining.setGravity(Gravity.END);
+        remaining.setOnClickListener(v -> {
+            timeDisplay = timeDisplay.next();
+            prefs().edit().putString("time", timeDisplay.name()).apply();
+            tickPosition();
+        });
+        remaining.setContentDescription("Switch between time left and length");
+        wave = new WaveformBar(this);
+        wave.setPadding(dp(8), dp(6), dp(8), dp(6));
+        wave.setListener(new WaveformBar.Listener() {
+            @Override public void onScrub(float fraction, boolean done) {
+                MediaController c = controller;
+                if (c == null) return;
+                long d = c.getDuration();
+                if (d == C.TIME_UNSET || d <= 0) return;
+                long to = (long) (fraction * d);
+                elapsed.setText(clock(to));
+                remaining.setText(timeDisplay.right(to, d));
+                if (done && can(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)) { c.seekTo(to); clock.reset(); }
+            }
+            @Override public void onStep(int direction) {
+                if (controller == null) return;
+                if (direction > 0 && can(Player.COMMAND_SEEK_FORWARD)) controller.seekForward();
+                else if (direction < 0 && can(Player.COMMAND_SEEK_BACK)) controller.seekBack();
+                clock.reset();
             }
         });
-        seek.setProgressTintList(ColorStateList.valueOf(GREEN));
-        seek.setThumbTintList(ColorStateList.valueOf(GREEN));
+        seekRow.addView(elapsed);
+        seekRow.addView(wave, new LinearLayout.LayoutParams(0, dp(48), 1));
+        seekRow.addView(remaining);
         LinearLayout.LayoutParams seekLp = new LinearLayout.LayoutParams(-1, -2);
         seekLp.topMargin = dp(16);
-        body.addView(seek, seekLp);
-        times = new LinearLayout(this);
-        times.setPadding(dp(16), 0, dp(16), 0);
-        elapsed = text("", 13, MUTED);
-        remaining = text("", 13, MUTED);
-        remaining.setGravity(Gravity.END);
-        times.addView(elapsed, new LinearLayout.LayoutParams(0, -2, 1));
-        times.addView(remaining, new LinearLayout.LayoutParams(0, -2, 1));
-        body.addView(times);
+        player.addView(seekRow, seekLp);
 
-        // One primary row: edge, previous, play, next, edge.
-        LinearLayout transport = new LinearLayout(this);
-        transport.setGravity(Gravity.CENTER_VERTICAL);
+        // Artist, title, album (year): centred, as a record sleeve reads.
+        artistLine = centred();
+        player.addView(artistLine);
+        title = centred();
+        title.setSingleLine(true);
+        title.setEllipsize(TextUtils.TruncateAt.MARQUEE);
+        title.setMarqueeRepeatLimit(-1);
+        title.setSelected(true);
+        title.setHorizontalFadingEdgeEnabled(true);
+        player.addView(title);
+        albumLine = centred();
+        player.addView(albumLine);
+        qualityLine = centred();
+        qualityLine.setPadding(0, dp(8), 0, 0);
+        player.addView(qualityLine);
+        status = centred();
+        status.setPadding(0, dp(8), 0, 0);
+        status.setMaxLines(2);
+        player.addView(status);
+
+        // One transport row: (back 10) previous, play, next (forward 10).
+        transport = new LinearLayout(this);
+        transport.setGravity(Gravity.CENTER);
         leftEdgeBox = edgeBox(true);
-        prev = icon(R.drawable.daylight_np_previous, "Previous", INK, () -> controller.seekToPrevious());
-        playPause = icon(R.drawable.daylight_np_play, "Play", Color.WHITE, () -> {
+        rightEdgeBox = edgeBox(false);
+        prev = icon(R.drawable.daylight_np_previous, "Previous", 0, () -> { controller.seekToPrevious(); clock.reset(); });
+        playPause = icon(R.drawable.daylight_np_play, "Play", 0, () -> {
             if (active(controller)) controller.pause();
             else { if (controller.getPlaybackState() == Player.STATE_IDLE) controller.prepare(); controller.play(); }
         });
-        playPause.setBackground(round(GREEN, 36));
-        playPause.setPadding(dp(18), dp(18), dp(18), dp(18));
-        next = icon(R.drawable.daylight_np_next, "Next", INK, () -> {
-            if (nextByCommand()) controller.sendCustomCommand(new SessionCommand(CarControls.NEXT_ACTION, Bundle.EMPTY), Bundle.EMPTY);
-            else controller.seekToNext();
-        });
-        rightEdgeBox = edgeBox(false);
-        transport.addView(leftEdgeBox, new LinearLayout.LayoutParams(0, dp(56), 1));
-        transport.addView(prev, new LinearLayout.LayoutParams(0, dp(56), 1));
-        LinearLayout.LayoutParams playLp = new LinearLayout.LayoutParams(dp(72), dp(72));
-        playLp.setMarginStart(dp(8));
-        playLp.setMarginEnd(dp(8));
-        transport.addView(playPause, playLp);
-        transport.addView(next, new LinearLayout.LayoutParams(0, dp(56), 1));
-        transport.addView(rightEdgeBox, new LinearLayout.LayoutParams(0, dp(56), 1));
+        playPause.setPadding(dp(22), dp(22), dp(22), dp(22));
+        next = icon(R.drawable.daylight_np_next, "Next", 0, () -> { skipNext(); clock.reset(); });
+        prev.setPadding(dp(14), dp(14), dp(14), dp(14));
+        next.setPadding(dp(14), dp(14), dp(14), dp(14));
+        transport.addView(leftEdgeBox, new LinearLayout.LayoutParams(dp(52), dp(52)));
+        LinearLayout.LayoutParams skipLp = new LinearLayout.LayoutParams(dp(68), dp(68));
+        skipLp.setMarginStart(dp(12));
+        skipLp.setMarginEnd(dp(12));
+        transport.addView(prev, skipLp);
+        transport.addView(playPause, new LinearLayout.LayoutParams(dp(84), dp(84)));
+        transport.addView(next, new LinearLayout.LayoutParams(skipLp));
+        transport.addView(rightEdgeBox, new LinearLayout.LayoutParams(dp(52), dp(52)));
         LinearLayout.LayoutParams transportLp = new LinearLayout.LayoutParams(-1, -2);
-        transportLp.topMargin = dp(8);
-        body.addView(transport, transportLp);
+        transportLp.topMargin = dp(16);
+        player.addView(transport, transportLp);
 
-        status = text("", 14, GREEN);
-        status.setGravity(Gravity.CENTER_HORIZONTAL);
-        status.setPadding(0, dp(12), 0, 0);
-        body.addView(status);
+        // One row of icons: queue, lyrics, shuffle, more, repeat, output.
+        bottom = new LinearLayout(this);
+        bottom.setGravity(Gravity.CENTER_VERTICAL);
+        queueButton = icon(R.drawable.daylight_np_queue, "Queue", 0, () -> setStage(stage == Stage.QUEUE ? Stage.ART : Stage.QUEUE));
+        lyricsButton = icon(R.drawable.daylight_np_lyrics, "Lyrics", 0, () -> setStage(stage == Stage.LYRICS ? Stage.ART : Stage.LYRICS));
+        shuffleButton = icon(R.drawable.daylight_np_shuffle, "Shuffle", 0, () -> controller.setShuffleModeEnabled(!controller.getShuffleModeEnabled()));
+        moreButton = icon(R.drawable.daylight_np_more, "More", 0, this::openMore);
+        // The sleep timer can be cancelled when nothing plays any more.
+        moreButton.setOnClickListener(v -> openMore());
+        repeatButton = icon(R.drawable.daylight_np_repeat, "Repeat", 0, this::cycleRepeat);
+        outputButton = icon(R.drawable.daylight_np_cast, "Play on", 0, this::openTargets);
+        outputButton.setOnClickListener(v -> openTargets());
+        for (ImageButton b : new ImageButton[] { queueButton, lyricsButton, shuffleButton, moreButton, repeatButton, outputButton }) {
+            FrameLayout slot = new FrameLayout(this);
+            slot.addView(b, new FrameLayout.LayoutParams(dp(48), dp(48), Gravity.CENTER));
+            bottom.addView(slot, new LinearLayout.LayoutParams(0, dp(52), 1));
+        }
+        LinearLayout.LayoutParams bottomLp = new LinearLayout.LayoutParams(-1, -2);
+        bottomLp.topMargin = dp(12);
+        player.addView(bottom, bottomLp);
 
-        // Next up, and the way into the queue.
-        upNextRow = new LinearLayout(this);
-        upNextRow.setGravity(Gravity.CENTER_VERTICAL);
-        upNextRow.setMinimumHeight(dp(52));
-        upNextRow.setPaddingRelative(dp(4), 0, dp(4), 0);
-        ImageView queueIcon = new ImageView(this);
-        queueIcon.setImageResource(R.drawable.daylight_np_queue);
-        queueIcon.setImageTintList(ColorStateList.valueOf(INK));
-        upNextRow.addView(queueIcon, new LinearLayout.LayoutParams(dp(22), dp(22)));
-        upNext = text("", 15, INK);
-        upNext.setPaddingRelative(dp(12), 0, 0, 0);
-        upNext.setMaxLines(1);
-        upNext.setEllipsize(TextUtils.TruncateAt.END);
-        upNextRow.addView(upNext, new LinearLayout.LayoutParams(0, -2, 1));
-        upNextRow.setOnClickListener(v -> openQueue());
-        upNextRow.setContentDescription("Open the queue");
-        LinearLayout.LayoutParams upLp = new LinearLayout.LayoutParams(-1, -2);
-        upLp.topMargin = dp(20);
-        upNextRule = new View(this);
-        upNextRule.setBackgroundColor(LINE);
-        body.addView(upNextRule, new LinearLayout.LayoutParams(-1, 1));
-        ((LinearLayout.LayoutParams) upNextRule.getLayoutParams()).topMargin = dp(20);
-        body.addView(upNextRow, new LinearLayout.LayoutParams(-1, -2));
-
-        setContentView(scroll);
+        setContentView(root);
+        applyTheme();
         render();
     }
 
-    /** The slot beside a skip: shuffle or repeat for music, a 10 s jump (icon with "10") for long items. */
+    /** Back and forward 10 s for long items: the icon with "10" over it. */
     private FrameLayout edgeBox(boolean left) {
         FrameLayout box = new FrameLayout(this);
-        ImageButton b = icon(R.drawable.daylight_np_shuffle, "", MUTED, () -> {
-            if (longForm()) { if (left) controller.seekBack(); else controller.seekForward(); }
-            else if (left) controller.setShuffleModeEnabled(!controller.getShuffleModeEnabled());
-            else cycleRepeat();
-        });
+        ImageButton b = icon(left ? R.drawable.daylight_np_replay : R.drawable.daylight_np_forward,
+                left ? "Back 10 seconds" : "Forward 10 seconds", 0, () -> {
+                    if (left) controller.seekBack(); else controller.seekForward();
+                    clock.reset();
+                });
         box.addView(b, new FrameLayout.LayoutParams(-1, -1));
-        TextView number = text("10", 9, INK);
-        number.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        TextView number = new TextView(this);
+        number.setText("10");
         number.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         FrameLayout.LayoutParams nLp = new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER);
         nLp.topMargin = dp(2);
@@ -1094,11 +1280,142 @@ public class NowPlayingActivity extends Activity {
         return box;
     }
 
-    /** An icon button whose action runs only while a controller is connected. */
+    /**
+     * Swipe the cover sideways to skip, as in Plexamp: it follows the finger, and past a
+     * quarter of its width (or a quick flick) it leaves and the next or previous item
+     * comes. A tick on a skip. Otherwise it springs back.
+     */
+    @android.annotation.SuppressLint("ClickableViewAccessibility")
+    private void swipeToSkip(View v) {
+        final float[] downX = new float[1];
+        final long[] downAt = new long[1];
+        v.setOnTouchListener((view, e) -> {
+            switch (e.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    downX[0] = e.getRawX();
+                    downAt[0] = e.getEventTime();
+                    view.animate().cancel();
+                    return true;
+                case MotionEvent.ACTION_MOVE:
+                    float dx = e.getRawX() - downX[0];
+                    if (Math.abs(dx) > dp(8)) view.getParent().requestDisallowInterceptTouchEvent(true);
+                    view.setTranslationX(dx);
+                    view.setAlpha(1f - Math.min(0.5f, Math.abs(dx) / (view.getWidth() * 2f)));
+                    return true;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    float moved = e.getRawX() - downX[0];
+                    long ms = Math.max(1, e.getEventTime() - downAt[0]);
+                    boolean flick = Math.abs(moved) > dp(48) && Math.abs(moved) / ms > 0.6f;
+                    boolean far = Math.abs(moved) > view.getWidth() / 4f;
+                    boolean forward = moved < 0;
+                    boolean allowed = forward ? canSkipNext() : can(Player.COMMAND_SEEK_TO_PREVIOUS);
+                    if (e.getActionMasked() == MotionEvent.ACTION_UP && (flick || far) && allowed && controller != null) {
+                        view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+                        float out = (forward ? -1 : 1) * view.getWidth();
+                        view.animate().translationX(out).alpha(0f).setDuration(160).withEndAction(() -> {
+                            if (forward) skipNext(); else controller.seekToPrevious();
+                            clock.reset();
+                            view.setTranslationX(-out * 0.35f);
+                            view.animate().translationX(0).alpha(1f).setDuration(220).start();
+                        }).start();
+                    } else {
+                        view.animate().translationX(0).alpha(1f).setDuration(200).start();
+                    }
+                    return true;
+                default:
+                    return true;
+            }
+        });
+        v.setContentDescription("Cover. Swipe left for next, right for previous");
+    }
+
+    /** Every color on the screen, from the theme (the cover's, when it has one). */
+    private void applyTheme() {
+        DaylightTheme t = theme;
+        int top = ThemeColors.mix(t.background, t.primary, t.dark ? 0.30 : 0.18);
+        GradientDrawable page = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[] { top, t.background, t.background });
+        root.setBackground(page);
+        // The soft cover fades into the page from a little below the top.
+        backdrop.setAlpha(t.dark ? 0.55f : 0.35f);
+        backdropFade.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[] { DaylightTheme.withAlpha(t.background, 0x40), DaylightTheme.withAlpha(t.background, 0xd0), t.background }));
+        Window w = getWindow();
+        w.setStatusBarColor(top);
+        w.setNavigationBarColor(t.background);
+        View decor = w.getDecorView();
+        int flags = decor.getSystemUiVisibility();
+        flags = t.dark ? flags & ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR : flags | View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+        decor.setSystemUiVisibility(flags);
+
+        art.setBackground(t.round(t.tile, DaylightTheme.Radius.MEDIUM));
+        close.setImageTintList(ColorStateList.valueOf(t.ink));
+        targetIcon.setImageTintList(ColorStateList.valueOf(t.inkMuted));
+        targetCaret.setImageTintList(ColorStateList.valueOf(t.inkMuted));
+        t.style(targetLabel, Type.LABEL, t.inkMuted, true);
+        pick.setBackground(t.pressable(null));
+        t.style(elapsed, Type.CAPTION, t.inkMuted, false);
+        t.style(remaining, Type.CAPTION, t.inkMuted, false);
+        elapsed.setFontFeatureSettings("tnum");
+        remaining.setFontFeatureSettings("tnum");
+        wave.setColors(t.primary, t.trackBuffered);
+        t.style(artistLine, Type.BODY, t.inkMuted, false);
+        t.style(title, Type.HEADLINE, t.ink, true);
+        t.style(albumLine, Type.BODY, t.inkMuted, false);
+        t.style(qualityLine, Type.CAPTION, t.inkMuted, false);
+        qualityLine.setLetterSpacing(0.04f);
+        t.style(status, Type.LABEL, t.attention, false);
+        // The big button: a disc of the cover's color, the glyph readable on it.
+        int disc = ThemeColors.mix(t.background, t.primary, t.dark ? 0.55 : 0.85);
+        playPause.setBackground(DaylightTheme.round(disc, dp(42)));
+        playPause.setImageTintList(ColorStateList.valueOf(ThemeColors.readableOn(disc)));
+        for (ImageButton b : new ImageButton[] { prev, next, leftEdge, rightEdge }) {
+            b.setImageTintList(ColorStateList.valueOf(t.ink));
+            b.setBackground(t.pressable(null));
+        }
+        for (TextView n : new TextView[] { leftEdgeNumber, rightEdgeNumber }) {
+            t.style(n, Type.CAPTION, t.ink, true);
+            n.setTextSize(9);
+        }
+        for (ImageButton b : new ImageButton[] { queueButton, lyricsButton, shuffleButton, moreButton, repeatButton, outputButton, padToggle, close }) {
+            b.setBackground(t.pressable(DaylightTheme.round(0x00000000, dp(24))));
+        }
+        t.style(queueHeading, Type.TITLE, t.ink, true);
+        t.style(clearButton, Type.LABEL, t.primary, true);
+        lyricsView.setTheme(t);
+        // The pad.
+        for (View k : padSurfaces) {
+            k.setBackground(t.pressable(DaylightTheme.round(t.surfaceVariant, dp(48))));
+            ((ImageButton) k).setImageTintList(ColorStateList.valueOf(t.ink));
+        }
+        if (okKey != null) {
+            t.style(okKey, Type.HEADLINE, t.onPrimary, true);
+            okKey.setBackground(t.pressable(DaylightTheme.round(t.primary, dp(48))));
+        }
+        if (backKey != null) {
+            backKey.setBackground(t.pressable(t.round(t.surfaceVariant, DaylightTheme.Radius.LARGE)));
+            backIcon.setImageTintList(ColorStateList.valueOf(t.ink));
+            t.style(backLabel, Type.BODY, t.ink, false);
+            t.style(padStatus, Type.LABEL, t.primary, false);
+        }
+        if (stage == Stage.QUEUE) fillQueue();
+        if (controller != null) render();
+    }
+
+    private TextView centred() {
+        TextView t = new TextView(this);
+        t.setGravity(Gravity.CENTER_HORIZONTAL);
+        t.setMaxLines(1);
+        t.setEllipsize(TextUtils.TruncateAt.END);
+        return t;
+    }
+
+    /** An icon button whose action runs only while a controller is connected. Tinted by applyTheme or render. */
     private ImageButton icon(int drawable, String description, int tint, Runnable action) {
         ImageButton b = new ImageButton(this);
         b.setImageResource(drawable);
-        b.setImageTintList(ColorStateList.valueOf(tint));
+        if (tint != 0) b.setImageTintList(ColorStateList.valueOf(tint));
         b.setScaleType(ImageView.ScaleType.FIT_CENTER);
         b.setPadding(dp(12), dp(12), dp(12), dp(12));
         b.setBackground(null);
@@ -1113,22 +1430,7 @@ public class NowPlayingActivity extends Activity {
     private static void enable(View v, boolean on) {
         v.setEnabled(on);
         v.setAlpha(on ? 1f : 0.3f);
-        if (v instanceof FrameLayout) for (int i = 0; i < ((FrameLayout) v).getChildCount(); i++) ((FrameLayout) v).getChildAt(i).setEnabled(on);
-    }
-
-    private TextView text(String s, int size, int color) {
-        TextView t = new TextView(this);
-        t.setText(s);
-        t.setTextSize(size);
-        t.setTextColor(color);
-        return t;
-    }
-
-    private GradientDrawable round(int color, int radius) {
-        GradientDrawable g = new GradientDrawable();
-        g.setColor(color);
-        g.setCornerRadius(dp(radius));
-        return g;
+        if (v instanceof ViewGroup) for (int i = 0; i < ((ViewGroup) v).getChildCount(); i++) ((ViewGroup) v).getChildAt(i).setEnabled(on);
     }
 
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
@@ -1137,5 +1439,29 @@ public class NowPlayingActivity extends Activity {
         long s = Math.max(0, ms) / 1000;
         long h = s / 3600, m = (s % 3600) / 60, sec = s % 60;
         return h > 0 ? String.format(Locale.US, "%d:%02d:%02d", h, m, sec) : String.format(Locale.US, "%d:%02d", m, sec);
+    }
+
+    /**
+     * The cover's box: as large as the stage allows, in the picture's shape (square, or
+     * 16:9 for a video's still), centred.
+     */
+    private static final class AspectFrame extends FrameLayout {
+        private float ratio = 1f;
+
+        AspectFrame(Context c) { super(c); }
+
+        void setRatio(float r) {
+            if (r == ratio) return;
+            ratio = r;
+            requestLayout();
+        }
+
+        @Override protected void onMeasure(int w, int h) {
+            int maxW = MeasureSpec.getSize(w), maxH = MeasureSpec.getSize(h);
+            if (MeasureSpec.getMode(h) == MeasureSpec.UNSPECIFIED) maxH = Math.round(maxW * ratio);
+            int width = Math.min(maxW, Math.round(maxH / ratio));
+            int height = Math.round(width * ratio);
+            super.onMeasure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY));
+        }
     }
 }

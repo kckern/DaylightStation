@@ -21,6 +21,7 @@ public class BackendMediaApiTest {
     @Rule public TemporaryFolder tmp = new TemporaryFolder();
     private final List<String> gets = new ArrayList<>();
     private int status = 200;
+    private String body = "{\"items\":[]}";
     private BackendMediaApi api;
 
     @Before public void setUp() throws Exception {
@@ -28,7 +29,7 @@ public class BackendMediaApiTest {
         Backend backend = Backend.from(core);
         core.settings().set(Backend.BASE_URL, "https://kiosk.example");
         api = new BackendMediaApi(backend, new Http() {
-            @Override public Reply get(String url) { gets.add(url); return new Reply(status, "{\"items\":[]}"); }
+            @Override public Reply get(String url) { gets.add(url); return new Reply(status, body); }
             @Override public Reply postJson(String url, String json) { throw new AssertionError("search is a GET"); }
             @Override public Reply postFile(String url, String contentType, File file, Map<String, String> headers) {
                 throw new AssertionError("search is a GET");
@@ -47,6 +48,17 @@ public class BackendMediaApiTest {
         api.play("plex:99", false);
         assertEquals("https://kiosk.example/api/v1/play/plex/99", gets.get(0));
         assertEquals("https://kiosk.example/api/v1/play/plex/99?resume=false", gets.get(1));
+    }
+
+    @Test public void levelsAndLyricsAreTrackRoutesAndNoneIsNull() throws Exception {
+        assertNotNull(api.levels("plex:12", 120));
+        assertEquals("https://kiosk.example/api/v1/track/levels/plex/12?samples=120", gets.get(0));
+        status = 204;
+        body = "";
+        assertNull(api.lyrics("plex:12"));
+        assertEquals("https://kiosk.example/api/v1/track/lyrics/plex/12", gets.get(1));
+        status = 500;
+        try { api.lyrics("plex:12"); fail(); } catch (MediaApi.Refused expected) { assertEquals(500, expected.status); }
     }
 
     @Test public void aRefusedSearchIsRefused() {

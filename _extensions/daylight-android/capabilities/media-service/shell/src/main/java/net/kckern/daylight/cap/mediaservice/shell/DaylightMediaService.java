@@ -62,6 +62,7 @@ public class DaylightMediaService extends MediaLibraryService {
     private PlayStart.Attempt artworkOwner;
     private Uri artworkUri;
     private MediaLibrarySession session;
+    private LibraryCallback callback;
     /** The layout the car was last given; null before the first. */
     private Boolean carLongForm;
     private PlaybackEvents events;
@@ -187,10 +188,10 @@ public class DaylightMediaService extends MediaLibraryService {
                 return true;
             }
         };
-        MediaLibrarySession.Builder builder = new MediaLibrarySession.Builder(this, sessionPlayer,
-                new LibraryCallback(media, io, getPackageName(), new AndroidPackageFacts(getPackageManager()),
-                        () -> SurfaceCache.get(this, ControllerPins.KEY), DaylightMediaService::stopPlayback)
-                        .withDrivingRadio(radio, this::cancelRadioHandoff));
+        callback = new LibraryCallback(media, io, getPackageName(), new AndroidPackageFacts(getPackageManager()),
+                () -> SurfaceCache.get(this, ControllerPins.KEY), DaylightMediaService::stopPlayback)
+                .withDrivingRadio(radio, this::cancelRadioHandoff);
+        MediaLibrarySession.Builder builder = new MediaLibrarySession.Builder(this, sessionPlayer, callback);
         builder.setCustomLayout(CarControls.layout(false));
         // A tap on the media notification opens the Now playing screen on this phone's
         // playback. Nothing from a controller is in the intent.
@@ -462,6 +463,7 @@ public class DaylightMediaService extends MediaLibraryService {
         updateTrackArtwork(null, null);
         clearListener();
         if (events != null) { events.detach(); events = null; }
+        if (callback != null) { callback.sleep.release(); callback = null; }
         if (session != null) { session.release(); session = null; }
         if (player != null) { player.release(); player = null; }
         if (io != null) { io.shutdown(); io = null; }

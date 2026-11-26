@@ -101,6 +101,16 @@ final class PayloadMedia {
         return port.call(request.toString(), waitMs);
     }
 
+    /** One track's loudness curve and quality: {ok, levels:{samples, quality}} or {ok, none:true}. */
+    String trackLevels(String contentId, int samples, long waitMs) throws Exception {
+        return port.call(new JSONObject().put("op", "track-levels").put("id", contentId).put("samples", samples).toString(), waitMs);
+    }
+
+    /** One track's lyrics: {ok, lyrics:{synced, lines:[{ms,text}]}} or {ok, none:true}. */
+    String trackLyrics(String contentId, long waitMs) throws Exception {
+        return port.call(new JSONObject().put("op", "track-lyrics").put("id", contentId).toString(), waitMs);
+    }
+
     /** Waits for a payload to attach. True as soon as one has. */
     boolean awaitReady(long waitMs) {
         return port.awaitReady(waitMs);

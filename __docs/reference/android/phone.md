@@ -465,7 +465,7 @@ targets are Media3 sessions behind one `MediaController`:
 
 | Piece | Installed (shell half) | Payload |
 |---|---|---|
-| `NowPlayingActivity` (not exported) | Top: the target (phone or TV icon, its name, ▾ opens **Play on** with the current one checked) and ⋮ (Stop, Clear queue). Then the art (square for a cover, 16:9 for a video still), title, artist on the phone, the seek bar with elapsed and remaining, and one row: previous, a filled play/pause, next, with shuffle and repeat beside them for music (tinted when on) or back 10 / forward 10 for an item of 20 minutes or more (shuffle and repeat move to ⋮). Under it, "Next: …" opens the queue in a sheet (tap to jump, × removes, Clear asks first). With a screen as the target the volume keys set the screen's volume and show the level for a moment. The status line shows only when something is wrong. A control is enabled only when the target's player makes its command available | Opens it on a `media/now-playing?target=` link (a `player:` action) |
+| `NowPlayingActivity` (not exported) | Laid out after Plexamp (ops:docs/superpowers/specs/2026-11-26-phone-player-parity-design.md). Top: close, the target (its icon and name, ▾ opens **Play on** with the current one checked) and, for a screen, the D-pad. The **stage** holds the cover (square, or 16:9 for a video still; swipe it left for next, right for previous, with a haptic tick), or the **lyrics** or the **queue** in its place (Back returns to the cover). Under it the **seek bar is the track's loudness** (Plex's analysis, as bars; a plain line when there is none), elapsed on the left and remaining on the right (tap: the length; remembered). Then artist, title (bold) and album (year), centred, and the audio quality ("FLAC · 24-bit · 96 kHz", "MP3 · 256 kbps · 44.1 kHz") when the backend knows it. One transport row: previous, play/pause in a disc of the cover's color, next; an item of 20 minutes or more adds back 10 / forward 10 at its ends. One icon row: queue, lyrics (enabled only when the track has lyrics), shuffle, ⋮ (Sleep timer on this phone, Stop, Clear queue), repeat, output (opens **Play on**). The page takes its colors from the cover (`CoverColor`, `DaylightTheme.withAccent`) over a soft copy of it. With a screen as the target the volume keys set the screen's volume and show the level for a moment. The status line shows only when something is wrong, or a sleep timer is set. A control is enabled only when the target's player makes its command available | Opens it on a `media/now-playing?target=` link (a `player:` action); `track-levels` and `track-lyrics` read `GET /api/v1/track/levels/<source>/<id>?samples=N` and `GET /api/v1/track/lyrics/<source>/<id>` (none, or an older backend's 404, is "none": the strip is a line and the button is off) |
 | `RemoteControlService`, a Media3 `MediaSessionService` (not exported, session id `screen-remote`) | A second session beside `DaylightMediaService`, holding a `ScreenPlayer`. Its notification and lock-screen card drive the screen; it reports remote playback (0–100), so the phone's volume keys set the screen's volume while it is the active session | — |
 | `ScreenPlayer`, a `SimpleBasePlayer` | The screen's snapshot as a Media3 player: its queue by `queueItemId`, its position carried forward while it plays. Every call becomes one command (`ScreenCommands`); its future completes after the session is read again, so the controls settle on what the screen did | `screens`, `screen-session`, `screen-command` (`ScreenRemote`): `GET /api/v1/device/config`, `GET /api/v1/device/<id>/session`, and the transport, queue, shuffle, repeat and volume routes of `__docs/reference/media/media-app-technical.md` §4 |
 
@@ -510,16 +510,34 @@ targets are Media3 sessions behind one `MediaController`:
   "<screen> did not respond", a server without the route "Home needs an update for
   this". The pad shows the screen's own state (off, not on, can't reach home) otherwise.
   Logcat: `remote input <action> [direction] -> <status>`.
-- **Not here.** Adding to a screen's queue, sleep timers, countdowns, audio and
-  subtitle tracks, and Put it back stay in the Media web app's Remote. Video still
-  does not play natively on the phone.
+- **Lyrics.** Synced lyrics follow the song: the line being sung is bold at a third of
+  the height, the others dimmed; a tap on a line seeks there; after a scroll by hand
+  the view waits 4 s before following again. Plain lyrics are text to scroll. They
+  work the same with a screen as the target, so the phone follows what the living
+  room sings.
+- **The position** drawn under the cover glides: between the player's reports it
+  counts on, and a report less than a second off is absorbed over at least 400 ms
+  instead of jumping (`PositionClock`). A seek is always sent from the player's own
+  position.
+- **Previous** restarts the item when more than 3 s in (or when nothing comes before),
+  and otherwise goes back one: the same on this phone, in the car and on a screen
+  (Media3 decides; `ScreenCommands` sends a restart as `seekAbs 0`).
+- **Sleep timer** (⋮, this phone only): off, 15, 30, 45 or 60 minutes, or at the end
+  of this item. It lives in the phone's media session (`SleepTimer`, custom command
+  `net.kckern.daylight.media.SLEEP` with `minutes`, -1 for the end of the item), so it
+  holds with Now playing closed; stopping playback or clearing the queue cancels it.
+- **Not here.** Adding to a screen's queue, countdowns, audio and subtitle tracks, and
+  Put it back stay in the Media web app's Remote. Video still does not play natively
+  on the phone.
 
 | Setting | Default | Meaning |
 |---|---|---|
 | `media.remoteName` | `Phone` | How a screen's notes name this device (at most 80 characters) |
 
 Logs: `adb logcat -s Daylight-Media` shows `remote screen <id>`, `remote command
-<kind> <action> -> <status> <code>`, `remote resting` and `now playing target <id>`.
+<kind> <action> -> <status> <code>`, `remote resting`, `now playing target <id>`,
+`now playing stage <art|lyrics|queue>`, `now playing detail: lyrics <none|synced|plain>`
+and `sleep timer: …`.
 No title or content id is logged.
 
 ### What a car's now-playing card shows
