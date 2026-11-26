@@ -417,7 +417,9 @@ final class ScreenPlayer extends SimpleBasePlayer {
         String code = reply.optString("code", "");
         if (status == 409 && "IDEMPOTENCY_CONFLICT".equals(code)) return "";
         if (status == 409) return screen + " is off";
-        if (status == 404) return screen + " is not on";
+        // DEVICE_NOT_FOUND is a screen not heard from; any other 404 is a route this
+        // backend does not have yet (a newer phone than server).
+        if (status == 404) return "DEVICE_NOT_FOUND".equals(code) ? screen + " is not on" : "Home needs an update for this";
         return "Not confirmed by " + screen;
     }
 }

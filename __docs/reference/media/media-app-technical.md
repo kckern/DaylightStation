@@ -1136,6 +1136,20 @@ Mutates the remote session's queue.
 - `__backend/tests/unit/suite/4_api/v1/routers/device.session-queue.test.mjs` — per-op validation for all 8 ops
 - `shared/contracts/media/envelopes.test.mjs` — envelope validator accepts each op shape
 
+### 4.6 `POST /api/v1/device/:id/input`
+
+A remote-control press from another device (the phone's D-pad) for a screen-framework
+screen.
+
+**Request body:** `{ "action": "navigate" | "select" | "escape", "direction": "up" |
+"down" | "left" | "right" (navigate only), "commandId": "<uuid>", "origin"?: {...} }`
+
+Published as an `input` CommandEnvelope on `screen:<id>`; the screen delivers it like a
+gamepad press (screen-framework.md, "Remote input from another device") and acks with
+`remote:input-delivered`. **200** delivered, **409** screen offline, **502** no ack,
+**400** a bad action/direction. One press, one request; senders never retry (a late OK
+on a menu is worse than none).
+
 ### 4.5 Session configuration setters
 
 | Endpoint | Body |

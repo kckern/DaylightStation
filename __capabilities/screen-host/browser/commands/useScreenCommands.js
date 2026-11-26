@@ -3,6 +3,7 @@ import { useWebSocketSubscription } from '../../../../frontend/src/hooks/useWebS
 import getLogger from '../../../../frontend/src/lib/logging/Logger.js';
 import { validateCommandEnvelope } from '@shared-contracts/media/envelopes.mjs';
 import { resolveBriefMode } from '@shared-contracts/media/playerFeatures.mjs';
+import { deliverPress } from '../input/deliverPress.js';
 
 let _logger;
 function logger() {
@@ -95,6 +96,20 @@ export function useScreenCommands(wsConfig, actionBus, screenId, controls = null
     const origin = data.origin;
     const withOrigin = (payload) => (origin ? { ...payload, origin } : payload);
     const ctl = controlsRef.current;
+
+    // A remote-control press from another device (the phone's D-pad). Delivered exactly
+    // like a gamepad press, so an app that works with a TV remote works with the phone.
+    // Not "who is playing this": no origin stamp, no screen note. It is a person in the
+    // room, so unattended auto-continue limits restart. Acked once delivered.
+    if (command === 'input') {
+      const payload = params.action === 'navigate' ? { direction: params.direction } : {};
+      const went = deliverPress(bus, { action: params.action, payload }, { __remoteSynthetic: true });
+      ctl?.markHumanInput?.();
+      logger().sampled?.('commands.input', { action: params.action, direction: params.direction ?? null, went, origin: origin ?? null },
+        { maxPerMinute: 30, aggregate: true });
+      bus.emit('remote:input-delivered', { commandId, went });
+      return;
+    }
 
     // Show briefly (RQ-PLAY-11): a camera, or a clip asked to be brief, goes
     // OVER what is playing and then returns it — it is not a replace, so it

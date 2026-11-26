@@ -501,6 +501,15 @@ targets are Media3 sessions behind one `MediaController`:
 - **Where it opens.** Setup's Play tab ("Now playing"), a `player:` action, and a tap
   on either media notification (the phone's own now opens Now playing on This phone,
   not the web view).
+- **D-pad.** With a screen as the target, the pad button (top right, beside ⋮) swaps
+  the player for a remote: up, down, left, right, OK and Back, for screen-framework
+  screens (the FHE menu, Party Games / Charades, any menu). A direction repeats while
+  held (400 ms, then every 150 ms); each press is a haptic tick. Presses go one at a
+  time, in order, on their own thread; one still waiting after 2 s is dropped. Each is
+  `POST /api/v1/device/<id>/input` and the screen acks delivery: a missed press says
+  "<screen> did not respond", a server without the route "Home needs an update for
+  this". The pad shows the screen's own state (off, not on, can't reach home) otherwise.
+  Logcat: `remote input <action> [direction] -> <status>`.
 - **Not here.** Adding to a screen's queue, sleep timers, countdowns, audio and
   subtitle tracks, and Put it back stay in the Media web app's Remote. Video still
   does not play natively on the phone.

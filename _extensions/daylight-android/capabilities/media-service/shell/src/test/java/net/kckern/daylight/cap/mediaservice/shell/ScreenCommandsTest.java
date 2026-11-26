@@ -106,6 +106,10 @@ public class ScreenCommandsTest {
         assertEquals("", ScreenPlayer.commandLine(
                 new JSONObject("{\"ok\":true,\"status\":409,\"accepted\":false,\"code\":\"IDEMPOTENCY_CONFLICT\"}"), "Office"));
         assertEquals("Can't reach home", ScreenPlayer.commandLine(null, "Office"));
+        assertEquals("Office is not on", ScreenPlayer.commandLine(
+                new JSONObject("{\"ok\":true,\"status\":404,\"accepted\":false,\"code\":\"DEVICE_NOT_FOUND\"}"), "Office"));
+        assertEquals("Home needs an update for this", ScreenPlayer.commandLine(
+                new JSONObject("{\"ok\":true,\"status\":404,\"accepted\":false,\"code\":\"\"}"), "Office"));
         assertEquals("Can't reach home", ScreenPlayer.commandLine(new JSONObject("{\"ok\":false,\"error\":\"unreachable\"}"), "Office"));
         assertEquals("Office did not answer in time; it may still happen", ScreenPlayer.commandLine(
                 new JSONObject("{\"ok\":true,\"status\":0,\"accepted\":false,\"code\":\"no_answer\"}"), "Office"));

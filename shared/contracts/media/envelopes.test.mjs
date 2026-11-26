@@ -195,6 +195,23 @@ describe('validateCommandEnvelope — happy paths', () => {
   });
 });
 
+describe('validateCommandEnvelope — input (phone D-pad)', () => {
+  const input = (params) => buildCommandEnvelope({ targetDevice: 'tv-1', command: 'input', params, commandId: 'i1' });
+  it('accepts navigate with a direction, select and escape', () => {
+    for (const direction of ['up', 'down', 'left', 'right']) {
+      expect(validateCommandEnvelope(input({ action: 'navigate', direction })).valid).toBe(true);
+    }
+    expect(validateCommandEnvelope(input({ action: 'select' })).valid).toBe(true);
+    expect(validateCommandEnvelope(input({ action: 'escape' })).valid).toBe(true);
+  });
+  it('rejects navigate without a direction, a direction on select, and unknown actions', () => {
+    expect(validateCommandEnvelope(input({ action: 'navigate' })).valid).toBe(false);
+    expect(validateCommandEnvelope(input({ action: 'navigate', direction: 'diagonal' })).valid).toBe(false);
+    expect(validateCommandEnvelope(input({ action: 'select', direction: 'up' })).valid).toBe(false);
+    expect(validateCommandEnvelope(input({ action: 'type', text: 'x' })).valid).toBe(false);
+  });
+});
+
 describe('validateCommandEnvelope — failure cases', () => {
   it('rejects a non-object envelope', () => {
     const r = validateCommandEnvelope(null);

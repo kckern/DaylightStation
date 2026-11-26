@@ -3,7 +3,16 @@ export const COMMAND_KINDS = Object.freeze([
   // Screen session controls (sleep timer, Put it back, next-episode countdown).
   // Params are validated by `validateSessionActionParams` in sessionControls.mjs.
   'session',
+  // A remote-control press from another device (the phone's D-pad): delivered to the
+  // screen exactly like a gamepad press (ActionBus first, else a synthetic keydown).
+  'input',
 ]);
+
+/** The presses an `input` command carries: a TV remote's D-pad, OK and Back. */
+export const INPUT_ACTIONS = Object.freeze(['navigate', 'select', 'escape']);
+export const INPUT_DIRECTIONS = Object.freeze(['up', 'down', 'left', 'right']);
+export const isInputAction = (v) => INPUT_ACTIONS.includes(v);
+export const isInputDirection = (v) => INPUT_DIRECTIONS.includes(v);
 
 export const TRANSPORT_ACTIONS = Object.freeze([
   'play', 'pause', 'stop', 'seekAbs', 'seekRel', 'skipNext', 'skipPrev',

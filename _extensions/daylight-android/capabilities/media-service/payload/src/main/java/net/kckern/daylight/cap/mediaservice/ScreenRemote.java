@@ -31,6 +31,8 @@ final class ScreenRemote {
     private static final Pattern TRANSPORT = Pattern.compile("play|pause|stop|seekAbs|seekRel|skipNext|skipPrev");
     private static final Pattern QUEUE_OP = Pattern.compile("jump|remove|clear|reorder");
     private static final Pattern REPEAT = Pattern.compile("off|one|all");
+    private static final Pattern INPUT = Pattern.compile("navigate|select|escape");
+    private static final Pattern DIRECTION = Pattern.compile("up|down|left|right");
 
     private final Http http;
     private final Function<String, String> url;
@@ -167,10 +169,24 @@ final class ScreenRemote {
                 put = true;
                 break;
             }
+            case "input": {
+                // A D-pad press for a screen-framework screen: up, down, left, right, OK, Back.
+                String action = request.optString("action", "");
+                if (!INPUT.matcher(action).matches()) throw new IllegalArgumentException("input action");
+                body.put("action", action);
+                if (action.equals("navigate")) {
+                    String direction = request.optString("direction", "");
+                    if (!DIRECTION.matcher(direction).matches()) throw new IllegalArgumentException("direction");
+                    body.put("direction", direction);
+                }
+                body.put("origin", origin());
+                path = "/input";
+                break;
+            }
             default:
                 throw new IllegalArgumentException("command");
         }
-        String target = url.apply(base(device) + path);
+        String target = url.apply((kind.equals("input") ? "/api/v1/device/" + checked(device) : base(device)) + path);
         Http.Reply r;
         try {
             r = put ? http.putJson(target, body.toString()) : http.postJson(target, body.toString());
@@ -216,8 +232,12 @@ final class ScreenRemote {
     }
 
     private static String base(String device) {
+        return "/api/v1/device/" + checked(device) + "/session";
+    }
+
+    private static String checked(String device) {
         if (device == null || !ID.matcher(device).matches()) throw new IllegalArgumentException("device");
-        return "/api/v1/device/" + device + "/session";
+        return device;
     }
 
     private static double finite(JSONObject request, String key) {

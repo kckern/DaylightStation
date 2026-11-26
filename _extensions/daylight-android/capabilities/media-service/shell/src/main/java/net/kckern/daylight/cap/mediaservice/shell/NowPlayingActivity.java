@@ -129,7 +129,18 @@ public class NowPlayingActivity extends Activity {
     private TextView targetLabel, title, subtitle, status, elapsed, remaining, upNext;
     private ImageView targetIcon, art;
     private SeekBar seek;
-    private ImageButton more, playPause, prev, next, leftEdge, rightEdge;
+    private ImageButton more, playPause, prev, next, leftEdge, rightEdge, padToggle;
+    private LinearLayout body, pad;
+    private TextView padStatus;
+    private boolean padShown;
+    /** D-pad presses: one at a time, in order, apart from the player's reads and commands. */
+    private ExecutorService padIo;
+    private final Runnable clearPadStatus = this::render;
+    /** Until when the pad's line shows a press's answer; after it, the screen's own status. */
+    private long padLineUntil;
+    /** A press still waiting this long is not sent: a late OK on a menu is worse than none (R5). */
+    private static final long PAD_STALE_MS = 2000;
+    private static final long PAD_REPEAT_FIRST_MS = 400, PAD_REPEAT_MS = 150;
     private TextView leftEdgeNumber, rightEdgeNumber;
     private FrameLayout leftEdgeBox, rightEdgeBox;
     private LinearLayout upNextRow, times;
@@ -139,6 +150,11 @@ public class NowPlayingActivity extends Activity {
         super.onCreate(saved);
         io = Executors.newSingleThreadExecutor(r -> {
             Thread t = new Thread(r, "Daylight-nowplaying");
+            t.setDaemon(true);
+            return t;
+        });
+        padIo = Executors.newSingleThreadExecutor(r -> {
+            Thread t = new Thread(r, "Daylight-nowplaying-pad");
             t.setDaemon(true);
             return t;
         });
@@ -187,6 +203,7 @@ public class NowPlayingActivity extends Activity {
     @Override protected void onDestroy() {
         if (io != null) io.shutdownNow();
         if (artIo != null) artIo.shutdownNow();
+        if (padIo != null) padIo.shutdownNow();
         super.onDestroy();
     }
 
@@ -421,6 +438,11 @@ public class NowPlayingActivity extends Activity {
         }
         enable(more, hasItem && (can(Player.COMMAND_STOP) || can(Player.COMMAND_CHANGE_MEDIA_ITEMS) || longForm()));
 
+        padToggle.setVisibility(remote() ? View.VISIBLE : View.GONE);
+        padToggle.setImageTintList(ColorStateList.valueOf(padShown ? GREEN : INK));
+        if (!remote() && padShown) showPad(false);
+        // On the pad, the screen's own state (off, not on, can't reach home) when no press is being answered.
+        if (padShown && android.os.SystemClock.elapsedRealtime() >= padLineUntil) padStatus.setText(line);
         renderUpNext();
         renderArtwork(hasItem ? meta.artworkUri : null, hasItem);
         renderTargets();
@@ -744,6 +766,163 @@ public class NowPlayingActivity extends Activity {
         return super.onKeyDown(keyCode, event);
     }
 
+    // ── the D-pad: the phone as a TV remote for a screen-framework screen ─────
+
+    private void showPad(boolean on) {
+        padShown = on && remote();
+        pad.setVisibility(padShown ? View.VISIBLE : View.GONE);
+        body.setVisibility(padShown ? View.GONE : View.VISIBLE);
+        padToggle.setImageTintList(ColorStateList.valueOf(padShown ? GREEN : INK));
+        padToggle.setContentDescription(padShown ? "Show the player" : "Remote control");
+        Log.i(TAG, "now playing pad " + (padShown ? "shown" : "hidden") + " for " + target);
+    }
+
+    /**
+     * One press to the target screen. Sent on the pad's own thread, in order; a press
+     * that waited over PAD_STALE_MS is dropped. Never retried. The answer is the screen's
+     * own: delivered (200), off (409), no answer (502).
+     */
+    private void press(String action, String direction) {
+        if (!remote()) return;
+        final String device = target, name = targetName;
+        final long queuedAt = android.os.SystemClock.elapsedRealtime();
+        final String what = action + (direction == null ? "" : " " + direction);
+        padIo.execute(() -> {
+            if (android.os.SystemClock.elapsedRealtime() - queuedAt > PAD_STALE_MS) {
+                Log.i(TAG, "remote input " + what + " not sent: waited too long");
+                main.post(() -> padLine("Too slow to send; try again"));
+                return;
+            }
+            JSONObject reply;
+            try {
+                JSONObject request = new JSONObject().put("op", "screen-command").put("device", device)
+                        .put("command", "input").put("action", action);
+                if (direction != null) request.put("direction", direction);
+                reply = new JSONObject(media.screenCommand(request, 4000));
+            } catch (Exception unreachable) {
+                reply = null;
+            }
+            JSONObject answered = reply;
+            Log.i(TAG, "remote input " + what + " -> " + (answered == null ? "unreachable"
+                    : (answered.optInt("status", 0) + " " + answered.optString("code", "")).trim()));
+            main.post(() -> {
+                if (!device.equals(target)) return;
+                String line = ScreenPlayer.commandLine(answered, name);
+                if (!line.isEmpty()) padLine(line.startsWith("Not confirmed") ? name + " did not respond" : line);
+            });
+        });
+    }
+
+    private void padLine(String line) {
+        padLineUntil = android.os.SystemClock.elapsedRealtime() + 4000;
+        padStatus.setText(line);
+        main.removeCallbacks(clearPadStatus);
+        main.postDelayed(clearPadStatus, 4000);
+    }
+
+    private LinearLayout buildPad() {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setGravity(Gravity.CENTER_HORIZONTAL);
+        box.setPadding(0, dp(24), 0, dp(8));
+        int key = Math.min(dp(96), (getResources().getDisplayMetrics().widthPixels - dp(64)) / 3);
+
+        android.widget.GridLayout grid = new android.widget.GridLayout(this);
+        grid.setColumnCount(3);
+        grid.setRowCount(3);
+        View[][] cells = {
+                { null, padKey(R.drawable.daylight_np_expand, 180, "Up", "navigate", "up"), null },
+                { padKey(R.drawable.daylight_np_expand, 90, "Left", "navigate", "left"), okKey(),
+                  padKey(R.drawable.daylight_np_expand, -90, "Right", "navigate", "right") },
+                { null, padKey(R.drawable.daylight_np_expand, 0, "Down", "navigate", "down"), null },
+        };
+        for (View[] row : cells) {
+            for (View cell : row) {
+                android.widget.GridLayout.LayoutParams lp = new android.widget.GridLayout.LayoutParams();
+                lp.width = key; lp.height = key;
+                lp.setMargins(dp(6), dp(6), dp(6), dp(6));
+                grid.addView(cell == null ? new View(this) : cell, lp);
+            }
+        }
+        // Wrapped, so the cross is centred (a vertical LinearLayout would stretch it to the row).
+        box.addView(grid, new LinearLayout.LayoutParams(-2, -2));
+
+        LinearLayout back = new LinearLayout(this);
+        back.setGravity(Gravity.CENTER);
+        back.setMinimumHeight(dp(56));
+        back.setPadding(dp(28), 0, dp(28), 0);
+        back.setBackground(round(Color.WHITE, 28));
+        ImageView backIcon = new ImageView(this);
+        backIcon.setImageResource(R.drawable.daylight_np_back);
+        backIcon.setImageTintList(ColorStateList.valueOf(INK));
+        back.addView(backIcon, new LinearLayout.LayoutParams(dp(22), dp(22)));
+        TextView backLabel = text("Back", 16, INK);
+        backLabel.setPadding(dp(10), 0, 0, 0);
+        back.addView(backLabel);
+        back.setContentDescription("Back");
+        back.setOnClickListener(v -> { tick(v); press("escape", null); });
+        LinearLayout.LayoutParams backLp = new LinearLayout.LayoutParams(-2, -2);
+        backLp.topMargin = dp(20);
+        box.addView(back, backLp);
+
+        padStatus = text("", 14, GREEN);
+        padStatus.setGravity(Gravity.CENTER_HORIZONTAL);
+        padStatus.setPadding(0, dp(16), 0, 0);
+        box.addView(padStatus, new LinearLayout.LayoutParams(-1, -2));
+        return box;
+    }
+
+    /** A direction: pressed on touch-down, repeated while held (R6), like a gamepad's D-pad. */
+    @android.annotation.SuppressLint("ClickableViewAccessibility")
+    private View padKey(int icon, float rotation, String description, String action, String direction) {
+        ImageButton b = new ImageButton(this);
+        b.setImageResource(icon);
+        b.setRotation(rotation);
+        b.setImageTintList(ColorStateList.valueOf(INK));
+        b.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        b.setPadding(dp(22), dp(22), dp(22), dp(22));
+        b.setBackground(round(Color.WHITE, 48));
+        b.setContentDescription(description);
+        final Runnable[] repeat = new Runnable[1];
+        repeat[0] = () -> { press(action, direction); main.postDelayed(repeat[0], PAD_REPEAT_MS); };
+        b.setOnTouchListener((v, e) -> {
+            switch (e.getActionMasked()) {
+                case android.view.MotionEvent.ACTION_DOWN:
+                    v.setPressed(true);
+                    tick(v);
+                    press(action, direction);
+                    main.postDelayed(repeat[0], PAD_REPEAT_FIRST_MS);
+                    return true;
+                case android.view.MotionEvent.ACTION_UP:
+                case android.view.MotionEvent.ACTION_CANCEL:
+                    v.setPressed(false);
+                    main.removeCallbacks(repeat[0]);
+                    return true;
+                default:
+                    return true;
+            }
+        });
+        // TalkBack and switch access activate with a click, not a touch.
+        b.setOnClickListener(v -> press(action, direction));
+        return b;
+    }
+
+    private View okKey() {
+        TextView ok = text("OK", 22, Color.WHITE);
+        ok.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        ok.setGravity(Gravity.CENTER);
+        ok.setBackground(round(GREEN, 48));
+        ok.setContentDescription("OK");
+        ok.setClickable(true);
+        ok.setFocusable(true);
+        ok.setOnClickListener(v -> { tick(v); press("select", null); });
+        return ok;
+    }
+
+    private static void tick(View v) {
+        v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY);
+    }
+
     // ── layout ───────────────────────────────────────────────────────────────
 
     private void buildViews() {
@@ -775,9 +954,20 @@ public class NowPlayingActivity extends Activity {
         pick.setOnClickListener(v -> openTargets());
         pick.setContentDescription("Choose where to play");
         top.addView(pick, new LinearLayout.LayoutParams(0, -2, 1));
+        padToggle = icon(R.drawable.daylight_np_dpad, "Remote control", INK, () -> showPad(!padShown));
+        // The pad does not need the player: it may be the only way to reach the screen.
+        padToggle.setOnClickListener(v -> showPad(!padShown));
+        top.addView(padToggle, new LinearLayout.LayoutParams(dp(48), dp(48)));
         more = icon(R.drawable.daylight_np_more, "More", INK, this::openMore);
         top.addView(more, new LinearLayout.LayoutParams(dp(48), dp(48)));
         col.addView(top);
+        // The player, and in its place the D-pad when a screen is driven by hand.
+        body = new LinearLayout(this);
+        body.setOrientation(LinearLayout.VERTICAL);
+        col.addView(body, new LinearLayout.LayoutParams(-1, -2));
+        pad = buildPad();
+        pad.setVisibility(View.GONE);
+        col.addView(pad, new LinearLayout.LayoutParams(-1, -2));
 
         art = new ImageView(this);
         art.setScaleType(ImageView.ScaleType.CENTER_CROP);
@@ -788,18 +978,18 @@ public class NowPlayingActivity extends Activity {
         LinearLayout.LayoutParams artLp = new LinearLayout.LayoutParams(side, side);
         artLp.gravity = Gravity.CENTER_HORIZONTAL;
         artLp.topMargin = dp(8);
-        col.addView(art, artLp);
+        body.addView(art, artLp);
 
         title = text("", 22, INK);
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         title.setPadding(0, dp(20), dp(8), 0);
         title.setMaxLines(2);
         title.setEllipsize(TextUtils.TruncateAt.END);
-        col.addView(title);
+        body.addView(title);
         subtitle = text("", 16, MUTED);
         subtitle.setMaxLines(1);
         subtitle.setEllipsize(TextUtils.TruncateAt.END);
-        col.addView(subtitle);
+        body.addView(subtitle);
 
         seek = new SeekBar(this);
         seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
@@ -814,7 +1004,7 @@ public class NowPlayingActivity extends Activity {
         seek.setThumbTintList(ColorStateList.valueOf(GREEN));
         LinearLayout.LayoutParams seekLp = new LinearLayout.LayoutParams(-1, -2);
         seekLp.topMargin = dp(16);
-        col.addView(seek, seekLp);
+        body.addView(seek, seekLp);
         times = new LinearLayout(this);
         times.setPadding(dp(16), 0, dp(16), 0);
         elapsed = text("", 13, MUTED);
@@ -822,7 +1012,7 @@ public class NowPlayingActivity extends Activity {
         remaining.setGravity(Gravity.END);
         times.addView(elapsed, new LinearLayout.LayoutParams(0, -2, 1));
         times.addView(remaining, new LinearLayout.LayoutParams(0, -2, 1));
-        col.addView(times);
+        body.addView(times);
 
         // One primary row: edge, previous, play, next, edge.
         LinearLayout transport = new LinearLayout(this);
@@ -850,12 +1040,12 @@ public class NowPlayingActivity extends Activity {
         transport.addView(rightEdgeBox, new LinearLayout.LayoutParams(0, dp(56), 1));
         LinearLayout.LayoutParams transportLp = new LinearLayout.LayoutParams(-1, -2);
         transportLp.topMargin = dp(8);
-        col.addView(transport, transportLp);
+        body.addView(transport, transportLp);
 
         status = text("", 14, GREEN);
         status.setGravity(Gravity.CENTER_HORIZONTAL);
         status.setPadding(0, dp(12), 0, 0);
-        col.addView(status);
+        body.addView(status);
 
         // Next up, and the way into the queue.
         upNextRow = new LinearLayout(this);
@@ -877,9 +1067,9 @@ public class NowPlayingActivity extends Activity {
         upLp.topMargin = dp(20);
         upNextRule = new View(this);
         upNextRule.setBackgroundColor(LINE);
-        col.addView(upNextRule, new LinearLayout.LayoutParams(-1, 1));
+        body.addView(upNextRule, new LinearLayout.LayoutParams(-1, 1));
         ((LinearLayout.LayoutParams) upNextRule.getLayoutParams()).topMargin = dp(20);
-        col.addView(upNextRow, new LinearLayout.LayoutParams(-1, -2));
+        body.addView(upNextRow, new LinearLayout.LayoutParams(-1, -2));
 
         setContentView(scroll);
         render();

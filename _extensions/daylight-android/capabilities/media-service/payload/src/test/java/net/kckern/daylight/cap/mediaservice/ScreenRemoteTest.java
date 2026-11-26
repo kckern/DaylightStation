@@ -152,6 +152,23 @@ public class ScreenRemoteTest {
         assertTrue(calls.get(1).startsWith("POST https://home.example/api/v1/device/office-tv/session/queue/clear "));
     }
 
+    @Test public void aDpadPressPostsToTheScreensInputRoute() throws Exception {
+        remote.command(new JSONObject().put("device", "livingroom-tv").put("command", "input").put("action", "navigate").put("direction", "left"));
+        remote.command(new JSONObject().put("device", "livingroom-tv").put("command", "input").put("action", "select").put("direction", "up"));
+        assertTrue(calls.get(0), calls.get(0).startsWith("POST https://home.example/api/v1/device/livingroom-tv/input "));
+        JSONObject first = new JSONObject(calls.get(0).substring(calls.get(0).indexOf('{')));
+        assertEquals("navigate", first.getString("action"));
+        assertEquals("left", first.getString("direction"));
+        assertEquals("Phone", first.getJSONObject("origin").getString("name"));
+        assertFalse("only navigate carries a direction", calls.get(1).contains("direction"));
+        String[][] bad = { {"action", "navigate"}, {"action", "type"} };
+        for (String[] b : bad) {
+            try { remote.command(new JSONObject().put("device", "tv").put("command", "input").put(b[0], b[1])); fail(b[1]); }
+            catch (IllegalArgumentException expected) { }
+        }
+        assertEquals(2, calls.size());
+    }
+
     @Test public void aReorderSendsTheNewOrderById() throws Exception {
         remote.command(new JSONObject().put("device", "office-tv").put("command", "queue").put("queueOp", "reorder")
                 .put("items", new org.json.JSONArray().put("q2").put("q1")));

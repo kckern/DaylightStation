@@ -312,6 +312,24 @@ subscriptions:
 
 Processing: for each topic, subscribe via `useWebSocketSubscription`. When a message arrives, check `on.event` filter (no filter = trigger on any message). On match, resolve `response.overlay` from widget registry, call `showOverlay`. Dismiss via event match, fixed timeout, or inactivity timer.
 
+### Remote input from another device (the phone's D-pad)
+
+A screen takes remote-style presses from another device as an `input` command on its
+`screen:<deviceId>` topic: `params {action: navigate|select|escape, direction?}`
+(`shared/contracts/media/commands.mjs` `INPUT_ACTIONS`). `useScreenCommands` hands it to
+`deliverPress` (`__capabilities/screen-host/browser/input/deliverPress.js`), the same
+path a gamepad press takes: the ActionBus first (`navigate`, `select`, `escape`); if no
+owner consumed it, a synthetic `keydown` (`ArrowUp/Down/Left/Right`, `Enter`, `Escape`)
+on `window`, marked `__gamepadSynthetic` (and `__remoteSynthetic`) so KeyboardAdapter
+and `useScopedRemoteControls` do not handle it twice. So anything that works with a TV
+remote or gamepad (TVMenu, the FHE menu, Party Games / Charades) works with the phone,
+with no change to the app.
+
+A press is not provenance: no "started by" stamp and no screen note, but it marks human
+input. It is acked with `remote:input-delivered` once delivered. The sender is
+`POST /api/v1/device/:id/input` (media-app-technical.md §4.6); the phone's pad is in
+`__docs/reference/android/phone.md` ("Now playing and the screen remote").
+
 **Two trigger sources for overlays:**
 - **Screen-level (subscriptions):** External events (MIDI keyboard, doorbell) auto-invoke overlays per YAML config
 - **Widget-level (programmatic):** Widgets call `showOverlay()` directly (menu item selects video)
