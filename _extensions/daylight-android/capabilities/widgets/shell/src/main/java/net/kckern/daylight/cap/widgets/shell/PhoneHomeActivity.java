@@ -678,13 +678,13 @@ public class PhoneHomeActivity extends Activity {
         return minutes > 0 ? minutes + " min left" : "Under a minute left";
     }
 
-    /** The playlists already chosen, as cover tiles two to a row; a tap plays one here. */
+    /** The playlists already chosen, as cover tiles three to a row; a tap plays one here. */
     private void playlistTiles(java.util.List<DrivingRadioSettings.Staple> playlists) {
         LinearLayout pair = null;
         for (DrivingRadioSettings.Staple p : playlists) {
-            if (pair == null || pair.getChildCount() == 2) {
+            if (pair == null || pair.getChildCount() == 3) {
                 pair = new LinearLayout(this);
-                pair.setWeightSum(2);
+                pair.setWeightSum(3);
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
                 lp.topMargin = dp(6);
                 column.addView(pair, lp);
@@ -709,8 +709,15 @@ public class PhoneHomeActivity extends Activity {
             String id = p.id;
             tile.setOnClickListener(v -> playHere("c:" + id));
             LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(0, -2, 1);
-            if (pair.getChildCount() == 0) tp.setMarginEnd(dp(6));
+            if (pair.getChildCount() < 2) tp.setMarginEnd(dp(6));
             pair.addView(tile, tp);
+        }
+        // A short last row keeps tile widths: empty weight fills it.
+        while (pair != null && pair.getChildCount() < 3) {
+            View spacer = new View(this);
+            LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(0, 1, 1);
+            if (pair.getChildCount() < 2) sp.setMarginEnd(dp(6));
+            pair.addView(spacer, sp);
         }
         buttonRow = null;
     }
@@ -1234,10 +1241,21 @@ public class PhoneHomeActivity extends Activity {
         // A banner, not a loose line: a check on good news, an amber card for anything to act on.
         LinearLayout banner = new LinearLayout(this);
         banner.setOrientation(LinearLayout.VERTICAL);
-        banner.setPadding(dp(16), dp(12), dp(16), dp(12));
+        banner.setPadding(dp(16), dp(12), dp(8), dp(12));
         banner.setBackground(t.round(problem ? t.attentionContainer : t.surfaceVariant, Radius.MEDIUM));
+        // Every banner can be put away: ✕ forgets this attempt (the item is not changed).
+        LinearLayout top = new LinearLayout(this);
+        top.setGravity(Gravity.CENTER_VERTICAL);
         TextView headline = PlaylistPicker.text(this, (problem ? "" : "✓  ") + request.title, Type.BODY, t.ink, true);
-        banner.addView(headline);
+        top.addView(headline, new LinearLayout.LayoutParams(0, -2, 1));
+        TextView close = PlaylistPicker.glyph(this, "✕", 18, t.inkMuted);
+        close.setPadding(dp(12), dp(4), dp(12), dp(4));
+        close.setContentDescription("Dismiss");
+        close.setBackground(t.pressable(null));
+        net.kckern.daylight.shellkit.UiTelemetry.tag(close, "placement.dismiss");
+        close.setOnClickListener(v -> { placements.dismiss(request.requestId); drawPlacement(); });
+        top.addView(close);
+        banner.addView(top);
         TextView detail = PlaylistPicker.text(this, message, Type.LABEL, t.ink, false);
         banner.addView(detail);
         if (status == LauncherPlacement.Status.UNCONFIRMED || status == LauncherPlacement.Status.REFUSED) {

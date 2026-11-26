@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The screen underneath stays put while the sheet moves. -->
+<translate xmlns:android="http://schemas.android.com/apk/res/android"
+    android:duration="260" android:fromYDelta="0" android:toYDelta="0" />

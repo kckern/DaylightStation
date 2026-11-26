@@ -190,6 +190,8 @@ public class NowPlayingActivity extends Activity {
 
     @Override protected void onCreate(Bundle saved) {
         super.onCreate(saved);
+        // A sheet over what was there: it rises on open and falls back down on close.
+        overridePendingTransition(R.anim.daylight_np_rise, R.anim.daylight_np_hold);
         UiTelemetry.install(this);
         io = executor("Daylight-nowplaying");
         padIo = executor("Daylight-nowplaying-pad");
@@ -261,6 +263,11 @@ public class NowPlayingActivity extends Activity {
         main.removeCallbacks(reconnect);
         disconnect();
         super.onStop();
+    }
+
+    @Override public void finish() {
+        super.finish();
+        overridePendingTransition(R.anim.daylight_np_hold, R.anim.daylight_np_fall);
     }
 
     @Override protected void onDestroy() {
@@ -1339,14 +1346,16 @@ public class NowPlayingActivity extends Activity {
         next = icon(R.drawable.daylight_np_next, "Next", 0, () -> { skipNext(); clock.reset(); });
         prev.setPadding(dp(14), dp(14), dp(14), dp(14));
         next.setPadding(dp(14), dp(14), dp(14), dp(14));
-        transport.addView(leftEdgeBox, new LinearLayout.LayoutParams(dp(52), dp(52)));
-        LinearLayout.LayoutParams skipLp = new LinearLayout.LayoutParams(dp(68), dp(68));
-        skipLp.setMarginStart(dp(12));
-        skipLp.setMarginEnd(dp(12));
-        transport.addView(prev, skipLp);
-        transport.addView(playPause, new LinearLayout.LayoutParams(dp(84), dp(84)));
-        transport.addView(next, new LinearLayout.LayoutParams(skipLp));
-        transport.addView(rightEdgeBox, new LinearLayout.LayoutParams(dp(52), dp(52)));
+        // Only the play disc is a fixed size; the others share what is left, so the row fits
+        // any width (a 411 dp phone spilled the ±10 buttons off both edges).
+        transport.addView(leftEdgeBox, new LinearLayout.LayoutParams(0, dp(52), 1));
+        transport.addView(prev, new LinearLayout.LayoutParams(0, dp(64), 1.2f));
+        LinearLayout.LayoutParams discLp = new LinearLayout.LayoutParams(dp(84), dp(84));
+        discLp.setMarginStart(dp(6));
+        discLp.setMarginEnd(dp(6));
+        transport.addView(playPause, discLp);
+        transport.addView(next, new LinearLayout.LayoutParams(0, dp(64), 1.2f));
+        transport.addView(rightEdgeBox, new LinearLayout.LayoutParams(0, dp(52), 1));
         LinearLayout.LayoutParams transportLp = new LinearLayout.LayoutParams(-1, -2);
         transportLp.topMargin = dp(16);
         player.addView(transport, transportLp);
