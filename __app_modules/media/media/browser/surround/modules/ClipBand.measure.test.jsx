@@ -245,4 +245,24 @@ describe('the clip band, measured: a medley sets inside the room under the pictu
     expect(m.plate.usedShort).toBe(short);
     expect(m.plate.cut, `cut at ${m.plate.fit.fontPx}px in ${m.plate.fit.availPx}px`).toBe(false);
   }, 60000);
+
+  // Every long title in the Tabernacle corpus must set whole or have a
+  // short_title that does. Title, short title and year as the plate receives
+  // them: the library work's `title`, `short_title` and `year` (the concert's
+  // year, which is not the file-name prefix).
+  const CORPUS = Object.freeze([
+    { title: 'Christmas with the Mormon Tabernacle Choir', short: 'Christmas with the Tabernacle Choir', year: 1994 },
+    { title: 'Christmas with Audra McDonald and Peter Graves', short: 'Christmas with Audra McDonald', year: 2004 },
+    { title: 'Christmas with Renée Fleming and Claire Bloom', short: 'Christmas with Renée Fleming', year: 2005 },
+    { title: 'The Most Wonderful Time of the Year', short: null, year: 2009 },
+  ]);
+
+  it.each(FLEET.flatMap((s) => CORPUS.map((c) => ({ ...s, ...c }))))('$name — "$title" sets on the plate', async ({ width, height, title, short, year }) => {
+    const data = payload('fill');
+    data.piece = { title, short_title: short ?? title, year };
+    const m = await layout(page, css, { width, height, data });
+    expect(m.plate.fit, 'the plate was not laid out').not.toBeNull();
+    expect(m.plate.fit.rejected, `"${title} · ${year}" needs a short_title`).toEqual([]);
+    expect(m.plate.cut).toBe(false);
+  }, 60000);
 });
