@@ -11,6 +11,7 @@ import { useCastTarget } from "../cast/useCastTarget.js";
 import { FleetContext } from "../fleet/FleetProvider.jsx";
 import { habitsStore, resetHabitsStoreForTests } from "../habits/mediaHabits.js";
 import mediaLog from "../logging/mediaLog.js";
+import { usePlayDestination } from "../habits/usePlayDestination.js";
 import { DestinationChip, useDestinationCycle } from "./DestinationChip.jsx";
 
 vi.mock("../logging/mediaLog.js", () => {
@@ -31,6 +32,20 @@ function AimProbe() {
   return <span data-testid="aim-probe">{targetIds.join(',')}</span>;
 }
 
+// What a film row's ▶ would do and say — the chip must name the same place.
+const FILM = { id: 'plex:1', type: 'movie' };
+function FilmPlayProbe() {
+  const { destinationFor, labelsFor } = usePlayDestination();
+  const d = destinationFor(FILM);
+  return (
+    <>
+      <span data-testid="film-source">{d.source}</span>
+      <span data-testid="film-targets">{d.targetIds.join(',')}</span>
+      <span data-testid="film-label">{labelsFor(FILM).short}</span>
+    </>
+  );
+}
+
 function CycleProbe() {
   const { current, cycle } = useDestinationCycle();
   return (
@@ -49,6 +64,7 @@ function tree(fleet) {
           <DestinationChip />
           <CycleProbe />
           <AimProbe />
+          <FilmPlayProbe />
         </CastTargetProvider>
       </FleetContext.Provider>
     </MantineProvider>
@@ -64,9 +80,42 @@ beforeEach(() => {
 });
 
 describe('DestinationChip', () => {
-  it('reads "▶ This device" with nothing aimed', () => {
+  // ── The chip names where a film's ▶ goes, in every state ──
+  it('nothing learned, nothing aimed: "▶ Choose a screen", and a film ▶ asks', () => {
     render(tree(fleetValue()));
+    expect(chip()).toHaveTextContent('▶ Choose a screen');
+    expect(screen.getByTestId('film-source')).toHaveTextContent('ask');
+    expect(screen.getByTestId('film-label')).toHaveTextContent('Play on…');
+  });
+
+  it('learned screen, nothing aimed: the chip names it, and that is where a film ▶ goes', () => {
+    habitsStore().recordScreen('video', ['office-tv']);
+    render(tree(fleetValue()));
+    expect(chip()).toHaveTextContent('▶ Office Screen');
+    expect(screen.getByTestId('film-source')).toHaveTextContent('learned');
+    expect(screen.getByTestId('film-targets')).toHaveTextContent('office-tv');
+    expect(screen.getByTestId('film-label')).toHaveTextContent('Office Screen');
+  });
+
+  it('learned screen, cycled to This device: a film ▶ plays here, not on the learned screen', () => {
+    habitsStore().recordScreen('video', ['office-tv']);
+    render(tree(fleetValue()));
+    fireEvent.click(screen.getByTestId('cycle-back')); // unaimed → last = This device
     expect(chip()).toHaveTextContent('▶ This device');
+    expect(screen.getByTestId('film-source')).toHaveTextContent('here');
+    expect(screen.getByTestId('film-targets')).toHaveTextContent('');
+    expect(screen.getByTestId('film-label')).toHaveTextContent('Play');
+    // …and it stays chosen across a reload.
+    expect(JSON.parse(localStorage.getItem(CAST_TARGET_KEY))).toMatchObject({ targetIds: [], here: true });
+  });
+
+  it('Tab from the unaimed state goes to the first entry of the cycle', () => {
+    habitsStore().recordScreen('video', ['office-tv']);
+    render(tree(fleetValue()));
+    fireEvent.click(chip());
+    expect(chip()).toHaveTextContent('▶ Office Screen');
+    expect(screen.getByTestId('aim-probe')).toHaveTextContent('office-tv');
+    expect(mediaLog.searchDestinationCycled).toHaveBeenCalledWith({ from: 'unaimed', to: 'office-tv', via: 'click' });
   });
 
   it('a click walks the cycle: usual film screen, the others by name, then This device', () => {
@@ -93,8 +142,10 @@ describe('DestinationChip', () => {
     expect(chip()).toHaveTextContent('▶ Office Screen');
   });
 
-  it('cycle(-1) walks backwards from This device to the last screen', () => {
+  it('cycle(-1) walks backwards: This device, then the last screen', () => {
     render(tree(fleetValue()));
+    fireEvent.click(screen.getByTestId('cycle-back'));
+    expect(chip()).toHaveTextContent('▶ This device');
     fireEvent.click(screen.getByTestId('cycle-back'));
     expect(chip()).toHaveTextContent('▶ Office Screen');
     expect(screen.getByTestId('cycle-current')).toHaveTextContent('Office Screen');
@@ -103,7 +154,7 @@ describe('DestinationChip', () => {
   it('logs each step and announces where things now play', () => {
     render(tree(fleetValue()));
     fireEvent.click(chip());
-    expect(mediaLog.searchDestinationCycled).toHaveBeenCalledWith({ from: 'local', to: 'livingroom-tv', via: 'click' });
+    expect(mediaLog.searchDestinationCycled).toHaveBeenCalledWith({ from: 'unaimed', to: 'livingroom-tv', via: 'click' });
     expect(screen.getByTestId('search-destination-announcement')).toHaveTextContent('Plays on Living Room TV');
     expect(screen.getByTestId('search-destination-announcement')).toHaveAttribute('aria-live', 'polite');
   });
@@ -114,13 +165,14 @@ describe('DestinationChip', () => {
     expect(down).toBe(false); // preventDefault: the box keeps focus and its list
   });
 
-  it('a screen that leaves the fleet reads "This device", never its id, and the aim is let go', () => {
+  it('a screen that leaves the fleet falls back to the unaimed state, never its id, and the aim is let go', () => {
     localStorage.setItem(CAST_TARGET_KEY, JSON.stringify({ mode: 'transfer', targetIds: ['livingroom-tv'], activityAt: Date.now() }));
     const { rerender } = render(tree(fleetValue()));
     expect(chip()).toHaveTextContent('▶ Living Room TV');
 
     rerender(tree(fleetValue({ devices: [office] })));
-    expect(chip()).toHaveTextContent('▶ This device');
+    expect(chip()).toHaveTextContent('▶ Choose a screen');
+    expect(screen.getByTestId('film-source')).toHaveTextContent('ask');
     expect(chip().textContent).not.toMatch(/livingroom/);
     expect(screen.getByTestId('aim-probe')).toHaveTextContent('');
     expect(mediaLog.searchDestinationStale).toHaveBeenCalledWith({ targetIds: ['livingroom-tv'] });
@@ -129,7 +181,7 @@ describe('DestinationChip', () => {
   it('keeps a remembered aim while the fleet is still loading', () => {
     localStorage.setItem(CAST_TARGET_KEY, JSON.stringify({ mode: 'transfer', targetIds: ['office-tv'], activityAt: Date.now() }));
     const { rerender } = render(tree(fleetValue({ devices: [], loading: true })));
-    expect(chip()).toHaveTextContent('▶ This device');
+    expect(chip()).toHaveTextContent('▶ Choose a screen');
     expect(screen.getByTestId('aim-probe')).toHaveTextContent('office-tv');
 
     act(() => { rerender(tree(fleetValue())); });

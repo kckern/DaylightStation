@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { destinationCycle, nextDestination } from './destinationCycle.js';
+import { aimKey, destinationCycle, nextDestination } from './destinationCycle.js';
 
 const devices = [
   { id: 'livingroom-tv', content_control: {} },
@@ -39,5 +39,12 @@ describe('nextDestination', () => {
   });
   it('unknown current goes to the first entry', () => {
     expect(nextDestination(cycle, ['gone'], 1).label).toBe('Office Screen');
+  });
+});
+
+describe('aimKey', () => {
+  it('is order-independent and names the empty aim local', () => {
+    expect(aimKey([])).toBe('local');
+    expect(aimKey(['b', 'a'])).toBe(aimKey(['a', 'b']));
   });
 });

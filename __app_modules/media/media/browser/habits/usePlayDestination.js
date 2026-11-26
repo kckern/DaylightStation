@@ -22,24 +22,30 @@ export function useHabits() {
  *   aim (useContentDispatch reads it through useCastTarget) passes it, so the
  *   two can never disagree.
  */
-export function usePlayDestination({ aimIds: aimOverride } = {}) {
+/**
+ * @param {{ aimIds?: string[], here?: boolean }} [options] - `here` overrides
+ *   the explicit This-device choice (the destination chip passes false to ask
+ *   what ▶ would do with nothing chosen).
+ */
+export function usePlayDestination({ aimIds: aimOverride, here: hereOverride } = {}) {
   const { store, snapshot } = useHabits();
   // Optional contexts: embedders without a fleet or aim (tests, the kiosk
   // shells) get "here" for everything.
   const aim = useContext(CastTargetContext);
   const fleet = useContext(FleetContext);
   const aimIds = aimOverride ?? aim?.targetIds ?? NO_AIM;
+  const here = hereOverride ?? aim?.here === true;
   const devices = fleet?.devices ?? NO_AIM;
   const localId = fleet?.identity?.deviceId ?? null;
 
   const destinationFor = useCallback((item) => {
     const kind = itemKind(item);
     return resolvePlayDestination({
-      aimIds, learnedIds: kind ? store.screenFor(kind) : null, devices, localId, kind,
+      aimIds, here, learnedIds: kind ? store.screenFor(kind) : null, devices, localId, kind,
     });
   // snapshot: re-resolve when something new is learned.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aimIds, devices, localId, store, snapshot]);
+  }, [aimIds, here, devices, localId, store, snapshot]);
 
   const labelsFor = useCallback((item, opts) => destinationLabels(destinationFor(item), opts), [destinationFor]);
 

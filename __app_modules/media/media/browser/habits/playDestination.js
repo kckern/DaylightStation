@@ -34,13 +34,16 @@ export function canPlayOn(device, kind) {
 
 /**
  * Resolve the destination for a play of `kind`.
- * @param {{ aimIds: string[], learnedIds: string[]|null, devices: object[], localId: string|null, kind: string|null }} input
+ * @param {{ aimIds: string[], here?: boolean, learnedIds: string[]|null, devices: object[], localId: string|null, kind: string|null }} input
  * @returns {{ targetIds: string[], source: 'aim'|'learned'|'here', devices: object[] }}
  */
-export function resolvePlayDestination({ aimIds = [], learnedIds = null, devices = [], localId = null, kind = null }) {
+export function resolvePlayDestination({ aimIds = [], here = false, learnedIds = null, devices = [], localId = null, kind = null }) {
   if (aimIds.length > 0) {
     return { targetIds: aimIds, source: 'aim', devices: aimIds.map(id => devices.find(d => d.id === id)).filter(Boolean) };
   }
+  // This device chosen on purpose (the search box's destination chip): here,
+  // over anything learned, without asking.
+  if (here) return { targetIds: [], source: 'here', devices: [] };
   // Chosen "this device" (or this browser's own id) is here, on purpose.
   if (Array.isArray(learnedIds) && learnedIds.filter(id => id !== localId).length === 0) {
     return { targetIds: [], source: 'here', devices: [] };

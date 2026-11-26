@@ -362,11 +362,11 @@ describe('MediaContentSearch', () => {
       expect(info).not.toHaveBeenCalledWith('search.destination-cycled', expect.anything());
     });
 
-    it('the aimed screen leaving the fleet reads "▶ This device"', () => {
+    it('the aimed screen leaving the fleet falls back to where ▶ would go', () => {
       const { rerender } = render(withAim(<MediaContentSearch />));
       expect(chipText()).toBe('▶ Office Screen');
       rerender(withAim(<MediaContentSearch />, [livingRoom]));
-      expect(chipText()).toBe('▶ This device');
+      expect(chipText()).toBe('▶ Choose a screen');
     });
 
     it('without an aim provider Tab is left to the combobox (closes as before)', () => {

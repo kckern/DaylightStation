@@ -93,7 +93,7 @@ describe('aim lifetime — PLACE.2a/RQ-PLACE-03', () => {
     expect(restored).toEqual({
       restored: false,
       migrated: false,
-      state: { mode: 'transfer', targetIds: [], activityAt: START, exemptionStartedAt: null },
+      state: { mode: 'transfer', targetIds: [], here: false, activityAt: START, exemptionStartedAt: null },
     });
   });
 

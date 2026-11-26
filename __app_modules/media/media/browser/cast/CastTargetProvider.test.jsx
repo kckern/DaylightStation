@@ -13,10 +13,12 @@ vi.mock("../logging/mediaLog.js", () => {
 });
 
 function Probe() {
-  const { mode, targetIds, setMode, toggleTarget, clearTargets, setTargets } = useCastTarget();
+  const { mode, targetIds, here, setMode, toggleTarget, clearTargets, setTargets } = useCastTarget();
   return (
     <div>
       <span data-testid="mode">{mode}</span>
+      <span data-testid="here">{here ? 'here' : 'unaimed'}</span>
+      <button data-testid="set-here" onClick={() => setTargets([], { here: true })}>here</button>
       <span data-testid="targets">{targetIds.join(',')}</span>
       <button data-testid="set-fork" onClick={() => setMode('fork')}>fork</button>
       <button data-testid="toggle-lr" onClick={() => toggleTarget('lr')}>lr</button>
@@ -77,6 +79,29 @@ describe('CastTargetProvider', () => {
     expect(screen.getByTestId('targets')).toHaveTextContent('a,b');
     const { default: log } = await import("../logging/mediaLog.js");
     expect(log.aimActivity).toHaveBeenCalledWith(expect.objectContaining({ source: 'search-cycle', targetIds: ['a', 'b'] }));
+  });
+
+  it('This device is an explicit, persisted choice distinct from nothing aimed', () => {
+    const { unmount } = render(<CastTargetProvider><Probe /></CastTargetProvider>);
+    expect(screen.getByTestId('here')).toHaveTextContent('unaimed');
+    act(() => { screen.getByTestId('set-here').click(); });
+    expect(screen.getByTestId('here')).toHaveTextContent('here');
+    expect(screen.getByTestId('targets')).toHaveTextContent('');
+    unmount();
+
+    const second = render(<CastTargetProvider><Probe /></CastTargetProvider>);
+    expect(screen.getByTestId('here')).toHaveTextContent('here');
+    // Aiming at a screen ends it; so does clearing back to nothing aimed.
+    act(() => { screen.getByTestId('set-two').click(); });
+    expect(screen.getByTestId('here')).toHaveTextContent('unaimed');
+    act(() => { screen.getByTestId('set-here').click(); });
+    act(() => { screen.getByTestId('toggle-lr').click(); });
+    expect(screen.getByTestId('here')).toHaveTextContent('unaimed');
+    act(() => { screen.getByTestId('clear').click(); });
+    act(() => { screen.getByTestId('set-here').click(); });
+    act(() => { screen.getByTestId('clear').click(); });
+    expect(screen.getByTestId('here')).toHaveTextContent('unaimed');
+    second.unmount();
   });
 
   it('clearTargets empties the array', () => {

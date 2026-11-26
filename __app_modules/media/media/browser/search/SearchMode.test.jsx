@@ -356,7 +356,7 @@ describe('SearchMode', () => {
     expect(chip()).toHaveTextContent('▶ Living Room TV');
     fireEvent.keyDown(input, { key: 'Tab', shiftKey: true });
     expect(chip()).toHaveTextContent('▶ Office Screen');
-    expect(mediaLog.searchDestinationCycled).toHaveBeenCalledWith({ from: 'local', to: 'office-tv', via: 'tab' });
+    expect(mediaLog.searchDestinationCycled).toHaveBeenCalledWith({ from: 'unaimed', to: 'office-tv', via: 'tab' });
     // A tap on the chip cycles too.
     fireEvent.click(chip());
     expect(chip()).toHaveTextContent('▶ Living Room TV');

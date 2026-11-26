@@ -22,6 +22,8 @@ function defaultState(now) {
   return {
     mode: DEFAULT_MODE,
     targetIds: [],
+    // This device chosen on purpose (vs nothing aimed); only with no targets.
+    here: false,
     activityAt: now,
     exemptionStartedAt: null,
   };
@@ -47,10 +49,12 @@ export function restoreAimState(raw, { now = Date.now() } = {}) {
   }
 
   const hasActivityAt = validTimestamp(parsed.activityAt);
+  const targetIds = normalizeTargetIds(parsed.targetIds);
   return {
     state: {
       mode: normalizeMode(parsed.mode),
-      targetIds: normalizeTargetIds(parsed.targetIds),
+      targetIds,
+      here: parsed.here === true && targetIds.length === 0,
       activityAt: hasActivityAt ? parsed.activityAt : now,
       // A persisted exemption was true only at the last observed moment. A
       // reload cannot credit the unobserved interval after that moment, so a

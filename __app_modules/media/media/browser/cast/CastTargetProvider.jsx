@@ -103,16 +103,18 @@ export function CastTargetProvider({ children }) {
       const targetIds = previous.targetIds.includes(id)
         ? previous.targetIds.filter((targetId) => targetId !== id)
         : [...previous.targetIds, id];
-      const next = renewAimActivity({ ...previous, targetIds }, { now: Date.now() });
+      const next = renewAimActivity({ ...previous, targetIds, here: false }, { now: Date.now() });
       mediaLog.aimActivity({ source: 'target-selection', targetIds });
       return next;
     });
   }, []);
 
-  const setTargets = useCallback((ids) => {
+  // `{ here: true }` with no ids = This device chosen on purpose (a film's ▶
+  // then plays here instead of following a learned screen or asking).
+  const setTargets = useCallback((ids, { here = false } = {}) => {
     const targetIds = [...new Set((Array.isArray(ids) ? ids : []).filter((id) => typeof id === 'string' && id))];
     setAim((previous) => {
-      const next = renewAimActivity({ ...previous, targetIds, exemptionStartedAt: null }, { now: Date.now() });
+      const next = renewAimActivity({ ...previous, targetIds, here: here === true && targetIds.length === 0, exemptionStartedAt: null }, { now: Date.now() });
       mediaLog.aimActivity({ source: 'search-cycle', targetIds });
       return next;
     });
@@ -120,15 +122,15 @@ export function CastTargetProvider({ children }) {
 
   const clearTargets = useCallback(() => {
     setAim((previous) => {
-      const next = renewAimActivity({ ...previous, targetIds: [], exemptionStartedAt: null }, { now: Date.now() });
+      const next = renewAimActivity({ ...previous, targetIds: [], here: false, exemptionStartedAt: null }, { now: Date.now() });
       mediaLog.aimActivity({ source: 'this-device', targetIds: [] });
       return next;
     });
   }, []);
 
   const value = useMemo(
-    () => ({ mode: aim.mode, targetIds: aim.targetIds, setMode, toggleTarget, setTargets, clearTargets }),
-    [aim.mode, aim.targetIds, setMode, toggleTarget, setTargets, clearTargets]
+    () => ({ mode: aim.mode, targetIds: aim.targetIds, here: aim.here === true, setMode, toggleTarget, setTargets, clearTargets }),
+    [aim.mode, aim.targetIds, aim.here, setMode, toggleTarget, setTargets, clearTargets]
   );
 
   return <CastTargetContext.Provider value={value}>{children}</CastTargetContext.Provider>;

@@ -146,6 +146,14 @@ describe('where a ▶ goes', () => {
     expect(d).toMatchObject({ targetIds: ['speaker-red'], source: 'aim' });
   });
 
+  it('an explicit This device plays here, over a learned screen, without asking', () => {
+    const d = resolvePlayDestination({ here: true, learnedIds: ['office-tv'], devices, kind: 'video' });
+    expect(d).toMatchObject({ targetIds: [], source: 'here' });
+    expect(resolvePlayDestination({ here: true, devices, kind: 'video' }).source).toBe('here');
+    // A screen aimed still wins (here only means something with nothing aimed).
+    expect(resolvePlayDestination({ here: true, aimIds: ['office-tv'], devices, kind: 'video' }).source).toBe('aim');
+  });
+
   it('with nothing aimed, the learned screen', () => {
     const d = resolvePlayDestination({ learnedIds: ['office-tv'], devices, kind: 'video' });
     expect(d).toMatchObject({ targetIds: ['office-tv'], source: 'learned' });

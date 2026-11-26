@@ -6,6 +6,12 @@ import { deviceName } from "../fleet/deviceDisplay.js";
 
 const HERE = { targetIds: [], label: 'This device' };
 
+/** Order-independent identity of an aim; the empty aim is 'local'. */
+export function aimKey(ids) {
+  const list = ids ?? [];
+  return list.length === 0 ? 'local' : [...list].sort().join(',');
+}
+
 export function destinationCycle({ devices = [], usualIds = [], localId = null } = {}) {
   const screens = devices
     .filter((d) => d?.id && d.id !== localId && canPlayOn(d, 'video')
@@ -21,9 +27,8 @@ export function destinationCycle({ devices = [], usualIds = [], localId = null }
 }
 
 export function nextDestination(cycle, currentIds, dir = 1) {
-  const key = (ids) => [...(ids ?? [])].sort().join('\u0000');
-  const current = key(currentIds);
-  const index = cycle.findIndex((c) => key(c.targetIds) === current);
+  const current = aimKey(currentIds);
+  const index = cycle.findIndex((c) => aimKey(c.targetIds) === current);
   if (index < 0) return cycle[dir === -1 ? cycle.length - 1 : 0];
   return cycle[(index + dir + cycle.length) % cycle.length];
 }
