@@ -188,6 +188,9 @@ final class ScreenPlayer extends SimpleBasePlayer {
         publishStatus();
     }
 
+    /** What the screen is doing now (idle, off, …): the player shows a different stage for each. */
+    ScreenSnapshot.Reach reach() { return snap.reach; }
+
     private void publishStatus() {
         String line = misses > 0 && !missLine.isEmpty() ? missLine
                 : !commandLine.isEmpty() && SystemClock.elapsedRealtime() - commandLineAt < COMMAND_LINE_MS
