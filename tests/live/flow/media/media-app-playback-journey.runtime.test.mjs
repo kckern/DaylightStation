@@ -498,6 +498,8 @@ test('[PLAY.1a] selecting another title does not restart the previously paused m
   const second = page.getByRole('option').filter({ hasText: secondTitle }).first();
   await expect(second).toBeVisible({ timeout: 15000 });
   await playResultHere(page, second); // a row only opens the info view; PLAY plays
+  // PLAY leaves the person on the info view: back to Now Playing to watch it.
+  await page.getByTestId('mini-player-open-nowplaying').click();
   const nextVideo = page.getByTestId('now-playing-host').locator('video');
   await expect.poll(() => nextVideo.evaluate((el, priorSource) => el.currentSrc !== priorSource
     && !el.paused && el.readyState >= 2 && el.currentTime > 0, oldSource), { timeout: 30000 }).toBe(true);

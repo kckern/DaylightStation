@@ -127,6 +127,9 @@ test('[RELY.4a/AC1][RELY.4a/AC2] Undo restores the previous paused native positi
   await research(other);
   await expect(next).toHaveCount(1, { timeout: 15000 });
   await playResultHere(page, next); // a row only opens the info view; PLAY plays
+  // PLAY leaves the person on the info view; the queue is in Now Playing.
+  await page.getByTestId('mini-player-open-nowplaying').click();
+  await expect(page.getByTestId('queue-panel')).toBeVisible({ timeout: 15000 });
   await expect(page.getByTestId(priorVisit)).toHaveCount(0);
   await expect(page.getByTestId(tailVisit)).toBeVisible();
   // Undo is offered at tap time: do not wait out its window for a decoder.
@@ -266,6 +269,7 @@ test('[PLAY.6a/AC1][STEER.8a/AC2] add without interrupting, then jump to a same-
   const nextResult = page.getByRole('option').filter({ hasText: nextTitle }).filter({ hasText: 'Movie' });
   await expect(nextResult).toHaveCount(1, { timeout: 15000 });
   await playResultHere(page, nextResult); // a row only opens the info view; PLAY plays
+  await page.getByTestId('mini-player-open-nowplaying').click(); // back to Now Playing to watch it
   await expect.poll(() => video.evaluate((el, priorSource) => el.currentSrc !== priorSource
     && !el.paused && !el.seeking && el.readyState >= 2, restartedSource), {
     timeout: 30000, message: 'An ordinary different title must play after the same-title restart',

@@ -73,7 +73,10 @@ async function openPlayNowEntry(sender, entry) {
     await expect(sender.getByTestId('browse-view')).toBeVisible();
     await sender.getByTestId('browse-open-plex:library/sections/6/all').click();
     await expect(await revealBrowseRow(sender, 'browse-row-plex:55854')).toBeVisible({ timeout: 30000 });
-    await sender.getByTestId('result-play-all-plex:55854').click();
+    // Arrival is already on the screen, so its row reads "On Acceptance receiver"
+    // (pause/resume) instead of ▶: Play Now is in the row's ⋯ menu.
+    await sender.getByTestId('result-more-plex:55854').click();
+    await sender.getByTestId('result-action-playNow-plex:55854').click();
   } else if (entry === 'Detail') {
     await sender.getByTestId('app-nav-browse').click();
     await expect(sender.getByTestId('browse-view')).toBeVisible();

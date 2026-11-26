@@ -198,8 +198,9 @@ export function startOutcome(page, { screen, title = null }) {
 export async function expectStarted(page, { screen, title = null, timeout = 60000 }) {
   await expect.poll(() => page.evaluate(({ screen, title }) => {
     const has = (el) => el.textContent.includes(screen) && (!title || el.textContent.includes(title));
-    const handle = [...document.querySelectorAll('[data-testid="screen-handle"]')].find(has);
-    if (handle && /^Playing/.test(handle.querySelector('[data-testid="screen-handle-state"]')?.textContent ?? '')) return true;
+    const handles = [...document.querySelectorAll('[data-testid="screen-handle"]')].filter(has);
+    if (handles.some((h) => h.dataset.status === 'playing'
+      || /^Playing/.test(h.querySelector('[data-testid="screen-handle-state"]')?.textContent ?? ''))) return true;
     return [...document.querySelectorAll('[data-testid^="dispatch-row-"][data-phase="confirmed"]')].some(has);
   }, { screen, title }), { timeout, message: `${title ?? 'a start'} on ${screen} should read Playing` }).toBe(true);
 }
