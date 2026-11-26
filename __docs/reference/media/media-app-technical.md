@@ -2521,6 +2521,12 @@ dot-delimited namespaces. Every event SHOULD include `clientId`,
 | `media-app.mounted` | info | App mounts. | `clientId`, `displayName`, `viewport{width,height}`, `orientation`, `devicePixelRatio` |
 | `media-app.unmounted` | info | App unmounts. | — |
 | `item.opened` | info | A tap opened a playable item's detail page (a look — nothing played). | `contentId`, `via` (`tap`, `tile`, `open`, `played-earlier`) |
+| `search.destination-cycled` | info | Tab, Shift+Tab or a click moved the search box's destination chip. | `from`, `to`, `via` (`tab`\|`click`) |
+| `search.returned` | info | Back or Esc from a search-opened info view restored the search. | `contentId`, `surface` (`dock`\|`sheet`) |
+| `play.prepared` | info | The look-time prepare answered (never started anything). | `contentId`, `targetIds`, `ms` |
+| `play.prepare-unavailable` | warn | The server has no prepare route; logged once. | — |
+| `preview.started` / `preview.stopped` | info | The info view's muted Preview began / ended (a look; nothing recorded). | `contentId`, `seconds` |
+| `preview.failed` | warn | The preview could not play. | `contentId`, `error` |
 | `play.sent` | info | A deliberate play started (row ▶, tile ▶, detail Play, Play here, a queue start). | `contentId`, `kind` (`playNow`\|`shuffle`), `targetIds` (`[]` = here), `source` (`aim`\|`learned`\|`here`\|`chosen`) |
 | `habit.pick-recorded` | info | A result opened or played from a search was remembered against its words. | `contentId`, `textLength`, `via` |
 | `habit.screen-recorded` | info | A deliberate play taught where this kind of thing is watched. | `kind` (`video`\|`audio`), `targetIds` |
@@ -2696,7 +2702,11 @@ Two related traps, both fixed and both worth not re-introducing:
   while held moves the restored spot. Play then mounts once at the restored
   position. `wasPlayingOnUnload` is still written for compatibility and never
   causes autoplay. Navigation (URL + `history.state.mediaNavStack`) and the aim
-  (`media-app.cast-target`, two-hour idle expiry) restore through their own keys.
+  (`media-app.cast-target`, which no longer expires: `AIM_IDLE_MS` stays exported
+  but unused, and `resolveAimExpiry` always answers false; the record carries an
+  explicit `here` flag for a deliberate "This device") restore through their own
+  keys. Destination resolution is aim, then `here`, then learned, then ask
+  (`habits/playDestination.js`).
 - **Reset / Start fresh (RELY.8a):** `lifecycle.reset({ keep: { playing,
   queue, spot } })` clears whatever is not kept. Clearing everything starts a new
   session and removes `media-app.session` and `media-app.url-command-token`

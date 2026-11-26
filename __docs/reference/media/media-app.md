@@ -138,7 +138,7 @@ or the label.
 ## Keeping your place
 
 A reload or crash restores what was playing, its spot, its queue, repeat and
-shuffle, the aim (unless its two-hour idle time has passed) and the area of the
+shuffle, the aim (which does not expire) and the area of the
 app — **paused**. Nothing loads or sounds until Play: the Player is not mounted
 for a restored session until the person presses Play, and then it starts at the
 restored spot. Saved data from an older version or in a broken shape is
@@ -513,17 +513,46 @@ that origin rides the progress report too, so "started by" and the ledger know.
 > deliberate action, aimed at the item and screen it has learned this person
 > usually wants.
 
+**Seven intents, and only the last three reach outside this device.** Each is
+one deliberate step down from the one above, and Esc or Back always goes up.
+
+| # | Intent | Allowed effects | Gesture |
+|---|---|---|---|
+| 0 | Aim | sets the destination (sticky) | Tab / Shift+Tab in the search box, or click the chip |
+| 1 | Find | none (remembered picks rank first) | type |
+| 2 | Scan | none | ↓ ↑ / hover |
+| 3 | Look | opens the info view; remembers the pick | Enter / click / tap a row |
+| 4 | Preview | plays here, muted, inside the info view; records nothing, sends nothing | the Preview control in the art |
+| 5 | Watch | plays on the destination, wakes it, writes history, teaches | PLAY only (row ▶ or info-view PLAY) |
+| 6 | Adjust | the destination's queue | ⋯ Play next / Add to queue ("on X") |
+| 7 | Redirect | one-off destination | ⋯ or info view: Play here, Play on… |
+
+**The destination lives in the search box.** On a wide screen a chip at the
+right end of the box says what ▶ would do — `▶ Office Screen`, `▶ This device`,
+or `▶ Choose a screen` when nothing is settled yet
+(`search/DestinationChip.jsx`, inside the combobox through its opt-in
+`inputAccessory` and `onTabKey`). **Tab and Shift+Tab cycle it while the box
+has focus**, and a click on the chip cycles too; Esc or a click leaves the box.
+The cycle order is fixed: the usual screen for films first, then the other
+screens that can play films by name, then **This device**. A screen that has
+left the fleet is never shown: the chip falls back to the next honest entry.
+The choice is **sticky** — it does not expire — and *This device* is a choice of
+its own, remembered apart from nothing being aimed (`here`). The header
+"Playing on" control is now phone-only; the first-use hint points at the chip.
+Cycling logs `search.destination-cycled {from, to, via}`.
+
 **A tap is a look.** Tapping a search row, a start-page tile, a browse row or
 a Played earlier row opens the item: a playable item's detail page (poster,
 facts, summary, how far anyone got, every action), a collection's list. It
 never starts playback anywhere. Cameras and single photos are the one tap that
 shows something — on this device, as before.
 
-**From search, the detail page lands on its PLAY, and Back comes back.** A
-result opened from the search (Enter on the highlighted row, or a tap) opens
+**From search, the detail page lands on its PLAY, and Back comes back.** For a
+film already known to play on the usual screen this is type, Enter, Enter — or
+type and press the row's ▶. A result opened from the search (Enter on the highlighted row, or a tap) opens
 its detail page with the primary Play focused, so a second Enter plays it —
 that is the button's own activation; no key handler anywhere plays on a stray
-Enter. The nav entry carries `{ contentId, focusPlay: true, from: 'search' }`
+Enter, and an auto-repeating (held) Enter arriving on PLAY is ignored. The nav entry carries `{ contentId, focusPlay: true, from: 'search' }`
 (`search/useContentDispatch.js`). Back or Esc from that page returns to the
 search exactly as it was: on a wide screen the box takes focus again and its
 kept list (`retainQueryOnClose`) reopens with the same words and the same row
@@ -542,11 +571,12 @@ the phone search also says, under the destination line, "Films and shows play
 on Office Screen" when that comes from learning. Where it goes
 (`habits/playDestination.js`):
 
-1. the aim, when something is aimed in the header;
-2. otherwise the screen this browser last played that kind of thing on (films
+1. the aim, when a screen is aimed (the chip, or the header on a phone);
+2. otherwise **This device**, when that was chosen on purpose (`here`);
+3. otherwise the screen this browser last played that kind of thing on (films
    and episodes are one kind, music and audiobooks another), if that screen is
    still in the house and can play it;
-3. otherwise this device.
+4. otherwise a film asks (`▶ Choose a screen`) and anything else plays here.
 
 The ⋯ menus' Play Now carry the same words, and offer **Play here** when the
 ▶ goes elsewhere; the detail page has **Play here** and **Play on…** beside
@@ -584,7 +614,27 @@ it, as a send to the aim always has. The list is in a stable order — the scree
 kind of thing first, then by name — and its send button stays on screen at
 the bottom of the sheet however long the list.
 
-Logs: `item.opened` (a tap that looked), `play.sent` (where a ▶ went and
+**Preview is a look at the film, never a play.** On the info view a neutral
+**Preview** control (film glyph, no amber, no ▶) plays the film muted on this
+device inside the art (`browse/InfoPreview.jsx`). It exists only for
+direct-play video files, through the plain progressive proxy URL; an item that
+would need a transcode gets no Preview control at all. It goes through no
+session, Player, dispatch or `play/log`: no queue or session change, no wake,
+no resume, watched, Carry on, Recent or habit. Every send on the page (PLAY,
+Play here, Play on…, queue verbs) stops it first, and Back stops it. Logs
+`preview.started|stopped {contentId, seconds}` and `preview.failed`.
+
+**The app prepares while you look, and starts at once on PLAY.** About 400 ms
+after the info view opens on a screen destination, the app asks the server to
+warm what it can (`cast/usePrepareStart.js`, `POST api/v1/device/:id/prepare`):
+the queue and the Plex playback decision only. It never starts a transcoder and
+never powers, wakes or commands the screen. On PLAY the item reads "Starting on
+<screen>" immediately, the list stays, and the outcome row confirms or offers
+Retry in place.
+
+Logs: `item.opened` (a tap that looked),
+`search.returned` (Back to the search), `search.destination-cycled`,
+`play.prepared`, `play.prepare-unavailable`, `preview.*`, `play.sent` (where a ▶ went and
 whether the aim, learning or a one-off choice decided it), `habit.pick-recorded`,
 `habit.screen-recorded`, `habit.results-ranked` (debug).
 
@@ -699,8 +749,9 @@ accessible description. Browse rows without artwork lead with a real icon per
 source (`browse/sourceIcons.jsx`), never a letter tile, and two source roots that
 read the same are one row.
 
-**Header, scope and house indicator.** The destination control ("Playing on
-<name> ⌄", `cast/CastTargetChip.jsx`) leads the header at every width. Scope
+**Header, scope and house indicator.** On a phone the destination control
+("Playing on <name> ⌄", `cast/CastTargetChip.jsx`) leads the header; on a wide
+screen it is the chip inside the search box. Scope
 is one segmented control, the same 44 px height as the search field. The house
 indicator hides at 0, otherwise "N playing" with a small dot at the same height.
 
@@ -920,7 +971,9 @@ and a **canvas** that shows exactly one view at a time:
 - the **house indicator** — "N playing" (and "M paused"), an at-a-glance
   summary of the house that opens **Devices**; it is hidden when nothing is
   playing or paused, and its words, not the small dot, carry the state,
-- the **destination control** — "Playing on <name> ⌄": where a plain Play goes
+- the **destination control** — on a phone, "Playing on <name> ⌄" in the header
+  (on a wide screen the same choice is the chip in the search box, see Looking
+  and watching): where a plain Play goes
   (this browser's own name, "this device" when it has none, the named screen,
   or "Kitchen + Living Room"). It absorbs the old cast icon: tapping it opens
   the cast preferences (preferred devices, move or keep playing here too).
@@ -930,10 +983,8 @@ and a **canvas** that shows exactly one view at a time:
   in Search Mode, on Browse and Detail, and on **Now Playing**. A machine name
   ("Browser 4778f429") is never shown: an unnamed browser reads "this device"
   for its owner and "a browser" to everyone else. An
-  aim on a screen has a two-hour inactivity lease; verified matching playback
-  that this browser sent or is steering suspends that lease; stale or unknown
-  receiver state does not. Restoration resolves expiry before first layout so
-  an expired screen never flashes as the active destination. Opening or leaving
+  aim is sticky: nothing expires it, so the destination chosen stays until
+  changed. Opening or leaving
   a screen's **Remote** never changes the aim,
 - the **settings menu** — rename this device, Screens, Routine history, Start
   fresh (itemised and confirmed).

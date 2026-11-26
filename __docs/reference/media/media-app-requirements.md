@@ -121,8 +121,8 @@ The redesign deliberately reverses or extends these rules in the current spec.
 | ID | Requirement | Pri | Traces |
 |---|---|---|---|
 | RQ-PLACE-01 | Every device MUST have exactly one aim: this device, one screen or several screens. The aim MUST be visible wherever a play or add action appears, at every device size, as the screen's name and room, "This device (<name>)", or "<n> screens". | P0 | PLACE.1a · PR-1, R49 · D1 |
-| RQ-PLACE-02 | The aim MUST be changeable in one step from wherever it is shown. "This device" MUST always be one of the choices, at every device size. | P0 | PLACE.2a, PLACE.2b · D2 |
-| RQ-PLACE-03 | The aim MUST persist across navigation and reloads. After 2 hours of no use *(default)* it MUST return to this device, but that clock MUST NOT run while the aimed screen plays something this device sent or is steering. Opening the app after that idle time MUST start aimed at this device. | P0 | PLACE.2a · Q1, R4, R7 |
+| RQ-PLACE-02 | The aim MUST be changeable in one step from wherever it is shown. On a wide screen it MUST be shown inside the search box as a chip naming what ▶ does, and Tab / Shift+Tab with focus in the box MUST cycle it: the usual film screen, the other screens that can play films, then This device. "This device" MUST always be one of the choices, at every device size. | P0 | PLACE.2a, PLACE.2b · D2 |
+| RQ-PLACE-03 | The aim MUST persist across navigation and reloads. It MUST be sticky: nothing expires it, and it stays until the person changes it. "This device" chosen on purpose MUST be remembered as a choice, distinct from nothing being aimed. A destination that has left the fleet MUST fall back to a screen or this device that exists, never show a dead name. | P0 | PLACE.2a · Q1, R4, R7 |
 | RQ-PLACE-04 | Steering another screen MUST NOT change the aim. The aim shown MUST always be the destination actually used. | P0 | PLACE.1a, STEER.1b · PR-4 · D1 |
 | RQ-PLACE-05 | Every item MUST offer Play on… and Add to queue on…, which send only that item to a chosen screen without changing the aim. | P0 | PLACE.3a, PLACE.3b · D3, G5 |
 | RQ-PLACE-06 | Choosing a screen MUST show each screen's name, room and state: playing (with title and time left), paused, idle or off. Screens not heard from in 2 minutes *(default)* MUST be marked uncertain. Choosing a screen MUST warn before replacing someone else's playback. | P0 | PLACE.5a · F4 |
@@ -185,7 +185,7 @@ The redesign deliberately reverses or extends these rules in the current spec.
 | RQ-RELY-04 | Replacing what's playing, removing and clearing MUST offer undo for 10 seconds *(default)*, restoring the item, spot and queue. The same undo MUST be available as Put it back from the affected screen's controls on any device, and from the note on that screen. Irreversible actions ask first instead. | P1 | RELY.4a, RELY.4b · R13 · PR-7 |
 | RQ-RELY-05 | Playback failures and skipped items MUST be reported wherever the person is in the app, naming the item, the screen and what plays instead. The handle shows a problem sign until recovery. This applies to this device and to any screen this device started or is steering. | P0 | RELY.5a · I4 |
 | RQ-RELY-06 | Every failure MUST carry its own Retry, which retries exactly that attempt (same item, same screen), plus a way to send it to another screen. Several failures MUST appear separately. | P0 | RELY.6a · E3 |
-| RQ-RELY-07 | After a reload or crash, the app MUST restore what was playing, its spot, its queue, repeat, shuffle and the part of the app the person was in, with playback paused. The aim is restored unless the idle time has passed. A brief network loss MUST NOT reload the app, and shows a quiet "reconnecting" note if it lasts. | P0 | RELY.7a · R7, R38 · I1, I3 |
+| RQ-RELY-07 | After a reload or crash, the app MUST restore what was playing, its spot, its queue, repeat, shuffle and the part of the app the person was in, with playback paused. The aim is restored. A brief network loss MUST NOT reload the app, and shows a quiet "reconnecting" note if it lasts. | P0 | RELY.7a · R7, R38 · I1, I3 |
 | RQ-RELY-08 | Every screen MUST keep its spot and queue through a power cut. | P1 | RELY.7a · R38 |
 | RQ-RELY-09 | Start fresh MUST be in this device's settings, one step from anywhere. It MUST list exactly what will be cleared (what's playing, the queue, the spot, the aim), let the person keep parts of it, and confirm first. | P0 | RELY.8a · I2 |
 | RQ-RELY-10 | The current area of the app MUST always be indicated, including inside a queue or another screen's controls. Choosing the current area returns to its top without adding back steps. | P0 | RELY.9a · K1 |
@@ -228,6 +228,8 @@ A tap is one deliberate touch or click, including opening a menu. Typing a searc
 | NF-TAP-09 | Retry a failed send, or put back a change. | 1 tap | RELY.6a, RELY.4b |
 | NF-TAP-10 | Send one item to a screen other than the aim. The screen used last for that kind of thing is the ▶ itself (1 tap); any other is ⋯ → Play on… → its tile, and the tile list holds only screens that can play it, the usual one first. | 3 taps | PLACE.3a |
 | NF-TAP-11 | Words searched before → the item picked for them last time, in the first row. | 0 scrolls | FIND.8b |
+| NF-TAP-12 | Search → a film known to play on the usual screen → playing there: type, Enter, Enter, or type and ▶. | 2 keys or 1 tap | FIND.8b |
+| NF-TAP-13 | Change the destination while searching. | 1 key (Tab) | PLACE.2a |
 
 ### NF-TIME — Responsiveness
 
@@ -281,7 +283,6 @@ A tap is one deliberate touch or click, including opening a menu. Typing a searc
 
 | Setting | Default | Used by |
 |---|---|---|
-| Aim returns to this device after no use | 2 hours | RQ-PLACE-03 |
 | Undo window | 10 seconds | RQ-RELY-04, RQ-STEER-17, RQ-FIND-15 |
 | Screen marked uncertain if not heard from for | 2 minutes | RQ-PLACE-06, RQ-HOUSE-05 |
 | Counts as unfinished after | 5 minutes or 5% | RQ-FIND-12 |
