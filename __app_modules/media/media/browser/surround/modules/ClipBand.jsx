@@ -231,7 +231,10 @@ export default function ClipBand({ data = null, position = 0, logger = null }) {
             <div className="clip-band__next-text" ref={nextTextRef}>
               <div className="clip-band__next-label">{elsewhere ? 'Next, from' : 'Up next'}</div>
               {nextWork && <div className="clip-band__next-work">{nextWork}</div>}
-              <div className="clip-band__next-title">{nextTitle}</div>
+              <div className="clip-band__next-title">
+                {nextTitle}
+                {step && <span className="clip-band__next-chevron" aria-hidden="true">{'›'}</span>}
+              </div>
             </div>
           </Tag>
         );

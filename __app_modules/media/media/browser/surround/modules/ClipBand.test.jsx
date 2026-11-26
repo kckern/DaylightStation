@@ -185,4 +185,13 @@ describe('clip band Up next: a button where there is a move to make', () => {
     expect(container.querySelector('button.clip-band__next')).toBeNull();
     expect(container.querySelector('div.clip-band__next')).not.toBeNull();
   });
+
+  it('marks a tappable Up next with a chevron, and only then', () => {
+    const tappable = render(<ClipBand data={makeData({ next: { ...makeData().clip.next, step: 1 } })} position={500} />);
+    const chevron = tappable.container.querySelector('.clip-band__next-chevron');
+    expect(chevron).not.toBeNull();
+    expect(chevron.getAttribute('aria-hidden')).toBe('true');
+    const plain = render(<ClipBand data={makeData()} position={500} />);
+    expect(plain.container.querySelector('.clip-band__next-chevron')).toBeNull();
+  });
 });
