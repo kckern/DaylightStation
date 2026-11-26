@@ -174,6 +174,9 @@ describe('DetailView with a preview (Review Focus 4)', () => {
     dispatchLeafVerb.mockImplementation(() => { order.push('dispatch'); return 'local'; });
     wrap(<DetailView contentId="plex:55854" />);
     await act(async () => { fireEvent.click(screen.getByTestId('detail-preview')); });
+    // Opening More is a look: the preview keeps playing until a verb sends.
+    fireEvent.click(screen.getByTestId('detail-more'));
+    expect(log.stopped).not.toHaveBeenCalled();
     fireEvent.click(screen.getByTestId(testId));
     expect(dispatchLeafVerb).toHaveBeenCalledWith(verb, 'plex:55854', expect.anything());
     expect(order).toEqual(['preview-stopped', 'dispatch']);
@@ -183,7 +186,8 @@ describe('DetailView with a preview (Review Focus 4)', () => {
   it.each([['Add on…'], ['Show briefly on…']])('%s stops the preview', async (label) => {
     wrap(<DetailView contentId="plex:55854" />);
     await act(async () => { fireEvent.click(screen.getByTestId('detail-preview')); });
-    fireEvent.click(screen.getByRole('button', { name: label }));
+    fireEvent.click(screen.getByTestId('detail-more'));
+    fireEvent.click(screen.getByRole('menuitem', { name: label }));
     expect(log.stopped).toHaveBeenCalled();
     expect(document.querySelector('video')).toBeNull();
   });

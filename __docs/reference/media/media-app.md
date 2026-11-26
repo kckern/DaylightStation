@@ -702,12 +702,36 @@ a look reach outside this device):
    start is in flight; nothing else on the page waits
    (`useStartingOn().isStarting`).
 7. **One menu table.** Every item menu — a search or Browse row's ⋯, the ⋯ on a
-   tile, Played earlier or a Now-on card, and Move to… — takes its entries and
-   words from `actions/itemMenuTable.js`, keyed by item kind (leaf,
-   collection, still) × surface (row, tile). The words are **Play Now, Play
-   here, Shuffle, Play Next, Play First, Add to Queue, Play on… / Show on…, Add
-   on…, Open detail, Quality…**, the household verbs, and Move to…'s **This
-   device**.
+   tile, Played earlier or a Now-on card, the info view's **More ⋯**, and Move
+   to… — takes its entries and words from `actions/itemMenuTable.js`, keyed by
+   item kind (leaf, collection, still) × surface (row, tile, detail). The words
+   are **Play Now, Play here, Shuffle, Play Next, Play First, Add to Queue, Play
+   on… / Show on…, Add on…, Show briefly on…, Open detail, Quality…, More**, the
+   household verbs, and Move to…'s **This device**.
+
+**The info view's actions (owner ruling 2026-11-26).** Under the art, facts
+and description, and under the **On <screen> · Playing** status line with
+Pause / Open (item 5, status rather than an action), row 1 is exactly:
+
+- the amber **▶ Play on <dest>** (or **Play here** when ▶ plays here; **Start
+  over on <screen>** when the item is already on that screen), which takes
+  focus when the view was opened with Enter from search, so a second Enter
+  plays;
+- **Play here** (only when ▶ goes to a screen);
+- **Play on…**;
+- **More ⋯**, a menu holding everything else, grouped: the queue (**Shuffle**
+  for a collection, **Play Next / Play First / Add to Queue**, each named "on
+  <screen>" when they go to one, then **Add on…**) · **Show briefly on…** ·
+  **Quality…** (films and episodes) · **Add to / Remove from favourites**,
+  **Mark watched / unwatched** (playable items). Pressing and holding Play
+  Next there still offers **At the very front**.
+
+There is no separate caption saying where the queue verbs go: their own words
+say it. More is a Tab stop after Play on…; Esc closes its menu and returns
+focus to More without leaving the info view. Opening More is a look — a
+running Preview keeps playing until a verb is picked. On a phone ▶ takes its
+own full-width line (normal height) and Play here, Play on… and More share the
+next.
 8. **Space = play/pause the current session**: the aimed screen's while it
    plays or is paused, else this device's. It never starts anything, and it
    leaves Space alone in a text field, the search box, and on any control
@@ -1244,7 +1268,7 @@ informational and need no input. Journeys: `screen-tv-input.runtime.test.mjs`.
 |---|---|---|
 | **Home** | The start page: Resume, Playing now on other screens, this screen's suggestions (Favourites, Carry on, Usually (here) at this time, New) and the household's Recent — see [The start page](#the-start-page-and-the-households-memory). | Default; nav; breadcrumb. |
 | **Browse** | Hierarchical catalog listing with artwork or a recognisable placeholder, kind labels, natural part ordering, and a breadcrumb containing every parent. Long collections page automatically as the end approaches; there is no separate load-more hunt. Pages are 50 titles: `GET /api/v1/list/...?take=50&skip=N` returns `{ items, total }`, and for Plex path containers (e.g. `library/sections/6/all`) the page is fetched from Plex itself (`X-Plex-Container-Start/Size`), so a 2,800-title library opens in ~0.3 s instead of sending every title. Each history entry owns `{ path, scrollTop, focusedId, loadedCount }`, captured before drilling into a container or opening Detail through either Details or More → Open detail. Back re-fetches `loadedCount` rows in one request (capped at 1,000) so a row the person had scrolled to exists again, then restores the exact prior collection viewport and triggering row focus. `loadedCount` is a viewport snapshot like `scrollTop`: re-selecting the Browse area ignores it when matching the original root entry. A specific container adds Play / Shuffle / Add at the top and names the current destination. | Nav; container rows; container taps in search. |
-| **Detail** | One item: artwork, what it is and how long ("Movie · 1 hr 56 min", "TV Show · 12 episodes"), description (the source's summary when it has no description), how far each screen has got, one primary Play that names where it plays ("Play on Office Screen" / "Play here"), then Play here and Play on… when it goes elsewhere, then Play Next / Play First / Add / Add on… / Show briefly on…, favourite and watched marks. Opening it never plays. | A tap on any row or tile; ⋯ Open detail. |
+| **Detail** | One item: artwork, what it is and how long ("Movie · 1 hr 56 min", "TV Show · 12 episodes"), description (the source's summary when it has no description), how far each screen has got, one primary Play that names where it plays ("Play on Office Screen" / "Play here"), Play here (when it goes elsewhere) and Play on…, then **More ⋯** with the queue verbs named for their screen, Add on…, Show briefly on…, Quality…, favourite and watched marks. Opening it never plays. | A tap on any row or tile; ⋯ Open detail. |
 | **Now Playing** | Full local transport: seek bar, prev/play-pause/next/stop, volume, the queue panel, the tappable aim line, and the same session controls as a screen's Remote. Hosts the visual output of the player. | The handle; Escape/Back returns (the Back button names where it goes, e.g. "Home" with a back chevron). |
 | **Fleet** | Configured devices and named browser screens, live and sorted with playing first. Each card offers **Remote**, **Play…**, inline **Pause**/**Stop** while active, and a truthful unavailable **Move here** until safe native adoption exists. Silent browser rows become uncertain after two minutes. Rows also carry start status, Started by, Add only, notes and "(was …)"; the view offers Pause all / Stop all / Resume all (see "The house view"). | Nav; fleet indicator. |
 | **Screens** | Screen admin: add, name and room, merge/unmerge, retire after the routines are shown, restore; "Not seen lately". | Devices → Screens; Settings. |

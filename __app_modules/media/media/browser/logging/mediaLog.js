@@ -182,6 +182,9 @@ export const mediaLog = {
   collectionContinued:    info('find.collection-continued'),
   playNextHoldOffered:    info('play-next.hold-offered'),
   playNextFrontChosen:    info('play-next.front-chosen'),
+  // Owner ruling 2026-11-26: the info view's More ⋯ (browse/DetailView.jsx).
+  detailMoreOpened:       info('detail.more-opened'),
+  detailMorePicked:       info('detail.more-picked'),
   remoteProblemReported:  warn('remote-problem.reported'),
   screenHandleShown:      info('screen-handle.shown'),
   screenHandleHidden:     debug('screen-handle.hidden'),

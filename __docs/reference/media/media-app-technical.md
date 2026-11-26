@@ -2624,6 +2624,8 @@ dot-delimited namespaces. Every event SHOULD include `clientId`,
 | `play.prepare-unavailable` | warn | The server has no prepare route; logged once. | — |
 | `play.prepared-reused` (server, `module: prewarm`) | info | PLAY's prewarm took a look's prepare for this screen and item instead of deciding again. | `deviceId`, `contentRef`, `contentId`, `savedMs` |
 | `preview.started` / `preview.stopped` | info | The info view's muted Preview began / ended (a look; nothing recorded). | `contentId`, `seconds` |
+| `detail.more-opened` | info | The info view's More ⋯ menu opened (a look). | `contentId`, `entries` |
+| `detail.more-picked` | info | A verb was picked from the info view's More ⋯. | `contentId`, `verb` (`playNext`, `playFirst`, `add`, `addOn`, `shuffle`, `showBrieflyOn`, `quality`, `favourite`, `unfavourite`, `watched`, `unwatched`, `playNextFront`) |
 | `preview.failed` | warn | The preview could not play. | `contentId`, `error` |
 | `play.sent` | info | A deliberate play started (row ▶, tile ▶, detail Play, Play here, a queue start). | `contentId`, `kind` (`playNow`\|`shuffle`), `targetIds` (`[]` = here), `source` (`aim`\|`learned`\|`here`\|`chosen`) |
 | `habit.pick-recorded` | info | A result opened or played from a search was remembered against its words. | `contentId`, `textLength`, `via` |

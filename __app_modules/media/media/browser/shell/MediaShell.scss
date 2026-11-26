@@ -1057,6 +1057,23 @@ $amber-ink: $on-accent;
 .detail-view {
   max-width: 680px;
 
+  // Row 1 (owner ruling 2026-11-26): PLAY, Play here, Play on…, More ⋯. On a
+  // phone the four do not share one line, so PLAY takes its own line at its
+  // normal height and the other three follow.
+  @media (max-width: 480px) {
+    .detail-row-one {
+      flex-wrap: wrap;
+
+      > .mantine-Button-root {
+        flex: 1 1 0;
+        min-width: 0;
+        padding-inline: var(--mantine-spacing-xs);
+      }
+
+      > .detail-play-primary { flex: 1 0 100%; }
+    }
+  }
+
   .detail-poster { max-width: 280px; }
 
   // Preview (browse/InfoPreview.jsx) plays inside the art's own box. Its label

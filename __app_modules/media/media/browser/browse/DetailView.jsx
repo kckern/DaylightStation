@@ -1,9 +1,10 @@
-import { ItemQualityButton } from "../quality/PlaybackQualityButtons.jsx";
 // frontend/src/modules/Media/browse/DetailView.jsx
-// One item, all its actions: artwork, description, then ONE primary play
-// that names where it goes ("▶ Play on Office Screen" — the aim, else the
+// One item, all its actions: artwork, description, then row 1 — ONE primary
+// play that names where it goes ("▶ Play on Office Screen" — the aim, else the
 // screen this browser learned for this kind of thing, else "here"), with
-// Play here / Play on… beside it for the other places, then the queue verbs.
+// Play here / Play on… beside it for the other places — and a More ⋯ menu
+// holding the rest (queue verbs named for their screen, Show briefly on…,
+// Quality…, favourites and watched marks; owner ruling 2026-11-26).
 // Opening this page never plays anything: it is where a look lands. It does
 // ask the server to prepare the start on that screen (cast/usePrepareStart.js),
 // which touches no screen. A video may be previewed inside its art
@@ -11,8 +12,9 @@ import { ItemQualityButton } from "../quality/PlaybackQualityButtons.jsx";
 // sends the item anywhere (play, queue, show briefly) stops that preview first —
 // a queue verb landing in an empty local queue starts a play.
 import React, { useEffect, useRef, useState } from 'react';
-import { Stack, Title, Text, Button, Group } from '@mantine/core';
-import { IconPlayerPlayFilled, IconPlayerPauseFilled, IconPlayerTrackNext, IconRowInsertTop, IconPlaylistAdd, IconCast, IconDeviceRemote, IconRotate } from '@tabler/icons-react';
+import { Stack, Title, Text, Button, Group, Menu } from '@mantine/core';
+import { IconPlayerPlayFilled, IconPlayerPauseFilled, IconPlayerTrackNext, IconRowInsertTop, IconPlaylistAdd, IconCast, IconDeviceRemote, IconRotate, IconDots, IconArrowsShuffle, IconPlaylist, IconPhoto, IconAdjustments } from '@tabler/icons-react';
+import { ActionMenu } from '@/lib/ui/ActionMenu.jsx';
 import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import { EmptyState } from '@/lib/ui/states.jsx';
 import { useRetryRegion } from '@/lib/ui/useRetryRegion.js';
@@ -27,6 +29,9 @@ import { useItemVerbs } from "../household/useItemVerbs.jsx";
 import { useFavourites, useHouseholdEntry } from "../household/useHousehold.js";
 import { spotsSummary, formatLeft, whereLine } from "../household/householdModel.js";
 import { IconHeart, IconHeartFilled, IconEye, IconEyeOff } from '@tabler/icons-react';
+import { itemMenuEntries, menuItemKind, MENU_LABELS } from "../actions/itemMenuTable.js";
+import { usePlaybackQuality } from "../quality/PlaybackQualityProvider.jsx";
+import { supportsQualityOverrides } from "../quality/PlaybackQualityButtons.jsx";
 import { useStartingOn } from "../cast/useStartingOn.js";
 import { usePressHoldOffer } from "../../../../../frontend/src/lib/ui/usePressHoldOffer.js";
 import mediaLog from "../logging/mediaLog.js";
@@ -35,6 +40,80 @@ import { usePlayDestination } from "../habits/usePlayDestination.js";
 import { usePrepareStart } from "../cast/usePrepareStart.js";
 import { InfoPreview } from "./InfoPreview.jsx";
 import { usePlayingOn } from "../fleet/usePlayingOn.js";
+
+// More ⋯ entries keep the test ids their buttons had before the owner's
+// 2026-11-26 ruling moved them here.
+const MORE_TEST_ID = {
+  shuffle: 'detail-shuffle', playNext: 'detail-play-next', playFirst: 'detail-up-next', add: 'detail-add',
+  addOn: 'detail-add-on', showBrieflyOn: 'detail-show-briefly', quality: 'detail-quality',
+  favourite: 'detail-favourite', unfavourite: 'detail-favourite', watched: 'detail-watched', unwatched: 'detail-unwatched',
+};
+const MORE_ICON = {
+  shuffle: IconArrowsShuffle, playNext: IconPlayerTrackNext, playFirst: IconRowInsertTop, add: IconPlaylistAdd,
+  addOn: IconPlaylist, showBrieflyOn: IconPhoto, quality: IconAdjustments,
+  favourite: IconHeart, unfavourite: IconHeartFilled, watched: IconEye, unwatched: IconEyeOff,
+};
+
+// "720p" / "Custom" beside Quality… when this item has an override.
+function qualitySummary(quality, item) {
+  if (!quality || !supportsQualityOverrides(item)) return null;
+  const overrides = quality.getOverrides(item.contentId ?? item.id);
+  if (overrides.maxResolution) return `${overrides.maxResolution}p`;
+  return Object.keys(overrides).length ? 'Custom' : null;
+}
+
+// The info view's More ⋯: every verb that is not row 1, grouped by the table's
+// dividers. Esc closes it and leaves focus on More (ActionMenu), never the page.
+function DetailMoreMenu({ contentId, entries, qualitySummary: summary, playNextHold, onPick }) {
+  const pick = (kind) => () => {
+    mediaLog.detailMorePicked({ contentId, verb: kind });
+    onPick(kind);
+  };
+  return (
+    <ActionMenu
+      withinPortal
+      position="bottom-end"
+      shadow="sm"
+      onOpen={() => mediaLog.detailMoreOpened({ contentId, entries: entries.filter((e) => !e.divider).length })}
+      dropdownProps={{ 'data-testid': 'detail-more-menu' }}
+      trigger={(
+        <Button variant="default" data-testid="detail-more" rightSection={<IconDots size={16} />}>
+          {MENU_LABELS.more}
+        </Button>
+      )}
+    >
+      {entries.map((entry, index) => {
+        if (entry.divider) return <Menu.Divider key={`divider-${index}`} />;
+        const Icon = MORE_ICON[entry.kind];
+        const leftSection = Icon ? <Icon size={16} /> : null;
+        if (entry.kind === 'playNext') {
+          return (
+            <React.Fragment key="playNext">
+              <Menu.Item data-testid={MORE_TEST_ID.playNext} leftSection={leftSection}
+                closeMenuOnClick={!playNextHold.offered} {...playNextHold.bind}
+                onClick={playNextHold.guardClick(pick('playNext'))}>
+                {entry.label}
+              </Menu.Item>
+              {playNextHold.offered && (
+                <Menu.Item data-testid="detail-play-next-front" leftSection={<IconRowInsertTop size={16} />}
+                  onClick={() => { playNextHold.dismiss(); pick('playNextFront')(); }}>
+                  {MENU_LABELS.playNextFront}
+                </Menu.Item>
+              )}
+            </React.Fragment>
+          );
+        }
+        return (
+          <Menu.Item key={entry.kind} data-testid={MORE_TEST_ID[entry.kind]} leftSection={leftSection}
+            rightSection={entry.kind === 'quality' && summary ? <Text size="xs" c="dimmed">{summary}</Text> : null}
+            onClick={pick(entry.kind)}>
+            {entry.label}
+          </Menu.Item>
+        );
+      })}
+    </ActionMenu>
+  );
+}
 
 // `focusPlay`: opened from search — PLAY takes focus once it can be pressed,
 // so a second Enter plays by that button's own activation (no key handler
@@ -55,6 +134,7 @@ export function DetailView({ contentId, focusPlay = false }) {
   const { run, overlays, nameFor } = useItemVerbs();
   const { destinationFor, labelsFor } = usePlayDestination();
   const favourites = useFavourites();
+  const quality = usePlaybackQuality();
   const { entry, pending: pendingResume } = useHouseholdEntry(contentId);
   // PLAY.5a/AC3: pressing and holding Play Next offers "At the very front".
   const { startingOnFor, isStarting } = useStartingOn();
@@ -140,9 +220,12 @@ export function DetailView({ contentId, focusPlay = false }) {
             </Button>
           </Group>
         )}
-        <Group className="detail-actions" gap="sm">
+        {/* Owner ruling 2026-11-26: row 1 is PLAY, Play here and Play on…;
+            everything else sits behind More ⋯ (one table: actions/itemMenuTable.js). */}
+        <Group className="detail-actions detail-row-one" gap="sm" data-testid="detail-row-one">
           <Button
             data-testid="detail-play-now"
+            className="detail-play-primary"
             ref={playRef}
             onKeyDown={(e) => { if (e.key === 'Enter' && e.repeat) e.preventDefault(); }}
             leftSection={on ? <IconRotate size={18} /> : elsewhere ? <IconCast size={18} /> : <IconPlayerPlayFilled size={18} />}
@@ -163,62 +246,30 @@ export function DetailView({ contentId, focusPlay = false }) {
               variant="default"
               onClick={() => { stopPreview(); dispatchLeafVerb('playNow', contentId, detailItem, { targetIds: [] }); }}
             >
-              Play here
+              {MENU_LABELS.playHere}
             </Button>
           )}
-          <Button variant="default" data-testid="detail-play-on" onClick={() => { stopPreview(); setOneShot({ kind: 'playOn', item: detailItem }); }}>Play on…</Button>
-          <ItemQualityButton item={detailItem} />
-          {isContainer(detailItem) && <Button variant="default" onClick={() => { stopPreview(); if (dispatchLeafVerb('shuffle', contentId, detailItem) === 'ask') setOneShot({ kind: 'playOn', item: detailItem }); }}>{elsewhere ? `Shuffle on ${whereName}` : 'Shuffle'}</Button>}
-          <Button data-testid="detail-play-next" variant="default" leftSection={<IconPlayerTrackNext size={16} />}
-                  {...playNextHold.bind}
-                  onClick={playNextHold.guardClick(() => { stopPreview(); dispatchLeafVerb('playNext', contentId, detailItem); })}>
-            Play Next
-          </Button>
-          {playNextHold.offered && (
-            <Button data-testid="detail-play-next-front" variant="default" leftSection={<IconRowInsertTop size={16} />}
-                    onClick={() => { stopPreview(); mediaLog.playNextFrontChosen({ surface: 'detail' }); playNextHold.dismiss(); dispatchLeafVerb('playFirst', contentId, detailItem); }}>
-              At the very front
-            </Button>
-          )}
-          <Button data-testid="detail-up-next" variant="default" leftSection={<IconRowInsertTop size={16} />}
-                  onClick={() => { stopPreview(); dispatchLeafVerb('playFirst', contentId, detailItem); }}>
-            Play First
-          </Button>
-          <Button data-testid="detail-add" variant="default" leftSection={<IconPlaylistAdd size={16} />}
-                  onClick={() => { stopPreview(); dispatchLeafVerb('add', contentId, detailItem); }}>
-            Add to Queue
-          </Button>
-          <Button variant="default" onClick={() => { stopPreview(); setOneShot({ kind: 'addOn', item: detailItem }); }}>Add on…</Button>
-          <Button variant="default" data-testid="detail-show-briefly" onClick={() => { stopPreview(); setOneShot({ kind: 'showBrieflyOn', item: detailItem }); }}>Show briefly on…</Button>
-        </Group>
-        {elsewhere && (
-          <Text size="sm" c="dimmed" data-testid="detail-queue-where">
-            Play Next, Play First and Add to Queue go to {whereName}.
-          </Text>
-        )}
-        <Group className="detail-actions" gap="sm">
-          <Button
-            data-testid="detail-favourite"
-            variant="default"
-            mih={44}
-            aria-pressed={favourite}
-            leftSection={favourite ? <IconHeartFilled size={16} /> : <IconHeart size={16} />}
-            onClick={() => run(favourite ? 'unfavourite' : 'favourite', detailItem)}
-          >
-            {favourite ? 'Remove from favourites' : 'Add to favourites'}
-          </Button>
-          {!collection && (
-            <>
-              <Button data-testid="detail-watched" variant="default" mih={44} leftSection={<IconEye size={16} />}
-                      onClick={() => run('watched', detailItem)}>
-                Mark watched
-              </Button>
-              <Button data-testid="detail-unwatched" variant="default" mih={44} leftSection={<IconEyeOff size={16} />}
-                      onClick={() => run('unwatched', detailItem)}>
-                Mark unwatched
-              </Button>
-            </>
-          )}
+          <Button variant="default" data-testid="detail-play-on" onClick={() => { stopPreview(); setOneShot({ kind: 'playOn', item: detailItem }); }}>{MENU_LABELS.playOn}</Button>
+          <DetailMoreMenu
+            contentId={contentId}
+            entries={itemMenuEntries({
+              surface: 'detail',
+              kind: menuItemKind({ collection }),
+              where: { elsewhere, short: whereName },
+              favourite,
+              quality: !!quality && supportsQualityOverrides(detailItem),
+            })}
+            qualitySummary={qualitySummary(quality, detailItem)}
+            playNextHold={playNextHold}
+            onPick={(kind) => {
+              if (kind === 'quality') { quality.openForItem(detailItem); return; }
+              if (kind === 'favourite' || kind === 'unfavourite' || kind === 'watched' || kind === 'unwatched') { run(kind, detailItem); return; }
+              stopPreview();
+              if (kind === 'addOn' || kind === 'showBrieflyOn') { setOneShot({ kind, item: detailItem }); return; }
+              if (kind === 'playNextFront') { mediaLog.playNextFrontChosen({ surface: 'detail' }); dispatchLeafVerb('playFirst', contentId, detailItem); return; }
+              if (dispatchLeafVerb(kind, contentId, detailItem) === 'ask') setOneShot({ kind: 'playOn', item: detailItem });
+            }}
+          />
         </Group>
         <ItemDestinationPicker action={oneShot} onClose={() => setOneShot(null)} />
         {overlays}

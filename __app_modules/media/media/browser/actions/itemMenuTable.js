@@ -2,7 +2,8 @@
 // Addendum item 7 (2026-11-26): one menu table. Every item menu — a search
 // row's ⋯ (desktop dropdown and phone sheet), a Browse row's ⋯, the ⋯ on a
 // start-page tile / Played earlier / Now-on card (household/ItemMenu.jsx) and
-// Move to… (shell/MoveToMenu.jsx) — takes its entries and their words from
+// Move to… (shell/MoveToMenu.jsx) and the info view's More ⋯
+// (browse/DetailView.jsx) — takes its entries and their words from
 // here, keyed by the item's kind and the surface, so a label can never drift
 // between two menus again ("Play now" on a tile vs "Play Now" on a row).
 //
@@ -20,6 +21,8 @@ export const MENU_LABELS = Object.freeze({
   add: (on = '') => `Add to Queue${on}`,
   playOn: 'Play on…',
   showOn: 'Show on…',
+  showBrieflyOn: 'Show briefly on…',
+  more: 'More',
   addOn: 'Add on…',
   quality: 'Quality…',
   details: 'Open detail',
@@ -46,12 +49,17 @@ const SURFACES = Object.freeze({
   row: ['continue', 'openScreen', 'playNow', 'playHere', 'shuffle', 'playNext', 'playFirst', 'add', 'playOn', 'addOn', '|', 'details', 'quality', '|', 'favourite', 'watched', 'unwatched', 'hide'],
   // A tile, Played earlier row or Now-on card (household/ItemMenu.jsx).
   tile: ['continue', 'openScreen', 'playNow', 'playHere', 'shuffle', 'playNext', 'playFirst', 'add', 'playOn', 'addOn', 'quality', 'details', '|', 'favourite', 'watched', 'unwatched', 'hide'],
+  // The info view's More ⋯ (owner ruling 2026-11-26): row 1 there is PLAY,
+  // Play here and Play on…, so More holds everything else — the queue verbs
+  // (named for the screen they go to; this replaces the old caption line),
+  // Show briefly on…, Quality…, then the household verbs.
+  detail: ['shuffleOn', 'playNext', 'playFirst', 'add', 'addOn', '|', 'showBriefly', '|', 'quality', '|', 'favourite', 'watched', 'unwatched'],
 });
 
 /**
  * The entries of one item menu.
  * @param {object} p
- * @param {'row'|'tile'} p.surface
+ * @param {'row'|'tile'|'detail'} p.surface
  * @param {'leaf'|'collection'|'show'} p.kind
  * @param {{ elsewhere?: boolean, short?: string|null, sentence?: string|null, ask?: boolean }} [p.where]
  *   where ▶ goes: `sentence` is the Play Now words when it goes to a screen
@@ -79,11 +87,14 @@ export function itemMenuEntries({
     playNow: { kind: 'playNow', label: elsewhere && where.sentence ? where.sentence : MENU_LABELS.playNow },
     playHere: elsewhere ? { kind: 'playHere', label: MENU_LABELS.playHere } : null,
     shuffle: collection ? { kind: 'shuffle', label: MENU_LABELS.shuffle } : null,
+    // The info view names its Shuffle's destination like its queue verbs.
+    shuffleOn: collection ? { kind: 'shuffle', label: `${MENU_LABELS.shuffle}${on}` } : null,
     playNext: { kind: 'playNext', label: MENU_LABELS.playNext(on), hold: 'playFirst' },
     playFirst: { kind: 'playFirst', label: MENU_LABELS.playFirst(on) },
     add: { kind: 'add', label: MENU_LABELS.add(on) },
     playOn: { kind: 'playOn', label: kind === 'show' ? MENU_LABELS.showOn : MENU_LABELS.playOn },
     addOn: { kind: 'addOn', label: MENU_LABELS.addOn },
+    showBriefly: { kind: 'showBrieflyOn', label: MENU_LABELS.showBrieflyOn },
     quality: quality ? { kind: 'quality', label: MENU_LABELS.quality } : null,
     details: { kind: 'details', label: MENU_LABELS.details },
     favourite: household ? { kind: favourite ? 'unfavourite' : 'favourite', label: favourite ? MENU_LABELS.unfavourite : MENU_LABELS.favourite } : null,

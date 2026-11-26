@@ -20,6 +20,18 @@ vi.mock("../controller/useSessionController.js", () => ({
 }));
 vi.mock("../cast/CastButton.jsx", () => ({ CastButton: () => null }));
 vi.mock("../shell/NavProvider.jsx", () => ({ useNav: () => ({ pop, backDestination }) }));
+vi.mock("../logging/mediaLog.js", () => {
+  const stub = new Proxy({}, { get: (target, key) => { if (!(key in target)) target[key] = vi.fn(); return target[key]; } });
+  return { default: stub, mediaLog: stub };
+});
+import mediaLog from "../logging/mediaLog.js";
+vi.mock("../actions/ItemDestinationPicker.jsx", () => ({
+  ItemDestinationPicker: ({ action }) => (action ? <div data-testid="picker-open" data-kind={action.kind} /> : null),
+}));
+
+// Owner ruling 2026-11-26: everything past row 1 sits behind More ⋯.
+const openMore = () => { fireEvent.click(screen.getByTestId('detail-more')); return screen.getByTestId('detail-more-menu'); };
+const pickMore = (testId) => { openMore(); fireEvent.click(screen.getByTestId(testId)); };
 
 import { DetailView } from "./DetailView.jsx";
 import { FleetContext } from "../fleet/FleetProvider.jsx";
@@ -153,9 +165,10 @@ describe('DetailView Play Now', () => {
     // Already here: no second "Play here".
     expect(screen.queryByTestId('detail-play-here')).toBeNull();
     expect(screen.getByTestId('detail-play-now')).toBeVisible();
-    expect(screen.getByTestId('detail-play-next')).toBeVisible();
-    expect(screen.getByTestId('detail-up-next')).toBeVisible();
-    expect(screen.getByTestId('detail-add')).toBeVisible();
+    openMore();
+    expect(screen.getByTestId('detail-play-next')).toHaveTextContent(/^Play Next$/);
+    expect(screen.getByTestId('detail-up-next')).toHaveTextContent(/^Play First$/);
+    expect(screen.getByTestId('detail-add')).toHaveTextContent(/^Add to Queue$/);
   });
   it('plays on the screen this browser learned for films, and still offers Play here', () => {
     habitsStore().recordScreen('video', ['office-tv']);
@@ -165,16 +178,17 @@ describe('DetailView Play Now', () => {
     fireEvent.click(screen.getByTestId('detail-play-here'));
     expect(dispatchLeafVerb).toHaveBeenLastCalledWith('playNow', 'plex:685088', expect.objectContaining({ id: 'plex:685088' }), { targetIds: [] });
   });
-  it('offers explicit Shuffle beside collection Play', () => {
+  it('offers explicit Shuffle for a collection, under More', () => {
     contentState.info = { title: 'Album', type: 'album' };
     render(<MantineProvider><DetailView contentId="plex:album" /></MantineProvider>);
-    fireEvent.click(screen.getByRole('button', { name: 'Shuffle', exact: true }));
+    openMore();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Shuffle' }));
     expect(dispatchLeafVerb).toHaveBeenLastCalledWith('shuffle', 'plex:album', expect.objectContaining({ type: 'album' }));
   });
   it('routes Next, First and Add through the displayed destination', () => {
     render(<MantineProvider><DetailView contentId="plex:685088" /></MantineProvider>);
     for (const [testId, verb] of [['detail-play-next', 'playNext'], ['detail-up-next', 'playFirst'], ['detail-add', 'add']]) {
-      fireEvent.click(screen.getByTestId(testId));
+      pickMore(testId);
       expect(dispatchLeafVerb).toHaveBeenLastCalledWith(verb, 'plex:685088', expect.objectContaining({ title: 'Episode 3' }));
     }
   });
@@ -216,14 +230,15 @@ describe('DetailView Play Now', () => {
 describe('DetailView household verbs (FIND.12a, FIND.10a/AC6)', () => {
   it('adds to favourites and marks watched in one step each', async () => {
     render(<MantineProvider><DetailView contentId="plex:685088" /></MantineProvider>);
-    fireEvent.click(screen.getByTestId('detail-favourite'));
+    pickMore('detail-favourite');
     expect(apiMock).toHaveBeenCalledWith('api/v1/media/household/favourites', expect.objectContaining({ id: 'plex:685088', kind: 'item' }), 'POST');
-    fireEvent.click(screen.getByTestId('detail-watched'));
+    pickMore('detail-watched');
     expect(apiMock).toHaveBeenCalledWith('api/v1/media/household/watched', { contentId: 'plex:685088', watched: true }, 'POST');
   });
   it('a collection offers favourites but no watched marks', () => {
     contentState.info = { title: 'Album', type: 'album' };
     render(<MantineProvider><DetailView contentId="plex:album" /></MantineProvider>);
+    openMore();
     expect(screen.getByTestId('detail-favourite')).toBeInTheDocument();
     expect(screen.queryByTestId('detail-watched')).toBeNull();
   });
@@ -329,7 +344,7 @@ describe('DetailView: already playing is shown; only PLAY spins (addendum 5, 6)'
     expect(screen.getByTestId('detail-play-now')).toHaveAttribute('data-busy', 'true');
     expect(screen.getByTestId('detail-play-now')).toBeDisabled();
     expect(screen.getByTestId('detail-play-on')).not.toBeDisabled();
-    expect(screen.getByTestId('detail-add')).not.toBeDisabled();
+    expect(screen.getByTestId('detail-more')).not.toBeDisabled();
   });
 
   it('another item starting does not make this PLAY spin', async () => {
@@ -337,5 +352,111 @@ describe('DetailView: already playing is shown; only PLAY spins (addendum 5, 6)'
     mount(outcomes);
     expect(screen.getByTestId('detail-play-now')).not.toHaveAttribute('data-busy');
     await waitFor(() => expect(screen.getByTestId('detail-play-now')).not.toBeDisabled());
+  });
+});
+
+// Owner ruling 2026-11-26: row 1 is three buttons; More ⋯ holds the rest.
+describe('DetailView: row 1 and More ⋯', () => {
+  const officeFleet = { devices: [{ id: 'office-tv', name: 'Office Screen', type: 'linux-pc', content_control: { type: 'websocket' } }], identity: { deviceId: 'browser:me' } };
+  const onOffice = (ui) => { habitsStore().recordScreen('video', ['office-tv']); habitsStore().recordScreen('audio', ['office-tv']); return <MantineProvider><FleetContext.Provider value={officeFleet}>{ui}</FleetContext.Provider></MantineProvider>; };
+  const rowOne = () => [...screen.getByTestId('detail-row-one').querySelectorAll('button')].map((b) => b.textContent.trim());
+  const menuGroups = () => {
+    const groups = [[]];
+    for (const el of screen.getByTestId('detail-more-menu').querySelectorAll('[role="menuitem"], .mantine-Menu-divider')) {
+      if (el.getAttribute('role') === 'menuitem') groups[groups.length - 1].push(el.textContent.trim());
+      else groups.push([]);
+    }
+    return groups;
+  };
+
+  it('a film aimed at a screen: PLAY, Play here, Play on… and More — no queue caption', () => {
+    contentState.info = { title: 'Arrival', type: 'movie' };
+    render(onOffice(<DetailView contentId="plex:55854" />));
+    expect(rowOne()).toEqual(['Play on Office Screen', 'Play here', 'Play on…', 'More']);
+    expect(screen.queryByTestId('detail-queue-where')).toBeNull();
+    for (const id of ['detail-play-next', 'detail-up-next', 'detail-add', 'detail-show-briefly', 'detail-favourite', 'detail-watched']) {
+      expect(screen.queryByTestId(id)).toBeNull();
+    }
+  });
+
+  it('a film: More holds the queue named for its screen, Show briefly, Quality, household', async () => {
+    contentState.info = { title: 'Arrival', type: 'movie' };
+    const { PlaybackQualityProvider } = await import('../quality/PlaybackQualityProvider.jsx');
+    render(onOffice(<PlaybackQualityProvider><DetailView contentId="plex:55854" /></PlaybackQualityProvider>));
+    openMore();
+    expect(menuGroups()).toEqual([
+      ['Play Next on Office Screen', 'Play First on Office Screen', 'Add to Queue on Office Screen', 'Add on…'],
+      ['Show briefly on…'],
+      ['Quality…'],
+      ['Add to favourites', 'Mark watched', 'Mark unwatched'],
+    ]);
+    expect(mediaLog.detailMoreOpened).toHaveBeenCalledWith(expect.objectContaining({ contentId: 'plex:55854' }));
+    fireEvent.click(screen.getByTestId('detail-add'));
+    expect(dispatchLeafVerb).toHaveBeenLastCalledWith('add', 'plex:55854', expect.objectContaining({ title: 'Arrival' }));
+    expect(mediaLog.detailMorePicked).toHaveBeenCalledWith({ contentId: 'plex:55854', verb: 'add' });
+  });
+
+  it('a track: no Quality; the queue still names its screen', () => {
+    contentState.info = { title: 'Song', type: 'track' };
+    render(onOffice(<DetailView contentId="plex:777" />));
+    expect(rowOne()).toEqual(['Play on Office Screen', 'Play here', 'Play on…', 'More']);
+    openMore();
+    expect(menuGroups()).toEqual([
+      ['Play Next on Office Screen', 'Play First on Office Screen', 'Add to Queue on Office Screen', 'Add on…'],
+      ['Show briefly on…'],
+      ['Add to favourites', 'Mark watched', 'Mark unwatched'],
+    ]);
+  });
+
+  it('a show: Shuffle leads the queue, no watched marks', () => {
+    contentState.info = { title: 'Bluey', type: 'show', childCount: 3 };
+    render(<MantineProvider><DetailView contentId="plex:9" /></MantineProvider>);
+    // Played here: no second Play here.
+    expect(rowOne()).toEqual(['Play here', 'Play on…', 'More']);
+    openMore();
+    expect(menuGroups()).toEqual([
+      ['Shuffle', 'Play Next', 'Play First', 'Add to Queue', 'Add on…'],
+      ['Show briefly on…'],
+      ['Add to favourites'],
+    ]);
+  });
+
+  it('Show briefly on… closes More and opens the screen picker', () => {
+    render(onOffice(<DetailView contentId="plex:685088" />));
+    pickMore('detail-show-briefly');
+    expect(screen.queryByTestId('detail-more-menu')).toBeNull();
+    expect(screen.getByTestId('picker-open')).toHaveAttribute('data-kind', 'showBrieflyOn');
+    pickMore('detail-add-on');
+    expect(screen.getByTestId('picker-open')).toHaveAttribute('data-kind', 'addOn');
+    expect(mediaLog.detailMorePicked).toHaveBeenCalledWith({ contentId: 'plex:685088', verb: 'showBrieflyOn' });
+  });
+
+  it('keyboard: Enter from search lands on PLAY, More is a Tab stop, Esc closes its menu and stays on the page', async () => {
+    contentState.info = { title: 'Arrival', type: 'movie' };
+    const seen = vi.fn();
+    document.addEventListener('keydown', seen);
+    try {
+      render(onOffice(<DetailView contentId="plex:55854" focusPlay />));
+      const play = screen.getByTestId('detail-play-now');
+      await waitFor(() => expect(document.activeElement).toBe(play));
+      const more = screen.getByTestId('detail-more');
+      expect(more.tagName).toBe('BUTTON');
+      expect(more).not.toHaveAttribute('tabindex', '-1');
+      // Tab order: PLAY → Play here → Play on… → More.
+      const tabbable = [...screen.getByTestId('detail-row-one').querySelectorAll('button')].filter((b) => b.tabIndex >= 0);
+      expect(tabbable.map((b) => b.dataset.testid)).toEqual(['detail-play-now', 'detail-play-here', 'detail-play-on', 'detail-more']);
+      more.focus();
+      fireEvent.click(more);
+      const menu = screen.getByTestId('detail-more-menu');
+      await waitFor(() => expect(menu.contains(document.activeElement)).toBe(true));
+      fireEvent.keyDown(document.activeElement, { key: 'Escape' });
+      await waitFor(() => expect(screen.queryByTestId('detail-more-menu')).toBeNull());
+      expect(document.activeElement).toBe(more);
+      expect(pop).not.toHaveBeenCalled();
+      expect(seen.mock.calls.some(([e]) => e.key === 'Escape')).toBe(false);
+      expect(screen.getByTestId('detail-view')).toBeInTheDocument();
+    } finally {
+      document.removeEventListener('keydown', seen);
+    }
   });
 });
