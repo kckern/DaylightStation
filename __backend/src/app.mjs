@@ -229,7 +229,7 @@ import { createCameraRouter } from "../../__app_modules/household/camera/server/
 import { createPrinterRouter } from "./4_api/v1/routers/printer.mjs";
 
 // Homeline call state tracking
-import { setCallLeaseAuthority } from "../../__app_modules/household/homeline/server/call-state.mjs";
+import { setCallLeaseAuthority, hasActiveCall, forceEndCall } from "../../__app_modules/household/homeline/server/call-state.mjs";
 
 import { createHomelineRouter } from "../../__app_modules/household/homeline/server/api.mjs";
 
@@ -2907,6 +2907,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     pianoMidiWakeService,
     kioskFrictionTracker,
     startStatusService: deviceStartStatusService,
+    // Power-off guard (GET /device/:id/off): a screen in a Home Line call is
+    // not switched off unless forced. Missing since 2026-10-12, which made
+    // every /off answer a TypeError ("reading 'hasActive'").
+    callControl: { hasActive: hasActiveCall, forceEnd: forceEndCall },
     // Info-view warm-up (POST /device/:id/prepare): prewarm only, no screen effect.
     prewarmService,
     // For the excursion guard's probe on devices running the Android kiosk app.

@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { markFirstUseDone } from './lib/firstUse.mjs';
-import { aimAt } from './lib/aim.mjs';
-import { playResultHere } from './lib/search.mjs';
+import { aimAt, stepChip } from './lib/aim.mjs';
+import { playResult } from './lib/search.mjs';
 
 test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 
@@ -40,10 +40,7 @@ async function startArrival(context, sender, phone) {
   if (phone) {
     await sender.getByTestId('media-search-launcher').click();
     const searchMode = sender.getByTestId('search-mode');
-    await searchMode.getByTestId('destination-line').click();
-    await sender.getByTestId('picker-device-acceptance-media').click();
-    await sender.getByTestId('picker-submit').click();
-    await expect(searchMode.getByTestId('destination-line-name')).toHaveText(/^Playing on Acceptance receiver/);
+    await stepChip(searchMode.getByTestId('search-destination-chip'), '▶ Acceptance receiver');
     input = searchMode.getByTestId('search-mode-input');
     result = searchMode.getByTestId('search-mode-result-plex:55854');
   } else {
@@ -53,7 +50,8 @@ async function startArrival(context, sender, phone) {
   }
   await input.fill('arrival');
   await expect(result).toBeVisible({ timeout: 30000 });
-  await playResultHere(sender, result); // a row only opens the info view; PLAY plays
+  // Aimed at the receiver: the row opens its info view, PLAY plays there.
+  await playResult(sender, result);
   const native = receiver.locator('.video-player video');
   await expect(native).toHaveCount(1);
   await expect.poll(() => native.evaluate(element => element.readyState >= 2 && !element.paused && element.currentTime > 0),

@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { markFirstUseDone } from './lib/firstUse.mjs';
-import { aimAt, aimLabel } from './lib/aim.mjs';
+import { aimAt, aimLabel, stepChip } from './lib/aim.mjs';
 import { playResult } from './lib/search.mjs';
 
 test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
@@ -30,14 +30,19 @@ async function openDestinationSurface(page, surface) {
   await expect(page.getByTestId('browse-dispatch-header')).toBeVisible();
 }
 
+// Where ▶ plays is named where you type: the phone search sheet's chip, or
+// (tablet, laptop) the dock search box chip / header control (aim.mjs).
+const sheetChip = (page) => page.getByTestId('search-mode').getByTestId('search-destination-chip');
+
 async function chooseAcceptanceTarget(page, surface) {
-  const destinationSurface = surface === 'phone'
-    ? page.getByTestId('search-mode')
-    : page.getByTestId('browse-dispatch-header');
-  await destinationSurface.getByTestId('destination-line').click();
-  await page.getByTestId('picker-device-acceptance-media').click();
-  await page.getByTestId('picker-submit').click();
-  await expect(destinationSurface.getByTestId('destination-line-name')).toContainText('Acceptance');
+  if (surface === 'phone') await stepChip(sheetChip(page), '▶ Acceptance receiver');
+  else await aimAt(page, 'acceptance-media');
+  await expectAimed(page, surface);
+}
+
+async function expectAimed(page, surface) {
+  if (surface === 'phone') await expect(sheetChip(page)).toContainText('Acceptance');
+  else await expect.poll(() => aimLabel(page)).toBe('Acceptance receiver');
 }
 
 for (const [label, viewport, surface] of surfaces) {
@@ -69,9 +74,9 @@ for (const [label, viewport, surface] of surfaces) {
       const collection = page.getByTestId('search-mode-results').getByTestId('search-mode-result-plex:663508');
       await expect(collection).toBeVisible({ timeout: 30000 });
       await collection.click();
-      const browseHeader = page.getByTestId('browse-dispatch-header');
-      await expect(browseHeader).toBeVisible();
-      await expect(browseHeader.getByTestId('destination-line-name')).toContainText('Acceptance');
+      await expect(page.getByTestId('browse-dispatch-header')).toBeVisible();
+      // The phone header's "Playing on" names the same aim.
+      await expect.poll(() => aimLabel(page)).toContain('Acceptance');
       await page.getByTestId('browse-crumb-home').click();
     } else {
       // The search box chip is another live view of the same shared target state.
@@ -87,14 +92,11 @@ for (const [label, viewport, surface] of surfaces) {
       await expect.poll(() => aimLabel(page)).toBe('Acceptance receiver');
       await openDestinationSurface(page, surface);
     }
-    const reopenedSurface = surface === 'phone'
-      ? page.getByTestId('search-mode')
-      : page.getByTestId('browse-dispatch-header');
-    await expect(reopenedSurface.getByTestId('destination-line-name')).toContainText('Acceptance');
+    await expectAimed(page, surface);
 
     await page.clock.fastForward(2 * 60 * 60 * 1000 + 1000);
     // Sticky: nothing expires the aim, two hours later it is still the screen.
-    await expect(reopenedSurface.getByTestId('destination-line-name')).toContainText('Acceptance');
+    await expectAimed(page, surface);
     await page.reload();
     if (surface === 'phone') {
       await expect(page.getByTestId('media-search-launcher')).toBeVisible({ timeout: 30000 });
@@ -103,10 +105,7 @@ for (const [label, viewport, surface] of surfaces) {
       await expect.poll(() => aimLabel(page)).toBe('Acceptance receiver');
       await openDestinationSurface(page, surface);
     }
-    const stickySurface = surface === 'phone'
-      ? page.getByTestId('search-mode')
-      : page.getByTestId('browse-dispatch-header');
-    await expect(stickySurface.getByTestId('destination-line-name')).toContainText('Acceptance');
+    await expectAimed(page, surface);
     expect(deviceCommands, 'Changing, persisting, and a long idle must not issue device commands').toEqual([]);
   });
 }

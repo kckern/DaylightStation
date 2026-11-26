@@ -1,5 +1,12 @@
 import { test, expect } from '@playwright/test';
 import { markFirstUseDone } from './lib/firstUse.mjs';
+import { aimAt, aimHere, aimLocator, stepChip } from './lib/aim.mjs';
+
+// The phone's search sheet names where ▶ plays with the destination chip; a
+// tap walks the cycle (usual screen, other screens, This device).
+const chipIn = (scope) => scope.getByTestId('search-destination-chip');
+const RECEIVER = '▶ Acceptance receiver';
+const HERE = '▶ This device';
 
 test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 
@@ -22,20 +29,18 @@ test('[PLACE.2a/AC2][PLACE.2a/AC3][PLACE.2a/AC5] remembered aim is sticky: still
   await expect(page.getByTestId('media-search-launcher')).toBeVisible({ timeout: 30000 });
   await page.getByTestId('media-search-launcher').click();
   const searchMode = page.getByTestId('search-mode');
-  await searchMode.getByTestId('destination-line').click();
-  await page.getByRole('button', { name: /^Acceptance receiver Virtual browser/ }).click();
-  await page.getByTestId('picker-submit').click();
+  await stepChip(chipIn(searchMode), RECEIVER);
   await page.reload();
   await expect(page.getByTestId('media-search-launcher')).toBeVisible({ timeout: 30000 });
   await page.getByTestId('media-search-launcher').click();
-  await expect(searchMode.getByTestId('destination-line-name')).toContainText('Acceptance receiver');
+  await expect(chipIn(searchMode)).toContainText('Acceptance receiver');
   await page.clock.fastForward(2 * 60 * 60 * 1000 + 1000);
   // Sticky: nothing expires the aim.
-  await expect(searchMode.getByTestId('destination-line-name')).toContainText('Acceptance receiver');
+  await expect(chipIn(searchMode)).toContainText('Acceptance receiver');
   await page.reload();
   await expect(page.getByTestId('media-search-launcher')).toBeVisible({ timeout: 30000 });
   await page.getByTestId('media-search-launcher').click();
-  await expect(page.getByTestId('search-mode').getByTestId('destination-line-name')).toContainText('Acceptance receiver');
+  await expect(chipIn(page.getByTestId('search-mode'))).toContainText('Acceptance receiver');
   expect(commands, 'A long-idle aim must not issue playback commands').toEqual([]);
 });
 
@@ -63,10 +68,8 @@ test('[PLACE.2a/AC5] a closed app restores a remote aim, and still does after mo
   await expect(page.getByTestId('media-search-launcher')).toBeVisible({ timeout: 30000 });
   await page.getByTestId('media-search-launcher').click();
   const searchMode = page.getByTestId('search-mode');
-  await searchMode.getByTestId('destination-line').click();
-  await page.getByRole('button', { name: /^Acceptance receiver Virtual browser/ }).click();
-  await page.getByTestId('picker-submit').click();
-  await expect(searchMode.getByTestId('destination-line-name')).toContainText('Acceptance receiver');
+  await stepChip(chipIn(searchMode), RECEIVER);
+  await expect(chipIn(searchMode)).toContainText('Acceptance receiver');
   const beforeClose = await readClockAndAim(page);
   expect(beforeClose).toMatchObject({ now: startedAt.getTime(), aim: { targetIds: [receiverTargetId], activityAt: startedAt.getTime() } });
   await page.close();
@@ -79,15 +82,12 @@ test('[PLACE.2a/AC5] a closed app restores a remote aim, and still does after mo
   await expect(beforeExpiry.getByTestId('media-search-launcher')).toBeVisible({ timeout: 30000 });
   await beforeExpiry.getByTestId('media-search-launcher').click();
   const beforeExpirySearch = beforeExpiry.getByTestId('search-mode');
-  await expect(beforeExpirySearch.getByTestId('destination-line-name')).toContainText('Acceptance receiver');
+  await expect(chipIn(beforeExpirySearch)).toContainText('Acceptance receiver');
   // Opening Search is user activity. Make the resulting lease explicit with
-  // the ordinary picker so the final closed interval has a known baseline.
-  await beforeExpirySearch.getByTestId('destination-line').click();
-  await beforeExpiry.getByRole('button', { name: 'This device', exact: true }).click();
-  await beforeExpirySearch.getByTestId('destination-line').click();
-  await beforeExpiry.getByRole('button', { name: /^Acceptance receiver Virtual browser/ }).click();
-  await beforeExpiry.getByTestId('picker-submit').click();
-  await expect(beforeExpirySearch.getByTestId('destination-line-name')).toContainText('Acceptance receiver');
+  // the chip (away and back) so the final closed interval has a known baseline.
+  await stepChip(chipIn(beforeExpirySearch), HERE);
+  await stepChip(chipIn(beforeExpirySearch), RECEIVER);
+  await expect(chipIn(beforeExpirySearch)).toContainText('Acceptance receiver');
   const afterKnownRenewal = await readClockAndAim(beforeExpiry);
   expect(afterKnownRenewal).toMatchObject({ now: beforeExpiryAt.getTime(), aim: { targetIds: [receiverTargetId], activityAt: beforeExpiryAt.getTime() } });
   await beforeExpiry.close();
@@ -98,7 +98,7 @@ test('[PLACE.2a/AC5] a closed app restores a remote aim, and still does after mo
   await afterExpiry.goto('/media');
   await expect(afterExpiry.getByTestId('media-search-launcher')).toBeVisible({ timeout: 30000 });
   await afterExpiry.getByTestId('media-search-launcher').click();
-  await expect(afterExpiry.getByTestId('search-mode').getByTestId('destination-line-name')).toContainText('Acceptance receiver');
+  await expect(chipIn(afterExpiry.getByTestId('search-mode'))).toContainText('Acceptance receiver');
   // Nothing expires a persisted aim. Read storage only as evidence after the
   // ordinary UI has established the user-visible contract: still the screen.
   const afterExpiryAfterOpen = await readClockAndAim(afterExpiry);
@@ -125,19 +125,14 @@ test('[PLACE.2b/AC1][PLACE.2b/AC2] phone switches receiver aim back to this devi
   await expect(page.getByTestId('media-search-launcher')).toBeVisible({ timeout: 30000 });
   await page.getByTestId('media-search-launcher').click();
   const searchMode = page.getByTestId('search-mode');
-  await searchMode.getByTestId('destination-line').click();
-  const receiver = page.getByRole('button', { name: /^Acceptance receiver Virtual browser/ });
-  await expect(receiver).toBeVisible();
-  await receiver.click();
-  await page.getByTestId('picker-submit').click();
-  await expect(searchMode.getByTestId('destination-line-name')).not.toHaveText(/This browser|This device/);
-  await searchMode.getByTestId('destination-line').click();
-  await page.getByRole('button', { name: 'This device', exact: true }).click();
-  await expect(page.getByTestId('destination-sheet')).not.toBeVisible();
-  await expect(searchMode.getByTestId('destination-line-name')).toHaveText(/This browser|This device/);
-  await searchMode.getByTestId('destination-line').click();
-  await expect(page.getByTestId('picker-this-device')).toHaveAttribute('aria-pressed', 'true');
-  await expect(receiver).toHaveAttribute('aria-pressed', 'false');
+  await stepChip(chipIn(searchMode), RECEIVER);
+  await expect(chipIn(searchMode)).not.toContainText(/This browser|This device/);
+  await stepChip(chipIn(searchMode), HERE);
+  await expect(chipIn(searchMode)).toHaveAttribute('data-here', 'true');
+  // The choice is sticky across closing and reopening the sheet.
+  await page.getByRole('button', { name: 'Close search' }).click();
+  await page.getByTestId('media-search-launcher').click();
+  await expect(chipIn(page.getByTestId('search-mode'))).toHaveText(HERE);
   expect(commands, 'Changing aim must not send a playback command').toEqual([]);
 });
 
@@ -164,17 +159,13 @@ for (const [device, viewport] of [
     const collection = page.getByTestId('combobox-option-plex:663508');
     await expect(collection).toBeVisible({ timeout: 15000 });
     await collection.click();
-    const dispatchHeader = page.getByTestId('browse-dispatch-header');
-    await expect(dispatchHeader).toBeVisible();
-    await dispatchHeader.getByTestId('destination-line').click();
-    await page.getByRole('button', { name: /^Acceptance receiver Virtual browser/ }).click();
-    await page.getByTestId('picker-submit').click();
-    await expect(dispatchHeader.getByTestId('destination-line-name')).toContainText('Acceptance receiver');
-    await dispatchHeader.getByTestId('destination-line').click();
-    await page.getByRole('button', { name: 'This device', exact: true }).click();
-    await expect(dispatchHeader.getByTestId('destination-line-name')).toHaveText(/This browser|This device/);
-    await dispatchHeader.getByTestId('destination-line').click();
-    await expect(page.getByTestId('picker-this-device')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByTestId('browse-dispatch-header')).toBeVisible();
+    // The destination is named where you type (the search chip, or the
+    // header control where this viewport has one), not on the browse header.
+    await aimAt(page, 'acceptance-media');
+    await expect(await aimLocator(page)).toContainText('Acceptance receiver');
+    await aimHere(page);
+    await expect(await aimLocator(page)).toContainText(/This browser|This device/);
     expect(commands, 'Changing aim must not send a playback command').toEqual([]);
   });
 }
@@ -194,17 +185,15 @@ test('[PLACE.2b/AC3] Start fresh defaults to returning the aim to This device wi
   await expect(page.getByTestId('media-search-launcher')).toBeVisible({ timeout: 30000 });
   await page.getByTestId('media-search-launcher').click();
   const searchMode = page.getByTestId('search-mode');
-  await searchMode.getByTestId('destination-line').click();
-  await page.getByRole('button', { name: /^Acceptance receiver Virtual browser/ }).click();
-  await page.getByTestId('picker-submit').click();
-  await expect(searchMode.getByTestId('destination-line-name')).toContainText('Acceptance receiver');
+  await stepChip(chipIn(searchMode), RECEIVER);
+  await expect(chipIn(searchMode)).toContainText('Acceptance receiver');
   await page.getByRole('button', { name: 'Close search' }).click();
   await page.getByTestId('settings-menu-trigger').click();
   await page.getByRole('menuitem', { name: 'Start fresh' }).click();
   await expect(page.getByLabel('Return aim to this device')).toBeChecked();
   await expect(page.getByText('It does not stop anything playing on other screens.')).toBeVisible();
-  await page.getByTestId('confirm-ok').click();
+  await page.getByRole('dialog', { name: 'Start fresh on this device?' }).getByRole('button', { name: 'Start fresh', exact: true }).click();
   await page.getByTestId('media-search-launcher').click();
-  await expect(page.getByTestId('search-mode').getByTestId('destination-line-name')).toHaveText(/This browser|This device/);
+  await expect(chipIn(page.getByTestId('search-mode'))).toContainText(/This browser|This device/);
   expect(commands, 'Starting fresh must not issue a command to another screen').toEqual([]);
 });

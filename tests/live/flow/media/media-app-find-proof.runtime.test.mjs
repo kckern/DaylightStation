@@ -105,17 +105,16 @@ test('[FIND.1a/AC3] search looks and behaves the same at every size, and while a
     await closeSearch(page, vp);
     // Aim at the other screen (the destination control), then search again: same search.
     if (isPhone(vp)) {
-      await (await openSearch(page, vp), page.getByTestId('search-mode').getByTestId('destination-line')).click();
-      await expect(page.getByTestId('destination-sheet')).toBeVisible();
-      await page.getByTestId(`picker-device-${A}`).click();
-      await page.getByTestId('picker-submit').click();
+      // The search sheet's chip names (and changes) where ▶ plays.
+      await openSearch(page, vp);
+      await aimAt(page, A);
       await closeSearch(page, vp).catch(() => {});
     } else {
       await aimAt(page, A);
     }
     const aimed = await signature(page, vp);
     expect(aimed, `${label}: search while aimed at ${A_NAME}`).toEqual(local);
-    await expect(isPhone(vp) ? page.getByTestId('search-mode').getByTestId('destination-line-name') : page.getByTestId('search-destination-chip')).toContainText(A_NAME);
+    await expect(page.locator('[data-testid="search-destination-chip"]:visible').first()).toContainText(A_NAME);
     await closeSearch(page, vp);
     // Steering: open that screen's controls (its Remote), search from there: still the same search.
     await goArea(page, vp, 'fleet');
@@ -162,8 +161,10 @@ for (const [label, vp] of Object.entries(VIEWPORTS)) {
     const { receiver, context, row, retained, verb, page } = await retentionSetup(browser, request, vp);
     await verb('Add to Queue');
     await retained('Add');
-    // Play here (tap the result).
-    await playResultHere(page, row); // a row only opens the info view; PLAY plays
+    // Play here: the row opens its info view, PLAY plays, and Back returns to
+    // the search with the same words, narrowing and results (spec ruling).
+    await playResultHere(page, row);
+    await page.getByTestId('detail-back').click();
     await retained('Play');
     await expect(page.locator('video').first()).toBeAttached({ timeout: 60000 });
     await context.close();
@@ -414,7 +415,7 @@ test('[FIND.8a/AC2] details show picture, title, description, length, kind and h
 });
 
 // FIND.8b — the tap rule, the mis-tap undo and the details action on every result.
-test('[FIND.8b/AC1][FIND.8b/AC4] a tap plays a playable item at the aim (with Undo) and opens a collection, in search and in browse', async ({ browser, request }) => {
+test('[FIND.8b/AC1][FIND.8b/AC4] a tap opens a playable item (PLAY plays it at the aim, with Undo) and opens a collection, in search and in browse', async ({ browser, request }) => {
   const receiver = await openReceiver(browser, request, A);
   const vp = VIEWPORTS.laptop;
   const { context, page } = await newAppPage(browser, vp);
@@ -430,11 +431,15 @@ test('[FIND.8b/AC1][FIND.8b/AC4] a tap plays a playable item at the aim (with Un
   await expect(page.locator('.browse-crumb--current, [data-testid="detail-view"]').first()).toBeVisible({ timeout: 30000 });
   expect((await receiverState(request, A))?.state ?? 'none').not.toBe('playing');
 
-  // Search: a playable item plays at the aim, with an Undo; the mis-tap costs nothing.
+  // Search: a tap on a playable item opens its info view (a look: nothing
+  // starts); PLAY plays it at the aim, with an Undo — the mis-tap costs nothing.
   await goArea(page, vp, 'home');
   const search = await openSearch(page, vp);
   await search.fill('Arrival');
   await resultRow(page, vp, ARRIVAL).click();
+  await expect(page.getByTestId('detail-play-now')).toBeVisible({ timeout: 30000 });
+  expect((await receiverState(request, A))?.state ?? 'none', 'a look starts nothing').not.toBe('playing');
+  await page.getByTestId('detail-play-now').click();
   const row = page.locator('[data-testid^="dispatch-row-"]').filter({ hasText: /Arrival/ });
   await expect(row).toBeVisible({ timeout: 15000 });
   await expect.poll(async () => (await receiverState(request, A))?.currentItem?.contentId, { timeout: 120000 }).toBe(ARRIVAL);

@@ -572,7 +572,16 @@ kept list (`retainQueryOnClose`) reopens with the same words and the same row
 highlighted — kept by item id, so a list that reordered still lands on it, and
 one that no longer holds it highlights row 1; on a phone the full-screen
 search reopens with the same words (`search/useReturnFromSearchDetail.js`,
-`search.returned`).
+`search.returned`). A row's ⋯ → Details is the same look on a wide screen: the
+list closes with its words kept (the shared combobox's `onMore` returns
+`'close'`), the detail page opens as `{ contentId, from: 'search' }` (no PLAY
+focus: it was asked for details), and Back returns to the list.
+
+The destination chip sits inside the search box but is not the box: a press on
+it changes where ▶ plays and leaves the words, the open list and the focus as
+they were (the combobox stops that press reaching Mantine's click-outside),
+and the empty part of the box's right section (room kept for the clear
+control) is still the box — a click there focuses the input.
 
 **The ▶ is the act, and it says where.** Every playable row carries a labelled
 ▶ ("▶ Office Screen", or "▶ Play" when it plays here); a tile carries a small

@@ -219,6 +219,11 @@
   gap: 4px;
   width: 100%;
   height: 100%;
+  // Its empty part (kept for the loader / clear control) is still the input:
+  // a click there must focus the box, not land on dead space.
+  pointer-events: none;
+
+  > * { pointer-events: auto; }
 }
 
 .content-combobox-input-accessory {

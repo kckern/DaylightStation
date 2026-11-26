@@ -24,7 +24,10 @@ export async function openSearch(page, vp) {
   }
   const input = page.getByRole('textbox', { name: 'Search media…', exact: true });
   await expect(input).toBeVisible({ timeout: 30000 });
-  await input.click();
+  // Click where the words go (just past the search icon), as a person does:
+  // the box's right part is the destination chip, and at tablet widths the
+  // chip covers the box's middle — a click there changes where ▶ plays.
+  await input.click({ position: { x: 48, y: 12 } });
   return input;
 }
 

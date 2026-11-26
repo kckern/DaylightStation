@@ -390,10 +390,25 @@ test('PLACE.4a — several screens: labelled, aim names both, same-room drift wa
   await markFirstUseDone(context);
   const page = await context.newPage();
   await gotoMedia(page);
+  // Aim at both screens: on a phone that is the header's "Playing on" control
+  // (one checkbox per screen); the search sheet's chip then names both.
+  await page.getByTestId('cast-target-chip').click();
+  await page.getByTestId(`cast-target-checkbox-${A}`).check();
+  await page.getByTestId(`cast-target-checkbox-${B}`).check();
+  await page.getByTestId('cast-target-chip').click();
+  await expect(page.getByTestId('cast-popover')).toBeHidden();
+  await expect(page.getByTestId('destination-control-name')).toContainText(`${A_NAME} + ${B_NAME}`);
   await page.getByTestId('media-search-launcher').click();
   const searchMode = page.getByTestId('search-mode');
-  await searchMode.getByTestId('destination-line').click();
-  await expect(page.getByTestId('destination-sheet')).toBeVisible();
+  await expect(searchMode.getByTestId('search-destination-chip')).toContainText(`${A_NAME} + ${B_NAME}`);
+
+  // Play on… several screens warns of same-room drift while they are chosen
+  // (PLACE.4a/AC6); sending from it starts both (one record per screen, AC3–AC4).
+  await searchMode.getByTestId('search-mode-input').fill('Disclosure Day');
+  await expect(searchMode.getByTestId(`search-mode-result-${DISCLOSURE}`)).toBeVisible({ timeout: 30000 });
+  await page.getByTestId(`result-more-${DISCLOSURE}`).click();
+  await page.getByRole('menuitem', { name: 'Play on…', exact: true }).click();
+  await expect(page.getByTestId('dispatch-target-picker')).toBeVisible();
   await expect(page.getByTestId('picker-multi-toggle')).toHaveText('Choose several screens');
   await page.getByTestId('picker-multi-toggle').click();
   await page.getByTestId(`picker-device-${A}`).click();
@@ -401,11 +416,6 @@ test('PLACE.4a — several screens: labelled, aim names both, same-room drift wa
   await expect(page.getByTestId('picker-drift-warning')).toContainText(`${A_NAME} and ${B_NAME} are both in Virtual browser`, { timeout: 15000 });
   await shot(page, 'several-screens-drift-phone');
   await page.getByTestId('picker-submit').click();
-  await expect(searchMode.getByTestId('destination-line-name')).toHaveText(new RegExp(`Playing on ${A_NAME} \\+ ${B_NAME}`));
-
-  // Play: one record per screen, both start (PLACE.4a/AC3–AC4).
-  await searchMode.getByTestId('search-mode-input').fill('Disclosure Day');
-  await playResult(page, searchMode.getByTestId(`search-mode-result-${DISCLOSURE}`));
   const tray = page.getByTestId('dispatch-tray');
   await expect(tray).toContainText(`Playing on ${A_NAME}`, { timeout: 90000 });
   await expect(tray).toContainText(`Playing on ${B_NAME}`, { timeout: 90000 });

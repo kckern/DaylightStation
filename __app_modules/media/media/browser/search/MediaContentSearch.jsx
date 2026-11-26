@@ -22,17 +22,15 @@
 // that shared, widely-used component leaves them unset and gets zero
 // behavior change) that light up ResultRowActions on the container ▶ and
 // leaf ⋯ respectively, wired to the exact same playContainerAsQueue /
-// applyResultRowVerb plumbing SearchMode uses.
+// dispatch plumbing SearchMode uses (Details opens the info view from search).
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { ContentCombobox } from "../../../../../__capabilities/content-catalog/browser/picker.mjs";
 import { useSearchContext } from "./useSearchContext.js";
 import { ScopeChips } from "./ScopeChips.jsx";
 import { useContentDispatch } from "./useContentDispatch.js";
 import { useDestinationInteraction } from "../cast/destinationInteraction.js";
-import { useSessionController } from "../controller/useSessionController.js";
 import { useNav } from "../shell/NavProvider.jsx";
 import { collapseResultEditions } from "./collapseResultEditions.js";
-import { applyResultRowVerb } from "./resultRowVerbs.js";
 import { isContainer } from "../../../../../__capabilities/content-catalog/browser/combobox-state.mjs";
 import { useRowLabels } from "./useRowLabels.js";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
@@ -57,7 +55,6 @@ export function MediaContentSearch({ inputRef: suppliedInputRef, destinationWrap
   const { dispatch, dispatchLeafVerb, playContainerAsQueue } = useContentDispatch();
   const { rowLabelsFor, continueFor } = useRowLabels();
   const { extraActions, runHousehold } = useHouseholdResultActions();
-  const { queue } = useSessionController('local');
   const { push } = useNav();
   const { scoresFor, rememberedFor, recordPick } = usePlayDestination();
   const lastRankedRef = useRef(null);
@@ -170,8 +167,11 @@ export function MediaContentSearch({ inputRef: suppliedInputRef, destinationWrap
       if (route === 'ask') setOneShotAction({ kind: 'playOn', item });
       return;
     }
-    applyResultRowVerb('detail', item, { queue, push });
-  }, [queue, push, log, dispatchLeafVerb, runHousehold, recordPick]);
+    // Details is a look, like selecting the row: the list closes (the words
+    // stay) and the info view opens; Back comes back to these results.
+    push('detail', { contentId: id, from: 'search' });
+    return 'close';
+  }, [push, log, dispatchLeafVerb, runHousehold, recordPick]);
 
   return (
     <div data-testid="media-search-bar" className="media-search-bar">

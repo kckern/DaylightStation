@@ -79,7 +79,7 @@ vi.mock("../../../../../__capabilities/content-catalog/browser/picker.mjs", () =
         <button data-testid="more-play-next" onClick={() => props.onMore?.('playNext', leaf)}>play next</button>
         <button data-testid="more-play-now" onClick={() => props.onMore?.('playNow', leaf)}>play now</button>
         <button data-testid="more-add" onClick={() => props.onMore?.('add', leaf)}>add</button>
-        <button data-testid="more-detail" onClick={() => props.onMore?.('detail', leaf)}>open detail</button>
+        <button data-testid="more-detail" onClick={() => { globalThis.__lastMoreReturn = props.onMore?.('detail', leaf); }}>open detail</button>
         <button data-testid="close-search" onClick={() => props.onClose?.('escape')}>close</button>
         {/* Mirrors ContentCombobox's opt-in Tab contract: the input's own
             keydown asks onTabKey first; unhandled, Tab closes the search. */}
@@ -306,11 +306,13 @@ describe('MediaContentSearch', () => {
       expect(queuePlayNow).not.toHaveBeenCalled();
     });
 
-    it('⋯ Open detail pushes the detail view, touching no queue applier', () => {
+    it('⋯ Open detail pushes the detail view from search (Back returns), touching no queue applier', () => {
       render(<MediaContentSearch />);
       fireEvent.click(screen.getByTestId('more-detail'));
 
-      expect(navPush).toHaveBeenCalledWith('detail', { contentId: 'plex:685088' });
+      expect(navPush).toHaveBeenCalledWith('detail', { contentId: 'plex:685088', from: 'search' });
+      // …and asks the picker to close (its words are kept), like a select.
+      expect(globalThis.__lastMoreReturn).toBe('close');
       expect(queuePlayNow).not.toHaveBeenCalled();
     });
   });

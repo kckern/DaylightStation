@@ -485,6 +485,21 @@ describe('ContentCombobox (hook wiring)', () => {
       expect(onMore).toHaveBeenCalledWith('playNext', expect.objectContaining({ id: 'plex:leaf:1' }));
     });
 
+    it("onMore returning 'close' closes the picker the way Escape does; any other return leaves it open", async () => {
+      const results = [{ id: 'plex:leaf:1', title: 'A Song', source: 'plex' }];
+      currentHook = makeHook({ state: { ...initialState(''), mode: Modes.SEARCH, search: 'song', results } });
+      const onMore = vi.fn((action) => (action === 'detail' ? 'close' : undefined));
+      renderCombobox({ onMore, retainQueryOnClose: true });
+      fireEvent.click(screen.getByTestId('result-more-plex:leaf:1'));
+      fireEvent.click(await screen.findByTestId('result-action-playNext-plex:leaf:1'));
+      await Promise.resolve();
+      expect(currentHook.commit.mock.calls.some(([kind]) => kind === 'escape')).toBe(false);
+      fireEvent.click(screen.getByTestId('result-more-plex:leaf:1'));
+      fireEvent.click(await screen.findByTestId('result-action-detail-plex:leaf:1'));
+      await Promise.resolve();
+      expect(currentHook.commit.mock.calls.some(([kind]) => kind === 'escape')).toBe(true);
+    });
+
     it('a container row never renders ⋯, and a leaf row never renders ▶, even when both callbacks are passed', () => {
       currentHook = makeHook({
         state: {
@@ -694,6 +709,29 @@ describe('ContentCombobox (hook wiring)', () => {
     expect(accessory).toContainElement(screen.getByTestId('chip'));
     expect(accessory.parentElement).toBe(clear.parentElement);
     expect(accessory.compareDocumentPosition(clear) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('a press on the accessory is inside the search: the list stays open (no outside commit)', async () => {
+    currentHook = makeHook({ state: { ...initialState(''), mode: Modes.SEARCH, search: 'abc' } });
+    renderCombobox({ retainQueryOnClose: true, inputAccessory: <button type="button" data-testid="chip">chip</button> });
+    fireEvent.mouseDown(screen.getByTestId('chip'));
+    fireEvent.touchStart(screen.getByTestId('chip'));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(currentHook.commit).not.toHaveBeenCalledWith('outside', expect.anything());
+    expect(currentHook.commit).not.toHaveBeenCalledWith('outside');
+    // Control: a press elsewhere on the page is still an outside close.
+    fireEvent.mouseDown(document.body);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(currentHook.commit.mock.calls.some(([kind]) => kind === 'outside')).toBe(true);
+  });
+
+  it('the accessory section lets a click on its empty part reach the input (only its controls take one)', () => {
+    currentHook = makeHook({ state: { ...initialState(''), mode: Modes.SEARCH, search: '' } });
+    renderCombobox({ retainQueryOnClose: true, inputAccessory: <span data-testid="chip">chip</span> });
+    // Mantine carries rightSectionPointerEvents as a CSS variable on the wrapper.
+    const wrapper = screen.getByRole('textbox').closest('.mantine-Input-wrapper, [class*="Input-wrapper"]');
+    expect(wrapper).not.toBeNull();
+    expect(wrapper.style.getPropertyValue('--input-right-section-pointer-events')).toBe('none');
   });
 
   it('Blur (outside close) routes through commit(\'outside\') — no junk-commit of typed text', () => {

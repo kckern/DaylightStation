@@ -127,7 +127,7 @@ class PickerScrollAnchor extends Component {
  *   provided, a container row additionally renders a ▶ (play-as-queue) action
  *   beside its existing badges/chevron. Omit (the default, every non-media
  *   caller) and nothing changes — no button renders.
- * @param {(action: string, item: object) => void} [props.onMore] - Task 14: when
+ * @param {(action: string, item: object) => (void|'close')} [props.onMore] - Task 14: when
  *   provided, a LEAF row renders a ⋯ menu (Play Now/Play Next/Play First/Add to
  *   Queue/Open detail); action is one of those five verb strings. Omit and
  *   nothing renders.
@@ -713,7 +713,12 @@ export function ContentCombobox({
               item={item}
               isContainerItem={container}
               onPlayAll={onPlayAll ? () => onPlayAll(item) : null}
-              onMore={onMore ? (action) => onMore(action, item) : null}
+              onMore={onMore ? (action) => {
+                // A caller whose verb navigates away (Media's Details) returns
+                // 'close': the picker closes the way Escape does (a caller that
+                // retains its query keeps it), once the menu has finished.
+                if (onMore(action, item) === 'close') queueMicrotask(() => commitClose('escape'));
+              } : null}
               onAction={onAction}
               extraActions={resultExtraActions}
               playLabel={resultRowLabels?.(item)?.play ?? null}
@@ -829,11 +834,24 @@ export function ContentCombobox({
           leftSection={<IconSearch size={16} />}
           {...(inputAccessory ? {
             rightSectionWidth: accessoryWidth + RIGHT_CONTROL_WIDTH,
-            rightSectionPointerEvents: 'all',
+            // The section is wider than what is in it (room is kept for the
+            // loader / clear control): only its controls take a click, the
+            // rest of it falls through to the input (ContentCombobox.scss).
+            rightSectionPointerEvents: 'none',
           } : {})}
           rightSection={inputAccessory ? (
             <span className="content-combobox-right-section">
-              <span ref={accessoryRef} className="content-combobox-input-accessory" data-testid="combobox-input-accessory">{inputAccessory}</span>
+              {/* The accessory sits beside the input, not in it, so Mantine's
+                  document-level click-outside would read a press on it as
+                  leaving the box and close the list. A press here is inside
+                  the search: keep the words, the list and the focus. */}
+              <span
+                ref={accessoryRef}
+                className="content-combobox-input-accessory"
+                data-testid="combobox-input-accessory"
+                onMouseDown={(e) => e.stopPropagation()}
+                onTouchStart={(e) => e.stopPropagation()}
+              >{inputAccessory}</span>
               {rightControl}
             </span>
           ) : rightControl}

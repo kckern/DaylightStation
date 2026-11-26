@@ -23,11 +23,19 @@ export async function hasHeaderControl(page) {
 const chipText = async (page) => ((await chipOf(page).innerText()).replace(/\s+/g, ' ').trim());
 
 async function stepChipTo(page, wanted) {
-  const chip = chipOf(page);
+  return stepChip(chipOf(page), wanted);
+}
+
+/**
+ * Click one destination chip (`search-destination-chip`, in the dock's search
+ * box or the phone's search sheet) until it reads `wanted` ("▶ <name>",
+ * "▶ This device"). Each click writes the aim only; nothing is contacted.
+ */
+export async function stepChip(chip, wanted) {
   await expect(chip, 'the search box destination chip should be on screen').toBeVisible({ timeout: 30000 });
   const seen = [];
   for (let i = 0; i <= MAX_STEPS; i += 1) {
-    const text = await chipText(page);
+    const text = (await chip.innerText()).replace(/\s+/g, ' ').trim();
     if (text === wanted) return;
     seen.push(text);
     if (i === MAX_STEPS) break;
@@ -43,7 +51,19 @@ async function stepChipTo(page, wanted) {
  * phone's popover; desktop has no mode control — a search row's ▶ always
  * keeps this device playing, useContentDispatch).
  */
+const sheetChipOf = (page) => page.getByTestId('search-mode').getByTestId('search-destination-chip');
+
+/** The phone's search sheet is open: it covers the header, and has its own chip. */
+async function searchSheetOpen(page) {
+  return sheetChipOf(page).isVisible().catch(() => false);
+}
+
 export async function aimAt(page, id, { name = NAMES[id], fork = false } = {}) {
+  if (!fork && await searchSheetOpen(page)) {
+    if (!name) throw new Error(`aimAt(${id}): no display name known; pass one`);
+    await stepChip(sheetChipOf(page), `▶ ${name}`);
+    return;
+  }
   if (await hasHeaderControl(page)) {
     await headerOf(page).click();
     if (fork) await page.getByTestId('cast-mode-fork').check();
@@ -58,6 +78,10 @@ export async function aimAt(page, id, { name = NAMES[id], fork = false } = {}) {
 
 /** Aim ▶ at This device (the explicit, sticky choice). */
 export async function aimHere(page) {
+  if (await searchSheetOpen(page)) {
+    await stepChip(sheetChipOf(page), '▶ This device');
+    return;
+  }
   if (await hasHeaderControl(page)) {
     await headerOf(page).click();
     const here = page.getByTestId('cast-target-here');

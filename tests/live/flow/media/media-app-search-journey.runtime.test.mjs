@@ -46,6 +46,12 @@ test('[FIND.1a/AC5] phone a row opens the info view (nothing plays) and only PLA
   await expect(page.locator('video'), 'selecting a result must not start playback').toHaveCount(0);
   await page.getByTestId('detail-play-now').click();
   const video = page.locator('video');
+  // An item other screens hold different places in asks where to continue
+  // from (SpotChooser, PLAY.4a/AC2; the seed's Disclosure Day has two): take
+  // the first offered place, which is still PLAY's own start.
+  const firstSpot = page.getByTestId('spot-choice-0');
+  await expect(video.or(firstSpot).first()).toBeAttached({ timeout: 30000 });
+  if (await firstSpot.isVisible()) await firstSpot.click();
   await expect(video).toHaveCount(1, { timeout: 30000 });
   await expect.poll(() => video.evaluate(el => !el.paused && el.readyState >= 2 && el.currentTime > 0), {
     timeout: 30000, message: 'Keeping search open must not prevent actual playback',
