@@ -682,6 +682,91 @@ export class PlexAdapter {
     });
   }
 
+  /**
+   * A track's metadata, its first audio-bearing media and that media's audio
+   * stream; null when Plex does not know the key (404) or it carries no audio.
+   * Other failures throw.
+   */
+  async #trackAudio(ratingKey) {
+    if (!/^\d+$/.test(String(ratingKey))) return null;
+    let data;
+    try {
+      data = await this.client.getMetadata(ratingKey, { deadline: 5000 });
+    } catch (err) {
+      if (err.status === 404) return null;
+      throw err;
+    }
+    const item = data?.MediaContainer?.Metadata?.[0];
+    if (!item) return null;
+    for (const media of item.Media ?? []) {
+      const part = media.Part?.[0];
+      const streams = part?.Stream ?? [];
+      const audio = streams.find(s => Number(s.streamType) === 2);
+      if (audio || media.audioCodec) return { item, media, part, audio: audio ?? null, streams };
+    }
+    return null;
+  }
+
+  /**
+   * Loudness over the length of a track, from Plex's loudness analysis
+   * (`/library/streams/<audio stream>/levels`), and its audio quality.
+   * @param {string} ratingKey
+   * @param {number} samples - how many evenly spaced windows to ask for
+   * @returns {Promise<{decibels: number[]|null, media: object, stream: object|null}|null>}
+   *   null for an unknown key or an item without audio; decibels null when the
+   *   track has not been analysed (or the levels call fails).
+   */
+  async getTrackLevels(ratingKey, samples) {
+    const track = await this.#trackAudio(ratingKey);
+    if (!track) return null;
+    let decibels = null;
+    // Plex stamps `loudness` on an analysed stream; asking for the levels of
+    // one that was never analysed only earns a 404 (logged as an error by the client).
+    if (track.audio?.id != null && track.audio.loudness != null) {
+      try {
+        const data = await this.client.request(
+          `/library/streams/${encodeURIComponent(track.audio.id)}/levels?subsample=${Number(samples) | 0}`,
+          { deadline: 4000 },
+        );
+        const levels = data?.MediaContainer?.Level;
+        if (Array.isArray(levels) && levels.length) decibels = levels.map(l => Number(l?.v));
+      } catch (err) {
+        if (err.status !== 404) this.logger.warn?.('plex.trackLevels.failed', { ratingKey, code: err.code, status: err.status });
+      }
+    }
+    return { decibels, media: track.media, stream: track.audio };
+  }
+
+  /**
+   * A track's lyrics as Plex holds them (a `streamType 4` stream: LyricFind
+   * LRC or a local .txt/.lrc beside the file) plus what a lyrics lookup elsewhere
+   * needs to identify the song.
+   * @param {string} ratingKey
+   * @returns {Promise<{track: {artist: string, title: string, album: string, durationMs: number|null},
+   *   lyrics: {format: string, text: string}|null}|null>} null for an unknown key
+   */
+  async getTrackLyrics(ratingKey) {
+    const track = await this.#trackAudio(ratingKey);
+    if (!track) return null;
+    const { item } = track;
+    const info = {
+      artist: item.originalTitle || item.grandparentTitle || '',
+      title: item.title || '',
+      album: item.parentTitle || '',
+      durationMs: Number.isFinite(Number(item.duration)) ? Number(item.duration) : null,
+    };
+    const lyricStream = (track.streams ?? []).find(s => Number(s.streamType) === 4 && s.key);
+    if (!lyricStream || !/^\/library\/streams\/\d+$/.test(lyricStream.key)) return { track: info, lyrics: null };
+    try {
+      const text = await this.client.request(lyricStream.key, { deadline: 4000 });
+      if (typeof text !== 'string' || !text.trim()) return { track: info, lyrics: null };
+      return { track: info, lyrics: { format: String(lyricStream.format || lyricStream.codec || '').toLowerCase(), text } };
+    } catch (err) {
+      this.logger.warn?.('plex.trackLyrics.failed', { ratingKey, code: err.code, status: err.status });
+      return { track: info, lyrics: null };
+    }
+  }
+
   audioListSources() {
     return [{ id: `${this.source}:playlists`, title: 'Plex' }];
   }
