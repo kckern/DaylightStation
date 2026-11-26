@@ -125,6 +125,7 @@ export function BrowseView({
       playHere: elsewhere ? 'Play here' : null,
       queueWhere: elsewhere ? short : null,
       menu: shared?.menu ?? null,
+      onMenuMore: shared?.onMenuMore ?? null,
       playingOn: shared?.playingOn ?? null,
       playBusy: !!shared?.playBusy,
     };

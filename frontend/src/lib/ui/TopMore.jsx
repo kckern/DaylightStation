@@ -112,14 +112,17 @@ export function TopMoreList({
 
 /**
  * The same inside a Mantine Menu dropdown: render it among Menu.Items.
- * `renderItem` returns a Menu.Item.
+ * `renderItem` returns a Menu.Item (or Menu.Divider for an `isSeparator`
+ * item, which More does not count).
  */
 export function TopMoreMenu({
   items, n, rank = null, keepIds = [], getId, canTop = null, renderItem,
-  moreLabel = defaultLabel, onExpand = null, testId = 'top-more', divider = true,
+  moreLabel = defaultLabel, onExpand = null, testId = 'top-more', divider = true, isSeparator = null,
 }) {
   const { top, more } = useStickySplit(items, { n, rank, keepIds, getId, canTop });
-  const { expanded, expand } = useTopMoreExpansion(onExpand, { shown: top.length, hidden: more.length });
+  // Dividers among the hidden entries are not counted ("More (5)" means five actions).
+  const hidden = isSeparator ? more.filter((item) => !isSeparator(item)).length : more.length;
+  const { expanded, expand } = useTopMoreExpansion(onExpand, { shown: top.length, hidden });
   return (
     <>
       {top.map((item, index) => renderItem(item, index))}
@@ -134,7 +137,7 @@ export function TopMoreMenu({
           rightSection={<IconChevronDown size={14} aria-hidden />}
           onClick={(event) => { event.stopPropagation?.(); expand(event.currentTarget); }}
         >
-          {moreLabel(more.length)}
+          {moreLabel(hidden)}
         </Menu.Item>
       )}
     </>

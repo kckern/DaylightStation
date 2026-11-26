@@ -58,6 +58,7 @@ describe('HomeTile', () => {
     mount();
     expect(screen.getByTestId('tile-play')).toHaveAccessibleName('Resume Hospital on Office Screen');
     fireEvent.click(screen.getByTestId('tile-more'));
+    fireEvent.click(await screen.findByTestId('tile-verb-more-more'));
     fireEvent.click(await screen.findByTestId('tile-verb-openScreen'));
     expect(push).toHaveBeenCalledWith('peek', { deviceId: 'office-tv' });
   });

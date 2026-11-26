@@ -183,6 +183,7 @@ describe('Browse Detail browser history', () => {
       fireEvent.click(screen.getByTestId('browse-open-plex:e2'));
     } else {
       fireEvent.click(screen.getByTestId('result-more-plex:e2'));
+      fireEvent.click(await screen.findByTestId('result-action-more-plex:e2-more'));
       fireEvent.click(await screen.findByRole('menuitem', { name: 'Open detail' }));
     }
     expect(screen.getByTestId('detail-route')).toHaveTextContent('plex:e2');

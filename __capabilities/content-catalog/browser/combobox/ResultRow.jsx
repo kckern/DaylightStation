@@ -32,6 +32,7 @@ import { ActionIcon, Button, Menu } from '@mantine/core';
 import { IconPlayerPlay, IconPlayerPause, IconCast, IconDotsVertical } from '@tabler/icons-react';
 import { isContainer } from "./comboboxMachine.js";
 import { usePressHoldOffer } from "../../../../frontend/src/lib/ui/usePressHoldOffer.js";
+import { TopMoreMenu } from "../../../../frontend/src/lib/ui/TopMore.jsx";
 
 function CatalogMoreMenu({ trigger, dropdownProps, children, ...menuProps }) {
   return (
@@ -53,7 +54,7 @@ function CatalogMoreMenu({ trigger, dropdownProps, children, ...menuProps }) {
 export function ResultRowActions({
   item, isContainerItem, onPlayAll, onDetails, detailsTestId, onMore, onAction, testId, extraActions = null,
   playLabel = null, playTitle = null, playElsewhere = false, playOnLabel = null, playNowLabel = null, playHereLabel = null,
-  queueWhere = null, playBusy = false, playingOn = null, menuEntries = null,
+  queueWhere = null, playBusy = false, playingOn = null, menuEntries = null, onMenuMore = null,
   MoreMenu = CatalogMoreMenu, moreTriggerRef: suppliedMoreTriggerRef,
   onMoreMenuPointerDown, onMoreMenuChange, onMoreMenuAction, onMoreMenuTriggerFocus, onMoreBoundaryBlur,
 }) {
@@ -206,10 +207,12 @@ export function ResultRowActions({
         'data-testid': `result-more-menu-${idPart}`,
       }}
     >
-        {Array.isArray(menuEntries) && onAction ? menuEntries.map((entry, index) => {
+        {Array.isArray(menuEntries) && onAction ? (() => {
           // Media addendum item 7: the caller's one menu table decides the
-          // entries and their words. Test ids keep their old names.
-          if (entry.divider) return <Menu.Divider key={`divider-${index}`} />;
+          // entries and their words. Test ids keep their old names. Entries
+          // flagged `more` (smart long lists) wait behind one "More (k)".
+          const renderEntry = (entry, index) => {
+          if (entry.divider) return <Menu.Divider key={entry.key ?? `divider-${index}`} />;
           const idKind = ({ playFirst: 'upNext', details: 'detail' })[entry.kind] ?? entry.kind;
           if (entry.hold) {
             return (
@@ -222,7 +225,27 @@ export function ResultRowActions({
             );
           }
           return <Menu.Item key={entry.kind} data-testid={`result-action-${idKind}-${idPart}`} onClick={fire(entry.kind)}>{entry.label}</Menu.Item>;
-        }) : (
+          };
+          const top = menuEntries.filter((entry) => !entry.more);
+          const more = menuEntries.filter((entry) => entry.more)
+            .map((entry, index) => (entry.divider ? { ...entry, key: `more-divider-${index}` } : entry));
+          return (
+            <>
+              {top.map(renderEntry)}
+              {more.length > 0 && (
+                <TopMoreMenu
+                  items={more}
+                  n={0}
+                  getId={(entry) => entry.key ?? entry.kind}
+                  isSeparator={(entry) => !!entry.divider}
+                  testId={`result-action-more-${idPart}`}
+                  onExpand={onMenuMore}
+                  renderItem={renderEntry}
+                />
+              )}
+            </>
+          );
+        })() : (
         <>
           <Menu.Item data-testid={`result-action-playNow-${idPart}`} onClick={fire('playNow')}>{playNowLabel ?? 'Play Now'}</Menu.Item>
           {onAction && playHereLabel && <Menu.Item data-testid={`result-action-playHere-${idPart}`} onClick={fire('playHere')}>{playHereLabel}</Menu.Item>}
@@ -314,7 +337,7 @@ export function ResultRow({ item, title, subtitle, thumbnail, leading = null, on
           onMore={onMore} onAction={onAction} testId={idPart} extraActions={extraActions}
           playLabel={rowLabels?.play ?? null} playTitle={rowLabels?.playTitle ?? null} playElsewhere={!!rowLabels?.playElsewhere} playOnLabel={rowLabels?.playOn ?? null}
           playNowLabel={rowLabels?.playNow ?? null} playHereLabel={rowLabels?.playHere ?? null} queueWhere={rowLabels?.queueWhere ?? null}
-          playBusy={!!rowLabels?.playBusy} playingOn={rowLabels?.playingOn ?? null} menuEntries={rowLabels?.menu ?? null}
+          playBusy={!!rowLabels?.playBusy} playingOn={rowLabels?.playingOn ?? null} menuEntries={rowLabels?.menu ?? null} onMenuMore={rowLabels?.onMenuMore ?? null}
           MoreMenu={MoreMenu} moreTriggerRef={moreTriggerRef} onMoreMenuChange={onMenuOpenChange}
         />
       </span>

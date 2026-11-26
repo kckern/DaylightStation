@@ -114,6 +114,32 @@ export function itemMenuEntries({
   return out;
 }
 
+// Smart long lists (spec addendum 2026-11-26 (b)): a row or tile ⋯ shows four
+// verbs, always these, in this order; everything else is behind its More.
+const MENU_TOP = Object.freeze([['continue', 'playNow'], ['playOn'], ['playNext'], ['add']]);
+
+/**
+ * A row/tile menu as shown: Play (or Continue, when there is a next part),
+ * Play on…, Play Next and Add to Queue first; every other entry after them
+ * flagged `more: true` (with its dividers, none leading, trailing or doubled).
+ * The surface renders the flagged ones behind one "More (k)".
+ */
+export function splitItemMenu(entries = []) {
+  const top = [];
+  for (const choices of MENU_TOP) {
+    const found = choices.map((kind) => entries.find((entry) => entry.kind === kind)).find(Boolean);
+    if (found) top.push(found);
+  }
+  const more = [];
+  for (const entry of entries) {
+    if (top.includes(entry)) continue;
+    if (entry.divider && (more.length === 0 || more[more.length - 1].divider)) continue;
+    more.push(entry.divider ? { divider: true, more: true } : { ...entry, more: true });
+  }
+  while (more.length && more[more.length - 1].divider) more.pop();
+  return [...top, ...more];
+}
+
 /** Move to…: the heading and this device's row (the screens follow, by name). */
 export function moveMenuEntries(screens = []) {
   return {

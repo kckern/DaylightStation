@@ -769,6 +769,7 @@ export function ContentCombobox({
               playBusy={!!resultRowLabels?.(item)?.playBusy}
               playingOn={resultRowLabels?.(item)?.playingOn ?? null}
               menuEntries={resultRowLabels?.(item)?.menu ?? null}
+              onMenuMore={resultRowLabels?.(item)?.onMenuMore ?? null}
               onMoreMenuPointerDown={handleMoreMenuPointerDown}
               onMoreMenuChange={handleMoreMenuChange}
               onMoreMenuAction={handleMoreMenuAction}

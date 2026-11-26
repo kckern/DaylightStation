@@ -52,6 +52,7 @@ describe('PlayedEarlier', () => {
     expect(dispatch).toHaveBeenCalledWith('plex:2', expect.objectContaining({ id: 'plex:2' }), { via: 'played-earlier' });
     expect(dispatchLeafVerb).not.toHaveBeenCalled();
     fireEvent.click(screen.getByTestId('played-earlier-0-more'));
+    fireEvent.click(await screen.findByTestId('played-earlier-0-verb-more-more'));
     fireEvent.click(await screen.findByTestId('played-earlier-0-verb-favourite'));
     expect(apiMock).toHaveBeenCalledWith('api/v1/media/household/favourites', expect.objectContaining({ id: 'plex:2', kind: 'item' }), 'POST');
   });

@@ -370,6 +370,7 @@ describe('SearchMode history × dispatch', () => {
 
     render(<Harness />);
     fireEvent.click(await screen.findByTestId('result-more-plex:685088'));
+    fireEvent.click(await screen.findByTestId('result-action-more-plex:685088-more'));
     fireEvent.click(await screen.findByTestId('result-action-detail-plex:685088'));
 
     expect(probe()).toHaveAttribute('data-view', 'detail');

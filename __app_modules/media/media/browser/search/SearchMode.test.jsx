@@ -506,6 +506,7 @@ describe('SearchMode', () => {
       render(<Harness />);
       await screen.findByTestId('result-more-plex:685088');
       fireEvent.click(screen.getByTestId('result-more-plex:685088'));
+      fireEvent.click(await screen.findByTestId('result-action-more-plex:685088-more'));
       fireEvent.click(await screen.findByTestId('result-action-upNext-plex:685088'));
 
       expect(dispatchLeafVerbMock).toHaveBeenCalledWith('playFirst', 'plex:685088', expect.objectContaining({ id: 'plex:685088' }));
@@ -554,6 +555,7 @@ describe('SearchMode', () => {
       render(<Harness />);
       await screen.findByTestId('result-more-plex:685088');
       fireEvent.click(screen.getByTestId('result-more-plex:685088'));
+      fireEvent.click(await screen.findByTestId('result-action-more-plex:685088-more'));
       fireEvent.click(await screen.findByTestId('result-action-detail-plex:685088'));
 
       // `replaceEntry` (fix round, Critical 1): "Open detail" navigates, so it

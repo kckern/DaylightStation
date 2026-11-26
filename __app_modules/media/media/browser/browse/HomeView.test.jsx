@@ -393,6 +393,7 @@ describe('HomeView start page', () => {
     expect(screen.getByTestId('home-tile-new-plex:600')).toBeInTheDocument();
     expect(tile).toHaveTextContent('4 editions');
     fireEvent.click(within(tile).getByTestId('home-tile-new-plex:501-more'));
+    fireEvent.click(await screen.findByTestId('home-tile-new-plex:501-verb-more-more'));
     fireEvent.click(await screen.findByTestId('home-tile-new-plex:501-edition-2'));
     expect(dispatch).toHaveBeenCalledWith('plex:503', expect.objectContaining({ id: 'plex:503' }), expect.anything());
   });

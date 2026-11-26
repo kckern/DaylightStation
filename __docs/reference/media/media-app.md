@@ -713,7 +713,9 @@ a look reach outside this device):
    item kind (leaf, collection, still) × surface (row, tile, detail). The words
    are **Play Now, Play here, Shuffle, Play Next, Play First, Add to Queue, Play
    on… / Show on…, Add on…, Show briefly on…, Open detail, Quality…, More**, the
-   household verbs, and Move to…'s **This device**.
+   household verbs, and Move to…'s **This device**. A row or tile ⋯ shows four
+   of them first, the rest behind its More (see [Long lists](#long-lists)); the
+   info view's More ⋯ is its own surface and is not split again.
 
 **The info view's actions (owner ruling 2026-11-26).** Under the art, facts
 and description, and under the **On <screen> · Playing** status line with
@@ -768,6 +770,7 @@ on More opens it and moves focus to the first new row. One shared component
 | Search results (search box, full-screen search, Devices-page play search) | 8 (habit-ranked), then **Show all N** | the rest of the results |
 | Queue panel | the current item and the next 5 | earlier and later items; opened, the whole queue in play order |
 | Subtitles / Audio | Off, the current track and 3 in the languages chosen last | the other tracks |
+| Item ⋯ menu (search and Browse rows, tiles, Played earlier, Now-on cards) | Play Now (or Continue <part>), Play on… / Show on…, Play Next, Add to Queue — always these | every other verb, with its dividers (`splitItemMenu`) |
 | Played earlier | the 10 most recent | **Show more**, 20 at a time |
 | Routine runs | the 10 most recent | older runs |
 | Devices page | screens that are on | **Off or not heard from (k)** |
@@ -790,7 +793,7 @@ server), scope chips, rooms, short fixed menus.
 Logs: `list.more-expanded` `{ surface, shown, hidden }` (surface `play-on`,
 `fling`, `move-to`, `send-elsewhere`, `aim`, `peek-switch`, `search`,
 `search-mode`, `devices-play-search`, `queue`, `subtitles`, `audio-tracks`,
-`played-earlier`, `routine-runs`, `devices`).
+`played-earlier`, `routine-runs`, `devices`, `row-menu`, `item-menu`).
 
 Logs: `item.opened` (a tap that looked),
 `search.returned` (Back to the search), `search.destination-cycled`,

@@ -15,7 +15,8 @@ import { isShowItem } from "../search/showOn.js";
 import { usePressHoldOffer } from "../../../../../frontend/src/lib/ui/usePressHoldOffer.js";
 import mediaLog from "../logging/mediaLog.js";
 import { usePlayDestination } from "../habits/usePlayDestination.js";
-import { itemMenuEntries, menuItemKind, MENU_LABELS } from "../actions/itemMenuTable.js";
+import { itemMenuEntries, menuItemKind, MENU_LABELS, splitItemMenu } from "../actions/itemMenuTable.js";
+import { TopMoreMenu } from '@/lib/ui/TopMore.jsx';
 
 // PLAY.5a/AC3: Play next, and — on press and hold — "At the very front".
 function PlayNextItems({ testId, fire, label }) {
@@ -66,13 +67,18 @@ export function ItemMenu({
     quality.openForItem(item);
   };
   // Addendum item 7: the entries and their words come from the one table.
-  const entries = itemMenuEntries({
+  // Smart long lists: Play / Continue, Play on…, Play Next, Add to Queue,
+  // then the rest behind this menu's More.
+  const entries = splitItemMenu(itemMenuEntries({
     surface: 'tile',
     kind: menuItemKind({ collection, show: isShowItem(item) }),
     where: { elsewhere, short: named.short, sentence: named.sentence },
     playingOn, continueLabel, favourite, watched, removable,
     quality: !!quality && supportsQualityOverrides(item),
-  });
+  }));
+  const topEntries = entries.filter((entry) => !entry.more);
+  const moreEntries = entries.filter((entry) => entry.more)
+    .map((entry, index) => (entry.divider ? { ...entry, key: `more-divider-${index}` } : entry));
   return (
     <ActionMenu
       withinPortal
@@ -93,35 +99,48 @@ export function ItemMenu({
         </ActionIcon>
       }
     >
-      {entries.map((entry, index) => {
-        if (entry.divider) return <Menu.Divider key={`divider-${index}`} />;
-        if (entry.kind === 'playNext') return <PlayNextItems key="playNext" testId={testId} fire={fire} label={entry.label} />;
-        const item_ = (
-          <Menu.Item key={entry.kind} data-testid={`${testId}-verb-${TEST_ID_KIND[entry.kind] ?? entry.kind}`}
-            onClick={entry.kind === 'quality' ? openQuality : fire(entry.kind)}>
-            {entry.label}
-          </Menu.Item>
-        );
-        if (entry.kind !== 'details' || !(Array.isArray(editions) && editions.length > 1 && onEdition)) return item_;
-        return (
-          <React.Fragment key="details">
-            {item_}
-            <Menu.Divider />
-            <Menu.Label>{editions.length} editions</Menu.Label>
-            {editions.map((edition, i) => (
-              <Menu.Item
-                key={edition.id}
-                data-testid={`${testId}-edition-${i}`}
-                onClick={(event) => { event?.stopPropagation?.(); onEdition(edition); }}
-              >
-                {`Open edition ${i + 1}`}
-              </Menu.Item>
-            ))}
-          </React.Fragment>
-        );
-      })}
+      {topEntries.map((entry, index) => renderEntry(entry, index))}
+      {moreEntries.length > 0 && (
+        <TopMoreMenu
+          items={moreEntries}
+          n={0}
+          getId={(entry) => entry.key ?? entry.kind}
+          isSeparator={(entry) => !!entry.divider}
+          testId={`${testId}-verb-more`}
+          onExpand={(counts) => mediaLog.listMoreExpanded({ surface: 'item-menu', ...counts })}
+          renderItem={renderEntry}
+        />
+      )}
     </ActionMenu>
   );
+  // One entry as a menu item (Play Next with its hold offer; Open detail with its editions).
+  function renderEntry(entry, index) {
+    if (entry.divider) return <Menu.Divider key={entry.key ?? `divider-${index}`} />;
+    if (entry.kind === 'playNext') return <PlayNextItems key="playNext" testId={testId} fire={fire} label={entry.label} />;
+    const item_ = (
+      <Menu.Item key={entry.kind} data-testid={`${testId}-verb-${TEST_ID_KIND[entry.kind] ?? entry.kind}`}
+        onClick={entry.kind === 'quality' ? openQuality : fire(entry.kind)}>
+        {entry.label}
+      </Menu.Item>
+    );
+    if (entry.kind !== 'details' || !(Array.isArray(editions) && editions.length > 1 && onEdition)) return item_;
+    return (
+      <React.Fragment key="details">
+        {item_}
+        <Menu.Divider />
+        <Menu.Label>{editions.length} editions</Menu.Label>
+        {editions.map((edition, i) => (
+          <Menu.Item
+            key={edition.id}
+            data-testid={`${testId}-edition-${i}`}
+            onClick={(event) => { event?.stopPropagation?.(); onEdition(edition); }}
+          >
+            {`Open edition ${i + 1}`}
+          </Menu.Item>
+        ))}
+      </React.Fragment>
+    );
+  }
 }
 
 export default ItemMenu;

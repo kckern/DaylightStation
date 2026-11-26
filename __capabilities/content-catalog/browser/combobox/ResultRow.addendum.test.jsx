@@ -58,3 +58,23 @@ describe('ResultRow already on a screen (item 5) and busy (item 6)', () => {
     expect(screen.getByTestId('result-row-plex:1')).not.toBeDisabled();
   });
 });
+
+describe('ResultRow menu: entries flagged `more` wait behind More (smart long lists)', () => {
+  it('shows the unflagged entries, then More (k) not counting dividers; More opens the rest and reports', async () => {
+    const onMenuMore = vi.fn();
+    const menu = [
+      { kind: 'playNow', label: 'Play Now' },
+      { kind: 'playOn', label: 'Play on…' },
+      { kind: 'playFirst', label: 'Play First', more: true },
+      { divider: true, more: true },
+      { kind: 'details', label: 'Open detail', more: true },
+    ];
+    renderRow(<ResultRow item={leaf} onTap={() => {}} onAction={vi.fn()} rowLabels={{ play: 'Play', menu, onMenuMore }} />);
+    fireEvent.click(screen.getByTestId('result-more-plex:1'));
+    const items = await screen.findAllByRole('menuitem');
+    expect(items.map((el) => el.textContent)).toEqual(['Play Now', 'Play on…', 'More (2)']);
+    fireEvent.click(screen.getByTestId('result-action-more-plex:1-more'));
+    expect(screen.getAllByRole('menuitem').map((el) => el.textContent)).toEqual(['Play Now', 'Play on…', 'Play First', 'Open detail']);
+    expect(onMenuMore).toHaveBeenCalledWith({ shown: 0, hidden: 2 });
+  });
+});

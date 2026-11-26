@@ -1,6 +1,6 @@
 // Addendum item 7: one menu table, so labels never drift between menus.
 import { describe, it, expect } from 'vitest';
-import { itemMenuEntries, moveMenuEntries, MENU_LABELS } from "./itemMenuTable.js";
+import { itemMenuEntries, moveMenuEntries, MENU_LABELS, splitItemMenu } from "./itemMenuTable.js";
 
 const labels = (entries) => entries.filter((e) => !e.divider).map((e) => e.label);
 const kinds = (entries) => entries.filter((e) => !e.divider).map((e) => e.kind);
@@ -95,5 +95,26 @@ describe('itemMenuEntries: the info view More ⋯', () => {
     expect(kinds(entries)).not.toContain('watched');
     expect(kinds(entries)).not.toContain('unwatched');
     expect(entries.find((e) => e.label === 'Shuffle on Office Screen').kind).toBe('shuffle');
+  });
+});
+
+describe('splitItemMenu (smart long lists)', () => {
+  it('Play, Play on…, Play Next and Add to Queue first; the rest behind More with tidy dividers', () => {
+    const where = { elsewhere: true, short: 'Office Screen', sentence: 'Play on Office Screen' };
+    const entries = splitItemMenu(itemMenuEntries({ surface: 'row', kind: 'leaf', where }));
+    const top = entries.filter((e) => !e.more);
+    expect(top.map((e) => e.kind)).toEqual(['playNow', 'playOn', 'playNext', 'add']);
+    const more = entries.filter((e) => e.more);
+    expect(more.filter((e) => !e.divider).map((e) => e.kind))
+      .toEqual(['playHere', 'playFirst', 'addOn', 'details', 'favourite', 'watched', 'unwatched']);
+    expect(more[0].divider).toBeUndefined();
+    expect(more[more.length - 1].divider).toBeUndefined();
+    expect(more.some((e, i) => e.divider && more[i + 1]?.divider)).toBe(false);
+  });
+
+  it('Continue takes the Play place when there is a next part; Play Now goes behind More', () => {
+    const entries = splitItemMenu(itemMenuEntries({ surface: 'tile', kind: 'collection', continueLabel: 'Continue S2E7', playingOn: { name: 'Office Screen' } }));
+    expect(entries.filter((e) => !e.more).map((e) => e.label)).toEqual(['Continue S2E7', 'Play on…', 'Play Next', 'Add to Queue']);
+    expect(entries.filter((e) => e.more).map((e) => e.kind)).toEqual(expect.arrayContaining(['playNow', 'openScreen', 'shuffle']));
   });
 });

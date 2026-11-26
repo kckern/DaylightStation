@@ -17,7 +17,10 @@ import { useStartingOn } from "../cast/useStartingOn.js";
 import { usePlayDestination } from "../habits/usePlayDestination.js";
 import { usePlayingOn } from "../fleet/usePlayingOn.js";
 import { useFavourites } from "../household/useHousehold.js";
-import { itemMenuEntries, menuItemKind } from "../actions/itemMenuTable.js";
+import { itemMenuEntries, menuItemKind, splitItemMenu } from "../actions/itemMenuTable.js";
+import mediaLog from "../logging/mediaLog.js";
+
+const logRowMenuMore = (counts) => mediaLog.listMoreExpanded({ surface: 'row-menu', ...counts });
 
 /**
  * Addendum items 5–7 for any result row (search, Browse): the ⋯ entries from
@@ -46,15 +49,16 @@ export function useRowExtras() {
       deviceId: on.deviceId,
     } : null;
     // Item 7: the ⋯ entries and their words, from the one table.
-    const menu = itemMenuEntries({
+    // Smart long lists: four verbs first, the rest behind the menu's More.
+    const menu = splitItemMenu(itemMenuEntries({
       surface: 'row',
       kind: menuItemKind({ collection: isContainer(item), show: isShowItem(item) }),
       where: { elsewhere, short, sentence: where.source === 'ask' ? null : sentence },
       playingOn: on,
       favourite: favourites.has(item.id),
-    });
+    }));
     // Item 6: this row's ▶ alone spins while its start is in flight.
-    return { menu, playingOn, playBusy: isStarting(item.id) };
+    return { menu, onMenuMore: logRowMenuMore, playingOn, playBusy: isStarting(item.id) };
   }, [isStarting, destinationFor, labelsFor, playingOnFor, toggle, favourites]);
   const screenFor = useCallback((item) => playingOnFor(item?.id)?.deviceId ?? null, [playingOnFor]);
   return { rowExtrasFor, screenFor };
@@ -70,7 +74,7 @@ export function useRowLabels() {
     // PLAY.1a/AC5: while its start is in flight the item itself says so.
     const extras = rowExtrasFor(item);
     const subtitle = startingOnFor(item.id) ?? extras.playingOn?.onLine ?? undefined;
-    if (isShowItem(item)) return { playOn: 'Show on…', subtitle, menu: extras.menu, playingOn: extras.playingOn };
+    if (isShowItem(item)) return { playOn: 'Show on…', subtitle, menu: extras.menu, onMenuMore: extras.onMenuMore, playingOn: extras.playingOn };
     const { short, sentence } = labelsFor(item);
     const where = destinationFor(item);
     const elsewhere = where.targetIds.length > 0;
