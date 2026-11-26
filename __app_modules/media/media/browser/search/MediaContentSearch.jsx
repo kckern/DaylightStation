@@ -53,7 +53,7 @@ export function MediaContentSearch({ inputRef: suppliedInputRef, destinationWrap
   const [oneShotAction, setOneShotAction] = useState(null);
   const { scopes, currentScopeKey, currentScope } = useSearchContext();
   const { dispatch, dispatchLeafVerb, playContainerAsQueue } = useContentDispatch();
-  const { rowLabelsFor, continueFor } = useRowLabels();
+  const { rowLabelsFor, continueFor, screenFor } = useRowLabels();
   const { extraActions, runHousehold } = useHouseholdResultActions();
   const { push } = useNav();
   const { scoresFor, rememberedFor, recordPick } = usePlayDestination();
@@ -160,6 +160,12 @@ export function MediaContentSearch({ inputRef: suppliedInputRef, destinationWrap
     log.info('row_action', { contentId: id, action });
     if (['playNow', 'playHere', 'playOn', 'detail', 'details'].includes(action)) recordPick(queryRef.current, item, action);
     if (runHousehold(action, item)) return;
+    if (action === 'openScreen') {
+      const deviceId = screenFor(item);
+      if (!deviceId) return;
+      push('peek', { deviceId });
+      return 'close';
+    }
     if (action === 'playHere') { dispatchLeafVerb('playNow', id, item, { targetIds: [] }); return; }
     if (action === 'playOn' || action === 'addOn') { setOneShotAction({ kind: action, item }); return; }
     if (action !== 'detail' && action !== 'details') {
@@ -171,7 +177,7 @@ export function MediaContentSearch({ inputRef: suppliedInputRef, destinationWrap
     // stay) and the info view opens; Back comes back to these results.
     push('detail', { contentId: id, from: 'search' });
     return 'close';
-  }, [push, log, dispatchLeafVerb, runHousehold, recordPick]);
+  }, [push, log, dispatchLeafVerb, runHousehold, recordPick, screenFor]);
 
   return (
     <div data-testid="media-search-bar" className="media-search-bar">

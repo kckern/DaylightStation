@@ -126,7 +126,7 @@ describe('DispatchTargetPicker / useDispatchTargetPicker', () => {
       render(<DispatchTargetPicker source={{ play: 'plex:1' }} />);
       expect(screen.getByTestId('picker-device-status-livingroom-tv')).toHaveTextContent('Living Room · Ready');
       expect(screen.getByTestId('picker-device-status-office-tv')).toHaveTextContent('Office · Ready');
-      expect(screen.getByTestId('picker-device-status-yellow-room-tablet')).toHaveTextContent('Yellow Room · Off');
+      expect(screen.getByTestId('picker-device-status-yellow-room-tablet')).toHaveTextContent('Yellow Room · Asleep');
     });
 
     it('has no confirm button and no title of its own in single-select', () => {
@@ -513,5 +513,77 @@ describe('DispatchTargetPicker — only the screens that can take it, the usual 
     expect(offered()).toEqual(['office-tv', 'livingroom-tv']);
     fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
     await waitFor(() => expect(habitsStore().screenFor('video')).toEqual(['livingroom-tv']));
+  });
+});
+
+// Addendum item 2 (2026-11-26): picker states.
+import { DispatchContext } from "./DispatchProvider.jsx";
+import { PeekContext } from "../peek/PeekContext.js";
+describe('picker states (addendum item 2)', () => {
+  const startOn = (deviceId, steps = []) => new Map([['s1', {
+    attemptId: 's1', targetId: deviceId, distance: 'far', kind: 'play', phase: 'running', status: 'running',
+    item: { contentId: 'plex:2', title: 'Arrival' }, steps, createdAt: '2026-11-26T10:00:00.000Z',
+  }]]);
+
+  it('a screen that is off reads Asleep; a tap still sends (waking it is the send)', () => {
+    fleetDevices = [{ id: 'office-tv', name: 'Office Screen', location: 'Office' }];
+    fleetEntries = { 'office-tv': { offline: true } };
+    render(<DispatchTargetPicker source={{ play: 'plex:1' }} />);
+    expect(screen.getByTestId('picker-device-status-office-tv')).toHaveTextContent('Office · Asleep');
+    expect(screen.getByTestId('picker-device-office-tv')).not.toBeDisabled();
+  });
+
+  it('a screen a start is waking reads Waking up… with a spinner, and is disabled with that reason', () => {
+    fleetDevices = [{ id: 'office-tv', name: 'Office Screen', location: 'Office' }];
+    fleetEntries = { 'office-tv': { offline: true } };
+    render(
+      <DispatchContext.Provider value={{ outcomes: startOn('office-tv', [{ step: 'power', status: 'running' }]) }}>
+        <DispatchTargetPicker source={{ play: 'plex:1' }} />
+      </DispatchContext.Provider>,
+    );
+    expect(screen.getByTestId('picker-device-status-office-tv')).toHaveTextContent('Waking up…');
+    expect(screen.getByTestId('picker-device-office-tv-busy')).toBeInTheDocument();
+    expect(screen.getByTestId('picker-device-office-tv')).toBeDisabled();
+    expect(screen.getByTestId('picker-device-office-tv')).toHaveAccessibleDescription(/Waking up…/);
+  });
+
+  it('a screen already loading reads Starting <title>…', () => {
+    fleetDevices = [{ id: 'office-tv', name: 'Office Screen' }];
+    fleetEntries = { 'office-tv': { snapshot: { state: 'idle' } } };
+    render(
+      <DispatchContext.Provider value={{ outcomes: startOn('office-tv', [{ step: 'load', status: 'running' }]) }}>
+        <DispatchTargetPicker source={{ play: 'plex:1' }} />
+      </DispatchContext.Provider>,
+    );
+    expect(screen.getByTestId('picker-device-status-office-tv')).toHaveTextContent('Starting Arrival…');
+  });
+
+  it('a screen already playing this item reads ✓ Playing this and is not offered again', () => {
+    fleetDevices = [{ id: 'office-tv', name: 'Office Screen' }];
+    fleetEntries = { 'office-tv': { snapshot: { state: 'playing', currentItem: { contentId: 'plex:1', title: 'Hospital' } } } };
+    render(<DispatchTargetPicker source={{ play: 'plex:1' }} />);
+    expect(screen.getByTestId('picker-device-status-office-tv')).toHaveTextContent('Playing this');
+    expect(screen.getByTestId('picker-device-office-tv').closest('.cast-row')).toHaveAttribute('data-state', 'playing-this');
+    expect(screen.getByTestId('picker-device-office-tv')).toBeDisabled();
+  });
+
+  it('the aimed screen, while it plays, shows its volume with −/+ steps (no slider)', () => {
+    fleetDevices = [{ id: 'office-tv', name: 'Office Screen' }];
+    fleetEntries = { 'office-tv': { snapshot: { state: 'playing', config: { volume: 40 }, currentItem: { contentId: 'plex:9', title: 'Bluey' } } } };
+    castTargetState = { targetIds: ['office-tv'], mode: 'transfer' };
+    const setVolume = vi.fn(async () => ({ ok: true }));
+    render(
+      <PeekContext.Provider value={{ getController: () => ({ config: { setVolume } }) }}>
+        <DispatchTargetPicker source={{ play: 'plex:1' }} />
+      </PeekContext.Provider>,
+    );
+    expect(screen.getByTestId('picker-volume-value-office-tv')).toHaveTextContent('40%');
+    expect(screen.queryByRole('slider')).toBeNull();
+    fireEvent.click(screen.getByTestId('picker-volume-up-office-tv'));
+    expect(setVolume).toHaveBeenCalledWith(45);
+    expect(screen.getByTestId('picker-volume-value-office-tv')).toHaveTextContent('45%');
+    fireEvent.click(screen.getByTestId('picker-volume-down-office-tv'));
+    expect(setVolume).toHaveBeenLastCalledWith(40);
+    castTargetState = { targetIds: [], mode: 'transfer' };
   });
 });

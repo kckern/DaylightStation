@@ -526,35 +526,49 @@ $np-amber-ink: $on-accent;
   color: var(--mantine-color-red-4);
 }
 
-// STEER.1a/AC4 — the handle for the screen last sent to or steered. One slim
-// row above the local handle; amber only on Resume (the shared np-icon-btn).
+// The handle for a screen (ScreenHandle.jsx): the same bar as this device's
+// own (.mini-player), so the play reads as one handle wherever it plays —
+// "▶ <title> · <screen>" over its state line. STEER.1a/AC4 (the screen last
+// steered) and addendum item 1 (the start just sent there: Starting →
+// Playing, or why it did not start with Retry / Play here).
 .screen-handle {
-  display: flex;
-  align-items: center;
-  gap: var(--mantine-spacing-sm);
-  min-height: 52px;
-  padding: 4px var(--media-gutter);
-  background: var(--media-surface);
-  border-top: 1px solid var(--media-line);
-  flex-shrink: 0;
-
-  .screen-handle-open {
-    flex: 1;
-    min-width: 0;
-    min-height: 44px;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    justify-content: center;
-    text-align: left;
-    padding: 0;
-    background: none;
-    border: 0;
-    color: inherit;
-    cursor: pointer;
-    @include np-focus-ring;
-  }
-  .screen-handle-name { font-size: 12px; color: var(--media-muted); }
-  .screen-handle-title { font-size: 14px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .screen-handle-open { @include np-focus-ring; }
+  .mini-player-title-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .np-icon-btn.mini-resume { width: auto; padding: 0 14px; }
+
+  // Retry / Play here / Start over: quiet text buttons, never amber.
+  .screen-handle-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 44px;
+    padding: 0 10px;
+    border-radius: var(--mantine-radius-sm);
+    background: var(--mantine-color-dark-5);
+    color: var(--media-text);
+    font-size: 0.875rem;
+    white-space: nowrap;
+    @include np-focus-ring;
+    &:hover { background: var(--mantine-color-dark-4); }
+  }
+
+  .screen-handle-spinner { margin-left: 4px; }
+
+  &--failed, &--preempted {
+    box-shadow: inset 3px 0 0 var(--mantine-color-red-6);
+    .mini-player-state { color: var(--media-text); }
+  }
+
+  // A phone: what went wrong takes the whole first line (it is the point of
+  // the bar); the way out sits on its own line under it.
+  @media (max-width: 30em) {
+    &.mini-player--wrap {
+      flex-wrap: wrap;
+      row-gap: 0;
+      .mini-player-title.screen-handle-open { flex: 1 1 calc(100% - 40px); }
+      .mini-player-title .mini-player-state { white-space: normal; }
+      .mini-player-controls { margin-left: auto; }
+    }
+    .screen-handle-action { padding: 0 8px; }
+  }
 }

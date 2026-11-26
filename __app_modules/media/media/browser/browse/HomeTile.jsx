@@ -8,10 +8,12 @@
 // play, and its accessible name says where it plays ("Play Sonic on Office
 // Screen"). No Play bar, no slab: a disc on the thumbnail.
 import React, { useState } from 'react';
-import { UnstyledButton } from '@mantine/core';
-import { IconPlayerPlayFilled, IconCast } from '@tabler/icons-react';
+import { Loader, UnstyledButton } from '@mantine/core';
+import { IconPlayerPlayFilled, IconPlayerPauseFilled, IconCast } from '@tabler/icons-react';
 import { ItemMenu } from "../household/ItemMenu.jsx";
 import { tileKind } from "./tilePresentation.js";
+import { usePlayingOn } from "../fleet/usePlayingOn.js";
+import { useStartingOn } from "../cast/useStartingOn.js";
 
 // Plex serves an audiobook as an "album" with a book cover (taller than wide):
 // a poster on a square tile would lose its title, so art that is clearly
@@ -35,6 +37,20 @@ export function HomeTile({
   const thumbnailFailed = Boolean(item?.thumbnail) && failedThumbnail === item.thumbnail;
   let kind = kindOverride ?? tileKind(item);
   if (kind === 'square' && hasPortraitArtwork) kind = 'poster';
+  // Addendum item 5: on a screen now → "On <screen>", the disc pauses (or
+  // resumes) it there and the menu opens its controls — never a fresh ▶.
+  // Addendum item 6: the disc alone spins while this item's start is in flight.
+  const { playingOnFor, toggle, open } = usePlayingOn();
+  const { isStarting } = useStartingOn();
+  const on = item?.id ? playingOnFor(item.id) : null;
+  const starting = !!item?.id && isStarting(item.id);
+  const onLine = on ? `On ${on.name}` : null;
+  const metaLines = (Array.isArray(meta) ? meta : [meta]).filter(Boolean)
+    .filter((line) => !onLine || line !== `Now on ${on.name}`);
+  const verb = (k) => (k === 'openScreen' && on ? open(on) : onVerb?.(k));
+  const discLabel = on
+    ? `${on.paused ? 'Resume' : 'Pause'} ${title} on ${on.name}`
+    : (playLabel ?? `Play ${title}`);
   return (
     <div className={`home-tile home-tile--${size} home-tile--${kind}`} data-testid={testId} data-kind={kind}>
       <div className="home-tile-art">
@@ -69,13 +85,20 @@ export function HomeTile({
         </UnstyledButton>
         {onPlay && (
           <UnstyledButton
-            className="home-tile-play"
+            className={`home-tile-play${on ? ' home-tile-play--on' : ''}`}
             data-testid={`${testId}-play`}
-            aria-label={playLabel ?? `Play ${title}`}
-            title={playLabel ?? `Play ${title}`}
-            onClick={(event) => { event.stopPropagation(); onPlay(); }}
+            data-busy={starting || undefined}
+            aria-busy={starting || undefined}
+            disabled={starting}
+            aria-label={discLabel}
+            title={discLabel}
+            onClick={(event) => { event.stopPropagation(); if (on) toggle(on, item.id); else onPlay(); }}
           >
-            {playElsewhere ? <IconCast size={18} aria-hidden /> : <IconPlayerPlayFilled size={16} aria-hidden />}
+            {starting
+              ? <Loader size={16} color="gray" aria-hidden />
+              : on
+                ? (on.paused ? <IconPlayerPlayFilled size={16} aria-hidden /> : <IconPlayerPauseFilled size={16} aria-hidden />)
+                : playElsewhere ? <IconCast size={18} aria-hidden /> : <IconPlayerPlayFilled size={16} aria-hidden />}
           </UnstyledButton>
         )}
       </div>
@@ -84,14 +107,15 @@ export function HomeTile({
           {/* The title is a second way to the same action; the picture button is
               the keyboard/AT path, so this one stays out of the tab order. */}
           <span className="home-tile-title" title={title} onClick={onPicture} role="presentation">{title}</span>
-          {(Array.isArray(meta) ? meta : [meta]).filter(Boolean).map((line, i) => (
+          {onLine && <span className="home-tile-line home-tile-line--on" data-testid={`${testId}-on`}>{onLine}</span>}
+          {metaLines.map((line, i) => (
             <span key={i} className="home-tile-line" data-testid={`${testId}-line-${i}`}>{line}</span>
           ))}
         </div>
         <div className="home-tile-more">
           <ItemMenu
             item={item}
-            onVerb={onVerb}
+            onVerb={verb}
             favourite={favourite}
             watched={watched}
             removable={removable}
@@ -99,6 +123,7 @@ export function HomeTile({
             editions={editions}
             onEdition={onEdition}
             continueLabel={continueLabel}
+            playingOn={on}
           />
         </div>
       </div>

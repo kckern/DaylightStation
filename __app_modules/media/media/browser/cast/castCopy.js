@@ -98,19 +98,52 @@ export function deviceStatusLine(entry) {
 }
 
 /**
- * The picker row's status word, the same shape on every row: "Off",
+ * The picker row's status word, the same shape on every row: "Asleep",
  * "Playing: <title>", "Paused: <title>", or "Ready" (nothing on, or not yet
  * heard from: a send wakes it either way). Never a countdown, never blank.
  * @returns {{text: string, tone: 'active'|'idle'|'off'}}
  */
 export function pickerStatus(entry, device = null) {
-  if (entry?.offline || (!entry?.snapshot && device?.state === 'off')) return { text: 'Off', tone: 'off' };
+  if (entry?.offline || (!entry?.snapshot && device?.state === 'off')) return { text: 'Asleep', tone: 'off' };
   const snap = entry?.snapshot;
   const title = snap?.currentItem?.title ?? null;
   if (snap && title && snap.state === 'paused') return { text: `Paused: ${title}`, tone: 'active' };
   if (snap && title && BUSY_STATES.has(snap.state)) return { text: `Playing: ${title}`, tone: 'active' };
-  if (snap && (snap.state === 'off' || snap.state === 'standby')) return { text: 'Off', tone: 'off' };
+  if (snap && (snap.state === 'off' || snap.state === 'standby')) return { text: 'Asleep', tone: 'off' };
   return { text: 'Ready', tone: 'idle' };
+}
+
+const PICKER_WAKE_STEPS = new Set(['power', 'verify']);
+
+/**
+ * Addendum item 2 (2026-11-26): a Play on… row's whole state — Asleep, Waking
+ * up… / Starting… with a busy spinner while a start is in flight there,
+ * ✓ Playing this, or the plain status. A row that a tap could not improve is
+ * disabled and says why in its own status line.
+ * @param {{ entry: Object|null, device: Object|null, starting: Object|null, sourceContentId: string|null }} p
+ *   `starting` is the in-flight outcome record for this screen, if any.
+ * @returns {{ text: string, tone: 'active'|'idle'|'off'|'busy', busy: boolean, playingThis: boolean, disabled: boolean }}
+ */
+export function pickerRowState({ entry = null, device = null, starting = null, sourceContentId = null } = {}) {
+  const plain = pickerStatus(entry, device);
+  if (starting) {
+    const last = starting.steps?.[starting.steps.length - 1]?.step ?? null;
+    const waking = PICKER_WAKE_STEPS.has(last) || (!last && plain.tone === 'off');
+    const title = starting.item?.title ?? starting.title ?? null;
+    return {
+      text: waking ? 'Waking up…' : (title ? `Starting ${title}…` : 'Starting…'),
+      tone: 'busy', busy: true, playingThis: false, disabled: true,
+    };
+  }
+  const snap = entry?.offline ? null : entry?.snapshot;
+  const current = snap?.currentItem?.contentId ?? null;
+  if (sourceContentId && current === sourceContentId && BUSY_STATES.has(snap.state)) {
+    return {
+      text: snap.state === 'paused' ? 'Paused on this' : 'Playing this',
+      tone: 'active', busy: false, playingThis: true, disabled: true,
+    };
+  }
+  return { ...plain, busy: false, playingThis: false, disabled: false };
 }
 
 /**
@@ -127,4 +160,25 @@ export function describeBusy(entry) {
   return { phrase: snap.state === 'paused' ? `paused on ${title}` : `playing ${title}` };
 }
 
-export default { friendlyStepLabel, friendlyStepPhrase, deviceKind, deviceKindNoun, deviceStatusLine, pickerStatus, describeBusy };
+/** Why a press never reached the screen: "The TV did not turn on". */
+export function notSentReason(d, kind) {
+  const noun = deviceKindNoun(kind);
+  if (d?.failedStep === 'power' || d?.failedStep === 'verify') return `The ${noun} did not turn on`;
+  if (d?.failedStep === 'input') return `The ${noun}'s remote input is not ready`;
+  return `The ${noun} isn't connected`;
+}
+
+/**
+ * Addendum item 3: the reason a start on a screen failed, in words, or null.
+ * not-sent → what kept it from reaching the screen; failed → the step it
+ * stopped at; unconfirmed → the screen never reported it playing.
+ */
+export function failureReason(d, phase, kind) {
+  if (phase === 'not-sent') return notSentReason(d, kind);
+  if (phase === 'unconfirmed') return 'it never reported playing';
+  const phrase = friendlyStepPhrase(d?.failedStep, kind);
+  if (phrase) return `Stopped while ${phrase.charAt(0).toLowerCase()}${phrase.slice(1)}`;
+  return typeof d?.error === 'string' && d.error && d.error !== 'unknown' ? d.error : null;
+}
+
+export default { pickerRowState, notSentReason, failureReason, friendlyStepLabel, friendlyStepPhrase, deviceKind, deviceKindNoun, deviceStatusLine, pickerStatus, describeBusy };

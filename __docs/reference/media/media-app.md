@@ -654,8 +654,70 @@ never powers, wakes or commands the screen. The server keeps that decision for
 two minutes against the screen and the item, and PLAY on that screen reuses it:
 the start skips the queue and the decision and only starts the transcoder
 (server log `play.prepared-reused {deviceId, contentId, savedMs}`). On PLAY the
-item reads "Starting on <screen>" immediately, the list stays, and the outcome
-row confirms or offers Retry in place.
+item reads "Starting on <screen>" immediately, the list stays, and the bar at
+the bottom follows the start — Starting → Playing, or why it did not start
+with Retry and Play here (below).
+
+### After PLAY: one bar, honest states (2026-11-26 addendum)
+
+Eight patterns adopted from JellyBox, all inside the taxonomy above (none lets
+a look reach outside this device):
+
+1. **One bar follows the play.** After PLAY to a screen the handle at the
+   bottom reads **▶ <title> · <screen>** at once: **Starting on <screen>…**
+   (with the wake step, a spinner, Undo and Stop) while it wakes and loads,
+   then **Playing** / **Paused** with pause, next and stop bound to that
+   screen's own session controller — the same one its Remote uses. Tapping the
+   title opens the Remote. The start is the outcome record the tray used to
+   show; the tray now leaves that one record to the bar (and still announces
+   it). This device's own playback keeps its own bar (`shell/MiniPlayer.jsx`);
+   the screen's half is `shell/ScreenHandle.jsx`, its state rules
+   `shell/screenHandleModel.js` (`pickHandlePlay`, `handlePlayView`). Once a
+   screen that had reported goes idle, the start is over and the bar falls
+   back to the screen last steered (STEER.1a).
+2. **Picker states.** Play on… rows read **Asleep** (a tap still sends: waking
+   it is the send), **Waking up…** or **Starting <title>…** with a spinner
+   while a start is in flight there (disabled, its status line says why),
+   **✓ Playing this** (disabled: Start over lives on the info view), else the
+   plain status. The screen ▶ is aimed at shows its volume inline as **− 40 % +**
+   in steps of 5 while it plays — never a slider (`castCopy.pickerRowState`).
+3. **Specific failure, with a way out.** A start that fails says which screen
+   and why — **Office Screen didn't start · The TV did not turn on**, **Office
+   Screen may not have started** (no confirmation), **Office Screen is now
+   playing Bluey** (another session took the screen) — with **Retry**, **Play
+   here** and dismiss, on the same bar (`castCopy.failureReason`).
+4. **Search pending placeholders.** Until the words typed are the words
+   searched (debounce, a stream not yet started), the results list shows
+   skeleton rows — desktop dropdown and phone sheet alike — and never "No
+   results" for words nobody has searched (`useContentCombobox.searchSettled`,
+   `SearchSkeletonRows`).
+5. **Already playing is shown.** An item that is playing or paused on a screen
+   right now reads **On <screen>** — in its search or Browse row's line, on its
+   tile, on its info view — and offers **Pause** (or **Resume**) there and
+   **Open <screen>** (⋯ on rows and tiles, a button on the info view), never a
+   fresh ▶. The info view's PLAY becomes the explicit **Start over on
+   <screen>** (restart there). `fleet/usePlayingOn.js`.
+6. **Only the pressed control spins.** The row ▶, tile disc and info-view PLAY
+   of the item being started spin (and take no second press) while that
+   start is in flight; nothing else on the page waits
+   (`useStartingOn().isStarting`).
+7. **One menu table.** Every item menu — a search or Browse row's ⋯, the ⋯ on a
+   tile, Played earlier or a Now-on card, and Move to… — takes its entries and
+   words from `actions/itemMenuTable.js`, keyed by item kind (leaf,
+   collection, still) × surface (row, tile). The words are **Play Now, Play
+   here, Shuffle, Play Next, Play First, Add to Queue, Play on… / Show on…, Add
+   on…, Open detail, Quality…**, the household verbs, and Move to…'s **This
+   device**.
+8. **Space = play/pause the current session**: the aimed screen's while it
+   plays or is paused, else this device's. It never starts anything, and it
+   leaves Space alone in a text field, the search box, and on any control
+   Space activates itself (a button, a menu item) (`shell/useSpaceToggle.js`).
+
+Logs: `screen-handle.play-state` (`status` starting / playing / paused / failed
+/ preempted / ended, with the outcome `phase`), `screen-handle.retry`,
+`screen-handle.play-here`, `picker.volume-step` / `picker.volume-failed`,
+`playing-on.command` / `playing-on.failed` (pause, play, startOver, open),
+`shortcut.space-toggle` / `shortcut.space-toggle-failed`.
 
 Logs: `item.opened` (a tap that looked),
 `search.returned` (Back to the search), `search.destination-cycled`,

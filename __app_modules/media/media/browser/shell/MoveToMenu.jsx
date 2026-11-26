@@ -16,6 +16,7 @@ import { DispatchContext } from "../cast/DispatchProvider.jsx";
 import { moveScreenPlayback, moveFailureReason } from "../cast/screenMove.js";
 import { canPlayOn } from "../habits/playDestination.js";
 import { orderPickerDevices } from "../cast/useDispatchTargetPicker.js";
+import { moveMenuEntries } from "../actions/itemMenuTable.js";
 import "./SessionControls.scss";
 
 /**
@@ -39,6 +40,11 @@ export function MoveToMenu({ sourceId, available = true, title = null, captureLo
   const outcomes = useContext(DispatchContext);
   const [moving, setMoving] = useState(false);
   const choices = moveDestinations(devices, sourceId);
+  // Addendum item 7: the heading and "This device" come from the one menu table.
+  const menu = moveMenuEntries(choices.map((device) => ({
+    id: device.id,
+    label: `${deviceName(device, device.id)}${deviceLocation(device) ? ` · ${deviceLocation(device)}` : ''}`,
+  })));
 
   const move = async (destinationId) => {
     if (moving) return;
@@ -82,18 +88,15 @@ export function MoveToMenu({ sourceId, available = true, title = null, captureLo
         </Button>
       }
     >
-      <Menu.Label>Move this playback to</Menu.Label>
-      <Menu.Item data-testid="move-to-local" className="session-controls-menu-item" onClick={() => move('local')}>
-        This device
-      </Menu.Item>
-      {choices.map((device) => (
+      <Menu.Label>{menu.heading}</Menu.Label>
+      {menu.entries.map((entry) => (
         <Menu.Item
-          key={device.id}
-          data-testid={`move-to-${device.id}`}
+          key={entry.kind}
+          data-testid={`move-to-${entry.kind}`}
           className="session-controls-menu-item"
-          onClick={() => move(device.id)}
+          onClick={() => move(entry.kind)}
         >
-          {deviceName(device, device.id)}{deviceLocation(device) ? ` · ${deviceLocation(device)}` : ''}
+          {entry.label}
         </Menu.Item>
       ))}
     </ActionMenu>

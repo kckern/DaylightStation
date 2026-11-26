@@ -100,3 +100,19 @@ describe('ItemMenu', () => {
     expect(screen.getByRole('button', { name: 'More actions for Arrival' })).toBeInTheDocument();
   });
 });
+
+// Addendum items 5 and 7 (2026-11-26).
+describe('ItemMenu reads from the one menu table', () => {
+  it('uses the same words as a search row (Play Next, Add to Queue, Open detail)', async () => {
+    open({ item: { id: 'plex:1', title: 'Arrival', itemType: 'leaf' } });
+    expect(await screen.findByTestId('t-verb-playNext')).toHaveTextContent(/^Play Next$/);
+    expect(screen.getByTestId('t-verb-add')).toHaveTextContent(/^Add to Queue$/);
+    expect(screen.getByTestId('t-verb-details')).toHaveTextContent(/^Open detail$/);
+  });
+  it('an item on a screen offers Open <screen>', async () => {
+    const onVerb = open({ item: { id: 'plex:1', title: 'Arrival', itemType: 'leaf' }, playingOn: { name: 'Office Screen' } });
+    fireEvent.click(await screen.findByTestId('t-verb-openScreen'));
+    expect(onVerb).toHaveBeenCalledWith('openScreen');
+    expect(screen.queryByText('Open Office Screen')).toBeDefined();
+  });
+});

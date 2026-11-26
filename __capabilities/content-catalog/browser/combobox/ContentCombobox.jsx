@@ -33,6 +33,7 @@ import { useContentCombobox } from "./useContentCombobox.js";
 import { Modes, isContainer } from "./comboboxMachine.js";
 import { StreamStatusLine } from "./StreamStatusLine.jsx";
 import { ResultRowActions } from "./ResultRow.jsx";
+import { SearchSkeletonRows } from "./SearchSkeletonRows.jsx";
 import "./ContentCombobox.scss";
 
 /** Result-subtitle labels that are not just the capitalised raw type. */
@@ -204,7 +205,7 @@ export function ContentCombobox({
     openWithSiblings, drill, goUp, goToCrumb, paginate, paginationWindow,
     handleClose, select, commit,
     resolvedTitle, isSearching, pendingSources, sourceErrors, streamError, retrySource, truncatedAt, fellBackToAll, searchState,
-    clearSearch,
+    clearSearch, searchSettled,
   } = useContentCombobox({
     value, onChange, searchParams, fallbackSearchParams, scopeKey, scopeLabel,
     appResults, selectContainers, allowFreeform, logApp, retainQueryOnEscape, retainPlayableSelection, retainQueryOnClose,
@@ -218,6 +219,9 @@ export function ContentCombobox({
   // for these words before last time first). The query is the box's text.
   const items = isBrowse ? state.browse.items : (transformResults ? transformResults(state.results, { query: state.search ?? '', searching: isSearching }) : state.results);
   const search = state.search;
+  // The typed words differ from the words the results answer (debounce, a
+  // stream not yet started or retired): not settled, so never "No results".
+  const awaitingResults = !isBrowse && (search ?? '').trim().length >= 2 && searchSettled === false && !streamError;
   const breadcrumbs = state.browse.breadcrumbs;
   const pagination = state.browse.pagination;
   const browseLoading = state.browse.loading;
@@ -728,6 +732,9 @@ export function ContentCombobox({
               playNowLabel={resultRowLabels?.(item)?.playNow ?? null}
               playHereLabel={resultRowLabels?.(item)?.playHere ?? null}
               queueWhere={resultRowLabels?.(item)?.queueWhere ?? null}
+              playBusy={!!resultRowLabels?.(item)?.playBusy}
+              playingOn={resultRowLabels?.(item)?.playingOn ?? null}
+              menuEntries={resultRowLabels?.(item)?.menu ?? null}
               onMoreMenuPointerDown={handleMoreMenuPointerDown}
               onMoreMenuChange={handleMoreMenuChange}
               onMoreMenuAction={handleMoreMenuAction}
@@ -1006,12 +1013,19 @@ export function ContentCombobox({
               viewportProps={{ style: { overflowAnchor: 'none' } }}
               onScrollPositionChange={handleScrollPosition}
             >
-              {(isSearching || browseLoading) && items.length === 0 ? (
+              {browseLoading && items.length === 0 ? (
                 <Combobox.Empty>
                   <Group justify="center" p="md" data-testid="combobox-loading">
                     <Loader size="sm" />
-                    <Text size="sm" c="dimmed">{browseLoading ? 'Loading...' : 'Searching...'}</Text>
+                    <Text size="sm" c="dimmed">Loading...</Text>
                   </Group>
+                </Combobox.Empty>
+              ) : (isSearching || awaitingResults) && items.length === 0 ? (
+                // Media addendum item 4: while the words typed are not the
+                // words searched yet, the list holds its shape — skeleton
+                // rows, never "No results" for words nobody searched.
+                <Combobox.Empty>
+                  <SearchSkeletonRows testId="combobox-loading" />
                 </Combobox.Empty>
               ) : items.length === 0 && !streamError && !hasUnresolvedSourceFailures ? (
                 <Combobox.Empty>

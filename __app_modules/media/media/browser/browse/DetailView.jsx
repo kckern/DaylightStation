@@ -12,7 +12,7 @@ import { ItemQualityButton } from "../quality/PlaybackQualityButtons.jsx";
 // a queue verb landing in an empty local queue starts a play.
 import React, { useEffect, useRef, useState } from 'react';
 import { Stack, Title, Text, Button, Group } from '@mantine/core';
-import { IconPlayerPlayFilled, IconPlayerTrackNext, IconRowInsertTop, IconPlaylistAdd, IconCast } from '@tabler/icons-react';
+import { IconPlayerPlayFilled, IconPlayerPauseFilled, IconPlayerTrackNext, IconRowInsertTop, IconPlaylistAdd, IconCast, IconDeviceRemote, IconRotate } from '@tabler/icons-react';
 import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import { EmptyState } from '@/lib/ui/states.jsx';
 import { useRetryRegion } from '@/lib/ui/useRetryRegion.js';
@@ -34,6 +34,7 @@ import { resultSubtitle } from "../search/resultPresentation.js";
 import { usePlayDestination } from "../habits/usePlayDestination.js";
 import { usePrepareStart } from "../cast/usePrepareStart.js";
 import { InfoPreview } from "./InfoPreview.jsx";
+import { usePlayingOn } from "../fleet/usePlayingOn.js";
 
 // `focusPlay`: opened from search — PLAY takes focus once it can be pressed,
 // so a second Enter plays by that button's own activation (no key handler
@@ -56,8 +57,14 @@ export function DetailView({ contentId, focusPlay = false }) {
   const favourites = useFavourites();
   const { entry, pending: pendingResume } = useHouseholdEntry(contentId);
   // PLAY.5a/AC3: pressing and holding Play Next offers "At the very front".
-  const { startingOnFor } = useStartingOn();
+  const { startingOnFor, isStarting } = useStartingOn();
   const startingOn = startingOnFor(contentId);
+  // Addendum item 6: PLAY spins while this item's own start is in flight.
+  const starting = isStarting(contentId);
+  // Addendum item 5: already on a screen → "On <screen>", Pause / Open, and
+  // PLAY is the explicit Start over there.
+  const { playingOnFor, toggle: toggleOn, startOver: startOverOn, open: openOn } = usePlayingOn();
+  const on = playingOnFor(contentId);
   const playNextHold = usePressHoldOffer({ onOffered: () => mediaLog.playNextHoldOffered({ surface: 'detail' }) });
   const playReady = !!info && !loading && !error;
   // Prepare on look: warm the start on the screen PLAY names (server-side
@@ -119,20 +126,36 @@ export function DetailView({ contentId, focusPlay = false }) {
         {description && <Text c="dimmed">{description}</Text>}
         {progress && <Text size="sm" data-testid="detail-progress">{progress}</Text>}
         {startingOn && <Text size="sm" data-testid="detail-starting" role="status">{startingOn}</Text>}
+        {on && !startingOn && (
+          <Group gap="sm" className="detail-playing-on" data-testid="detail-playing-on">
+            <Text size="sm" role="status" data-testid="detail-playing-on-text">On {on.name} · {on.paused ? 'Paused' : 'Playing'}</Text>
+            <Button size="compact-md" variant="default" data-testid="detail-on-toggle"
+              leftSection={on.paused ? <IconPlayerPlayFilled size={14} /> : <IconPlayerPauseFilled size={14} />}
+              onClick={() => toggleOn(on, contentId)}>
+              {on.paused ? 'Resume' : 'Pause'}
+            </Button>
+            <Button size="compact-md" variant="default" data-testid="detail-on-open" leftSection={<IconDeviceRemote size={14} />}
+              onClick={() => openOn(on)}>
+              Open {on.name}
+            </Button>
+          </Group>
+        )}
         <Group className="detail-actions" gap="sm">
           <Button
             data-testid="detail-play-now"
             ref={playRef}
             onKeyDown={(e) => { if (e.key === 'Enter' && e.repeat) e.preventDefault(); }}
-            leftSection={elsewhere ? <IconCast size={18} /> : <IconPlayerPlayFilled size={18} />}
-            loading={!collection && pendingResume}
+            leftSection={on ? <IconRotate size={18} /> : elsewhere ? <IconCast size={18} /> : <IconPlayerPlayFilled size={18} />}
+            loading={(!collection && pendingResume) || starting}
+            data-busy={starting || undefined}
             onClick={() => {
               stopPreview();
+              if (on) { startOverOn(on, contentId); return; }
               const route = collection ? dispatchLeafVerb('playNow', contentId, detailItem) : run('playNow', detailItem, { entry });
               if (route === 'ask') setOneShot({ kind: 'playOn', item: detailItem });
             }}
           >
-            {labelsFor(detailItem).sentence}
+            {on ? `Start over on ${on.name}` : labelsFor(detailItem).sentence}
           </Button>
           {elsewhere && (
             <Button

@@ -30,7 +30,7 @@ import { Button } from '@mantine/core';
 import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import { ActionMenu } from '@/lib/ui/ActionMenu.jsx';
 import { useContentCombobox } from "../../../../../__capabilities/content-catalog/browser/picker-controller.mjs";
-import { StreamStatusLine } from "../../../../../__capabilities/content-catalog/browser/search-status.mjs";
+import { StreamStatusLine, SearchSkeletonRows } from "../../../../../__capabilities/content-catalog/browser/search-status.mjs";
 import { ResultRow } from "../../../../../__capabilities/content-catalog/browser/result-row.mjs";
 import { useSearchContext } from "./useSearchContext.js";
 import { ScopeChips } from "./ScopeChips.jsx";
@@ -86,7 +86,7 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
   const [oneShotAction, setOneShotAction] = useState(null);
   const { scopes, currentScopeKey, currentScope, resetScope } = useSearchContext();
   const { dispatch, dispatchLeafVerb, playContainerAsQueue, addToScreen } = useContentDispatch();
-  const { rowLabelsFor, continueFor } = useRowLabels();
+  const { rowLabelsFor, continueFor, screenFor } = useRowLabels();
   const { extraActions, runHousehold } = useHouseholdResultActions();
   const { queue } = useSessionController('local');
   const { push } = useNav();
@@ -229,6 +229,11 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
     if (addTo && action !== 'detail' && action !== 'details') { addOnce(id, item, action); return; }
     if (['playNow', 'playHere', 'playOn', 'detail', 'details'].includes(action)) recordPick(searchTextRef.current, item, action);
     if (runHousehold(action, item)) return;
+    if (action === 'openScreen') {
+      const deviceId = screenFor(item);
+      if (deviceId) { pushOverSurface('peek', { deviceId }); closeSurface('dispatch', { navigated: true }); }
+      return;
+    }
     if (action === 'playHere') { dispatchLeafVerb('playNow', id, item, { targetIds: [] }); return; }
     if (action === 'playOn' || action === 'addOn') {
       const returnFocusRef = {
@@ -249,7 +254,7 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
     // 'detail' is the only verb that navigates; queue mutations leave search
     // and its marker untouched.
     if (action === 'detail' || action === 'details') closeSurface('dispatch', { navigated: true });
-  }, [queue, pushOverSurface, log, closeSurface, dispatchLeafVerb, addTo, addOnce, runHousehold, recordPick]);
+  }, [queue, pushOverSurface, log, closeSurface, dispatchLeafVerb, addTo, addOnce, runHousehold, recordPick, screenFor]);
 
   const combo = useContentCombobox({
     value: '',
@@ -266,7 +271,7 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
   });
   const {
     state, searchState, handleInput, isSearching, pendingSources, sourceErrors,
-    streamError, retrySource = () => {}, fellBackToAll,
+    streamError, retrySource = () => {}, fellBackToAll, searchSettled,
   } = combo;
   const searchText = state.search ?? '';
   searchTextRef.current = searchText;
@@ -326,7 +331,10 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
   const hasUnresolvedSourceFailures = sourceErrors.length > 0;
   // The widening notice below already explains an empty widened search in
   // scope-aware wording, so the generic empty line would only repeat it.
-  const showEmpty = results.length === 0 && !isSearching && !streamError && !hasUnresolvedSourceFailures && searchText.trim().length >= 2 && !fellBackToAll;
+  // Addendum item 4: until the words typed are the words searched, the list
+  // holds its shape (skeleton rows) and never says "No results".
+  const awaitingResults = searchText.trim().length >= 2 && searchSettled === false && !streamError;
+  const showEmpty = results.length === 0 && !isSearching && !awaitingResults && !streamError && !hasUnresolvedSourceFailures && searchText.trim().length >= 2 && !fellBackToAll;
   const emptyMessage = `No results for “${searchText}”. Try a different word or change the scope.`;
   // D5 widening notice (Finding 2 of the final review). The hook widens a
   // scope that settled empty and ContentCombobox says so on desktop — but this
@@ -413,8 +421,10 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
         {showHint && (
           <li className="search-mode-hint" data-testid="search-mode-hint">Type to search…</li>
         )}
-        {isSearching && results.length === 0 && (
-          <li className="search-mode-hint" data-testid="search-mode-loading">Searching...</li>
+        {(isSearching || awaitingResults) && results.length === 0 && (
+          <li className="search-mode-skeleton" data-testid="search-mode-loading">
+            <SearchSkeletonRows testId="search-mode-skeleton" />
+          </li>
         )}
         {showEmpty && (
           <li className="search-mode-hint" data-testid="search-mode-empty">

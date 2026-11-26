@@ -15,19 +15,23 @@ import { isShowItem } from "../search/showOn.js";
 import { usePressHoldOffer } from "../../../../../frontend/src/lib/ui/usePressHoldOffer.js";
 import mediaLog from "../logging/mediaLog.js";
 import { usePlayDestination } from "../habits/usePlayDestination.js";
+import { itemMenuEntries, menuItemKind, MENU_LABELS } from "../actions/itemMenuTable.js";
 
 // PLAY.5a/AC3: Play next, and — on press and hold — "At the very front".
-function PlayNextItems({ testId, fire, on = '' }) {
+function PlayNextItems({ testId, fire, label }) {
   const { offered, bind, guardClick } = usePressHoldOffer({ onOffered: () => mediaLog.playNextHoldOffered({ surface: 'item-menu' }) });
   return (
     <>
-      <Menu.Item data-testid={`${testId}-verb-playNext`} closeMenuOnClick={!offered} {...bind} onClick={guardClick(fire('playNext'))}>{`Play next${on}`}</Menu.Item>
+      <Menu.Item data-testid={`${testId}-verb-playNext`} closeMenuOnClick={!offered} {...bind} onClick={guardClick(fire('playNext'))}>{label}</Menu.Item>
       {offered && (
-        <Menu.Item data-testid={`${testId}-verb-playNextFront`} onClick={(event) => { mediaLog.playNextFrontChosen({ surface: 'item-menu' }); fire('playFirst')(event); }}>At the very front</Menu.Item>
+        <Menu.Item data-testid={`${testId}-verb-playNextFront`} onClick={(event) => { mediaLog.playNextFrontChosen({ surface: 'item-menu' }); fire('playFirst')(event); }}>{MENU_LABELS.playNextFront}</Menu.Item>
       )}
     </>
   );
 }
+
+// Test ids predate the table: a favourite toggle keeps one id either way.
+const TEST_ID_KIND = { unfavourite: 'favourite' };
 
 /**
  * @param {object} props
@@ -41,10 +45,12 @@ function PlayNextItems({ testId, fire, on = '' }) {
  *   item that a collapsed tile stands for (the tile's own first, then the rest)
  * @param {(edition: object) => void} [props.onEdition] open one edition
  * @param {string|null} [props.continueLabel] "Continue <part>" entry, when there is a next part
+ * @param {{ name: string }|null} [props.playingOn] the screen it is on right now:
+ *   offers "Open <screen>" (onVerb('openScreen'), addendum item 5)
  */
 export function ItemMenu({
   item, onVerb, favourite = false, watched = null, removable = false, testId,
-  editions = null, onEdition = null, continueLabel = null,
+  editions = null, onEdition = null, continueLabel = null, playingOn = null,
 }) {
   const quality = usePlaybackQuality();
   const triggerRef = useRef(null);
@@ -52,13 +58,21 @@ export function ItemMenu({
   // The menu's plays and queue verbs go where the tile's ▶ goes; say so.
   const { labelsFor, destinationFor } = usePlayDestination();
   const elsewhere = destinationFor(item).targetIds.length > 0;
-  const on = elsewhere ? ` on ${labelsFor(item).short}` : '';
+  const named = labelsFor(item);
   const fire = (kind) => (event) => { event?.stopPropagation?.(); onVerb(kind); };
   const openQuality = event => {
     event.stopPropagation();
     triggerRef.current?.focus({ preventScroll: true });
     quality.openForItem(item);
   };
+  // Addendum item 7: the entries and their words come from the one table.
+  const entries = itemMenuEntries({
+    surface: 'tile',
+    kind: menuItemKind({ collection, show: isShowItem(item) }),
+    where: { elsewhere, short: named.short, sentence: named.sentence },
+    playingOn, continueLabel, favourite, watched, removable,
+    quality: !!quality && supportsQualityOverrides(item),
+  });
   return (
     <ActionMenu
       withinPortal
@@ -79,47 +93,33 @@ export function ItemMenu({
         </ActionIcon>
       }
     >
-      {continueLabel && (
-        <Menu.Item data-testid={`${testId}-verb-continue`} onClick={fire('continue')}>{continueLabel}</Menu.Item>
-      )}
-      <Menu.Item data-testid={`${testId}-verb-playNow`} onClick={fire('playNow')}>{elsewhere ? labelsFor(item).sentence : 'Play now'}</Menu.Item>
-      {elsewhere && <Menu.Item data-testid={`${testId}-verb-playHere`} onClick={fire('playHere')}>Play here</Menu.Item>}
-      {collection && <Menu.Item data-testid={`${testId}-verb-shuffle`} onClick={fire('shuffle')}>Shuffle</Menu.Item>}
-      <PlayNextItems testId={testId} fire={fire} on={on} />
-      <Menu.Item data-testid={`${testId}-verb-playFirst`} onClick={fire('playFirst')}>{`Play first${on}`}</Menu.Item>
-      <Menu.Item data-testid={`${testId}-verb-add`} onClick={fire('add')}>{`Add to queue${on}`}</Menu.Item>
-      <Menu.Item data-testid={`${testId}-verb-playOn`} onClick={fire('playOn')}>{isShowItem(item) ? 'Show on…' : 'Play on…'}</Menu.Item>
-      <Menu.Item data-testid={`${testId}-verb-addOn`} onClick={fire('addOn')}>Add on…</Menu.Item>
-      {quality && supportsQualityOverrides(item) && <Menu.Item onClick={openQuality}>Quality…</Menu.Item>}
-      <Menu.Item data-testid={`${testId}-verb-details`} onClick={fire('details')}>Details</Menu.Item>
-      {Array.isArray(editions) && editions.length > 1 && onEdition && (
-        <>
-          <Menu.Divider />
-          <Menu.Label>{editions.length} editions</Menu.Label>
-          {editions.map((edition, index) => (
-            <Menu.Item
-              key={edition.id}
-              data-testid={`${testId}-edition-${index}`}
-              onClick={(event) => { event?.stopPropagation?.(); onEdition(edition); }}
-            >
-              {`Open edition ${index + 1}`}
-            </Menu.Item>
-          ))}
-        </>
-      )}
-      <Menu.Divider />
-      <Menu.Item data-testid={`${testId}-verb-favourite`} onClick={fire(favourite ? 'unfavourite' : 'favourite')}>
-        {favourite ? 'Remove from favourites' : 'Add to favourites'}
-      </Menu.Item>
-      {!collection && watched !== true && (
-        <Menu.Item data-testid={`${testId}-verb-watched`} onClick={fire('watched')}>Mark watched</Menu.Item>
-      )}
-      {!collection && watched !== false && (
-        <Menu.Item data-testid={`${testId}-verb-unwatched`} onClick={fire('unwatched')}>Mark unwatched</Menu.Item>
-      )}
-      {removable && (
-        <Menu.Item data-testid={`${testId}-verb-hide`} onClick={fire('hide')}>Remove from household list</Menu.Item>
-      )}
+      {entries.map((entry, index) => {
+        if (entry.divider) return <Menu.Divider key={`divider-${index}`} />;
+        if (entry.kind === 'playNext') return <PlayNextItems key="playNext" testId={testId} fire={fire} label={entry.label} />;
+        const item_ = (
+          <Menu.Item key={entry.kind} data-testid={`${testId}-verb-${TEST_ID_KIND[entry.kind] ?? entry.kind}`}
+            onClick={entry.kind === 'quality' ? openQuality : fire(entry.kind)}>
+            {entry.label}
+          </Menu.Item>
+        );
+        if (entry.kind !== 'details' || !(Array.isArray(editions) && editions.length > 1 && onEdition)) return item_;
+        return (
+          <React.Fragment key="details">
+            {item_}
+            <Menu.Divider />
+            <Menu.Label>{editions.length} editions</Menu.Label>
+            {editions.map((edition, i) => (
+              <Menu.Item
+                key={edition.id}
+                data-testid={`${testId}-edition-${i}`}
+                onClick={(event) => { event?.stopPropagation?.(); onEdition(edition); }}
+              >
+                {`Open edition ${i + 1}`}
+              </Menu.Item>
+            ))}
+          </React.Fragment>
+        );
+      })}
     </ActionMenu>
   );
 }

@@ -1,0 +1,32 @@
+// Search pending placeholders (Media addendum item 4): rows the size of the
+// result rows they stand in for, so nothing jumps when results land.
+.search-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 8px;
+}
+
+.search-skeleton__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+}
+
+.search-skeleton__lines {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.search-skeleton__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

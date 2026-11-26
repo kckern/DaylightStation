@@ -21,16 +21,20 @@
 //     source, so a pick only changes the preferred destination; the chrome
 //     never says Cast or Play there (2026-08-21 review finding).
 import React from 'react';
-import { Button, Switch, UnstyledButton } from '@mantine/core';
+import { ActionIcon, Button, Loader, Switch, UnstyledButton } from '@mantine/core';
 import {
   IconBrowser, IconCheck, IconDeviceDesktop, IconDeviceLaptop, IconDeviceMobile,
-  IconDeviceTablet, IconDeviceTv, IconSpeakerphone, IconAlertCircle,
+  IconDeviceTablet, IconDeviceTv, IconSpeakerphone, IconAlertCircle, IconMinus, IconPlus,
 } from '@tabler/icons-react';
 import { useDispatchTargetPicker, HERE_ID } from "./useDispatchTargetPicker.js";
 import { useDevice } from "../fleet/useDevice.js";
 import { useFleetContext } from "../fleet/useFleetContext.js";
 import { deviceName, deviceGlyph, deviceLocation, isMachineDeviceLabel } from "../fleet/deviceDisplay.js";
-import { pickerStatus, describeBusy } from "./castCopy.js";
+import { pickerRowState, describeBusy } from "./castCopy.js";
+import { DispatchContext } from "./DispatchProvider.jsx";
+import { PeekContext } from "../peek/PeekContext.js";
+import { useCastTarget } from "./useCastTarget.js";
+import { outcomePhase } from "./dispatchReducer.js";
 import { aimName } from "./AimLabel.jsx";
 import { screenRoomsFromRegistry, sharedRoomGroups, neighbouringRoomGroups, driftWarningText } from "./screenRooms.js";
 import mediaLog from "../logging/mediaLog.js";
@@ -79,17 +83,71 @@ function ReplacePrompt({ id, what, confirmLabel, onConfirm }) {
   );
 }
 
+const VOLUME_STEP = 5;
+const ACTIVE_STATES = new Set(['playing', 'paused', 'buffering', 'stalled']);
+
+/** The in-flight start on a screen (running / sent), if any: its row is busy. */
+function startingOn(outcomes, deviceId) {
+  if (!outcomes) return null;
+  let newest = null;
+  for (const record of outcomes.values()) {
+    if (record?.distance !== 'far' || (record.targetId ?? record.deviceId) !== deviceId) continue;
+    const phase = record.phase ?? outcomePhase(record);
+    if (phase !== 'running' && phase !== 'sent') continue;
+    if (!newest || String(record.createdAt ?? '') >= String(newest.createdAt ?? '')) newest = record;
+  }
+  return newest;
+}
+
+// Addendum item 2: the screen ▶ plays on shows its volume inline, in steps —
+// never a slider on touch (house rule).
+function RowVolume({ deviceId, name, volume }) {
+  const peek = React.useContext(PeekContext);
+  const setVolume = peek?.getController?.(deviceId)?.config?.setVolume;
+  const [shown, setShown] = React.useState(volume);
+  React.useEffect(() => { setShown(volume); }, [volume]);
+  if (typeof setVolume !== 'function' || !Number.isFinite(shown)) return null;
+  const step = (delta) => {
+    const next = Math.max(0, Math.min(100, shown + delta));
+    if (next === shown) return;
+    setShown(next);
+    mediaLog.pickerVolumeStep({ deviceId, from: shown, to: next });
+    Promise.resolve(setVolume(next)).catch((error) => {
+      setShown(volume);
+      mediaLog.pickerVolumeFailed({ deviceId, error: error?.message ?? String(error) });
+    });
+  };
+  return (
+    <div className="cast-row__volume" data-testid={`picker-volume-${deviceId}`} role="group" aria-label={`Volume on ${name}`}>
+      <ActionIcon variant="subtle" color="gray" size={36} aria-label={`Volume down on ${name}`} data-testid={`picker-volume-down-${deviceId}`}
+        disabled={shown <= 0} onClick={() => step(-VOLUME_STEP)}>
+        <IconMinus size={16} />
+      </ActionIcon>
+      <span className="cast-row__volume-value" data-testid={`picker-volume-value-${deviceId}`} aria-live="polite">{shown}%</span>
+      <ActionIcon variant="subtle" color="gray" size={36} aria-label={`Volume up on ${name}`} data-testid={`picker-volume-up-${deviceId}`}
+        disabled={shown >= 100} onClick={() => step(VOLUME_STEP)}>
+        <IconPlus size={16} />
+      </ActionIcon>
+    </div>
+  );
+}
+
 function PickerRow({
   testId, Icon, name, meta, metaTone, usual = false, pressed, showCheck, pending, replaceWhat, confirmLabel,
-  onPress, onConfirm, autoFocus, statusTestId,
+  onPress, onConfirm, autoFocus, statusTestId, busy = false, playingThis = false, disabled = false, trailing = null,
 }) {
+  const statusId = React.useId();
   return (
-    <div className={`cast-row${pending ? ' cast-row--asking' : ''}${pressed && showCheck ? ' cast-row--selected' : ''}`}>
+    <div className={`cast-row${pending ? ' cast-row--asking' : ''}${pressed && showCheck ? ' cast-row--selected' : ''}${disabled ? ' cast-row--disabled' : ''}`}
+      data-state={busy ? 'busy' : playingThis ? 'playing-this' : metaTone}>
       <UnstyledButton
         data-testid={testId}
         className="cast-row__button"
         aria-pressed={showCheck ? pressed : undefined}
         aria-expanded={replaceWhat ? pending : undefined}
+        aria-describedby={meta ? statusId : undefined}
+        aria-busy={busy || undefined}
+        disabled={disabled}
         data-autofocus={autoFocus || undefined}
         onClick={onPress}
       >
@@ -100,13 +158,18 @@ function PickerRow({
             {usual && <span className="cast-row__usual" data-testid={`${testId}-usual`}>Usual</span>}
           </span>
           {meta && (
-            <span className={`cast-row__meta cast-row__meta--${metaTone}`} data-testid={statusTestId}>{meta}</span>
+            <span className={`cast-row__meta cast-row__meta--${metaTone}`} data-testid={statusTestId} id={statusId}>
+              {playingThis && <IconCheck size={14} stroke={2.2} aria-hidden className="cast-row__meta-check" />}
+              {meta}
+            </span>
           )}
         </span>
-        {showCheck && (
+        {busy && <Loader size={16} color="gray" className="cast-row__spinner" data-testid={`${testId}-busy`} aria-hidden />}
+        {showCheck && !busy && (
           <span className="cast-row__check" aria-hidden>{pressed ? <IconCheck size={18} stroke={2.2} /> : null}</span>
         )}
       </UnstyledButton>
+      {trailing}
       {pending && replaceWhat && (
         <ReplacePrompt id={testId.replace(/^picker-(device-)?/, '')} what={replaceWhat} confirmLabel={confirmLabel} onConfirm={onConfirm} />
       )}
@@ -114,10 +177,14 @@ function PickerRow({
   );
 }
 
-function DeviceRow({ device, pressed, showCheck, usual, pending, verb, onSelect, onConfirm, autoFocus }) {
+function DeviceRow({ device, pressed, showCheck, usual, pending, verb, onSelect, onConfirm, autoFocus, sourceContentId, aimed, chooseOnly = false }) {
   const { entry } = useDevice(device.id);
-  const status = pickerStatus(entry, device);
+  const outcomes = React.useContext(DispatchContext)?.outcomes ?? null;
+  const starting = startingOn(outcomes, device.id);
+  const status = pickerRowState({ entry, device, starting, sourceContentId });
   const busy = describeBusy(entry);
+  const snap = entry?.offline ? null : entry?.snapshot;
+  const showVolume = aimed && !status.busy && !!snap?.currentItem && ACTIVE_STATES.has(snap.state) && Number.isFinite(snap.config?.volume);
   const Icon = GLYPHS[deviceGlyph(device)] ?? IconDeviceDesktop;
   return (
     <PickerRow
@@ -136,6 +203,11 @@ function DeviceRow({ device, pressed, showCheck, usual, pending, verb, onSelect,
       onPress={() => onSelect(device.id)}
       onConfirm={() => onConfirm(device.id)}
       autoFocus={autoFocus}
+      busy={status.busy}
+      playingThis={status.playingThis}
+      // Choosing a destination never sends, so nothing there is pointless to pick.
+      disabled={status.disabled && !chooseOnly}
+      trailing={showVolume ? <RowVolume deviceId={device.id} name={deviceName(device)} volume={snap.config.volume} /> : null}
     />
   );
 }
@@ -205,6 +277,10 @@ export function DispatchTargetPicker({ source, onComplete, autoFocus = true, ver
   } = useDispatchTargetPicker({ source, onComplete, intent });
 
   const isDestination = intent === 'destination';
+  const { targetIds: aimIds = [] } = useCastTarget();
+  const aimSet = new Set(aimIds);
+  const sourceContentId = source?.itemAction?.item?.contentId ?? source?.itemAction?.item?.id
+    ?? source?.item?.contentId ?? source?.item?.id ?? source?.play ?? null;
   const hasMoveSnapshot = !!(source?.getSnapshot || source?.snapshot);
   const selectedDevices = devices.filter((d) => selected.has(d.id));
   const targetLabel = selectedDevices.length === 1
@@ -240,6 +316,9 @@ export function DispatchTargetPicker({ source, onComplete, autoFocus = true, ver
             onSelect={select}
             onConfirm={confirmReplace}
             autoFocus={autoFocus && index === 0}
+            sourceContentId={sourceContentId}
+            aimed={aimSet.has(d.id)}
+            chooseOnly={isDestination}
           />
         ))}
       </div>

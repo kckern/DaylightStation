@@ -36,7 +36,10 @@ export function useStartingOn() {
     const names = targets.map((id) => deviceName(devices.find((d) => d.id === id) ?? null, id));
     return `Starting on ${names.length > 1 ? `${names.length} screens` : names[0]}…`;
   }, [outcomes, devices]);
-  return { startingOnFor };
+  // Addendum item 6: only the pressed control spins — the item's own ▶ / PLAY
+  // while its start is in flight, nothing else on the page.
+  const isStarting = useCallback((contentId) => startingTargets(outcomes, contentId).length > 0, [outcomes]);
+  return { startingOnFor, isStarting };
 }
 
 export default useStartingOn;

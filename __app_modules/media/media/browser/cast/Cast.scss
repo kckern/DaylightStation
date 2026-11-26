@@ -70,10 +70,38 @@
 
 // ---- Rows -----------------------------------------------------------------
 .cast-row {
+  display: flex;
+  align-items: center;
   border-radius: var(--mantine-radius-sm);
   transition: background var(--ds-motion-fast) ease;
 
-  &--asking { background: var(--mantine-color-dark-5); }
+  &--asking { background: var(--mantine-color-dark-5); flex-wrap: wrap; }
+
+  // Addendum item 2: a row a tap could not improve (already starting there,
+  // already playing this) — its own status line says why.
+  &--disabled .cast-row__button {
+    cursor: default;
+    &:hover, &:active { background: none; }
+  }
+  &--disabled .cast-row__name { color: var(--media-muted, var(--mantine-color-dark-1)); }
+}
+
+.cast-row__spinner { flex-shrink: 0; }
+
+// The screen ▶ plays on: its volume in −/+ steps, never a slider.
+.cast-row__volume {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  padding-right: 4px;
+}
+.cast-row__volume-value {
+  min-width: 3.25em;
+  text-align: center;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--media-muted, var(--mantine-color-dark-1));
 }
 
 .cast-row__button {
@@ -81,6 +109,8 @@
   align-items: center;
   gap: 12px;
   width: 100%;
+  flex: 1;
+  min-width: 0;
   min-height: 52px;
   padding: 6px 8px;
   border-radius: var(--mantine-radius-sm);
@@ -146,6 +176,12 @@
   text-overflow: ellipsis;
 
   &--off { color: var(--mantine-color-dark-2); }
+  &--busy, &--active { color: var(--media-text, var(--mantine-color-dark-0)); }
+}
+
+.cast-row__meta-check {
+  vertical-align: -2px;
+  margin-right: 4px;
 }
 
 .cast-row__check {
@@ -167,6 +203,7 @@
 
 // A screen that is playing something asks in its own row before replacing it.
 .cast-row-confirm {
+  flex-basis: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;

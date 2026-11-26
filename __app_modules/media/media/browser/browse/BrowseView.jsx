@@ -37,6 +37,7 @@ import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import { useRetryRegion } from '@/lib/ui/useRetryRegion.js';
 import { StateMessage } from '@/lib/ui/states.jsx';
 import { ResultRow } from "../../../../../__capabilities/content-catalog/browser/result-row.mjs";
+import { useRowExtras } from "../search/useRowLabels.js";
 import { ItemDestinationPicker } from "../actions/ItemDestinationPicker.jsx";
 import { sourceIconFor, dedupeSourceRows } from "./sourceIcons.jsx";
 import { sourceRootPresentation } from "../search/resultPresentation.js";
@@ -107,8 +108,12 @@ export function BrowseView({
   const { dispatchLeafVerb, playContainerAsQueue, addContainerToQueue } = useContentDispatch();
   const { extraActions, runHousehold } = useHouseholdResultActions();
   const { labelsFor, destinationFor } = usePlayDestination();
+  // Addendum items 5–7: the ⋯ entries (one table), "On <screen>" and the
+  // pressed ▶'s own spinner come from the same row labels search uses.
+  const { rowExtrasFor, screenFor } = useRowExtras();
   // A row's ▶ and its ⋯ Play say where they play, the same words as search.
   const rowLabelsFor = (row) => {
+    const shared = rowExtrasFor(row);
     const { short, sentence } = labelsFor(row);
     const where = destinationFor(row);
     const elsewhere = where.targetIds.length > 0;
@@ -119,6 +124,9 @@ export function BrowseView({
       playNow: where.source === 'ask' ? null : sentence,
       playHere: elsewhere ? 'Play here' : null,
       queueWhere: elsewhere ? short : null,
+      menu: shared?.menu ?? null,
+      playingOn: shared?.playingOn ?? null,
+      playBusy: !!shared?.playBusy,
     };
   };
   const log = useMemo(() => getLogger().child({ component: 'browse-view' }), []);
@@ -297,7 +305,7 @@ export function BrowseView({
                 <ResultRow
                   item={{ ...row, id }}
                   title={sourceRootPresentation(row).title}
-                  subtitle={sourceRootPresentation(row).subtitle}
+                  subtitle={(isSourceRow ? null : rowExtrasFor({ ...row, id }).playingOn?.onLine) ?? sourceRootPresentation(row).subtitle}
                   thumbnail={row.thumbnail}
                   leading={row.thumbnail ? null : sourceIconFor(row)}
                   testId={`browse-open-${id}`}
@@ -312,6 +320,7 @@ export function BrowseView({
                   onMenuOpenChange={setRowMenuOpen}
                   onAction={action => {
                   if (runHousehold(action.kind, { ...row, id })) return;
+                  if (action.kind === 'openScreen') { const deviceId = screenFor({ ...row, id }); if (deviceId) push('peek', { deviceId }); return; }
                   if (action.kind === 'playHere') dispatchLeafVerb('playNow', id, row, { targetIds: [] });
                   else if (['playOn', 'addOn'].includes(action.kind)) setOneShot(action);
                   else if (action.kind === 'details') openDetail(id);

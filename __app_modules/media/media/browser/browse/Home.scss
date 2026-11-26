@@ -224,6 +224,9 @@
   }
 
   // ONE meta line: the most useful fact.
+  // Addendum item 5: the screen it is on right now.
+  .home-tile-line--on { color: var(--media-text); font-weight: 500; }
+
   .home-tile-line {
     font-size: 0.8125rem;
     font-weight: 400;

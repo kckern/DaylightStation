@@ -22,6 +22,7 @@ import { SearchLauncherContext } from "./SearchLauncherContext.js";
 import { PlaybackQualityHost } from "../quality/PlaybackQualityProvider.jsx";
 import mediaLog from "../logging/mediaLog.js";
 import { useReturnFromSearchDetail } from "../search/useReturnFromSearchDetail.js";
+import { useSpaceToggle } from "./useSpaceToggle.js";
 import "./MediaShell.scss";
 
 function ShellInner() {
@@ -61,6 +62,9 @@ function ShellInner() {
     if (depth > 1) pop();
   }, [depth, pop]);
 
+  // Addendum item 8: Space = play/pause the current session, never a new start.
+  useSpaceToggle();
+
   useHotkey('/', () => {
     if (searchOpen) return false;
     // Desktop uses the dock input. On phones the launcher opens a sheet.
@@ -84,7 +88,7 @@ function ShellInner() {
               never takes page space or moves anything, and never covers the
               handle's controls. Only the row's own buttons take pointer input. */}
           <div className="media-outcome-anchor" data-testid="media-outcome-anchor">
-            <DispatchProgressTray />
+            <DispatchProgressTray handleOwnsPlays />
           </div>
           <ScreenHandle />
           <MiniPlayer />

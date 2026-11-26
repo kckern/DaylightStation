@@ -1,5 +1,7 @@
 import React from 'react';
-import { act, render, screen } from '@testing-library/react';
+import { act, render as rtlRender, screen } from '@testing-library/react';
+import { MantineProvider } from '@mantine/core';
+const render = (ui) => { const r = rtlRender(ui, { wrapper: MantineProvider }); return { ...r, rerender: (next) => r.rerender(next) }; };
 import { expect, it, vi } from 'vitest';
 import { FleetContext } from '../fleet/FleetProvider.jsx';
 import { createFleetStore } from '../fleet/fleetStore.js';

@@ -2,6 +2,7 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { MantineProvider } from '@mantine/core';
 
 const push = vi.fn();
 const nav = { push, view: 'home', params: {} };
@@ -32,7 +33,7 @@ const play = vi.fn(async () => ({ ok: true }));
 const peek = { getController: () => ({ transport: { pause, play } }), lastSteeredId: null };
 
 function mount(overrides = {}) {
-  return render(<PeekContext.Provider value={{ ...peek, ...overrides }}><ScreenHandle /></PeekContext.Provider>);
+  return render(<PeekContext.Provider value={{ ...peek, ...overrides }}><ScreenHandle /></PeekContext.Provider>, { wrapper: MantineProvider });
 }
 
 beforeEach(() => {
@@ -46,13 +47,14 @@ beforeEach(() => {
 describe('ScreenHandle', () => {
   it('shows nothing when no screen was sent to or steered', () => {
     const { container } = mount();
-    expect(container).toBeEmptyDOMElement();
+    expect(container.querySelector('[data-testid="screen-handle"]')).toBeNull();
   });
 
   it('names the aimed screen playing something and pauses it in one tap', () => {
     cast = { targetIds: ['tv'] };
     mount();
-    expect(screen.getByTestId('screen-handle-name')).toHaveTextContent('Living Room TV · Playing');
+    expect(screen.getByTestId('screen-handle-title')).toHaveTextContent('▶ Bluey · Living Room TV');
+    expect(screen.getByTestId('screen-handle-state')).toHaveTextContent('Playing');
     expect(screen.getByTestId('screen-handle')).toHaveTextContent('Bluey');
     fireEvent.click(screen.getByTestId('screen-handle-toggle'));
     expect(pause).toHaveBeenCalledTimes(1);
@@ -75,15 +77,15 @@ describe('ScreenHandle', () => {
   it('does not duplicate the controls while that screen\'s Remote is open', () => {
     nav.view = 'peek'; nav.params = { deviceId: 'tv' };
     const { container } = mount({ lastSteeredId: 'tv' });
-    expect(container).toBeEmptyDOMElement();
+    expect(container.querySelector('[data-testid="screen-handle"]')).toBeNull();
   });
 
   it('is absent when the screen is idle or is this device itself', () => {
     entries.tv.snapshot.state = 'idle';
     const { container, rerender } = mount({ lastSteeredId: 'tv' });
-    expect(container).toBeEmptyDOMElement();
+    expect(container.querySelector('[data-testid="screen-handle"]')).toBeNull();
     entries.me = { snapshot: { state: 'playing', currentItem: { title: 'Mine' } } };
     rerender(<PeekContext.Provider value={{ ...peek, lastSteeredId: 'me' }}><ScreenHandle /></PeekContext.Provider>);
-    expect(container).toBeEmptyDOMElement();
+    expect(container.querySelector('[data-testid="screen-handle"]')).toBeNull();
   });
 });

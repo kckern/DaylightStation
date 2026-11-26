@@ -112,7 +112,9 @@ describe('SearchMode streaming lifecycle', () => {
     await screen.findByTestId('scope-chip-all');
     const input = await screen.findByTestId('search-mode-input');
     fireEvent.change(input, { target: { value: 'arrival' } });
-    expect(screen.getByTestId('search-mode-loading')).toHaveTextContent('Searching...');
+    expect(screen.getByTestId('search-mode-loading')).toHaveTextContent('Searching…');
+    // Addendum item 4: the pending list keeps its shape — skeleton rows.
+    expect(screen.getAllByTestId('search-mode-skeleton-row').length).toBeGreaterThan(0);
     expect(screen.queryByTestId('search-mode-empty')).toBeNull();
 
     await waitFor(() => expect(MockEventSource.instances).toHaveLength(1));
@@ -125,7 +127,7 @@ describe('SearchMode streaming lifecycle', () => {
 
     fireEvent.click(screen.getByTestId('scope-chip-family'));
     await waitFor(() => expect(oldStream.readyState).toBe(2));
-    expect(screen.getByTestId('search-mode-loading')).toHaveTextContent('Searching...');
+    expect(screen.getByTestId('search-mode-loading')).toHaveTextContent('Searching…');
     expect(screen.queryByText('Arrival')).toBeNull();
     expect(screen.queryByTestId('search-mode-empty')).toBeNull();
   });

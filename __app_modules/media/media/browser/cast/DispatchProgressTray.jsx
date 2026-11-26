@@ -21,7 +21,8 @@ import { useDevice } from "../fleet/useDevice.js";
 import { useFleetContext } from "../fleet/useFleetContext.js";
 import { deviceName } from "../fleet/deviceDisplay.js";
 import { useNav } from "../shell/NavProvider.jsx";
-import { friendlyStepLabel, friendlyStepPhrase, deviceKind, deviceKindNoun } from "./castCopy.js";
+import { friendlyStepLabel, friendlyStepPhrase, deviceKind, notSentReason } from "./castCopy.js";
+import { pickHandlePlay } from "../shell/screenHandleModel.js";
 import { rowPhase } from "./dispatchRowPhase.js";
 import mediaLog from "../logging/mediaLog.js";
 import "./Cast.scss";
@@ -183,13 +184,6 @@ function localCopy(d, phase, name) {
   };
 }
 
-function notSentReason(d, kind) {
-  const noun = deviceKindNoun(kind);
-  if (d.failedStep === 'power' || d.failedStep === 'verify') return `The ${noun} did not turn on`;
-  if (d.failedStep === 'input') return `The ${noun}'s remote input is not ready`;
-  return `The ${noun} isn't connected`;
-}
-
 function farCopy(d, phase, name, kind) {
   const rawTitle = d.item?.title ?? d.title ?? null;
   const title = phase === 'confirmed' ? titleWithCount(rawTitle, d) : rawTitle;
@@ -287,7 +281,7 @@ function SendElsewhere({ d, sendElsewhere }) {
   );
 }
 
-function UndoAction({ d, removeDispatch, recordLocal }) {
+export function UndoAction({ d, removeDispatch, recordLocal }) {
   const undo = d.undo;
   const [, force] = useState(0);
   const remaining = undo ? undo.expiresAt - Date.now() : 0;
@@ -468,15 +462,25 @@ function AnnouncedText({ d }) {
   return <>{[primary, secondary].filter(Boolean).join('. ')}</>;
 }
 
-export function DispatchProgressTray() {
+/**
+ * @param {object} props
+ * @param {boolean} [props.handleOwnsPlays] the shell's handle (ScreenHandle) shows the
+ *   newest start on a screen — Starting, Playing, Retry (addendum item 1) — so
+ *   this tray leaves that one row out instead of saying it twice. The live
+ *   region still announces it.
+ */
+export function DispatchProgressTray({ handleOwnsPlays = false } = {}) {
   const { dispatches, outcomes, retry, removeDispatch, sendElsewhere, recordLocal, stopAttempt, skipLocal, startOver } = useDispatch();
-  const records = [...(outcomes ?? dispatches).values()];
+  const all = [...(outcomes ?? dispatches).values()];
+  const owned = handleOwnsPlays ? pickHandlePlay(all) : null;
+  const shown = owned ? all.filter((d) => d !== owned) : all;
+  const records = all;
   return (
     <>
       <Announcer records={records} />
-      {records.length > 0 && (
+      {shown.length > 0 && (
         <div data-testid="dispatch-tray" className="cast-tray">
-          {records.map((d) => (
+          {shown.map((d) => (
             <TrayRow
               key={d.attemptId ?? d.dispatchId}
               d={d}

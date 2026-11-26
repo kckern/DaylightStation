@@ -4,11 +4,11 @@
 // and shared URLs all restore correctly. The stack itself is serialized into
 // each history entry (mediaNavStack) — popstate restores the full stack, not
 // a flattened single entry.
-import React, { createContext, useContext, useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import React, { useContext, useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { readNavFromSearch, writeNavToSearch } from "../lib/urlParams.js";
 import mediaLog from "../logging/mediaLog.js";
 
-const NavContext = createContext(null);
+import { NavContext } from "./navContext.js";
 
 // Canvas owns these view names. Keeping their primary-area ownership here
 // makes navigation controls and visible Back labels consume one history model.

@@ -276,3 +276,66 @@ describe('DetailView prepares on look, touches no screen before PLAY (Task 4)', 
     expect(prepareCalls()).toEqual([]);
   });
 });
+
+// Addendum items 5 and 6 (2026-11-26).
+import { PeekContext } from "../peek/PeekContext.js";
+import { DispatchContext } from "../cast/DispatchProvider.jsx";
+describe('DetailView: already playing is shown; only PLAY spins (addendum 5, 6)', () => {
+  const entries = {};
+  const fleet = {
+    devices: [{ id: 'office-tv', name: 'Office Screen', type: 'linux-pc', content_control: { type: 'websocket' } }],
+    identity: { deviceId: 'browser:me' },
+    store: { getEntry: (id) => entries[id] ?? null, subscribeAll: () => () => {}, subscribeDevice: () => () => {} },
+  };
+  const transport = { pause: vi.fn(async () => ({ ok: true })), play: vi.fn(async () => ({ ok: true })), restartCurrent: vi.fn(async () => ({ ok: true })) };
+  const mount = (outcomes = new Map()) => render(
+    <MantineProvider>
+      <FleetContext.Provider value={fleet}>
+        <PeekContext.Provider value={{ getController: () => ({ transport }) }}>
+          <DispatchContext.Provider value={{ outcomes }}>
+            <DetailView contentId="plex:266151" />
+          </DispatchContext.Provider>
+        </PeekContext.Provider>
+      </FleetContext.Provider>
+    </MantineProvider>,
+  );
+  beforeEach(() => { for (const k of Object.keys(entries)) delete entries[k]; contentState.info = { title: 'Hospital', type: 'movie' }; });
+
+  it('an item on a screen reads "On <screen>" with Pause and Open, and PLAY is Start over there', async () => {
+    entries['office-tv'] = { snapshot: { state: 'playing', currentItem: { contentId: 'plex:266151', title: 'Hospital' } } };
+    mount();
+    expect(screen.getByTestId('detail-playing-on-text')).toHaveTextContent('On Office Screen · Playing');
+    fireEvent.click(screen.getByTestId('detail-on-toggle'));
+    expect(transport.pause).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('detail-on-open')).toHaveTextContent('Open Office Screen');
+    expect(screen.getByTestId('detail-play-now')).toHaveTextContent('Start over on Office Screen');
+    await waitFor(() => expect(screen.getByTestId('detail-play-now')).not.toBeDisabled());
+    fireEvent.click(screen.getByTestId('detail-play-now'));
+    expect(transport.restartCurrent).toHaveBeenCalledTimes(1);
+    expect(dispatchLeafVerb).not.toHaveBeenCalled();
+  });
+
+  it('a paused item offers Resume', () => {
+    entries['office-tv'] = { snapshot: { state: 'paused', currentItem: { contentId: 'plex:266151' } } };
+    mount();
+    expect(screen.getByTestId('detail-on-toggle')).toHaveTextContent('Resume');
+    fireEvent.click(screen.getByTestId('detail-on-toggle'));
+    expect(transport.play).toHaveBeenCalledTimes(1);
+  });
+
+  it('PLAY spins while this item starts; the other verbs stay usable', () => {
+    const outcomes = new Map([['a1', { attemptId: 'a1', targetId: 'office-tv', distance: 'far', kind: 'play', phase: 'running', status: 'running', item: { contentId: 'plex:266151' } }]]);
+    mount(outcomes);
+    expect(screen.getByTestId('detail-play-now')).toHaveAttribute('data-busy', 'true');
+    expect(screen.getByTestId('detail-play-now')).toBeDisabled();
+    expect(screen.getByTestId('detail-play-on')).not.toBeDisabled();
+    expect(screen.getByTestId('detail-add')).not.toBeDisabled();
+  });
+
+  it('another item starting does not make this PLAY spin', async () => {
+    const outcomes = new Map([['a1', { attemptId: 'a1', targetId: 'office-tv', distance: 'far', kind: 'play', phase: 'running', status: 'running', item: { contentId: 'plex:9' } }]]);
+    mount(outcomes);
+    expect(screen.getByTestId('detail-play-now')).not.toHaveAttribute('data-busy');
+    await waitFor(() => expect(screen.getByTestId('detail-play-now')).not.toBeDisabled());
+  });
+});

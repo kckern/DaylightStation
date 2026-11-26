@@ -147,7 +147,7 @@ describe('ContentCombobox streaming-search lifecycle', () => {
     // the 300ms before the replacement request actually opened.
     const { input, rerender } = renderScopedCombobox();
     fireEvent.change(input, { target: { value: 'arrival' } });
-    expect(screen.getByTestId('combobox-loading')).toHaveTextContent('Searching...');
+    expect(screen.getByTestId('combobox-loading')).toHaveTextContent('Searching…');
     expect(screen.queryByText(/No results/)).toBeNull();
 
     await waitFor(() => expect(MockEventSource.instances).toHaveLength(1));
@@ -164,7 +164,7 @@ describe('ContentCombobox streaming-search lifecycle', () => {
       </MantineProvider>
     );
     await waitFor(() => expect(oldStream.readyState).toBe(2));
-    expect(screen.getByTestId('combobox-loading')).toHaveTextContent('Searching...');
+    expect(screen.getByTestId('combobox-loading')).toHaveTextContent('Searching…');
     expect(screen.queryByText('Arrival')).toBeNull();
     expect(screen.queryByText(/No results/)).toBeNull();
   });

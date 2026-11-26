@@ -187,6 +187,19 @@ export const mediaLog = {
   screenHandleHidden:     debug('screen-handle.hidden'),
   screenHandleCommand:    info('screen-handle.command'),
   screenHandleFailed:     warn('screen-handle.failed'),
+  // Addendum item 1/3: the handle following a start on a screen.
+  screenHandlePlayState:  info('screen-handle.play-state'),
+  screenHandleRetry:      info('screen-handle.retry'),
+  screenHandlePlayHere:   info('screen-handle.play-here'),
+  // Addendum item 2: the Play on… row's inline volume steps.
+  pickerVolumeStep:       info('picker.volume-step'),
+  pickerVolumeFailed:     warn('picker.volume-failed'),
+  // Addendum item 5: an item already on a screen — Pause / Open / Start over there.
+  playingOnCommand:       info('playing-on.command'),
+  playingOnFailed:        warn('playing-on.failed'),
+  // Addendum item 8: Space plays / pauses the current session.
+  spaceToggle:            info('shortcut.space-toggle'),
+  spaceToggleFailed:      warn('shortcut.space-toggle-failed'),
   shownHere:              info('find.shown-here'),
   // Fling: send what plays here to a screen from the handle (shell/FlingButton.jsx)
   flingOpened:            info('fling.opened'),

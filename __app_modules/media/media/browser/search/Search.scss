@@ -207,6 +207,12 @@
   font-size: 14px;
 }
 
+// Addendum item 4: pending results hold the list's shape.
+.search-mode-skeleton {
+  list-style: none;
+  padding: 4px var(--mantine-spacing-xs);
+}
+
 // A row's ▶ names where it plays ("▶ Office Screen"). On a phone that name
 // costs the title its room — three Sonic films all read "Sonic the Hed…" —
 // and the title is how the right one is told apart. Below 480 px the ▶ is a

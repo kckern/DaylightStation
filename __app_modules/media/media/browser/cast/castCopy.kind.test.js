@@ -30,7 +30,7 @@ describe('pickerStatus — one status word on every picker row', () => {
   it('reads Ready for a screen that never reported, Off when offline, the title when busy', () => {
     expect(pickerStatus(null).text).toBe('Ready');
     expect(pickerStatus({ snapshot: { state: 'idle' } }).text).toBe('Ready');
-    expect(pickerStatus({ offline: true, snapshot: { state: 'idle' } }).text).toBe('Off');
+    expect(pickerStatus({ offline: true, snapshot: { state: 'idle' } }).text).toBe('Asleep');
     expect(pickerStatus({ snapshot: { state: 'paused', currentItem: { title: 'Sonic' } } }).text).toBe('Paused: Sonic');
     expect(pickerStatus({ snapshot: { state: 'playing', position: 10, currentItem: { title: 'Sonic', duration: 100 } } }).text).toBe('Playing: Sonic');
   });

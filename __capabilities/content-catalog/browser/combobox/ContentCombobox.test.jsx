@@ -801,6 +801,7 @@ describe('ContentCombobox (hook wiring)', () => {
       state: { ...initialState(''), mode: Modes.SEARCH, search: 'zzzznomatch', results: [] },
       fellBackToAll: true,
       isSearching: false,
+      searchSettled: true,
     });
     renderCombobox({ scopeLabel: 'Ambient' });
 
@@ -842,5 +843,30 @@ describe('ContentCombobox (hook wiring)', () => {
     renderCombobox({ scopeLabel: 'Ambient' });
 
     expect(screen.queryByTestId('combobox-fallback-notice')).toBeNull();
+  });
+});
+
+// Media addendum item 4 (2026-11-26): search pending placeholders.
+describe('ContentCombobox search pending placeholders', () => {
+  it('while the typed words are not the searched words, shows skeleton rows and never "No results"', () => {
+    currentHook = makeHook({
+      state: { ...initialState(''), mode: Modes.SEARCH, search: 'hospi', results: [] },
+      isSearching: false,
+      searchSettled: false,
+    });
+    renderCombobox();
+    expect(screen.getByTestId('combobox-loading')).toBeInTheDocument();
+    expect(screen.getAllByTestId('combobox-loading-row').length).toBeGreaterThan(0);
+    expect(screen.queryByText(/No results/)).toBeNull();
+  });
+  it('once those words settle empty, says so', () => {
+    currentHook = makeHook({
+      state: { ...initialState(''), mode: Modes.SEARCH, search: 'hospi', results: [] },
+      isSearching: false,
+      searchSettled: true,
+    });
+    renderCombobox();
+    expect(screen.queryByTestId('combobox-loading')).toBeNull();
+    expect(screen.getByText(/^No results/)).toBeInTheDocument();
   });
 });
