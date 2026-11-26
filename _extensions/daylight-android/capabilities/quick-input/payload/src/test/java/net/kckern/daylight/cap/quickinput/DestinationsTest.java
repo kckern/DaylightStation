@@ -133,4 +133,21 @@ public class DestinationsTest {
         assertEquals("text/plain; charset=utf-8", Kind.TEXT.contentType("x.txt"));
         assertEquals("image/jpeg", Kind.PHOTO.contentType("x.jpg"));
     }
+
+    @Test public void shareTargetsAreTheShareTextDestinationsInSlotOrder() {
+        Destinations d = of(null,
+                "journal|Journal|voice|/api/v1/journalist/voice",
+                "share-office|Office|text|/api/v1/share/to/office/text",
+                "sharer|Not a share|text|/api/v1/journalist/text",
+                "share-voice|Spoken|voice|/api/v1/journalist/voice",
+                "share|Default|text|/api/v1/share/text");
+        List<Destination> targets = d.shareTargets();
+        assertEquals(2, targets.size());
+        assertEquals("share-office", targets.get(0).id);
+        assertEquals("share", targets.get(1).id);
+    }
+
+    @Test public void theDefaultsHaveNoShareTarget() {
+        assertTrue(Destinations.usable(Arrays.asList(Destinations.DEFAULTS), null).shareTargets().isEmpty());
+    }
 }

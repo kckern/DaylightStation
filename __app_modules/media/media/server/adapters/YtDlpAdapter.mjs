@@ -88,11 +88,90 @@ export function buildProbeArgs(url, opts = {}) {
 }
 
 /**
+ * One line of the progress template `downloadOne` asks yt-dlp for:
+ *   `share-progress|<downloaded bytes>|<total bytes>|<estimated total>|<file name>`
+ * Fields yt-dlp does not know print as `NA`. null for any other line.
+ */
+export const SINGLE_PROGRESS_PREFIX = 'share-progress';
+export function parseSingleProgressLine(line) {
+  const text = String(line || '').trim();
+  if (!text.startsWith(`${SINGLE_PROGRESS_PREFIX}|`)) return null;
+  const [, done, total, estimate, ...fileParts] = text.split('|');
+  const num = (v) => {
+    const n = Number(v);
+    return Number.isFinite(n) && n >= 0 ? n : null;
+  };
+  return {
+    downloadedBytes: num(done) ?? 0,
+    totalBytes: num(total) ?? num(estimate),
+    file: fileParts.join('|') || null,
+  };
+}
+
+/**
+ * Overall progress of a single-video download that may fetch two streams
+ * (video, then audio) and merge them. yt-dlp reports each stream from zero, so
+ * the first file maps onto [0, firstShare] and the next onto [firstShare, 1].
+ * Never moves backwards; 1 is reported only by the caller once the file is done.
+ */
+export class SingleDownloadProgress {
+  #files = [];
+  #best = 0;
+  #firstShare;
+
+  constructor({ firstShare = 0.9 } = {}) { this.#firstShare = firstShare; }
+
+  /** @returns {number} fraction 0..0.99 */
+  update({ downloadedBytes, totalBytes, file }) {
+    if (file && !this.#files.includes(file)) this.#files.push(file);
+    const index = file ? this.#files.indexOf(file) : Math.max(0, this.#files.length - 1);
+    const within = totalBytes > 0 ? Math.min(1, downloadedBytes / totalBytes) : 0;
+    const [lo, hi] = index === 0 ? [0, this.#firstShare] : [this.#firstShare, 1];
+    const overall = Math.min(0.99, lo + within * (hi - lo));
+    if (overall > this.#best) this.#best = overall;
+    return this.#best;
+  }
+
+  get fraction() { return this.#best; }
+}
+
+/**
+ * The argv for `downloadOne` (excluding the binary). The URL is the last,
+ * discrete element and never passes through a shell (see buildProbeArgs).
+ * Prefers AVC up to `maxHeight` with m4a audio, merged to mp4, so every screen
+ * can direct-play the file.
+ */
+export function buildSingleDownloadArgs(url, { outputPath, maxHeight = 1080 } = {}) {
+  if (!outputPath || !/\.mp4$/.test(outputPath)) throw new Error('buildSingleDownloadArgs requires an .mp4 outputPath');
+  const h = Number(maxHeight) > 0 ? Math.round(Number(maxHeight)) : 1080;
+  return [
+    '--js-runtimes', 'node',
+    '--no-playlist',
+    '--no-warnings',
+    '--newline',
+    '--progress', // --print implies --quiet; keep the progress lines
+    '--no-part',
+    '--concurrent-fragments', '4',
+    '-f', `bv*[vcodec^=avc1][height<=${h}]+ba[ext=m4a]/b[ext=mp4][height<=${h}]/bv*[height<=${h}]+ba/b`,
+    '--merge-output-format', 'mp4',
+    '--remux-video', 'mp4',
+    '--progress-template',
+    `download:${SINGLE_PROGRESS_PREFIX}|%(progress.downloaded_bytes)s|%(progress.total_bytes)s|%(progress.total_bytes_estimate)s|%(progress.filename)s`,
+    '--print', 'after_move:share-done|%(filepath)s|%(title)s|%(duration)s',
+    '--no-simulate',
+    // The streams land as <name>.f<id>.<ext> and merge into <name>.mp4.
+    '-o', outputPath.replace(/\.mp4$/, '.%(ext)s'),
+    url,
+  ];
+}
+
+/**
  * yt-dlp adapter for video source downloads
  */
 export class YtDlpAdapter extends IVideoSourceGateway {
   #logger;
   #downloadRoot;
+  #spawn;
 
   /**
    * @param {Object} [deps] - Dependencies
@@ -101,6 +180,7 @@ export class YtDlpAdapter extends IVideoSourceGateway {
   constructor(deps = {}) {
     super();
     this.#logger = deps.logger || console;
+    this.#spawn = deps.spawn || child_process.spawn;
     this.#downloadRoot = deps.downloadRoot ? path.resolve(deps.downloadRoot) : null;
   }
 
@@ -542,6 +622,73 @@ export class YtDlpAdapter extends IVideoSourceGateway {
       error: `Failed to download after ${codecAttempts.length} attempts`
     };
   }
+  /**
+   * Download ONE video to an exact path, reporting real progress. For the
+   * share router: a link shared from the phone, played once and swept later.
+   *
+   * @param {string} url - A canonical watch URL built from a validated id (never shared text)
+   * @param {Object} options
+   * @param {string} options.outputPath - Where the mp4 goes (`%(ext)s` is not used)
+   * @param {number} [options.maxHeight=1080]
+   * @param {(fraction: number) => void} [options.onProgress] - 0..0.99 as bytes arrive
+   * @param {number} [options.timeoutMs=900000]
+   * @param {AbortSignal} [options.signal]
+   * @returns {Promise<{kind: 'downloaded', filePath: string, title: string|null, duration: number|null}|{kind: 'failed', error: string}>}
+   */
+  downloadOne(url, options = {}) {
+    const { outputPath, maxHeight = 1080, onProgress = null, timeoutMs = 900000, signal = null } = options;
+    const argv = buildSingleDownloadArgs(url, { outputPath, maxHeight });
+    ensureDir(path.dirname(outputPath));
+    const progress = new SingleDownloadProgress();
+    const startedAt = Date.now();
+    this.#logger.info?.('ytdlp.single.start', { outputPath: path.basename(outputPath), maxHeight });
+    return new Promise((resolve) => {
+      let settled = false;
+      let done = null;
+      let stderrTail = '';
+      const finish = (result) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        signal?.removeEventListener?.('abort', onAbort);
+        if (result.kind === 'failed') {
+          for (const p of [outputPath, `${outputPath}.part`]) { try { if (fileExists(p)) deleteFile(p); } catch { /* swept later */ } }
+          this.#logger.warn?.('ytdlp.single.failed', { error: result.error, ms: Date.now() - startedAt });
+        } else {
+          this.#logger.info?.('ytdlp.single.done', { ms: Date.now() - startedAt, duration: result.duration });
+        }
+        resolve(result);
+      };
+      const child = this.#spawn('yt-dlp', argv, { stdio: ['ignore', 'pipe', 'pipe'] });
+      const timer = setTimeout(() => { child.kill('SIGKILL'); finish({ kind: 'failed', error: `timeout after ${timeoutMs}ms` }); }, timeoutMs);
+      const onAbort = () => { child.kill('SIGKILL'); finish({ kind: 'failed', error: 'cancelled' }); };
+      signal?.addEventListener?.('abort', onAbort, { once: true });
+      let buffer = '';
+      child.stdout.on('data', (chunk) => {
+        buffer += chunk.toString();
+        let nl;
+        while ((nl = buffer.indexOf('\n')) >= 0) {
+          const line = buffer.slice(0, nl);
+          buffer = buffer.slice(nl + 1);
+          const tick = parseSingleProgressLine(line);
+          if (tick) { onProgress?.(progress.update(tick)); continue; }
+          if (line.startsWith('share-done|')) {
+            const [, filePath, title, duration] = line.trim().split('|');
+            const d = Number(duration);
+            done = { filePath: filePath || outputPath, title: title && title !== 'NA' ? title : null, duration: Number.isFinite(d) ? d : null };
+          }
+        }
+      });
+      child.stderr.on('data', (chunk) => { stderrTail = (stderrTail + chunk.toString()).slice(-600); });
+      child.on('error', (error) => finish({ kind: 'failed', error: error.message }));
+      child.on('close', (code) => {
+        if (code === 0 && fileExists(outputPath)) {
+          finish({ kind: 'downloaded', filePath: outputPath, title: done?.title ?? null, duration: done?.duration ?? null });
+          return;
+        }
+        const reason = (stderrTail.match(/ERROR:[^\n]*/) || [])[0] || `yt-dlp exited ${code}`;
+        finish({ kind: 'failed', error: reason.slice(0, 300) });
+      });
+    });
+  }
 }
-
-export default YtDlpAdapter;

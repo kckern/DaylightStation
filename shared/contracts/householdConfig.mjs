@@ -88,6 +88,8 @@ export const HOUSEHOLD_APP_CONFIGS = Object.freeze({
   'pressure-mats':  'hardware/pressure-mats/config',
   'state-gates':    'state-gates/config',
   scales:           'hardware/scales',
+  // Share router (the phone's share sheet): screens a share may play on.
+  share:            'share/config',
   // A named policy file reads better than a generic config.yml sitting beside
   // records/ and runtime/.
   school:           'school/school',

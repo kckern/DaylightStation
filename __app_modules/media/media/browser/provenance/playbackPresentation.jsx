@@ -14,6 +14,7 @@ import { useEffect, useState } from 'react';
 import { useMediaVideoPresentation } from '../content-filter/videoPresentation.jsx';
 import { useProvenanceIntro } from './useProvenanceIntro.jsx';
 import { SCENE_TIMING } from './useSceneTimeline.js';
+import { useShareIntro } from '../share/useShareIntro.jsx';
 
 const INTRO_UP = new Set(['waiting', 'covering', 'holding']);
 
@@ -38,4 +39,15 @@ export function useMediaPlaybackPresentation({ media, isPlex, getMediaEl, introS
   return useMediaVideoPresentation({ media, isPlex, getMediaEl, bumperHeld });
 }
 
-export const useMediaVideoIntro = useProvenanceIntro;
+const NO_INTRO_ARGS = Object.freeze({ media: null, isPlex: false });
+
+/**
+ * The Media intro: a video shared from the phone gets the share intro (the
+ * provider's scene following the real fetch); every other title the
+ * provenance lookup's. Both hooks always run (hook order); only one answers.
+ */
+export function useMediaVideoIntro(args) {
+  const share = useShareIntro(args || NO_INTRO_ARGS);
+  const provenance = useProvenanceIntro(share ? NO_INTRO_ARGS : (args || NO_INTRO_ARGS));
+  return share || provenance;
+}

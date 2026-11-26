@@ -27,6 +27,11 @@ describe('app.mjs keeps app-wide CORS and body parsing off self-guarded routes',
     expect(paths).toEqual(QUICK_INPUT_PATHS);
   });
 
+  it('adds the share router\'s intake paths, which come from share/config.yml', () => {
+    const list = app.match(/const selfGuarded = exceptPaths\(\[([\s\S]*?)\]\);/)?.[1] ?? '';
+    expect(list).toContain('...shareSelfGuardedPaths(configService)');
+  });
+
   it('wraps cors and both body parsers', () => {
     expect(app).toMatch(/app\.use\(selfGuarded\(cors\(corsOptionsFor\(allowedOrigins\)\)\)\);/);
     expect(app).toMatch(/app\.use\(selfGuarded\(express\.json\(/);

@@ -606,6 +606,28 @@ The steps below use the Journal button. Step 18 repeats the first two for Meal.
 11. A very large capture (the camera's highest resolution): it still arrives, and
     logcat shows no `OutOfMemoryError`. Record the queued file's size.
 
+## F4. Sharing from other apps (share router)
+
+Needs shell 114 or later, the backend's share router (`share/config.yml`, the phone bound
+with `quick_input.share` in the devices file) and a screen nobody is watching.
+
+1. In YouTube, open a short video, tap Share, then Daylight. A small window shows
+   the video's title line, **Send to Living room TV** and **Office** below it.
+   Nothing is in `files/inputs/inbox` yet.
+2. Tap **Send to Living room TV**. The toast says "Sent to Living room TV". Within
+   seconds the TV wakes on the YouTube logo, and the lines reach in as the video
+   is fetched (`share.video.progress` in the log store). They meet when the file
+   is in, and the video plays. Capture status lists the share as accepted.
+3. Share again and tap **Office**: it plays on the office screen.
+4. Share from a browser a page that is not a video: the capture is parked, and
+   Capture status says it was refused. Nothing plays.
+5. Share, then tap Cancel: nothing is queued. The same with the back button.
+6. Force-stop the app, then share: the window says "Getting ready…" briefly, then
+   shows the destinations.
+7. Share a video that YouTube refuses (a private one): the TV shows the scene, the
+   lines pull back, the screen stops after about 8 s, and a notification says the
+   share did not play.
+
 ## G. Notifications
 
 1. With an input waiting (F7), tap the notice: a message says how many are being

@@ -127,6 +127,9 @@ export class RecordPlaybackProgress {
     // window, so a percent of it would mark the channel watched or resumable.
     // It still shows in the screen's play ledger below.
     const live = itemMetadata?.live === true;
+    // An ephemeral item (a video shared from the phone, played once from temp
+    // storage and swept) keeps no playhead either: there is nothing to resume.
+    const noPlayhead = live || itemMetadata?.ephemeral === true;
 
     if (listId) {
       const namespace = await this.contentCatalog.listNamespace(listId);
@@ -205,7 +208,7 @@ export class RecordPlaybackProgress {
       ...spotFields,
     });
 
-    if (this.mediaProgressMemory && !live) {
+    if (this.mediaProgressMemory && !noPlayhead) {
       await this.mediaProgressMemory.saveProgress(newState, progressNamespace);
       // Writing a fresh state drops a stored skip: the viewer came back to it.
       if (existingState?.skipped) {
@@ -218,7 +221,7 @@ export class RecordPlaybackProgress {
       }
     }
 
-    if (!live && this.progressSyncSources?.has(type) && this.progressSyncService) {
+    if (!noPlayhead && this.progressSyncSources?.has(type) && this.progressSyncService) {
       const localId = assetId.includes(':') ? assetId.split(':').slice(1).join(':') : assetId;
       this.progressSyncService.onProgressUpdate(compoundId, localId, {
         playhead: normalizedSeconds,
@@ -233,7 +236,7 @@ export class RecordPlaybackProgress {
     // ONE-WAY and strictly advisory: nothing it returns is read back, and a
     // failure must never surface here. A child watching a story does not lose
     // their progress because a dashboard missed a heartbeat.
-    if (!live && this.reportPlaybackSession && deviceId) {
+    if (!noPlayhead && this.reportPlaybackSession && deviceId) {
       try {
         await this.reportPlaybackSession.execute({
           surfaceId: deviceId,

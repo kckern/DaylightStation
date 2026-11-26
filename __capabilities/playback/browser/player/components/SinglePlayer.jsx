@@ -233,8 +233,31 @@ export function SinglePlayer(props = {}) {
     setWatchedDurationValue(watchedDurationPreference?.read() ?? 0);
   }, [watchedDurationPreference, setWatchedDurationValue]);
 
+  // The installed intro (e.g. Media's provenance scene) is owned here from the
+  // play request, so the scene, not a spinner, covers the play-info fetch.
+  // VideoPlayer's gate times it once it mounts (hooks/useIntroHost.js).
+  const readyFormat = isReady ? mediaInfo?.format : null;
+  const introForVideo = !isReady
+    || (isMediaFormat(readyFormat) && readyFormat !== 'audio' && readyFormat !== 'image');
+  const introContentId = isReady
+    ? (mediaInfo?.assetId || mediaInfo?.key || mediaInfo?.plex || null)
+    : effectiveContentId;
+  // Any video title may have an intro; the installed app decides which do
+  // (its hook answers null for the rest). `isPlex` tells it a Plex rating key.
+  const introEligible = introForVideo && Boolean(introContentId);
+  const intro = useVideoIntro(introEligible
+    ? { media: { assetId: introContentId }, isPlex: PLEX_ID.test(String(introContentId)) }
+    : NO_INTRO_ARGS);
+  // An intro whose title's source is still being prepared (a shared video
+  // being fetched) holds the play request: the scene covers from the request
+  // and play info is fetched once the intro lets go. Contract:
+  // __docs/reference/content/content-playback.md (intro slot).
+  const introHoldsRequest = !isReady && intro?.holdRequest === true;
+
   const readVideoInfo = useCallback(async (isCurrent, signal) => {
     setIsReady(false);
+    // Held by the intro: fetch nothing yet (re-run when the hold lifts).
+    if (introHoldsRequest) return;
 
     // Direct-play bypass: if the play prop already contains mediaUrl and a media format,
     // skip the /play API call entirely. This happens when queue items come from
@@ -401,7 +424,7 @@ export function SinglePlayer(props = {}) {
   // Keep this scoped to the stable lookup inputs. The direct-media bypass and
   // presentation metadata also read values from the committed play snapshot.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveContentId, plex, media, open, shuffle, continuous, play?.maxVideoBitrate, play?.maxResolution, play?.transcode, play?.adaptive, play?.seconds, play?.resume, plexClientSession, remountDiagnostics]);
+  }, [effectiveContentId, plex, media, open, shuffle, continuous, play?.maxVideoBitrate, play?.maxResolution, play?.transcode, play?.adaptive, play?.seconds, play?.resume, plexClientSession, remountDiagnostics, introHoldsRequest]);
 
   const { reload: fetchVideoInfo } = useRefreshableRead(readVideoInfo);
   useEffect(() => {
@@ -441,17 +464,6 @@ export function SinglePlayer(props = {}) {
     };
   }, [showVideoMeta, mediaInfo?.id, mediaInfo?.mediaUrl]);
 
-  // The installed intro (e.g. Media's provenance scene) is owned here from the
-  // play request, so the scene, not a spinner, covers the play-info fetch.
-  // VideoPlayer's gate times it once it mounts (hooks/useIntroHost.js).
-  const readyFormat = isReady ? mediaInfo?.format : null;
-  const introForVideo = !isReady
-    || (isMediaFormat(readyFormat) && readyFormat !== 'audio' && readyFormat !== 'image');
-  const introContentId = isReady
-    ? (mediaInfo?.assetId || mediaInfo?.key || mediaInfo?.plex || null)
-    : effectiveContentId;
-  const introEligible = introForVideo && PLEX_ID.test(String(introContentId || ''));
-  const intro = useVideoIntro(introEligible ? { media: { assetId: introContentId }, isPlex: true } : NO_INTRO_ARGS);
   // A start the request already fixes; otherwise the intro's own read of where
   // a play of the title would start (null: unknown, so no early cover).
   const explicitStartSec = REVIEW_GOTO != null ? REVIEW_GOTO

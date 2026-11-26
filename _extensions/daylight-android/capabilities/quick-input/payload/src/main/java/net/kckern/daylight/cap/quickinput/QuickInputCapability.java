@@ -138,8 +138,10 @@ public final class QuickInputCapability implements Capability {
         if ("recorded".equals(op)) return Replies.ok().put("waiting", recorded()).toString();
         String owner = captureOwner.get();
         if (!"status".equals(op) && !"retry".equals(op) && !"replace".equals(op)
-                && !"view".equals(op) && !"health".equals(op)) return Replies.err("bad_request").toString();
+                && !"view".equals(op) && !"health".equals(op) && !"share-targets".equals(op)) return Replies.err("bad_request").toString();
         if (owner == null || !owner.equals(body.optString("owner"))) return Replies.err("account_unavailable").toString();
+        // The share sheet's choices: ids and labels only, never a route.
+        if ("share-targets".equals(op)) return shareTargets().toString();
         InputQueue q = requireQueue();
         switch (op) {
             case "status":
@@ -740,6 +742,19 @@ public final class QuickInputCapability implements Capability {
         List<String> lines = new ArrayList<>();
         for (int i = 1; i <= Destinations.SLOTS; i++) lines.add((String) core.settings().get(DEST + i));
         return Destinations.usable(lines, problems);
+    }
+
+    /** Where a share from another app may go (ShareActivity): ids and labels, the default first. */
+    JSONObject shareTargets() {
+        try {
+            JSONArray targets = new JSONArray();
+            for (Destinations.Destination d : destinations(null).shareTargets()) {
+                targets.put(new JSONObject().put("id", d.id).put("label", d.label));
+            }
+            return Replies.ok().put("targets", targets);
+        } catch (org.json.JSONException impossible) {
+            return Replies.err("bad_request");
+        }
     }
 
     /** Ids, labels and kinds. No route: where the backend is reached is not for a status answer. */

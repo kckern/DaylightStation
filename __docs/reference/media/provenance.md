@@ -37,6 +37,12 @@ the scene covers the play request from the start.
 | `docked` (~4 s) | playing | field and lines dissolve; logo moves to the top-right corner at 80% opacity |
 | `leaving` (~0.9 s) | playing | corner logo fades |
 
+**Real progress.** A video shared from the phone gets the same scene, but its lines
+follow the real fetch instead of the per-play motion (`progress` on
+`ProvenanceHandoff`), its dots slow when no bytes have come for 2.5 s, and a failed
+fetch pulls the lines back and dims the logo (`failed`). The scene holds for as long
+as the fetch takes. See `__docs/reference/core/share.md`.
+
 **Secondary logos** (config `secondary_logos`), when the answer carries any, sit
 smaller in a row in the bottom third, below the lines, arriving just after the main
 logo; they fade out when the field clears and never dock. One that will not load is

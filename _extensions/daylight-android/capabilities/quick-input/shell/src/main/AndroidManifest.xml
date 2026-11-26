@@ -64,6 +64,25 @@
             android:taskAffinity=""
             android:theme="@android:style/Theme.DeviceDefault.Dialog" />
 
+        <!-- Exported, no permission: Daylight in Android's share sheet. Another app's share
+             (plain text: a link, a title around it) opens it; nothing is sent until the owner
+             taps where it goes, and it is written into the private quick-input queue like a
+             typed note. Not over the lock screen. See ShareActivity. -->
+        <activity
+            android:name="net.kckern.daylight.cap.quickinput.shell.ShareActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:label="Daylight"
+            android:launchMode="standard"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.DeviceDefault.Dialog">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
+
         <!-- Not exported: only the system's job scheduler binds it. Sends a queued capture after the app was stopped. -->
         <service
             android:name="net.kckern.daylight.cap.quickinput.shell.UploadJob"

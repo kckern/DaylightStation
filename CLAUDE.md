@@ -272,6 +272,7 @@ git rev-parse HEAD > {env.ops_docs}/docs-last-updated.txt
 | Lifelog knowledge (verified loops, private reviews, question queue, default-off runtime) | `__docs/reference/lifelog/knowledge.md` |
 | Life triage (Now → guided Gmail + todo triage: never-auto rules, dry run vs live, login-bound writes, applying/in-doubt cards, undo log, `triage/config.yml`) | `__docs/reference/life/triage.md` |
 | Journalist domain (journaling bot) | `__docs/reference/journalist/journalist-domain.md` |
+| Share router (Android share sheet → Daylight: one intake, URL routed to a handler; a shared video link fetched with yt-dlp to `media/tmp/share/` and played on a screen with the provenance scene following the real fetch; `share/config.yml` targets, `holdRequest` intro, `share:` content source) | `__docs/reference/core/share.md` |
 | Quick-input intake (phone uploads to the Journalist and Nutribot: voice, text, photo routes; device binding, daily allowance, once-only processing, adding an intake to a bot) | `__docs/reference/core/quick-input.md` |
 | School / Portal homeschool | `__docs/reference/school/README.md` |
 | Teacher flows (what a grown-up can do, from which state) | `__docs/reference/school/teacher.md` |

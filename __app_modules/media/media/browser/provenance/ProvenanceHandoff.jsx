@@ -11,12 +11,17 @@
  * Secondary logos (config `secondary_logos`), when the answer carries any,
  * sit smaller in a row in the bottom third and fade out as the main logo docks.
  *
+ * Real progress (`progress`, 0..1): a shared video being fetched. The lines
+ * then follow the bytes instead of the per-play motion, and the dots slow when
+ * no bytes have come for a while — a real stall, not a drawn one. `failed`
+ * pulls the lines back and dims the logo.
+ *
  * No words: the logo and the joining lines say it. Phases come from
  * useSceneTimeline (driven by the Player's intro stage). Reference: __docs/reference/media/provenance.md
  */
 import React, { useEffect, useId, useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
-import { makeLinkPlan, keyframesCss } from './linkCurve.js';
+import { makeLinkPlan, keyframesCss, REACH_PERCENT } from './linkCurve.js';
 import './ProvenanceHandoff.scss';
 
 /** The lines start reaching this long after the scene appears (matches the SCSS delay). */
@@ -43,10 +48,31 @@ export function useLinkStalls(stalls, active) {
   return active ? mood : null;
 }
 
+/** Real progress that has not moved for this long reads as a stall (the dots slow). */
+export const PROGRESS_STALL_MS = 2500;
+
+/**
+ * The dots' mood under real progress: `stalled` once it has not moved for
+ * PROGRESS_STALL_MS, `resumed` briefly when it moves again, else null.
+ */
+export function useProgressStalls(progress, active, stallMs = PROGRESS_STALL_MS) {
+  const [mood, setMood] = useState(null);
+  useEffect(() => {
+    if (!active) { setMood(null); return undefined; }
+    setMood((m) => (m === 'stalled' ? 'resumed' : m));
+    const timers = [
+      setTimeout(() => setMood((m) => (m === 'resumed' ? null : m)), RESUMED_MS),
+      setTimeout(() => setMood('stalled'), stallMs),
+    ];
+    return () => timers.forEach(clearTimeout);
+  }, [progress, active, stallMs]);
+  return active ? mood : null;
+}
+
 /** Line and dot colour when the answer names none (config `services[].accent`). */
 export const DEFAULT_ACCENT = '#ffffff'; // data-color: default service accent
 
-export function ProvenanceHandoff({ phase, provenance, linkMs = null, random = Math.random }) {
+export function ProvenanceHandoff({ phase, provenance, linkMs = null, progress = null, failed = false, random = Math.random }) {
   // A fresh motion for every play: bursts, shared stops, a hang on one side.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const plan = useMemo(() => makeLinkPlan(linkMs || 2200, random), [linkMs]);
@@ -57,20 +83,30 @@ export function ProvenanceHandoff({ phase, provenance, linkMs = null, random = M
     [plan, names.left, names.right],
   );
   const linking = phase === 'linking';
-  const mood = useLinkStalls(plan.stalls, linking);
+  const real = typeof progress === 'number' && Number.isFinite(progress);
+  const planMood = useLinkStalls(plan.stalls, linking && !real);
+  const progressMood = useProgressStalls(progress, linking && real && !failed);
+  const mood = failed ? null : (real ? progressMood : planMood);
   if (!provenance?.logoUrl) return null;
   const accent = /^#[0-9a-f]{3,8}$/i.test(provenance.accent || '') ? provenance.accent : DEFAULT_ACCENT;
   // The per-play animation applies only while linking; from `linked` on the
   // SCSS drops the animation and the lines close the gap.
-  const reach = (name) => (linking ? { animationName: name } : undefined);
+  // Under real progress the lines are as long as the bytes say (the SCSS
+  // transition eases each step); a failure pulls them back.
+  const reach = (name) => {
+    if (!linking) return undefined;
+    if (failed) return { animation: 'none', width: 0 };
+    if (real) return { animation: 'none', width: `${Math.max(0, Math.min(1, progress)) * REACH_PERCENT}%` };
+    return { animationName: name };
+  };
   return (
     <div
-      className={`provenance-handoff provenance-handoff--${phase}${mood ? ` provenance-handoff--${mood}` : ''}`}
+      className={`provenance-handoff provenance-handoff--${phase}${mood ? ` provenance-handoff--${mood}` : ''}${failed ? ' provenance-handoff--failed' : ''}`}
       style={{ '--ph-accent': accent, ...(linkMs ? { '--ph-link-ms': `${linkMs}ms` } : {}) }}
       data-provider={provenance.provider}
       aria-hidden="true"
     >
-      <style>{css}</style>
+      {real ? null : <style>{css}</style>}
       <div className="provenance-handoff__field" />
       <div className="provenance-handoff__link">
         <span className="provenance-handoff__line provenance-handoff__line--left" style={reach(names.left)} />
@@ -99,6 +135,10 @@ ProvenanceHandoff.propTypes = {
   }),
   /** How long the video is held (5-10 s, random per play): the lines take that long to reach in. */
   linkMs: PropTypes.number,
+  /** Real progress 0..1 (a shared video being fetched): the lines follow it instead of the per-play motion. */
+  progress: PropTypes.number,
+  /** The fetch failed: the lines pull back and the logo dims. */
+  failed: PropTypes.bool,
   /** Random source for the per-play motion (injectable for tests). */
   random: PropTypes.func,
 };

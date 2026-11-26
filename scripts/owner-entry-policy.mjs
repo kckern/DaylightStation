@@ -182,6 +182,8 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__app_modules/media/media/server/composition/plexHubSessions.mjs': 'composition',
   '__app_modules/media/media/server/composition/content-filter.mjs': 'composition',
   '__app_modules/media/media/server/composition/provenance.mjs': 'composition',
+  '__app_modules/media/media/server/composition/share.mjs': 'composition',
+  '__app_modules/media/media/server/application/share/ports/ISharedVideoSource.mjs': 'application',
   '__capabilities/state-gates/server/composition.mjs': 'composition',
   '__app_modules/money/economy/server/composition/earnings.mjs': 'composition',
   '__app_modules/household/donow/server/action-validation.mjs': 'application',
@@ -223,6 +225,7 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__app_modules/games/chess/server/composition/runtime.mjs': 'composition',
   '__app_modules/money/economy/server/composition/economyApi.mjs': 'composition',
   '__app_modules/household/donow/server/composition/donow.mjs': 'composition',
+  '__app_modules/household/share/server/composition/share.mjs': 'composition',
   '__app_modules/media/media/server/composition/playback-hub.mjs': 'composition',
   '__app_modules/wellness/fitness/server/application/measures/fitnessRingsProvider.mjs': 'application',
   // Gem achievement evidence (2026-11-04): each module's provider for the economy's gem rules.

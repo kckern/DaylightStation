@@ -206,6 +206,13 @@ $ph-ease: cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   &--leaving .provenance-handoff__badge { opacity: 0; }
+
+  // A shared video's fetch failed: the lines pull back (inline width 0, eased
+  // by the line transition), the dots go, the logo dims (the badge eases its own opacity).
+  &--failed {
+    .provenance-handoff__dots { opacity: 0; }
+    .provenance-handoff__badge { animation: none; opacity: 0.35; }
+  }
 }
 
 @keyframes ph-reach {

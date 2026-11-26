@@ -326,6 +326,10 @@ export const EXPECTED_COMPONENTS = {
   'service net.kckern.daylight.cap.quickinput.shell.UploadJob': { exported: false, permission: 'android.permission.BIND_JOB_SERVICE' },
   'activity net.kckern.daylight.cap.quickinput.shell.PhotoCaptureActivity': { exported: false, permission: null },
   'activity net.kckern.daylight.cap.quickinput.shell.CaptureStatusActivity': { exported: false, permission: null },
+  // Exported with no permission: Android's share sheet starts it for the app the owner is
+  // sharing from, and no permission exists that only the share sheet holds. It takes plain
+  // text, sends nothing until the owner taps a target, and queues it like a typed note.
+  'activity net.kckern.daylight.cap.quickinput.shell.ShareActivity': { exported: true, permission: null },
   // The camera app reaches the one file of a capture through a grant the photo screen
   // makes; the provider itself is closed, and grants are limited to /capture/.
   'provider net.kckern.daylight.cap.quickinput.shell.InputFileProvider': { exported: false, permission: null, grantsOnly: '/capture/' },

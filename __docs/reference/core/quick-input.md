@@ -9,6 +9,7 @@ A quick input is something captured away from a bot's chat and uploaded to it: a
 | `POST /api/v1/nutribot/voice` | audio | A spoken meal description |
 | `POST /api/v1/nutribot/text` | text | A typed meal description |
 | `POST /api/v1/nutribot/photo` | image | A meal photo |
+| `POST /api/v1/share/text`, `POST /api/v1/share/to/<target>/text` | text | Something shared from another app: routed by the [share router](share.md) (a video link plays on the target screen). Binding key `share`; no conversation, so `unknown_user` does not apply |
 
 What each bot does with an input is in its own reference: [Journalist](../journalist/journalist-domain.md#quick-input-intake), [Nutribot](../nutrition/README.md#quick-input-intake).
 

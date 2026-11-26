@@ -24,7 +24,7 @@ vi.mock('../../presentation.mjs', async (importOriginal) => ({
   useVideoIntro: (args) => {
     introState.calls.push(args);
     if (!args?.media) return null;
-    return { status: introState.status, minHoldMs: 6000, startSec: introState.startSec, resumeOk: introState.resumeOk, render: (stage) => <Scene stage={stage} /> };
+    return { status: introState.status, minHoldMs: 6000, startSec: introState.startSec, resumeOk: introState.resumeOk, holdRequest: introState.holdRequest, render: (stage) => <Scene stage={stage} /> };
   },
 }));
 
@@ -52,7 +52,7 @@ describe('SinglePlayer intro from the play request', () => {
   let info;
   beforeEach(() => {
     vi.clearAllMocks();
-    Object.assign(introState, { status: 'ready', startSec: 0, resumeOk: false, calls: [] });
+    Object.assign(introState, { status: 'ready', startSec: 0, resumeOk: false, holdRequest: false, calls: [] });
     sceneMounts.count = 0;
     video.host = null;
     info = deferred();
@@ -152,5 +152,21 @@ describe('SinglePlayer intro from the play request', () => {
       act(() => { vi.advanceTimersByTime(1500); });
       expect(isIntroCovering()).toBe(false);
     } finally { vi.useRealTimers(); }
+  });
+
+  it('asks the installed intro about any video id, telling it whether it is a Plex key', () => {
+    play({ contentId: 'share:s000000000001' });
+    expect(introState.calls.at(-1)).toEqual({ media: { assetId: 'share:s000000000001' }, isPlex: false });
+  });
+
+  it('fetches no play info while the intro holds the request, and fetches once it lets go', () => {
+    introState.holdRequest = true;
+    const view = play({ contentId: 'share:s000000000001' });
+    expect(screen.getByTestId('scene')).toHaveAttribute('data-stage', 'covering');
+    expect(fetchMediaInfo).not.toHaveBeenCalled();
+    introState.holdRequest = false;
+    view.rerender(<SinglePlayer contentId="share:s000000000001" clear={vi.fn()} advance={vi.fn()} />);
+    expect(fetchMediaInfo).toHaveBeenCalledTimes(1);
+    expect(fetchMediaInfo.mock.calls[0][0].contentId).toBe('share:s000000000001');
   });
 });

@@ -19,7 +19,9 @@ placeholder), `widgets` (a four-button widget and one-action buttons), native au
 playback (`media-service`, with playing from a widget or tile with no window and
 pinning media from the site) with Android Auto (`android-auto`), a list of household
 actions and a voice memo in the car (`car-actions`), quick inputs for the
-Journalist and Nutribot (`quick-input`: a recording, typed text or a photo) and
+Journalist and Nutribot (`quick-input`: a recording, typed text or a photo), a share
+target in Android's share sheet (`quick-input`: a shared link goes to the share
+router; a video plays on a screen) and
 the app's own local notifications. What it does not have is
 under "What the phone does not have".
 
@@ -1192,6 +1194,13 @@ the route, and the route in force when the input is sent is the one used. An
 input whose destination has since been removed is parked with "unknown
 destination" and kept.
 
+The phone's device file adds two share destinations (see "Sharing from other apps"):
+
+| Slot | Destination id | Kind | Route | Label |
+|---|---|---|---|---|
+| 6 | `share-livingroom-tv` | text | `/api/v1/share/to/livingroom-tv/text` | Living room TV |
+| 7 | `share-office-tv` | text | `/api/v1/share/to/office-tv/text` | Office |
+
 ### Who can start a capture
 
 A recording, the camera and the text screen start only from a tap on this
@@ -1259,6 +1268,30 @@ Daylight applies EXIF orientation, scales the long edge to at most 2048 pixels,
 and re-encodes the image as JPEG. It checks the encoded file for EXIF, XMP and
 IPTC blocks and removes the camera source after processing. Upload uses the
 processed image and the capture timestamp kept separately.
+
+### Sharing from other apps
+
+Daylight is in Android's share sheet for plain text (`SEND`, `text/plain`): a link
+from YouTube, a browser or any other app, often with a title around it.
+`ShareActivity` opens over the sending app, shows the first line of what is shared
+and one big button, **Send to <first share destination>**, with the other share
+destinations below it and **Cancel**. Nothing is sent until the owner taps one.
+The tap writes the shared text into the same private queue as a typed note, for
+that destination. It is sent with this install's identity, retried, and shown in
+Capture status like any capture. The backend's [share router](../core/share.md)
+decides what to do with it. A video link plays on that screen, which shows the
+provider's scene following the real fetch.
+
+- **Share destinations** are the text destinations whose id is `share` or starts
+  with `share-`, in slot order. The first one is the big button. The screen asks the
+  payload for them (port op `share-targets`, ids and labels only) once the payload
+  has started. A cold start waits up to 8 s for it (`READY_WAIT_MS`).
+- **No destination** ("Sharing has no destination on this phone") or **not set up**
+  ("Daylight is not set up on this phone yet"): nothing is queued.
+- **Text over the intake's 16 KB** keeps its start, where the link is.
+- Not over the lock screen, kept out of recents, no recents screenshot.
+- The backend refuses for good a share with no URL, or a URL nothing handles
+  (`422 unusable_input`). The capture is then parked, and Capture status shows it.
 
 ### Capture status
 
@@ -1522,6 +1555,7 @@ What another app on the phone can reach, and what stands in the way.
 | Component | Why it is exported | What protects it |
 |---|---|---|
 | `LinkActivity` | Links from notifications, pages and the app's own surfaces | The checks under "Links": origin, page path, install key, a fixed list of effects |
+| `ShareActivity` (`quick-input`) | Android's share sheet starts it for the app the owner is sharing from | No permission exists that only the share sheet holds. It takes `text/plain` only and sends nothing until the owner taps a destination. What it sends goes to a configured share route with this install's identity; the backend routes only a URL a handler takes, and plays it only on a configured screen |
 | `ActionTileService$Tile1` to `$Tile4` | The system binds tiles | `BIND_QUICK_SETTINGS_TILE`: only the system can bind. They take no input from the caller |
 | `KioskActivity` (`webview-host`) | It is the launcher icon | It reads nothing from the intent that starts it. It shows nothing over the lock screen and has no lock task |
 | `MainActivity` (shell) | Not exported on the phone | Another app could otherwise start it to put the battery-exemption screen and permission prompts in front of the owner |
@@ -1538,10 +1572,13 @@ What another app on the phone can reach, and what stands in the way.
 | `CarAppPermissionActivity`, `CarAppNotificationBroadcastReceiver`, `CarAppMetadataHolderService` (Car App Library) | Not exported (the last also disabled) | Merged in by the library; named in `car-actions`' `libraryComponents:` and the verifier's table |
 | `ShellService`, `InstallReceiver` | Not exported | |
 
-Ten components are exported: `LinkActivity`, `KioskActivity`, the four tile
-services (which the system alone can bind), `DaylightMediaService`,
-`CarHostGateService`, `ButtonWidgetConfigActivity` and `BootReceiver`. An
-eleventh, or one of these no longer exported, fails the build. The car screen added
+Thirteen components are exported: `LinkActivity`, `ShareActivity`, `KioskActivity`,
+the four tile services (which the system alone can bind), `DaylightMediaService`,
+`MediaButtonReceiver`, `CarHostGateService`, `ButtonWidgetConfigActivity`,
+`PhoneHomeActivity` and `BootReceiver` (`tools/phone-list.test.mjs`). A fourteenth,
+or one of these no longer exported, fails the build. Sharing from other apps added
+one component, `ShareActivity`, which is exported, and no permission; the verifier
+counts 33 components in the build (shell 114). The car screen added
 five components (the exported gate, the closed car service behind it and the
 library's three closed ones) and no permission to the list: it declares `RECORD_AUDIO`
 for the car's microphone, which `quick-input` already brings, so the list is still

@@ -60,7 +60,7 @@ test('a photo is taken by the meal camera or the system camera app, so the phone
     'android.permission.FOREGROUND_SERVICE_MICROPHONE', 'android.permission.ACCESS_NETWORK_STATE']);
 });
 
-test('another app can reach exactly these twelve components of the phone build', () => {
+test('another app can reach exactly these thirteen components of the phone build', () => {
   const exported = ['net.kckern.daylight.shell.BootReceiver', ...phone.capabilities.flatMap((name) => capabilities[name]?.exported || [])];
   assert.deepEqual(exported.sort(), [
     'androidx.media3.session.MediaButtonReceiver',
@@ -71,6 +71,7 @@ test('another app can reach exactly these twelve components of the phone build',
     'net.kckern.daylight.cap.onetap.shell.ActionTileService$Tile2',
     'net.kckern.daylight.cap.onetap.shell.ActionTileService$Tile3',
     'net.kckern.daylight.cap.onetap.shell.ActionTileService$Tile4',
+    'net.kckern.daylight.cap.quickinput.shell.ShareActivity',
     'net.kckern.daylight.cap.webviewhost.shell.KioskActivity',
     'net.kckern.daylight.cap.widgets.shell.ButtonWidgetConfigActivity',
     'net.kckern.daylight.cap.widgets.shell.PhoneHomeActivity',
@@ -93,24 +94,33 @@ test('the widget chooser is exported and Freematics setup is private', () => {
   ]);
 });
 
-test('nothing of quick-input is exported: a capture starts inside the app or not at all', () => {
-  assert.equal(capabilities['quick-input'].exported, undefined);
+test('quick-input exports only the share sheet entry: a capture starts inside the app or not at all', () => {
+  assert.deepEqual(capabilities['quick-input'].exported, ['net.kckern.daylight.cap.quickinput.shell.ShareActivity']);
   const own = Object.entries(EXPECTED_COMPONENTS).filter(([key]) => key.includes('.cap.quickinput.'));
   assert.deepEqual(own.map(([key]) => key).sort(), [
     'activity net.kckern.daylight.cap.quickinput.shell.CaptureStatusActivity',
     'activity net.kckern.daylight.cap.quickinput.shell.MealCameraActivity',
     'activity net.kckern.daylight.cap.quickinput.shell.PhotoCaptureActivity',
     'activity net.kckern.daylight.cap.quickinput.shell.RecordActivity',
+    'activity net.kckern.daylight.cap.quickinput.shell.ShareActivity',
     'activity net.kckern.daylight.cap.quickinput.shell.TextInputActivity',
     'provider net.kckern.daylight.cap.quickinput.shell.InputFileProvider',
     'service net.kckern.daylight.cap.quickinput.shell.MemoRecorderService',
     'service net.kckern.daylight.cap.quickinput.shell.UploadJob',
   ]);
   for (const [key, row] of own) {
-    assert.equal(row.exported, false, key);
+    // The share sheet starts ShareActivity for another app; it sends nothing until the owner taps a target.
+    assert.equal(row.exported, key.endsWith('.ShareActivity'), key);
     // The job service is bound only by the system's job scheduler, which holds BIND_JOB_SERVICE.
     assert.equal(row.permission, key.endsWith('.UploadJob') ? 'android.permission.BIND_JOB_SERVICE' : null, key);
   }
+});
+
+test('the phone sends shares to share destinations, the living-room TV first', () => {
+  const lines = Object.entries(phone.defaults).filter(([k]) => k.startsWith('input.dest.')).map(([, v]) => v);
+  const shares = lines.filter((v) => /^share(-|\|)/.test(v));
+  assert.ok(shares.length >= 1);
+  assert.match(shares[0], /^share-livingroom-tv\|[^|]+\|text\|\/api\/v1\/share\/to\/livingroom-tv\/text$/);
 });
 
 test('the phone enables Call prompts and keeps general web capture off', () => {

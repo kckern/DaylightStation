@@ -3,11 +3,16 @@
 # on the backend). The shell half captures: a recorder (a microphone foreground service),
 # a text screen, and a photo screen that opens the system's camera app and hands it one
 # file through a closed provider. Each is started only by a tap on this phone, through a
-# keyed link; none is exported. This payload queues every input on disk and uploads it
-# when the network is up, and keeps it until the backend has answered 200 for it.
+# keyed link; none of those is exported. ShareActivity is: Daylight in Android's share
+# sheet, which turns a share from another app into a text input for a "share" destination.
+# This payload queues every input on disk and uploads it when the network is up, and
+# keeps it until the backend has answered 200 for it.
 # Owns the link kinds daylight://input/<voice|text|photo|queue|discard> and, as the
 # earlier name of a voice input for the journal, daylight://memo/<new|queue|discard>.
 entry: net.kckern.daylight.cap.quickinput.QuickInputCapability
+exported:
+  # The share sheet: plain text from another app; nothing is sent until the owner taps a target.
+  - net.kckern.daylight.cap.quickinput.shell.ShareActivity
 # No CAMERA: a photo is taken by the system's camera app (ACTION_IMAGE_CAPTURE), which
 # an app may use without the permission as long as it does not declare it.
 permissions:

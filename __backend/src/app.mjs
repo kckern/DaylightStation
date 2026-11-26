@@ -469,6 +469,7 @@ import { ROLE_SEVERITY } from "../../__app_modules/learning/school/server/domain
 
 import { createContentFilterRuntime } from "../../__app_modules/media/media/server/composition/content-filter.mjs";
 import { createProvenanceRuntime } from "../../__app_modules/media/media/server/composition/provenance.mjs";
+import { shareSelfGuardedPaths } from "../../__app_modules/household/share/server/composition/share.mjs";
 import { FeedbackService } from "./3_applications/common/feedback/FeedbackService.mjs";
 import { NotificationConfigService } from "./3_applications/notification/NotificationConfigService.mjs";
 import { YamlNotificationConfigRepository } from '#adapters/notification/YamlNotificationConfigRepository.mjs';
@@ -576,6 +577,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     // own small body parsers. __docs/reference/nutrition/README.md.
     '/api/v1/nutribot/upc',
     '/api/v1/nutribot/image',
+    // The share router's quick-input intakes (/text and one per target in
+    // share/config.yml): the shared quick-input route guards itself, as above.
+    ...shareSelfGuardedPaths(configService),
   ]);
   // Cross-site writes are refused before any body is read, and CORS answers
   // only the configured extra origins (default none). Without these, any page
@@ -2777,6 +2781,34 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     // a missing seam) — log loudly and leave the rest of the house booting,
     // same posture as `school.lifecycle.wiring-failed` below.
     donowLogger.error('donow.wiring-failed', { error: err.message });
+  }
+
+  // ==========================================================================
+  // Share router — anything shared from the phone (Android share sheet), one
+  // intake, routed to the app that owns that kind of thing. A shared video
+  // link is fetched to the media temp folder and played on a screen, with
+  // the provider's provenance scene following the real fetch.
+  // __docs/reference/core/share.md. After wakeAndLoadService (it plays there).
+  // ==========================================================================
+  try {
+    const { createMediaShare } = await import("../../__app_modules/media/media/server/composition/share.mjs");
+    const { createShare } = await import("../../__app_modules/household/share/server/composition/share.mjs");
+    const mediaShare = createMediaShare({
+      configService,
+      contentRegistry,
+      rootLogger,
+      screens: {
+        load: (deviceId, query) => wakeAndLoadService.execute(deviceId, query),
+        stop: (deviceId) => sessionControlService.transport(deviceId, { action: 'stop', commandId: `share-stop-${Date.now()}` }),
+      },
+      notify: (username, { title, body }) => notificationStack.notificationService.send({
+        title, body, category: 'household_alert', urgency: 'normal', metadata: { username },
+      }),
+    });
+    const share = createShare({ configService, householdId, dataService, handlers: [mediaShare.handler], rootLogger });
+    v1Routers.share = share.router;
+  } catch (err) {
+    rootLogger.error('share.wiring-failed', { error: err.message });
   }
 
   // ==========================================================================

@@ -97,6 +97,21 @@ final class Destinations {
         return null;
     }
 
+    /** The prefix of a destination that takes shares from other apps (the share sheet). */
+    static final String SHARE_PREFIX = "share";
+
+    /**
+     * Where something shared from another app may go: text destinations whose id is
+     * "share" or starts with "share-", in slot order. The first is the default.
+     */
+    List<Destination> shareTargets() {
+        List<Destination> out = new ArrayList<>();
+        for (Destination d : all) {
+            if (d.kind == Kind.TEXT && (d.id.equals(SHARE_PREFIX) || d.id.startsWith(SHARE_PREFIX + "-"))) out.add(d);
+        }
+        return out;
+    }
+
     /** The label of a destination, or its id when it is not configured any more. */
     String label(String id) {
         Destination d = find(id);
