@@ -41,9 +41,12 @@ import { ItemDestinationPicker } from "../actions/ItemDestinationPicker.jsx";
 import { useHouseholdResultActions } from "../household/useHouseholdResultActions.js";
 import { usePlayDestination } from "../habits/usePlayDestination.js";
 import { rankByHabits } from "../habits/mediaHabits.js";
+import { DestinationChip, useDestinationCycle } from "./DestinationChip.jsx";
 import "./Search.scss";
 
-export function MediaContentSearch({ inputRef }) {
+// `destinationWrapper`: a component the chip is wrapped in — the desktop dock
+// passes FirstUseCard so the first-use naming prompt points at the chip.
+export function MediaContentSearch({ inputRef, destinationWrapper: DestinationWrapper = null }) {
   const [oneShotAction, setOneShotAction] = useState(null);
   const { scopes, currentScopeKey, currentScope } = useSearchContext();
   const { dispatch, dispatchLeafVerb, playContainerAsQueue } = useContentDispatch();
@@ -74,6 +77,14 @@ export function MediaContentSearch({ inputRef }) {
     }
     return ranked;
   }, [scoresFor, rememberedFor, wholeCatalog]);
+  // The destination lives in the box: Tab / Shift+Tab (input focused only)
+  // and a click on the chip step through where ▶ plays. Outside an aim
+  // provider nothing is handled and Tab closes the search as before.
+  const { cycle: cycleDestination } = useDestinationCycle();
+  const handleTabKey = useCallback((dir) => cycleDestination(dir, 'tab'), [cycleDestination]);
+  const destinationChip = DestinationWrapper
+    ? <DestinationWrapper><DestinationChip /></DestinationWrapper>
+    : <DestinationChip />;
   // The header's destination control is in use: keep this search open (FIND.1b).
   const { active: destinationInteractionActive } = useDestinationInteraction();
 
@@ -156,6 +167,8 @@ export function MediaContentSearch({ inputRef }) {
             onPlayAll={handlePlayAll}
             onMore={handleMore}
             onAction={({ kind, item }) => handleMore(kind, item)}
+            inputAccessory={destinationChip}
+            onTabKey={handleTabKey}
             transformResults={transformResults}
             resultExtraActions={extraActions}
             resultRowLabels={rowLabelsFor}

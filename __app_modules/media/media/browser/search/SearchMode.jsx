@@ -6,8 +6,9 @@
 // scope control and the icon cluster the instant the field got focus (the
 // one moment scope mattered). That rule is deleted. On mobile the dock is
 // now a launcher (Dock.jsx); tapping it mounts this component instead, which
-// gets the whole screen: ✕ + input (autofocus), DestinationLine, ScopeChips,
-// StreamStatusLine, then a results list filling the rest.
+// gets the whole screen: ✕ + input (autofocus) + the destination chip (where
+// ▶ plays; Tab in the box or a tap on it cycles it — DestinationChip.jsx),
+// ScopeChips, StreamStatusLine, then a results list filling the rest.
 //
 // Rendered by the shell (MediaAppShell.jsx), not a route — it overlays
 // whatever view is current. Playback and queue actions keep it mounted so
@@ -33,7 +34,7 @@ import { StreamStatusLine } from "../../../../../__capabilities/content-catalog/
 import { ResultRow } from "../../../../../__capabilities/content-catalog/browser/result-row.mjs";
 import { useSearchContext } from "./useSearchContext.js";
 import { ScopeChips } from "./ScopeChips.jsx";
-import { DestinationLine } from "../cast/DestinationLine.jsx";
+import { DestinationChip, useDestinationCycle } from "./DestinationChip.jsx";
 import { useContentDispatch } from "./useContentDispatch.js";
 import { useSessionController } from "../controller/useSessionController.js";
 import { useNav } from "../shell/NavProvider.jsx";
@@ -89,7 +90,8 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
   const { extraActions, runHousehold } = useHouseholdResultActions();
   const { queue } = useSessionController('local');
   const { push } = useNav();
-  const { scoresFor, rememberedFor, recordPick, destinationFor, labelsFor } = usePlayDestination();
+  const { scoresFor, rememberedFor, recordPick } = usePlayDestination();
+  const { cycle: cycleDestination } = useDestinationCycle();
   const log = useMemo(() => getLogger().child({ component: 'search-mode' }), []);
   // The words on screen when a row is opened or played (set below, read by
   // the handlers, which are defined before the combobox that owns the text).
@@ -274,11 +276,6 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
   // A remembered pick holds row 1 from the first keystroke, in the
   // catalog-wide scope only (see MediaContentSearch).
   const wholeCatalog = currentScopeKey == null || currentScopeKey === scopes[0]?.key;
-  const learnedWhere = [
-    ['Films and shows play', { type: 'movie' }],
-    ['Music plays', { type: 'track' }],
-  ].map(([kind, probe]) => (destinationFor(probe).source === 'learned' ? `${kind} on ${labelsFor(probe).short}` : null))
-    .filter(Boolean).join(' · ') || null;
   const results = useMemo(
     () => rankByHabits(collapseResultEditions(state.results), scoresFor(searchText), wholeCatalog && isSearching ? rememberedFor(searchText) : null),
     [state.results, scoresFor, rememberedFor, searchText, wholeCatalog, isSearching],
@@ -364,23 +361,20 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
           aria-label="Search media"
           value={searchText}
           onChange={(e) => handleInput(e.target.value)}
+          // Tab / Shift+Tab in the box cycle where ▶ plays (an add-to-one-screen
+          // search has no destination to change).
+          onKeyDown={(e) => {
+            if (e.key !== 'Tab' || addTo || e.altKey || e.ctrlKey || e.metaKey) return;
+            if (cycleDestination(e.shiftKey ? -1 : 1, 'tab')) e.preventDefault();
+          }}
         />
+        {!addTo && <DestinationChip />}
       </div>
 
-      {addTo ? (
+      {addTo && (
         <div className="search-mode-add-to" data-testid="search-add-to-banner" role="status">
           Adding to the queue on <strong>{addTo.name ?? 'this screen'}</strong> — just this once; your aim doesn&apos;t change.
         </div>
-      ) : (
-        <>
-          <DestinationLine surface="search-mode" />
-          {learnedWhere && (
-            // The header names the aim; with nothing aimed, a ▶ follows where
-            // this browser usually plays that kind of thing. Say so here, where
-            // the rows' ▶ are icon-only on a phone.
-            <div className="search-mode-learned" data-testid="search-learned-where" role="note">{learnedWhere}</div>
-          )}
-        </>
       )}
 
       <div className="search-mode-scope">

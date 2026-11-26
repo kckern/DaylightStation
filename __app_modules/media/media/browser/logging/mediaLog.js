@@ -86,6 +86,10 @@ export const mediaLog = {
   outcomeUndoFailed:      warn('outcome.undo-failed'),
   outcomeUndone:          info('outcome.undone'),
   destinationChanged:     info('dispatch.destination_changed'),
+  // The search box's destination chip: one step of its cycle (Tab, Shift+Tab
+  // or a click), and an aimed screen that left the fleet being let go.
+  searchDestinationCycled: info('search.destination-cycled'),
+  searchDestinationStale: info('search.destination-stale'),
   aimRestored:            info('aim.restored'),
   aimActivity:            sampled('aim.activity', { maxPerMinute: 30, aggregate: true }),
   aimExpired:             info('aim.expired'),

@@ -325,7 +325,7 @@ describe('SearchMode history × dispatch', () => {
     comboState = { search: 'bluey', results: [LEAF] };
     dispatchResult = Promise.resolve(['dispatch-1']);
     const { rerender } = render(<Harness />);
-    await waitFor(() => expect(screen.getByTestId('destination-line-name')).toHaveTextContent('Living Room TV'));
+    await screen.findByTestId('search-destination-chip');
 
     fireEvent.click(await screen.findByTestId('result-play-all-plex:685088'));
     expect(screen.getByTestId('search-mode')).toBeInTheDocument();
@@ -348,7 +348,7 @@ describe('SearchMode history × dispatch', () => {
     comboState = { search: 'bluey', results: [LEAF] };
     dispatchResult = Promise.resolve(['dispatch-2']);
     const { rerender } = render(<Harness />);
-    await waitFor(() => expect(screen.getByTestId('destination-line-name')).toHaveTextContent('Living Room TV'));
+    await screen.findByTestId('search-destination-chip');
 
     fireEvent.click(await screen.findByTestId('result-play-all-plex:685088'));
     expect(screen.getByTestId('search-mode')).toBeInTheDocument();

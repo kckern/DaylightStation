@@ -81,17 +81,50 @@ vi.mock("../../../../../__capabilities/content-catalog/browser/picker.mjs", () =
         <button data-testid="more-add" onClick={() => props.onMore?.('add', leaf)}>add</button>
         <button data-testid="more-detail" onClick={() => props.onMore?.('detail', leaf)}>open detail</button>
         <button data-testid="close-search" onClick={() => props.onClose?.('escape')}>close</button>
+        {/* Mirrors ContentCombobox's opt-in Tab contract: the input's own
+            keydown asks onTabKey first; unhandled, Tab closes the search. */}
+        <input
+          data-testid="mock-search-input"
+          onKeyDown={(e) => {
+            if (e.key !== 'Tab') return;
+            if (props.onTabKey?.(e.shiftKey ? -1 : 1)) { e.preventDefault(); return; }
+            props.onClose?.('tab');
+          }}
+        />
+        <div data-testid="mock-input-accessory">{props.inputAccessory}</div>
+        <div role="menu" data-testid="mock-more-menu"><button role="menuitem" data-testid="mock-menu-item">Play next</button></div>
       </>
     );
   },
 }));
 
 vi.mock("../../../../../frontend/src/lib/logging/Logger.js", () => {
-  const getLogger = () => ({ child: () => ({ info }) });
+  const logger = { info, debug: () => {}, warn: () => {}, error: () => {}, sampled: () => {} };
+  logger.child = () => logger;
+  const getLogger = () => logger;
   return { default: getLogger, getLogger };
 });
 
 import { MediaContentSearch } from "./MediaContentSearch.jsx";
+import { MantineProvider } from '@mantine/core';
+import { CastTargetProvider, CAST_TARGET_KEY } from "../cast/CastTargetProvider.jsx";
+import { FleetContext } from "../fleet/FleetProvider.jsx";
+import { resetHabitsStoreForTests } from "../habits/mediaHabits.js";
+
+const office = { id: 'office-tv', type: 'linux-pc', name: 'Office Screen', content_control: { provider: 'ws' } };
+const livingRoom = { id: 'livingroom-tv', type: 'shield-tv', name: 'Living Room TV', content_control: { provider: 'fully-kiosk' } };
+function fleet(devices = [office, livingRoom]) {
+  return { devices, loading: false, error: null, refresh: vi.fn(), identity: { clientId: 'me', deviceId: 'browser:me' } };
+}
+function withAim(ui, devices) {
+  return (
+    <MantineProvider>
+      <FleetContext.Provider value={fleet(devices)}>
+        <CastTargetProvider>{ui}</CastTargetProvider>
+      </FleetContext.Provider>
+    </MantineProvider>
+  );
+}
 
 beforeEach(() => {
   dispatch.mockReset();
@@ -278,6 +311,68 @@ describe('MediaContentSearch', () => {
 
       expect(navPush).toHaveBeenCalledWith('detail', { contentId: 'plex:685088' });
       expect(queuePlayNow).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── The destination lives in the search box; Tab cycles it ──
+  describe('destination chip', () => {
+    beforeEach(() => {
+      localStorage.clear();
+      resetHabitsStoreForTests();
+      localStorage.setItem(CAST_TARGET_KEY, JSON.stringify({ mode: 'transfer', targetIds: ['office-tv'], activityAt: Date.now() }));
+    });
+    const chipText = () => screen.getByTestId('search-destination-chip').textContent;
+
+    it('mounts the chip inside the search input and opts in to Tab', () => {
+      render(withAim(<MediaContentSearch />));
+      expect(screen.getByTestId('mock-input-accessory')).toContainElement(screen.getByTestId('search-destination-chip'));
+      expect(typeof comboboxProps.onTabKey).toBe('function');
+      expect(chipText()).toBe('▶ Office Screen');
+    });
+
+    it('typing then Tab moves the chip on; Shift+Tab moves it back; the search stays open', () => {
+      const onClose = vi.fn();
+      render(withAim(<MediaContentSearch />));
+      const input = screen.getByTestId('mock-search-input');
+      fireEvent.change(input, { target: { value: 'termin' } });
+
+      expect(fireEvent.keyDown(input, { key: 'Tab' })).toBe(false);
+      expect(chipText()).toBe('▶ This device');
+      fireEvent.keyDown(input, { key: 'Tab' });
+      expect(chipText()).toBe('▶ Living Room TV');
+      fireEvent.keyDown(input, { key: 'Tab', shiftKey: true });
+      expect(chipText()).toBe('▶ This device');
+      fireEvent.keyDown(input, { key: 'Tab', shiftKey: true });
+      expect(chipText()).toBe('▶ Office Screen');
+      expect(onClose).not.toHaveBeenCalled();
+      expect(info).toHaveBeenCalledWith('search.destination-cycled', { from: 'local', to: 'livingroom-tv', via: 'tab' });
+    });
+
+    it('a click on the chip cycles too, logged as a click', () => {
+      render(withAim(<MediaContentSearch />));
+      fireEvent.click(screen.getByTestId('search-destination-chip'));
+      expect(chipText()).toBe('▶ This device');
+      expect(info).toHaveBeenCalledWith('search.destination-cycled', { from: 'office-tv', to: 'local', via: 'click' });
+    });
+
+    it('Tab inside a ⋯ menu does not cycle the destination', () => {
+      render(withAim(<MediaContentSearch />));
+      fireEvent.keyDown(screen.getByTestId('mock-menu-item'), { key: 'Tab' });
+      expect(chipText()).toBe('▶ Office Screen');
+      expect(info).not.toHaveBeenCalledWith('search.destination-cycled', expect.anything());
+    });
+
+    it('the aimed screen leaving the fleet reads "▶ This device"', () => {
+      const { rerender } = render(withAim(<MediaContentSearch />));
+      expect(chipText()).toBe('▶ Office Screen');
+      rerender(withAim(<MediaContentSearch />, [livingRoom]));
+      expect(chipText()).toBe('▶ This device');
+    });
+
+    it('without an aim provider Tab is left to the combobox (closes as before)', () => {
+      render(<MediaContentSearch />);
+      expect(screen.queryByTestId('search-destination-chip')).toBeNull();
+      expect(comboboxProps.onTabKey?.(1) ?? false).toBe(false);
     });
   });
 });

@@ -224,10 +224,52 @@
   }
 }
 
-// "Films and shows play on Office Screen" — under the destination line on the
-// phone search, when a ▶ follows a learned screen rather than the aim.
-.search-mode-learned {
-  padding: 0 var(--mantine-spacing-md) var(--mantine-spacing-xs);
+// ---- Destination chip (where ▶ plays, Tab cycles it) ------------------------
+// Lives inside the search box's right end on desktop (ContentCombobox's
+// inputAccessory) and beside the input on the phone's search surface. Plain
+// and quiet: amber stays reserved for PLAY. 44 px tall.
+.media-search-input-wrap .mantine-Input-input {
+  // Room for the 44 px chip inside the field (the section insets 1 px).
+  height: 46px;
+  min-height: 46px;
+}
+
+.media-destination-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 100%;
+  min-height: 44px;
+  max-width: 14rem;
+  padding: 0 10px;
+  border-left: 1px solid var(--media-control-line);
+  color: var(--media-text);
   font-size: 0.875rem;
-  color: var(--mantine-color-dark-1);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+
+  &:hover { background: chalk(0.06); }
+  &:focus-visible { outline: 2px solid var(--media-accent); outline-offset: -2px; }
+  &[data-here] { color: var(--media-muted); }
+
+  .media-destination-chip-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  // The device icon is the phone's short form (below).
+  .media-destination-chip-icon { display: none; flex-shrink: 0; }
+}
+
+// Phone search surface: the chip rides the input's row as its own 44 px
+// control — device icon + name, capped so the input keeps most of the row.
+.search-mode-header .media-destination-chip {
+  flex: 0 1 auto;
+  max-width: min(30%, 9rem);
+  border: 1px solid var(--media-control-line);
+  border-radius: var(--mantine-radius-sm);
+
+  .media-destination-chip-icon { display: inline-block; }
 }

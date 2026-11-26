@@ -133,7 +133,33 @@ class PickerScrollAnchor extends Component {
  *   nothing renders.
  * @param {boolean} [props.destinationInteractionActive] - keeps this editing
  *   session open for the desktop media destination picker's explicit lifetime
+ * @param {React.ReactNode} [props.inputAccessory] - rendered inside the input's
+ *   right side, before the loader/clear control (Media: the destination chip).
+ *   Omit and the input is unchanged.
+ * @param {(dir: 1|-1) => boolean} [props.onTabKey] - asked on Tab (1) /
+ *   Shift+Tab (-1) while the INPUT itself has focus; return true when handled
+ *   and the key is consumed (no focus move, the search stays open). Omit, or
+ *   return false, and Tab closes the search as it always has.
  */
+// Room for the loader / clear control beside an input accessory.
+const RIGHT_CONTROL_WIDTH = 36;
+
+/** Width of the element given the returned ref, kept current while `active`. */
+function useMeasuredWidth(active) {
+  const [node, setNode] = useState(null);
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    if (!active || !node) return undefined;
+    const measure = () => setWidth(Math.ceil(node.getBoundingClientRect().width));
+    measure();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [active, node]);
+  return [setNode, width];
+}
+
 // Media shows the source in sentence case ("Plex"), never shouting capitals.
 function sentenceCase(value) {
   const text = String(value ?? '').trim();
@@ -168,6 +194,8 @@ export function ContentCombobox({
   retainQueryOnEscape = false,
   retainPlayableSelection = false,
   retainQueryOnClose = false,
+  inputAccessory = null,
+  onTabKey = null,
 }) {
   const log = useMemo(() => getChildLogger({ component: 'ContentCombobox', app: logApp, sessionLog: true }), [logApp]);
   const {
@@ -197,6 +225,9 @@ export function ContentCombobox({
   const highlightedId = items[highlightIdx]?.id;
   const normalizedValue = normalizeValue(value);
 
+  // An input accessory (Media's destination chip) sits inside the input's
+  // right side; the input's text stops short of it, so its width is measured.
+  const [accessoryRef, accessoryWidth] = useMeasuredWidth(!!inputAccessory);
   const localInputRef = useRef(null);
   const inputRef = suppliedInputRef || localInputRef;
   // More-actions menus have their own portal. Mark their pointer boundary
@@ -416,6 +447,13 @@ export function ContentCombobox({
       return;
     }
     if (e.key === 'Tab') {
+      // Opt-in (Media): Tab in the box cycles the destination instead of
+      // leaving. Only keys aimed at the input itself, never a bubbled one.
+      if (onTabKey && e.target === e.currentTarget && !e.altKey && !e.ctrlKey && !e.metaKey
+        && onTabKey(e.shiftKey ? -1 : 1) === true) {
+        e.preventDefault();
+        return;
+      }
       commitClose('tab'); // no preventDefault — focus moves naturally
     }
   };
@@ -694,6 +732,38 @@ export function ContentCombobox({
   const hasUnresolvedSourceFailures = sourceErrors.length > 0;
   const showFreeform = allowFreeform && !!search && search !== value && !isBrowse && !streamError && !hasUnresolvedSourceFailures && search.length >= 2;
 
+  // The loader / clear control at the input's right end.
+  const rightControl = (isSearching || browseLoading) ? <Loader size="xs" /> : (retainQueryOnClose && search ? (
+    <ActionIcon
+      size="sm"
+      variant="subtle"
+      aria-label="Clear search"
+      data-testid="combobox-clear-search"
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={(e) => { e.stopPropagation(); log.info('search.cleared', {}); clearSearch(); inputRef.current?.focus(); }}
+    >
+      <IconX size={14} />
+    </ActionIcon>
+  ) : value ? (
+    <ActionIcon
+      size="sm"
+      variant="subtle"
+      aria-label="Clear selection"
+      data-testid="combobox-clear"
+      // preventDefault: a mousedown here must not blur the input while
+      // editing — that closes the dropdown and commit-on-close fires
+      // BEFORE this button's click, double-committing in-progress text.
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={(e) => {
+        e.stopPropagation();
+        log.info('clear.click', { prevValue: value });
+        onChange(''); // hook logs value.cleared on the prop transition
+      }}
+    >
+      <IconX size={14} />
+    </ActionIcon>
+  ) : null);
+
   return (
     <div onKeyDownCapture={handleMoreMenuEscapeCapture}>
     <Combobox
@@ -741,36 +811,16 @@ export function ContentCombobox({
           aria-label={placeholder}
           autoFocus={!!renderValue}
           leftSection={<IconSearch size={16} />}
-          rightSection={(isSearching || browseLoading) ? <Loader size="xs" /> : (retainQueryOnClose && search ? (
-            <ActionIcon
-              size="sm"
-              variant="subtle"
-              aria-label="Clear search"
-              data-testid="combobox-clear-search"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={(e) => { e.stopPropagation(); log.info('search.cleared', {}); clearSearch(); inputRef.current?.focus(); }}
-            >
-              <IconX size={14} />
-            </ActionIcon>
-          ) : value ? (
-            <ActionIcon
-              size="sm"
-              variant="subtle"
-              aria-label="Clear selection"
-              data-testid="combobox-clear"
-              // preventDefault: a mousedown here must not blur the input while
-              // editing — that closes the dropdown and commit-on-close fires
-              // BEFORE this button's click, double-committing in-progress text.
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={(e) => {
-                e.stopPropagation();
-                log.info('clear.click', { prevValue: value });
-                onChange(''); // hook logs value.cleared on the prop transition
-              }}
-            >
-              <IconX size={14} />
-            </ActionIcon>
-          ) : null)}
+          {...(inputAccessory ? {
+            rightSectionWidth: accessoryWidth + RIGHT_CONTROL_WIDTH,
+            rightSectionPointerEvents: 'all',
+          } : {})}
+          rightSection={inputAccessory ? (
+            <span className="content-combobox-right-section">
+              <span ref={accessoryRef} className="content-combobox-input-accessory" data-testid="combobox-input-accessory">{inputAccessory}</span>
+              {rightControl}
+            </span>
+          ) : rightControl}
         />
       </Combobox.Target>
       {search === null && !renderValue && resolvedTitle && (

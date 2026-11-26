@@ -405,6 +405,24 @@ describe('ContentCombobox result actions — real focus ownership', () => {
     await waitFor(() => expect(input).toHaveValue(''));
   });
 
+  it('Tab inside an open More menu never reaches onTabKey (only the input cycles)', async () => {
+    const onTabKey = vi.fn(() => true);
+    const { input } = await renderSearchedCombobox({ onTabKey });
+    pointerActivate(screen.getByTestId('result-more-plex:leaf-1'));
+    const add = await screen.findByTestId('result-action-add-plex:leaf-1');
+    const menu = screen.getByTestId('result-more-menu-plex:leaf-1');
+    await waitFor(() => expect(menu.contains(document.activeElement)).toBe(true));
+
+    fireEvent.keyDown(add, { key: 'Tab' });
+    fireEvent.keyDown(document.activeElement, { key: 'Tab', shiftKey: true });
+    expect(onTabKey).not.toHaveBeenCalled();
+
+    // Back in the input, Tab is the input's again.
+    act(() => input.focus());
+    fireEvent.keyDown(input, { key: 'Tab' });
+    expect(onTabKey).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps the ordinary Tab close policy outside the action-menu boundary', async () => {
     const { input, onChange } = await renderSearchedCombobox();
 

@@ -599,6 +599,62 @@ describe('ContentCombobox (hook wiring)', () => {
     expect(onClose).toHaveBeenCalledWith('tab');
   });
 
+  // ── Opt-in Tab handling (Media: Tab cycles the destination chip) ──
+  it('onTabKey returning true keeps the search open: no close, no focus move', () => {
+    currentHook = makeHook({
+      state: { ...initialState(''), mode: Modes.SEARCH, search: 'abc' },
+    });
+    const onClose = vi.fn();
+    const onTabKey = vi.fn(() => true);
+    renderCombobox({ onClose, onTabKey });
+
+    const input = screen.getByRole('textbox');
+    const tab = fireEvent.keyDown(input, { key: 'Tab' });
+    expect(tab).toBe(false); // preventDefault: focus stays in the input
+    expect(onTabKey).toHaveBeenLastCalledWith(1);
+    fireEvent.keyDown(input, { key: 'Tab', shiftKey: true });
+    expect(onTabKey).toHaveBeenLastCalledWith(-1);
+    expect(currentHook.commit).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('onTabKey returning false falls through to the ordinary Tab close', () => {
+    currentHook = makeHook({
+      state: { ...initialState(''), mode: Modes.SEARCH, search: 'abc' },
+    });
+    const onClose = vi.fn();
+    renderCombobox({ onClose, onTabKey: () => false });
+
+    const tab = fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Tab' });
+    expect(tab).toBe(true);
+    expect(currentHook.commit).toHaveBeenCalledWith('tab');
+    expect(onClose).toHaveBeenCalledWith('tab');
+  });
+
+  it('without onTabKey, Tab closes as before and nothing extra renders', () => {
+    currentHook = makeHook({
+      state: { ...initialState(''), mode: Modes.SEARCH, search: 'abc' },
+    });
+    renderCombobox();
+    const tab = fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Tab' });
+    expect(tab).toBe(true);
+    expect(currentHook.commit).toHaveBeenCalledWith('tab');
+    expect(screen.queryByTestId('combobox-input-accessory')).toBeNull();
+  });
+
+  it('renders inputAccessory inside the input, before the clear control', () => {
+    currentHook = makeHook({
+      state: { ...initialState(''), mode: Modes.SEARCH, search: 'abc' },
+    });
+    renderCombobox({ retainQueryOnClose: true, inputAccessory: <span data-testid="chip">chip</span> });
+
+    const accessory = screen.getByTestId('combobox-input-accessory');
+    const clear = screen.getByTestId('combobox-clear-search');
+    expect(accessory).toContainElement(screen.getByTestId('chip'));
+    expect(accessory.parentElement).toBe(clear.parentElement);
+    expect(accessory.compareDocumentPosition(clear) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('Blur (outside close) routes through commit(\'outside\') — no junk-commit of typed text', () => {
     currentHook = makeHook({
       state: { ...initialState(''), mode: Modes.SEARCH, search: 'unpicked typed query' },

@@ -1,6 +1,8 @@
 // frontend/src/modules/Media/shell/Dock.jsx
-// Tablet+: the persistent row — search, fleet indicator, cast target chip,
-// settings. Mobile: a launcher only. A 360px dock used to split the row
+// Tablet+: the persistent row — search (with the destination chip inside the
+// box: where ▶ plays, Tab cycles it — search/DestinationChip.jsx), fleet
+// indicator, settings. The header "Playing on" control is phone-only now: on
+// desktop the one destination is shown where you type. Mobile: a launcher only. A 360px dock used to split the row
 // between a scope control, a search input, and a 168px icon cluster; the
 // input landed at ~50px (its own placeholder didn't fit) and a CSS rule hid
 // the scope control at the one moment it mattered (focus). Mobile now gets
@@ -13,6 +15,7 @@
 // gear is the one control both layouts keep, so it renders once, unscoped.
 import { UiIcon } from '../../../../../frontend/src/lib/ui/UiIcon.jsx';
 import React, { useState, useCallback, useMemo } from 'react';
+import { useCompactViewport } from '@/lib/ui/useCompactViewport.js';
 import { MediaContentSearch } from "../search/MediaContentSearch.jsx";
 import { FleetIndicator } from "./FleetIndicator.jsx";
 import { SettingsMenu } from "./SettingsMenu.jsx";
@@ -27,15 +30,19 @@ export function Dock({ onOpenSearch, searchInputRef, launcherRef, destinationCon
   // Set while the destination control is being used, so an open search stays open.
   const [destinationActive, setDestinationActive] = useState(false);
   const destinationInteraction = useMemo(() => ({ active: destinationActive, setActive: setDestinationActive }), [destinationActive]);
+  const isPhone = useCompactViewport();
 
   return (
     <DestinationInteractionContext.Provider value={destinationInteraction}>
     <header className="media-dock" data-testid="media-dock">
-      {/* The destination control: where the next Play goes. On every width. The
-          first-use naming popover anchors to it. */}
-      <div className="media-dock-destination">
-        <FirstUseCard><CastTargetChip controlRef={destinationControlRef} /></FirstUseCard>
-      </div>
+      {/* Phone: the destination control, where the next Play goes; the
+          first-use naming popover anchors to it. Desktop: the destination
+          chip in the search box carries both (MediaContentSearch below). */}
+      {isPhone && (
+        <div className="media-dock-destination">
+          <FirstUseCard><CastTargetChip controlRef={destinationControlRef} /></FirstUseCard>
+        </div>
+      )}
       <button
         type="button"
         ref={launcherRef}
@@ -54,7 +61,7 @@ export function Dock({ onOpenSearch, searchInputRef, launcherRef, destinationCon
           at 1200px before this fix). Mobile hides `.media-search-bar`
           directly by its own class (mobile-only rule below), not via a
           wrapper. */}
-      <MediaContentSearch inputRef={searchInputRef} />
+      <MediaContentSearch inputRef={searchInputRef} destinationWrapper={isPhone ? null : FirstUseCard} />
       <FleetIndicator />
       <SettingsMenu onResetSession={openStartFresh} />
       <StartFreshDialog open={startFreshOpen} onClose={() => setStartFreshOpen(false)} />

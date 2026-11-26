@@ -16,8 +16,12 @@ const { lifecycleReset } = vi.hoisted(() => ({ lifecycleReset: vi.fn() }));
 // Settings leads to screen admin / routine history through the nav stack.
 vi.mock("./NavProvider.jsx", () => ({ useNav: () => ({ push: () => {} }) }));
 vi.mock("../search/MediaContentSearch.jsx", () => ({
-  MediaContentSearch: () => <div data-testid="media-content-search-stub" />,
+  MediaContentSearch: ({ destinationWrapper: Wrapper }) => (
+    <div data-testid="media-content-search-stub" data-first-use={Wrapper ? 'chip' : 'none'} />
+  ),
 }));
+const { compact } = vi.hoisted(() => ({ compact: { value: false } }));
+vi.mock('@/lib/ui/useCompactViewport.js', () => ({ useCompactViewport: () => compact.value }));
 vi.mock("./FleetIndicator.jsx", () => ({
   FleetIndicator: () => <div data-testid="fleet-indicator-stub" />,
 }));
@@ -53,6 +57,7 @@ function renderDock(props = {}) {
 }
 
 beforeEach(() => {
+  compact.value = false;
   vi.clearAllMocks();
   localStorage.clear();
 });
@@ -77,7 +82,20 @@ describe('Dock', () => {
     expect(screen.getByTestId('settings-menu-trigger')).toBeInTheDocument();
     expect(screen.getByTestId('media-content-search-stub')).toBeInTheDocument();
     expect(screen.getByTestId('fleet-indicator-stub')).toBeInTheDocument();
+  });
+
+  it('desktop: no header "Playing on" control — the destination lives in the search box, first-use hint on its chip', () => {
+    compact.value = false;
+    renderDock({ onOpenSearch: vi.fn() });
+    expect(screen.queryByTestId('cast-target-chip-stub')).toBeNull();
+    expect(screen.getByTestId('media-content-search-stub')).toHaveAttribute('data-first-use', 'chip');
+  });
+
+  it('phone: keeps the header destination control with the first-use hint', () => {
+    compact.value = true;
+    renderDock({ onOpenSearch: vi.fn() });
     expect(screen.getByTestId('cast-target-chip-stub')).toBeInTheDocument();
+    expect(screen.getByTestId('media-content-search-stub')).toHaveAttribute('data-first-use', 'none');
   });
 
   it('does not blow up when onOpenSearch is omitted', () => {

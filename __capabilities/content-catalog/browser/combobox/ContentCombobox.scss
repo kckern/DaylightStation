@@ -209,3 +209,22 @@
     color: var(--mantine-color-text) !important;
   }
 }
+
+// ── Input accessory (opt-in, e.g. Media's destination chip) ──
+// Sits inside the input's right side, before the loader / clear control.
+.content-combobox-right-section {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  width: 100%;
+  height: 100%;
+}
+
+.content-combobox-input-accessory {
+  display: inline-flex;
+  align-items: center;
+  // Natural width (the accessory caps itself): it is measured to size the
+  // section, so it must not shrink to the section it sizes.
+  flex-shrink: 0;
+}

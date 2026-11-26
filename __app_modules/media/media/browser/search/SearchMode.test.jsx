@@ -4,7 +4,7 @@
 // requirement is proven against the actual shared scope state a mounted
 // SearchMode and its nested ScopeChips both read — a per-component mock of
 // useSearchContext can't express "two components share one scope" the way a
-// real Provider does. ScopeChips and DestinationLine mount as-is (per Task
+// real Provider does. ScopeChips and the destination chip mount as-is (per Task
 // 13's interface contract); only their own leaf dependencies (fleet devices,
 // the dismiss-layer registrar, the device picker sheet body) are stubbed.
 // useContentCombobox and useContentDispatch are mocked at the hook boundary:
@@ -106,6 +106,7 @@ vi.mock("../../../../../frontend/src/lib/api.mjs", () => ({
 import mediaLog from "../logging/mediaLog.js";
 import { SearchProvider } from "./SearchProvider.jsx";
 import { CastTargetProvider } from "../cast/CastTargetProvider.jsx";
+import { FleetContext } from "../fleet/FleetProvider.jsx";
 import { SearchMode } from "./SearchMode.jsx";
 import { habitsStore as seedHabits } from "../habits/mediaHabits.js";
 
@@ -325,11 +326,41 @@ describe('SearchMode', () => {
     expect(screen.getByTestId('search-mode')).toBeInTheDocument();
   });
 
-  it('mounts ScopeChips, DestinationLine, and StreamStatusLine', async () => {
+  it('mounts ScopeChips and the destination chip in the input row', async () => {
     render(<Harness />);
     await screen.findByTestId('search-mode');
     expect(screen.getByTestId('scope-chips')).toBeInTheDocument();
-    expect(screen.getByTestId('destination-line')).toBeInTheDocument();
+    const chip = screen.getByTestId('search-destination-chip');
+    expect(chip.closest('.search-mode-header')).toContainElement(screen.getByTestId('search-mode-input'));
+    expect(chip).toHaveTextContent('▶ This device');
+    expect(screen.queryByTestId('destination-line')).toBeNull();
+    expect(screen.queryByTestId('search-learned-where')).toBeNull();
+  });
+
+  it('Tab / Shift+Tab in the input cycle the chip and keep focus in the box', async () => {
+    const devices = [
+      { id: 'office-tv', type: 'linux-pc', name: 'Office Screen', content_control: { provider: 'ws' } },
+      { id: 'livingroom-tv', type: 'shield-tv', name: 'Living Room TV', content_control: { provider: 'fully-kiosk' } },
+    ];
+    seedHabits().recordScreen('video', ['office-tv']);
+    render(
+      <FleetContext.Provider value={{ devices, loading: false, error: null, identity: { deviceId: 'browser:me' } }}>
+        <Harness />
+      </FleetContext.Provider>
+    );
+    const input = await screen.findByTestId('search-mode-input');
+    const chip = () => screen.getByTestId('search-destination-chip');
+    expect(fireEvent.keyDown(input, { key: 'Tab' })).toBe(false);
+    expect(chip()).toHaveTextContent('▶ Office Screen');
+    fireEvent.keyDown(input, { key: 'Tab' });
+    expect(chip()).toHaveTextContent('▶ Living Room TV');
+    fireEvent.keyDown(input, { key: 'Tab', shiftKey: true });
+    expect(chip()).toHaveTextContent('▶ Office Screen');
+    expect(mediaLog.searchDestinationCycled).toHaveBeenCalledWith({ from: 'local', to: 'office-tv', via: 'tab' });
+    // A tap on the chip cycles too.
+    fireEvent.click(chip());
+    expect(chip()).toHaveTextContent('▶ Living Room TV');
+    expect(screen.getByTestId('search-mode')).toBeInTheDocument();
   });
 
   // ── Fix round (Important 2): the D5 widening notice. The hook widened
@@ -553,7 +584,7 @@ describe('SearchMode — Add to this queue (STEER.1b/AC7)', () => {
     comboState = { search: 'hos', results: [{ id: 'plex:266151', title: 'Hospital', type: 'episode' }] };
     render(<AddToHarness />);
     expect(await screen.findByTestId('search-add-to-banner')).toHaveTextContent('Adding to the queue on Living Room TV');
-    expect(screen.queryByTestId('destination-line')).toBeNull();
+    expect(screen.queryByTestId('search-destination-chip')).toBeNull();
     fireEvent.click(screen.getByTestId('search-mode-result-plex:266151').querySelector('button') ?? screen.getByTestId('search-mode-result-plex:266151'));
     await waitFor(() => expect(addToScreenMock).toHaveBeenCalledWith('livingroom-tv', 'plex:266151', expect.objectContaining({ title: 'Hospital' })));
     expect(dispatchMock).not.toHaveBeenCalled();
