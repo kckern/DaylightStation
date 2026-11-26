@@ -908,6 +908,71 @@ out of reach the last answer is served, however old; a level never loaded fails
 only when it is an https URL on the backend; anything else is left out, in the
 payload and again in the installed service.
 
+### Downloads: Keep on this phone
+
+A whole collection (an album, a book, a playlist, a household list) can be kept on
+the phone and played with no network: on a plane, in the car out of coverage.
+
+- **Keep it.** Now playing → ⋮ → **Keep on this phone** keeps the collection now
+  playing: the household list it was started from, or else the track's album (the
+  payload asks `GET /api/v1/info/<source>/<id>` for its `albumId`). The payload's
+  `keep` op resolves it as a play would and stores the answer (title, cover, every
+  track's id, stream URL, title, artist, album, art and length) in the payload
+  state's `kept/` folder, one JSON file per collection. The menu then reads
+  "On this phone: 12 tracks · 230 MB" (or "Downloading 3 of 12", "Waiting for Wi-Fi ·
+  0 of 12", "2 of 12 did not download") and offers **Remove from this phone**.
+- **The audio.** Media3's download stack in the installed code (`KeepStore`,
+  `KeepService`): one `SimpleCache` in the app's own `files/media-cache`, a
+  `DownloadManager` on a `StandaloneDatabaseProvider`, at most two at a time.
+  Every track is cached under its content id (`track:plex:123`), not its URL, so a
+  play resolved later (another session in the URL, or offline) finds it. The stream
+  route `/api/v1/proxy/plex/stream/<id>` is downloaded as it is (it redirects to the
+  file and serves ranges). `KeepService` is not exported and runs in the foreground
+  (`dataSync`) with Media3's progress notification while it works.
+- **When.** On an unmetered network unless `media.downloadOnCellular`, and never
+  while storage is low. No scheduler: a download waiting for Wi-Fi goes on the next
+  time the app runs with one.
+- **Room.** Before anything is fetched each track's size is read (a HEAD on its
+  stream URL); a collection that would take the cache past `media.downloadCapMb` is
+  refused with "Not enough room: … more would pass the 4096 MB set for downloads",
+  and nothing of it is kept.
+- **Playing.** The player reads through a `CacheDataSource` over its HTTP source:
+  a kept track plays from the phone whether online or not (the playback cache is
+  read-only; only downloads write to it). When a play cannot be resolved because the
+  backend is out of reach (no network, a restart), the payload answers from the kept
+  collections: a collection plays whole; a track of one plays from that track on,
+  so a book carries on with its next chapter. A 404 or a bad request is an answer,
+  not an outage, and is not covered up.
+- **Where you were.** Every progress report is also kept on the phone
+  (`positions.json`, newest per item); an offline play of a kept track starts there.
+  A report that could not be sent (no network, a 5xx) waits in `pending-progress.json`,
+  newest per content id, at most 200, and is sent when the next report gets through
+  and when the payload starts. A 4xx is a refusal and is not kept.
+- **Covers.** The covers of a kept collection (its own and its tracks') are saved
+  in `files/kept-art`, named by a hash of the URL; every screen's cover loader
+  (`PlaylistArtwork`) reads there before the network. A missing one is fetched again
+  at the next change while downloads are allowed.
+- **Removing.** **Remove from this phone** forgets the collection and deletes the
+  audio of the tracks no other kept collection holds. At each start the downloads
+  are reconciled with the kept list: audio of a collection no longer kept is deleted
+  and a kept track with no audio is fetched again. Only a real answer from the
+  payload does either: a payload that cannot say what is kept (an older one after a
+  rollback, one still starting) never empties the phone.
+- **The phone home.** The Play tab shows **On this phone**: each kept collection with
+  its cover and state, and "230 MB of 4.1 GB used for downloads". A tap plays it
+  here. **Continue listening** marks a kept item "On this phone · …"; with no network
+  an item that is not kept is dimmed, reads "Needs a connection", and a tap says so.
+  The state comes from shell-kit's `KeptIndex` (`files/kept-index.json`), written by
+  `KeepStore` whenever a download changes.
+- **Telemetry.** `Downloads` events `download.start`, `download.complete`,
+  `download.fail`, `download.remove` and `download.refused` carry track counts and
+  bytes, never titles; Now playing adds `download.keep.tap` and `download.remove.tap`.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `media.downloadCapMb` | 4096 | The most the downloads may take, in MB (0 for no cap, at most 512000). A collection that would pass it is refused before anything is fetched |
+| `media.downloadOnCellular` | false | Whether downloads may use mobile data. Off: they wait for Wi-Fi |
+
 ## Page bridge on the phone: pinning media
 
 The site's full-screen media view, inside the phone app, can ask the app to pin
@@ -1663,6 +1728,7 @@ Twelve:
 | `CAMERA` | `webview-host`, `quick-input` | Video calls, and the meal photo camera (asked in the camera screen; refused means the phone's camera app is used) |
 | `MODIFY_AUDIO_SETTINGS` | `webview-host` | Page audio |
 | `FOREGROUND_SERVICE_MEDIA_PLAYBACK` | `media-service` | The media library service |
+| `FOREGROUND_SERVICE_DATA_SYNC` | `media-service` | The downloads kept on this phone (`KeepService`, type `dataSync`; needed from target 34) |
 | `FOREGROUND_SERVICE_MICROPHONE` | `quick-input` | The recorder service |
 
 The phone keeps meal photos in its own files and requires no media-library,

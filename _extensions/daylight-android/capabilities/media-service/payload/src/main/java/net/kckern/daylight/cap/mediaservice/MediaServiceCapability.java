@@ -50,6 +50,9 @@ public final class MediaServiceCapability implements Capability {
     private static final String ROOTS = "media.roots";
     /** Whether this device takes "Play on" from the household's web (the phone: long-polls the backend). */
     static final String PLAY_ON_TARGET = "media.playOnTarget";
+    /** Downloads kept on this phone: the most they may take (MB; 0 for no cap), and whether mobile data may be used. */
+    static final String DOWNLOAD_CAP_MB = "media.downloadCapMb";
+    static final String DOWNLOAD_ON_CELLULAR = "media.downloadOnCellular";
     private static final String RECENT_LIMIT = "media.recentLimit";
     private static final String PAGE_SIZE = "media.pageSize";
     /** How a screen's notes name this device when it pauses or skips there: "Paused by Phone". */
@@ -124,6 +127,8 @@ public final class MediaServiceCapability implements Capability {
         // How many entries one browse level holds. A car limits what it shows per level.
         core.settings().declare(PAGE_SIZE, SettingsRegistry.Type.INTEGER, 50, SettingsRegistry.range(10, 200));
         core.settings().declare(PLAY_ON_TARGET, SettingsRegistry.Type.BOOLEAN, false, null);
+        core.settings().declare(DOWNLOAD_CAP_MB, SettingsRegistry.Type.INTEGER, 4096, SettingsRegistry.range(0, 512_000));
+        core.settings().declare(DOWNLOAD_ON_CELLULAR, SettingsRegistry.Type.BOOLEAN, false, null);
         if (inbox == null) {
             inbox = new PlayInbox(http, backend::url, core.deviceId(), mediaId -> {
                 Launcher l = launcher();
@@ -204,6 +209,9 @@ public final class MediaServiceCapability implements Capability {
         writePins();
         port.attach(onCall);
         if (Boolean.TRUE.equals(core.settings().get(PLAY_ON_TARGET)) && inbox != null) inbox.start();
+        // Progress kept while offline goes out as soon as the payload runs with a backend.
+        ExecutorService w0 = worker;
+        if (w0 != null) w0.execute(this::flushPending);
     }
 
     /** The installed service reads the pins from the surface cache: it may run with no payload loaded. */
@@ -270,6 +278,19 @@ public final class MediaServiceCapability implements Capability {
             if ("event".equals(op)) return event(request);
             if ("action".equals(op)) return action(request);
             if ("search".equals(op)) return search(request);
+            if ("keep".equals(op)) return keep(request);
+            if ("kept".equals(op)) return keptList();
+            if ("downloadRules".equals(op)) {
+                return new Outcome(200, Replies.ok().put("capMb", (Integer) core.settings().get(DOWNLOAD_CAP_MB))
+                        .put("onCellular", Boolean.TRUE.equals(core.settings().get(DOWNLOAD_ON_CELLULAR))));
+            }
+            if ("unkeep".equals(op)) {
+                String id = Json.str(request, "id");
+                if (!ContentId.valid(id)) return failure(400, "bad_request");
+                JSONArray orphaned = new JSONArray();
+                for (String t : kept().remove(id)) orphaned.put(t);
+                return new Outcome(200, Replies.ok().put("orphaned", orphaned));
+            }
             if ("continue".equals(op)) {
                 return new Outcome(200, Replies.ok().put("items",
                         BrowseTree.continueItems(api.recent(50), backend, Math.max(1, Math.min(20, request.optInt("limit", 8))))));
@@ -365,6 +386,66 @@ public final class MediaServiceCapability implements Capability {
         return nodes.size() > pageSize ? new ArrayList<>(nodes.subList(0, pageSize)) : nodes;
     }
 
+    /**
+     * "Keep on this phone": the collection a play belongs to (a c: id as it is; a track's
+     * album otherwise), resolved now and kept with its tracks so it plays offline. The
+     * answer lists the tracks (id, url) for the shell to download.
+     */
+    private Outcome keep(JSONObject request) throws Exception {
+        String raw = Json.str(request, "id");
+        String cid = raw.startsWith("c:") ? raw.substring(2) : raw.startsWith("p:") ? MediaId.parse(raw).contentId : raw;
+        if (!ContentId.valid(cid)) return failure(400, "bad_request");
+        if (!raw.startsWith("c:")) {
+            // A track: keep its album (a book, a record), when the backend names one.
+            JSONObject info = api.info(cid);
+            JSONObject meta = info == null ? null : info.optJSONObject("metadata");
+            String album = meta == null ? "" : meta.optString("albumId", "");
+            if (!album.isEmpty()) cid = ContentId.source(cid) + ":" + album;
+        }
+        Resolver.Resolved r = Resolver.resolve(java.util.Collections.singletonList("c:" + cid), -1, false,
+                api, backend, "daylight-" + core.deviceId(), false);
+        if (r.tracks.isEmpty()) return failure(404, "not_found");
+        JSONArray tracks = new JSONArray();
+        for (Track t : r.tracks) tracks.put(t.toJson());
+        String title = r.tracks.get(0).album, art = r.tracks.get(0).artUrl;
+        try {
+            JSONObject l = api.list(cid, 1, 0);
+            title = Json.first(Json.str(l, "title"), Json.str(l, "label"), title);
+            String image = BrowseTree.art(backend, Json.str(l, "image"));
+            if (image != null) art = image;
+        } catch (Exception unnamed) { /* the first track's album and cover */ }
+        kept().save(cid, title, art, tracks, clock.getAsLong());
+        JSONObject out = Replies.ok().put("contentId", cid).put("title", title == null ? "" : title).put("tracks", tracks)
+                .put("capMb", core == null ? 4096 : (Integer) core.settings().get(DOWNLOAD_CAP_MB))
+                .put("onCellular", core != null && Boolean.TRUE.equals(core.settings().get(DOWNLOAD_ON_CELLULAR)));
+        if (art != null) out.put("art", art);
+        return new Outcome(200, out);
+    }
+
+    private Outcome keptList() throws Exception {
+        JSONArray items = new JSONArray();
+        for (JSONObject k : kept().list()) {
+            JSONObject o = new JSONObject().put("contentId", k.optString("contentId")).put("title", k.optString("title"))
+                    .put("tracks", k.optJSONArray("tracks") == null ? new JSONArray() : k.optJSONArray("tracks"))
+                    .put("keptAt", k.optLong("keptAt"));
+            if (k.has("art")) o.put("art", k.optString("art"));
+            items.put(o);
+        }
+        return new Outcome(200, Replies.ok().put("items", items));
+    }
+
+    /** Sends progress kept while offline, oldest first; stops at the first that still cannot go. */
+    private void flushPending() {
+        for (JSONObject body : pending().waiting()) {
+            try {
+                api.log(body);
+                pending().sent(body.optString("assetId"));
+            } catch (Exception stillOffline) {
+                return;
+            }
+        }
+    }
+
     private Outcome resolve(JSONObject request) throws Exception {
         JSONArray ids = request.optJSONArray("ids");
         if (ids == null || ids.length() == 0) throw new IllegalArgumentException("body needs 'ids'");
@@ -373,8 +454,19 @@ public final class MediaServiceCapability implements Capability {
             Object id = ids.opt(i);
             mediaIds.add(id instanceof String ? (String) id : null);
         }
-        Resolver.Resolved r = Resolver.resolve(mediaIds, request.optInt("startIndex", -1), request.optBoolean("explicitPosition"),
-                api, backend, "daylight-" + core.deviceId(), request.optBoolean("shuffle"));
+        Resolver.Resolved r;
+        try {
+            r = Resolver.resolve(mediaIds, request.optInt("startIndex", -1), request.optBoolean("explicitPosition"),
+                    api, backend, "daylight-" + core.deviceId(), request.optBoolean("shuffle"));
+        } catch (Exception unreachable) {
+            // No backend (no network, a restart): a collection kept on this phone plays from here.
+            // A bad request or a 404 is an answer, not an outage.
+            if (unreachable instanceof IllegalArgumentException) throw unreachable;
+            if (unreachable instanceof MediaApi.Refused && ((MediaApi.Refused) unreachable).status == 404) throw unreachable;
+            Resolver.Resolved offline = mediaIds.size() == 1 ? Offline.resolve(mediaIds.get(0), kept(), positions()) : null;
+            if (offline == null) throw unreachable;
+            r = offline;
+        }
         JSONArray tracks = new JSONArray();
         for (Track t : r.tracks) tracks.put(t.toJson());
         String first = mediaIds.isEmpty() ? null : mediaIds.get(0);
@@ -392,6 +484,42 @@ public final class MediaServiceCapability implements Capability {
     });
 
     /** The lists played lately, kept with the payload's state; in memory only where there is none (tests). */
+    private java.io.File stateDir;
+    /** Where the payload keeps small state (payloads/state), or a temp dir without one (tests). */
+    synchronized java.io.File stateDir() {
+        if (stateDir != null) return stateDir;
+        java.io.File dir = null;
+        try {
+            Object payloadDir = core == null ? null : core.shell().payloadDir();
+            if (payloadDir instanceof java.io.File) dir = net.kckern.daylight.api.PayloadState.dir((java.io.File) payloadDir);
+        } catch (RuntimeException none) { /* no state dir */ }
+        if (dir == null) {
+            try { dir = java.nio.file.Files.createTempDirectory("media-state").toFile(); }
+            catch (java.io.IOException e) { dir = new java.io.File(System.getProperty("java.io.tmpdir")); }
+        }
+        stateDir = dir;
+        return dir;
+    }
+
+    private KeptCollections kept;
+    private PendingProgress pending, positions;
+
+    synchronized KeptCollections kept() {
+        if (kept == null) kept = new KeptCollections(new java.io.File(stateDir(), "kept"));
+        return kept;
+    }
+
+    synchronized PendingProgress pending() {
+        if (pending == null) pending = new PendingProgress(new java.io.File(stateDir(), "pending-progress.json"));
+        return pending;
+    }
+
+    /** The last position reported for each item (sent or not): where an offline play resumes. */
+    synchronized PendingProgress positions() {
+        if (positions == null) positions = new PendingProgress(new java.io.File(stateDir(), "positions.json"));
+        return positions;
+    }
+
     synchronized RecentLists recentLists() {
         if (recentLists != null) return recentLists;
         java.io.File dir = null;
@@ -510,10 +638,23 @@ public final class MediaServiceCapability implements Capability {
     private void send(final ProgressReporter.Report report) {
         Runnable job = () -> {
             try {
-                api.log(report.toBody());
+                JSONObject body = report.toBody();
+                positions().keep(body);
+                try {
+                    api.log(body);
+                } catch (MediaApi.Refused answered) {
+                    // A server error is a backend that was not there; a 4xx is a refusal to keep.
+                    if (answered.status >= 500) pending().keep(body);
+                    throw answered;
+                } catch (java.io.IOException offline) {
+                    pending().keep(body);
+                    throw offline;
+                }
+                pending().sent(report.contentId);
                 lastReportAtMs = clock.getAsLong();
                 lastError = "";
                 reportsSent++;
+                flushPending();
             } catch (MediaApi.Refused answered) {
                 lastError = answered.getMessage();          // a route and a status code
             } catch (IllegalStateException notConfigured) {

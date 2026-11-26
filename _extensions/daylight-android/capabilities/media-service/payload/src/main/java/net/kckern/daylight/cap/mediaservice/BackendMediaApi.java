@@ -71,6 +71,10 @@ final class BackendMediaApi implements MediaApi {
         return getOrNone("levels", ContentPath.of("track/levels", contentId) + "?samples=" + samples);
     }
 
+    @Override public JSONObject info(String contentId) throws Exception {
+        return get("info", ContentPath.of("info", contentId));
+    }
+
     @Override public JSONObject lyrics(String contentId) throws Exception {
         return getOrNone("lyrics", ContentPath.of("track/lyrics", contentId));
     }

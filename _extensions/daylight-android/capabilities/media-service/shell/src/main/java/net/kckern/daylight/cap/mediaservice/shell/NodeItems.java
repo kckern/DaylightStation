@@ -116,7 +116,10 @@ final class NodeItems {
             if (!t.album.isEmpty()) meta.setAlbumTitle(t.album).setDescription(t.album);
             if (t.artUrl != null) meta.setArtworkUri(Uri.parse(t.artUrl));
             // The media id is the content id: it is what progress reports are keyed by.
-            out.add(new MediaItem.Builder().setMediaId(t.id).setUri(t.url).setMediaMetadata(meta.build()).build());
+            // The cache key is the content id, not the URL (whose session may differ): a track
+            // kept on this phone is found in the download cache however it was resolved.
+            out.add(new MediaItem.Builder().setMediaId(t.id).setUri(t.url).setCustomCacheKey(KeepStore.cacheKey(t.id))
+                    .setMediaMetadata(meta.build()).build());
         }
         return out;
     }

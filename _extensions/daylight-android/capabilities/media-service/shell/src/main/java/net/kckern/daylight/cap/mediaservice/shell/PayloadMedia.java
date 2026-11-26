@@ -107,6 +107,26 @@ final class PayloadMedia {
     }
 
     /** One track's lyrics: {ok, lyrics:{synced, lines:[{ms,text}]}} or {ok, none:true}. */
+    /** "Keep on this phone": the collection a play belongs to, resolved and kept; its tracks to download. */
+    String keep(String mediaId, long waitMs) throws Exception {
+        return port.call(new JSONObject().put("op", "keep").put("id", mediaId).toString(), waitMs);
+    }
+
+    /** media.downloadCapMb and media.downloadOnCellular, as the payload holds them. */
+    String downloadRules(long waitMs) throws Exception {
+        return port.call(new JSONObject().put("op", "downloadRules").toString(), waitMs);
+    }
+
+    /** The collections kept on this phone, with their tracks. */
+    String kept(long waitMs) throws Exception {
+        return port.call(new JSONObject().put("op", "kept").toString(), waitMs);
+    }
+
+    /** Forget a kept collection; the answer names the tracks no other kept collection holds. */
+    String unkeep(String contentId, long waitMs) throws Exception {
+        return port.call(new JSONObject().put("op", "unkeep").put("id", contentId).toString(), waitMs);
+    }
+
     String trackLyrics(String contentId, long waitMs) throws Exception {
         return port.call(new JSONObject().put("op", "track-lyrics").put("id", contentId).toString(), waitMs);
     }

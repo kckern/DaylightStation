@@ -33,4 +33,6 @@ interface MediaApi {
     default JSONObject levels(String contentId, int samples) throws Exception { return null; }
     /** GET /api/v1/track/lyrics/<source>/<id>: {synced, lines:[{ms,text}], provider}, or null for none (204). */
     default JSONObject lyrics(String contentId) throws Exception { return null; }
+    /** GET /api/v1/info/<source>/<id>: an item's details (a track's albumId is in its metadata). */
+    default JSONObject info(String contentId) throws Exception { return null; }
 }

@@ -76,6 +76,8 @@ public class PhoneHomeActivity extends Activity {
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
+        // Covers of collections kept on this phone show offline (media-service saves them).
+        net.kckern.daylight.shellkit.PlaylistArtwork.useKept(new java.io.File(getFilesDir(), "kept-art"));
         net.kckern.daylight.shellkit.UiTelemetry.install(this);
         t = DaylightTheme.of(this);
         launcherPicker = Intent.ACTION_CREATE_SHORTCUT.equals(getIntent().getAction());
@@ -98,6 +100,11 @@ public class PhoneHomeActivity extends Activity {
         NowPlayingNote.listen(nowChanged);
         observingNow = true;
         drawNowStrip();
+        if (keptBox != null) fillKept();   // a collection kept from Now playing shows on return
+        if (continueBox != null && continueBox.getParent() != null) {
+            // Redrawn from the last answer: the offline marks follow the network now.
+            fillContinue(continueBox, getSharedPreferences("daylight.home", MODE_PRIVATE).getString("continue", ""));
+        }
         if (!launcherPicker) {
             observingPlacement = true;
             placements.prefs.registerOnSharedPreferenceChangeListener(placementChanged);
@@ -112,6 +119,7 @@ public class PhoneHomeActivity extends Activity {
         observingPlacement = false;
         placements.prefs.unregisterOnSharedPreferenceChangeListener(placementChanged);
         timer.removeCallbacks(placementTimeout);
+        timer.removeCallbacks(keptTick);
         super.onStop();
     }
 
@@ -561,7 +569,9 @@ public class PhoneHomeActivity extends Activity {
             LinearLayout continuing = new LinearLayout(this);
             continuing.setOrientation(LinearLayout.VERTICAL);
             column.addView(continuing);
+            continueBox = continuing;
             loadContinue(continuing);
+            addKept();
             java.util.List<DrivingRadioSettings.Staple> mine = new DrivingRadioSettings(this).staged();
             if (!mine.isEmpty()) {
                 section("Your playlists");
@@ -575,6 +585,95 @@ public class PhoneHomeActivity extends Activity {
         if (!canPinWidgets()) {
             row("Widget on Home", "How to put a playlist on your home screen", "open", "›",
                     () -> showManualWidgetPlacement(null));
+        }
+    }
+
+    /**
+     * "On this phone": the collections kept for listening without a network (media-service's
+     * downloads, read from shell-kit's KeptIndex), with how far each download is and the room
+     * they take against the cap. A tap plays a collection here. Redrawn every few seconds
+     * while something is still downloading.
+     */
+    private LinearLayout keptBox, continueBox;
+    private final Runnable keptTick = this::fillKept;
+
+    private void addKept() {
+        keptBox = new LinearLayout(this);
+        keptBox.setOrientation(LinearLayout.VERTICAL);
+        column.addView(keptBox);
+        fillKept();
+    }
+
+    private void fillKept() {
+        timer.removeCallbacks(keptTick);
+        if (keptBox == null || keptBox.getParent() == null || isFinishing()) return;
+        java.util.List<JSONObject> index = net.kckern.daylight.shellkit.KeptIndex.read(getFilesDir());
+        keptBox.removeAllViews();
+        if (index.isEmpty()) return;
+        TextView heading = label("On this phone", Type.TITLE, t.ink);
+        heading.setPadding(0, dp(10), 0, dp(2));
+        keptBox.addView(heading);
+        long cap = net.kckern.daylight.shellkit.KeptIndex.capMb(getFilesDir());
+        long used = net.kckern.daylight.shellkit.KeptIndex.usedBytes(index);
+        keptBox.addView(label(net.kckern.daylight.shellkit.KeptIndex.size(used)
+                + (cap > 0 ? " of " + net.kckern.daylight.shellkit.KeptIndex.size(cap * 1_000_000L) : "") + " used for downloads",
+                Type.LABEL, t.inkMuted));
+        boolean busy = false;
+        for (JSONObject k : index) {
+            boolean whole = k.optInt("total") > 0 && k.optInt("done") >= k.optInt("total");
+            if (!whole && k.optInt("failed") == 0) busy = true;
+            keptBox.addView(keptCard(k, whole));
+        }
+        if (busy) timer.postDelayed(keptTick, 3000);
+    }
+
+    private View keptCard(JSONObject k, boolean whole) {
+        String title = k.optString("title"), line = net.kckern.daylight.shellkit.KeptIndex.describe(k);
+        LinearLayout card = new LinearLayout(this);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setPadding(dp(8), dp(8), dp(12), dp(8));
+        card.setBackground(t.pressable(t.round(t.surface, Radius.SMALL)));
+        ImageView cover = new ImageView(this);
+        cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        cover.setClipToOutline(true);
+        cover.setBackground(t.round(t.tile, Radius.SMALL));
+        card.addView(cover, new LinearLayout.LayoutParams(dp(56), dp(56)));
+        loadCover(cover, k.optString("art"));
+        LinearLayout words = new LinearLayout(this);
+        words.setOrientation(LinearLayout.VERTICAL);
+        words.setPadding(dp(12), 0, 0, 0);
+        TextView name = t.text(this, title, Type.BODY, t.ink, true);
+        name.setMaxLines(2);
+        name.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        words.addView(name);
+        TextView sub = label(line, Type.LABEL, t.inkMuted);
+        sub.setMaxLines(1);
+        sub.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        words.addView(sub);
+        card.addView(words, new LinearLayout.LayoutParams(0, -2, 1));
+        card.setContentDescription(title + ", on this phone. " + line);
+        net.kckern.daylight.shellkit.UiTelemetry.tag(card, "play.kept");
+        String id = "c:" + k.optString("contentId");
+        // A part-kept collection plays too: online it streams the rest; offline, what is here.
+        card.setOnClickListener(v -> playHere(id));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.topMargin = dp(6);
+        card.setLayoutParams(lp);
+        return card;
+    }
+
+    /**
+     * Whether this phone has a network that reaches the internet now. ACCESS_NETWORK_STATE
+     * comes from the base shell; without it this answers true (nothing is dimmed).
+     */
+    @android.annotation.SuppressLint("MissingPermission")
+    private boolean online() {
+        try {
+            android.net.ConnectivityManager cm = getSystemService(android.net.ConnectivityManager.class);
+            android.net.NetworkCapabilities c = cm == null ? null : cm.getNetworkCapabilities(cm.getActiveNetwork());
+            return c != null && c.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET);
+        } catch (RuntimeException unknown) {
+            return true;
         }
     }
 
@@ -645,7 +744,12 @@ public class PhoneHomeActivity extends Activity {
         name.setEllipsize(android.text.TextUtils.TruncateAt.END);
         words.addView(name);
         String left = timeLeft(Math.max(0, duration - played));
-        TextView line = label(sub.isEmpty() || sub.equals(title) ? left : sub + " · " + left, Type.LABEL, t.inkMuted);
+        // Kept on this phone: marked, and the only cards that play with no network.
+        boolean here = net.kckern.daylight.shellkit.KeptIndex.onPhone(
+                net.kckern.daylight.shellkit.KeptIndex.read(getFilesDir()), item.optString("contentId"));
+        boolean reachable = here || online();
+        String said = !reachable ? "Needs a connection" : (here ? "On this phone · " : "") + (sub.isEmpty() || sub.equals(title) ? left : sub + " · " + left);
+        TextView line = label(said, Type.LABEL, here ? t.primary : t.inkMuted);
         line.setMaxLines(1);
         line.setEllipsize(android.text.TextUtils.TruncateAt.END);
         words.addView(line);
@@ -661,10 +765,14 @@ public class PhoneHomeActivity extends Activity {
         barLp.topMargin = dp(6);
         words.addView(bar, barLp);
         card.addView(words, new LinearLayout.LayoutParams(0, -2, 1));
-        card.setContentDescription("Continue " + title + ", " + left);
+        card.setContentDescription("Continue " + title + ", " + (reachable ? left : "needs a connection"));
         net.kckern.daylight.shellkit.UiTelemetry.tag(card, "play.continue");
         String id = item.optString("id");
-        card.setOnClickListener(v -> playHere(id));
+        if (!reachable) card.setAlpha(0.45f);
+        card.setOnClickListener(v -> {
+            if (!here && !online()) { toast("Needs a connection: this is not kept on the phone"); return; }
+            playHere(id);
+        });
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.topMargin = dp(6);
         card.setLayoutParams(lp);

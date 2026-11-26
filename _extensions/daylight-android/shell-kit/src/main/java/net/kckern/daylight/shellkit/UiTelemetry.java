@@ -137,6 +137,9 @@ public final class UiTelemetry {
 
     // ── lifecycle ────────────────────────────────────────────────────────────
 
+    // ACCESS_NETWORK_STATE comes from the base shell of every build that uses shell-kit;
+    // without it the callback throws and is caught below (sending stays on the timer).
+    @android.annotation.SuppressLint("MissingPermission")
     private void listen(Application application) {
         application.registerActivityLifecycleCallbacks(new Application.ActivityLifecycleCallbacks() {
             @Override public void onActivityCreated(Activity a, Bundle saved) { hook(a); }

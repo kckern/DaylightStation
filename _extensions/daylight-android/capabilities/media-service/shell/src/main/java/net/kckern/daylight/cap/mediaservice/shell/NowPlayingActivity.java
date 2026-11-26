@@ -190,6 +190,7 @@ public class NowPlayingActivity extends Activity {
 
     @Override protected void onCreate(Bundle saved) {
         super.onCreate(saved);
+        net.kckern.daylight.shellkit.PlaylistArtwork.useKept(new java.io.File(getFilesDir(), "kept-art"));
         UiTelemetry.install(this);
         io = executor("Daylight-nowplaying");
         padIo = executor("Daylight-nowplaying-pad");
@@ -877,6 +878,18 @@ public class NowPlayingActivity extends Activity {
         boolean any = controller != null && controller.getMediaItemCount() > 0;
         if (!remote() && any) menu.getMenu().add(0, 5, 0, SleepTimer.isSet() ? "Sleep timer: " + SleepTimer.describeNow() : "Sleep timer…");
         else if (!remote() && SleepTimer.isSet()) menu.getMenu().add(0, 5, 0, "Sleep timer: " + SleepTimer.describeNow());
+        // Keep on this phone: the collection now playing (its list, or the track's album).
+        MediaItem current = controller == null ? null : controller.getCurrentMediaItem();
+        org.json.JSONObject kept = null;
+        if (!remote() && current != null && !current.mediaId.isEmpty()) {
+            kept = KeepStore.get(this).keptHolding(current.mediaId);
+            if (kept == null) menu.getMenu().add(0, 6, 0, "Keep on this phone");
+            else {
+                menu.getMenu().add(0, 8, 0, "On this phone: " + net.kckern.daylight.shellkit.KeptIndex.describe(kept)).setEnabled(false);
+                menu.getMenu().add(0, 7, 0, "Remove from this phone");
+            }
+        }
+        final org.json.JSONObject keptNow = kept;
         if (can(Player.COMMAND_STOP) && any) menu.getMenu().add(0, 1, 0, remote() ? "Stop on " + targetName : "Stop");
         if (can(Player.COMMAND_CHANGE_MEDIA_ITEMS) && any) menu.getMenu().add(0, 2, 0, "Clear queue");
         menu.setOnMenuItemClickListener(item -> {
@@ -885,11 +898,32 @@ public class NowPlayingActivity extends Activity {
                 case 1: stop(); break;
                 case 2: confirmClear(); break;
                 case 5: chooseSleep(); break;
+                case 6: keepHere(current); break;
+                case 7: if (keptNow != null) {
+                        note("download.remove.tap");
+                        KeepStore.get(this).remove(keptNow.optString("contentId"), this::say);
+                    }
+                    break;
                 default: break;
             }
             return true;
         });
         menu.show();
+    }
+
+    /** Keeps the collection {@code item} belongs to: its household list when it came from one, its album otherwise. */
+    private void keepHere(MediaItem item) {
+        if (item == null) return;
+        String list = NodeItems.listId(item);
+        String id = list.contains(":") ? "c:" + list : "p:" + item.mediaId;
+        note("download.keep.tap", "fromList", !list.isEmpty());
+        say("Getting it ready to keep…");
+        KeepStore.get(this).keep(id, this::say);
+    }
+
+    private void say(String line) {
+        if (isFinishing() || isDestroyed()) return;
+        android.widget.Toast.makeText(this, line, android.widget.Toast.LENGTH_LONG).show();
     }
 
     /**

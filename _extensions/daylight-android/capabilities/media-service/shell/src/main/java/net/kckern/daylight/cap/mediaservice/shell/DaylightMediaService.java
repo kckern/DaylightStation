@@ -140,6 +140,8 @@ public class DaylightMediaService extends MediaLibraryService {
                 .setWakeMode(C.WAKE_MODE_NETWORK)
                 .setSeekBackIncrementMs(CarControls.SEEK_STEP_MS)
                 .setSeekForwardIncrementMs(CarControls.SEEK_STEP_MS)
+                // Tracks kept on this phone play from the download cache, with no network.
+                .setMediaSourceFactory(new androidx.media3.exoplayer.source.DefaultMediaSourceFactory(KeepStore.get(this).playback()))
                 .build();
 
         // Long items: the listener's speed (music stays 1x) and a short step back on resume.

@@ -4,6 +4,8 @@
     <!-- Needed for a media foreground service from target 34; declared now so a later
          target bump is a config change. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- The same, for the downloads service (dataSync) from target 34. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <queries>
         <package android:name="com.google.android.projection.gearhead" />
@@ -44,6 +46,14 @@
             android:name="net.kckern.daylight.cap.mediaservice.shell.PlayActionService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
+
+        <!-- Not exported: downloads kept on this phone ("Keep on this phone", KeepStore).
+             Started only by this app's own Now playing menu; Media3's DownloadService runs
+             in the foreground with a progress notification while it works. -->
+        <service
+            android:name="net.kckern.daylight.cap.mediaservice.shell.KeepService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <!-- Not exported: the phone as a remote for one screen's session (a second Media3
              session beside the one above). Bound by this app's Now playing screen; the
