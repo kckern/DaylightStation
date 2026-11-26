@@ -279,8 +279,11 @@ final class KeepStore {
     JSONObject room() {
         try {
             long kept = keptBytes(), free = freeBytes(), limit = limitBytes();
+            // Until the limit is read, the line leaves it out rather than show a wrong one.
+            String line = rulesKnown ? KeptIndex.roomLine(kept, capMb, free)
+                    : KeptIndex.size(kept) + " kept · " + KeptIndex.size(free) + " free on phone";
             return new JSONObject().put("kept", kept).put("capMb", capMb).put("free", free).put("limit", limit)
-                    .put("room", KeptIndex.roomLine(kept, capMb, free)).put("over", KeptIndex.overLine(limit, kept))
+                    .put("room", line).put("over", rulesKnown ? KeptIndex.overLine(limit, kept) : "")
                     .put("location", location);
         } catch (Exception e) { return new JSONObject(); }
     }
@@ -1309,14 +1312,26 @@ final class KeepStore {
         for (String c : covers) net.kckern.daylight.shellkit.PlaylistArtwork.keep(c);
     }
 
+    /** Sizes are read six at a time ("Checking size…" for a 24-track album takes seconds, not 20). */
+    private final ExecutorService sizer = Executors.newFixedThreadPool(6, r -> {
+        Thread t = new Thread(r, "Daylight-keep-size");
+        t.setDaemon(true);
+        return t;
+    });
+
     private long missingBytes(JSONArray tracks) {
-        long need = 0;
+        List<java.util.concurrent.Future<Long>> sizes = new ArrayList<>();
         for (int i = 0; tracks != null && i < tracks.length(); i++) {
             JSONObject t = tracks.optJSONObject(i);
             if (t == null) continue;
             Download d = download(keyFor(t.optString("id")));
             if (d != null && d.state == Download.STATE_COMPLETED) continue;
-            need += size(t.optString("url"));
+            String url = t.optString("url");
+            sizes.add(sizer.submit(() -> size(url)));
+        }
+        long need = 0;
+        for (java.util.concurrent.Future<Long> f : sizes) {
+            try { need += f.get(12, java.util.concurrent.TimeUnit.SECONDS); } catch (Exception unknown) { /* counts 0 */ }
         }
         return need;
     }

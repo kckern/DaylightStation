@@ -68,6 +68,7 @@
         <activity android:name="net.kckern.daylight.cap.mediaservice.shell.DownloadsActivity"
             android:exported="false"
             android:label="On this phone"
+            android:launchMode="singleTop"
             android:theme="@style/Theme.Daylight.WithTitle" />
         <service android:name="net.kckern.daylight.cap.mediaservice.shell.KeepJob"
             android:exported="false"
