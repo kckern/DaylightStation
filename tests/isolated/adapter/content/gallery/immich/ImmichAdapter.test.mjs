@@ -25,6 +25,22 @@ describe('ImmichAdapter', () => {
       expect(mockHttpClient.post.mock.calls[0][1]).not.toHaveProperty('takenAfter');
     });
 
+    test('a named instance searches person ids across every page under its own prefix and proxy', async () => {
+      mockHttpClient.post
+        .mockResolvedValueOnce({ data: { assets: { items: [{ id: 'a', type: 'IMAGE', originalFileName: 'a.jpg' }], nextPage: '2' } } })
+        .mockResolvedValueOnce({ data: { assets: { items: [{ id: 'b', type: 'IMAGE', originalFileName: 'b.jpg' }], nextPage: null } } });
+      const adapter = new ImmichAdapter(
+        { source: 'familyphotos', host: 'http://family', apiKey: 'key' },
+        { httpClient: mockHttpClient }
+      );
+      const result = await adapter.search({ personIds: ['person-1'] });
+      expect(result.items.map(i => i.id)).toEqual(['familyphotos:a', 'familyphotos:b']);
+      expect(result.items[0].source).toBe('familyphotos');
+      expect(result.items[0].mediaUrl).toBe('/api/v1/proxy/familyphotos/assets/a/thumbnail?size=preview');
+      expect(mockHttpClient.post.mock.calls[0][1]).toMatchObject({ personIds: ['person-1'], page: 1, withPeople: true });
+      expect(mockHttpClient.post.mock.calls[1][1]).toMatchObject({ personIds: ['person-1'], page: 2 });
+    });
+
     test('an unknown tag never falls back to an unfiltered library search', async () => {
       mockHttpClient.get.mockResolvedValue({ data: [] });
       const adapter = new ImmichAdapter({ host: 'http://immich', apiKey: 'key' }, { httpClient: mockHttpClient });

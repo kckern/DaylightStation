@@ -877,6 +877,15 @@ export function createProxyService(config) {
     ));
   }
 
+  // Additional Immich servers, each proxied under its own name.
+  for (const instance of config.immichInstances || []) {
+    if (!instance?.name || !instance.host || !instance.apiKey) continue;
+    proxyService.register(new ImmichProxyAdapter(
+      { host: instance.host, apiKey: instance.apiKey, serviceName: instance.name },
+      { logger }
+    ));
+  }
+
   // Register Audiobookshelf adapter if configured
   if (config.audiobookshelf?.host) {
     proxyService.register(new AudiobookshelfProxyAdapter(

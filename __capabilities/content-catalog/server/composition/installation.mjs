@@ -165,6 +165,23 @@ export function registerRemoteCatalogSources(registry, config, httpClient) {
     );
   }
 
+  // Additional Immich servers (e.g. a family-history archive). Each registers
+  // under its own name, which is its content id prefix (`<name>:<asset>`), its
+  // proxy route and its registry provider, so `immich` keeps meaning the main
+  // library. They share the `gallery` category.
+  for (const instance of config.immichInstances || []) {
+    if (!instance?.name || !instance.host || !instance.apiKey || !httpClient) continue;
+    registry.register(
+      new ImmichAdapter({
+        source: instance.name,
+        host: instance.host,
+        apiKey: instance.apiKey,
+        slideDuration: instance.slideDuration || config.immich?.slideDuration || 10
+      }, { httpClient }),
+      { category: immichManifest.capability, provider: instance.name }
+    );
+  }
+
   // Register Audiobookshelf adapter if configured
   // (manifest metadata makes it resolvable via the 'readable' category and
   // 'abs' provider, alongside Komga)

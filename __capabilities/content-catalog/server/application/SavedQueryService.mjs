@@ -76,6 +76,9 @@ export class SavedQueryService {
         ...(raw.take != null && { take: raw.take }),
         ...(raw.exclude != null && { exclude: raw.exclude }),
         ...(raw.slideshow != null && { slideshow: raw.slideshow }),
+        ...(raw.instance != null && { instance: raw.instance }),
+        ...(raw.timeFilter != null && { timeFilter: raw.timeFilter }),
+        ...(raw.videoRules != null && { videoRules: raw.videoRules }),
       }],
     };
   }

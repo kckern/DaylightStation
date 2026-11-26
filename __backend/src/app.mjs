@@ -1033,6 +1033,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const immichHost = configService.resolveServiceUrl('immich');
   const immichAuth = configService.getHouseholdAuth('immich');
   const immichConfig = immichHost && immichAuth?.token ? { host: immichHost, apiKey: immichAuth.token } : null;
+  // Additional Immich servers. Each name is a services.yml key and a household
+  // auth file (`auth/<name>.yml`, `token:`), and becomes the content id prefix
+  // and proxy route (`<name>:<asset>`, `/api/v1/proxy/<name>`). A server with no
+  // URL or token is left out.
+  const immichInstances = ['familyphotos'].flatMap((name) => {
+    const host = configService.resolveServiceUrl(name);
+    const token = configService.getHouseholdAuth(name)?.token;
+    return host && token ? [{ name, host, apiKey: token }] : [];
+  });
 
   // Get Audiobookshelf credentials (ebooks/audiobooks)
   const audiobookshelfHost = configService.resolveServiceUrl('audiobookshelf');
@@ -1108,6 +1117,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     mediaBasePath,
     plex: mediaLibConfig,  // Bootstrap key stays 'plex' for now
     immich: immichConfig,  // Gallery source (photos/videos)
+    immichInstances,       // Additional Immich servers (own prefix + proxy route)
     audiobookshelf: audiobookshelfConfig,  // Ebooks/audiobooks
     canvas,  // Canvas art display (filesystem-based)
     dataPath: contentPath,
@@ -1139,6 +1149,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const contentProxyService = createProxyService({
     plex: mediaLibConfig,  // Bootstrap key stays 'plex' for now
     immich: immichConfig,  // Photo/video gallery
+    immichInstances,
     audiobookshelf: audiobookshelfConfig,  // Ebooks/audiobooks
     komga: komgaProxyHost ? { host: komgaProxyHost, apiKey: komgaProxyAuth?.token } : null,
     logger: rootLogger.child({ module: 'content-proxy' })

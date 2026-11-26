@@ -415,8 +415,10 @@ export class QueryAdapter {
   }
 
   /**
-   * Resolve an immich query by searching across date ranges.
-   * Loops from yearFrom to current year, searching each year for the given month/day.
+   * Resolve an immich query.
+   * Date mode loops from yearFrom to the current year, searching each year for the
+   * given month/day. People mode (`params.personIds`) gathers every photo of the
+   * listed people. `query.instance` picks the Immich server (default `immich`).
    * @param {Object} query - Normalized query definition with params
    * @returns {Promise<Array>}
    */
@@ -426,16 +428,90 @@ export class QueryAdapter {
       return [];
     }
 
-    const adapter = this.#registry.get('immich');
+    const instance = query.instance || 'immich';
+    const adapter = this.#registry.get(instance);
     if (!adapter) {
-      console.warn('[QueryAdapter] ImmichAdapter not registered');
+      console.warn(`[QueryAdapter] Immich instance not registered: ${instance}`);
       return [];
     }
 
-    const { mediaType, month, day, yearFrom, yearTo, includeTags = [] } = query.params;
+    const { mediaType, month, day, yearFrom, yearTo, includeTags = [], personIds = [] } = query.params || {};
+    const timeFiltered = personIds.length
+      ? await this.#searchImmichPeople(adapter, query.params)
+      : await this.#searchImmichDates(adapter, query);
+    if (!timeFiltered) return [];
+
+    // Tags are explicit inclusions (OR), independent of every date/time filter.
+    // Merge before sorting/segmentation so overlap never creates duplicate clips.
+    if (includeTags.length) {
+      const taggedResults = await Promise.all(includeTags.map(tag =>
+        adapter.search({ tags: [tag], mediaType: mediaType || undefined })
+      ));
+      const includedIds = new Set(timeFiltered.map(item => item.id));
+      for (const result of taggedResults) {
+        for (const item of result.items || []) {
+          if (includedIds.has(item.id)) continue;
+          includedIds.add(item.id);
+          timeFiltered.push(item);
+        }
+      }
+    }
+
+    // Filter by mediaType if specified
+    let filtered = mediaType
+      ? timeFiltered.filter(item => item.mediaType === mediaType)
+      : timeFiltered;
+
+    // Exclude specific asset IDs
+    if (query.exclude?.length > 0) {
+      const excludeSet = new Set(query.exclude);
+      const prefix = `${instance}:`;
+      filtered = filtered.filter(item => {
+        const assetId = item.id?.startsWith(prefix) ? item.id.slice(prefix.length) : item.id;
+        return !excludeSet.has(assetId);
+      });
+    }
+
+    return this.#finishImmichItems(filtered, query);
+  }
+
+  /**
+   * People mode: every photo of the listed Immich people (person ids, as in the
+   * Immich people URL). `match: any` (default) unions one search per person;
+   * Immich itself ANDs a personIds list, which is what `match: all` sends.
+   * Optional `yearFrom`/`yearTo` bound the capture year.
+   * @returns {Promise<Array>}
+   */
+  async #searchImmichPeople(adapter, params) {
+    const { personIds, match = 'any', mediaType, yearFrom, yearTo } = params;
+    const searches = match === 'all' ? [personIds] : personIds.map(id => [id]);
+    const results = await Promise.all(searches.map(ids =>
+      adapter.search({ personIds: ids, mediaType: mediaType || undefined }).catch(err => {
+        console.warn(`[QueryAdapter] Immich people search failed for ${ids.join(',')}:`, err.message);
+        return { items: [] };
+      })
+    ));
+    const seen = new Set();
+    return results.flatMap(r => r.items || []).filter(item => {
+      if (item.itemType === 'container' || !item.mediaType) return false;
+      if (seen.has(item.id)) return false;
+      seen.add(item.id);
+      const year = Number((item.metadata?.localDateTime || item.metadata?.capturedAt || '').slice(0, 4));
+      if (yearFrom && !(year >= yearFrom)) return false;
+      if (yearTo && !(year <= yearTo)) return false;
+      return true;
+    });
+  }
+
+  /**
+   * Date mode: assets captured on month/day in each year from yearFrom.
+   * @returns {Promise<Array|null>} null when the query lacks its date params
+   */
+  async #searchImmichDates(adapter, query) {
+    const { mediaType, month, day, yearFrom, yearTo } = query.params;
     if (!month || !day || !yearFrom) {
-      console.warn('[QueryAdapter] Immich query missing required params (month, day, yearFrom)');
-      return [];
+      console.warn('[QueryAdapter] Immich query missing required params (month, day, yearFrom) or personIds');
+      return null;
     }
 
     const lastYear = yearTo || new Date().getFullYear();
@@ -499,36 +575,14 @@ export class QueryAdapter {
       });
     }
 
-    // Tags are explicit inclusions (OR), independent of every date/time filter.
-    // Merge before sorting/segmentation so overlap never creates duplicate clips.
-    if (includeTags.length) {
-      const taggedResults = await Promise.all(includeTags.map(tag =>
-        adapter.search({ tags: [tag], mediaType: mediaType || undefined })
-      ));
-      const includedIds = new Set(timeFiltered.map(item => item.id));
-      for (const result of taggedResults) {
-        for (const item of result.items || []) {
-          if (includedIds.has(item.id)) continue;
-          includedIds.add(item.id);
-          timeFiltered.push(item);
-        }
-      }
-    }
+    return timeFiltered;
+  }
 
-    // Filter by mediaType if specified
-    let filtered = mediaType
-      ? timeFiltered.filter(item => item.mediaType === mediaType)
-      : timeFiltered;
-
-    // Exclude specific asset IDs
-    if (query.exclude?.length > 0) {
-      const excludeSet = new Set(query.exclude);
-      filtered = filtered.filter(item => {
-        const assetId = item.id?.replace(/^immich:/, '');
-        return !excludeSet.has(assetId);
-      });
-    }
-
+  /**
+   * Shared tail for every Immich entry: slideshow stamp, sort, video rules.
+   * @returns {Array}
+   */
+  #finishImmichItems(filtered, query) {
     // Stamp slideshow config on all items (images and videos)
     if (query.slideshow) {
       for (const item of filtered) {

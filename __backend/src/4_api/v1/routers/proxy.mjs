@@ -38,6 +38,12 @@ export function createProxyPassthroughHandlers(proxyService) {
     plexLive: bind('plex-live'),
     plexLiveArt: bind('plex-live-art'),
     immich: bind('immich'),
+    // Additional Immich servers, keyed by service name (e.g. a family archive).
+    immichInstances: Object.fromEntries(
+      (proxyService?.getServices?.() || [])
+        .filter((name) => name !== 'immich' && proxyService.getAdapter?.(name)?.kind === 'immich')
+        .map((name) => [name, bind(name)])
+    ),
     reddit: bind('reddit'),
     komga: bind('komga'),
     audiobookshelf: bind('audiobookshelf'),
@@ -292,6 +298,9 @@ export function createProxyRouter(config = {}) {
     passthroughHandlers.immich,
     'Immich proxy not configured (ProxyService required)',
   ));
+  for (const [name, handler] of Object.entries(passthroughHandlers.immichInstances || {})) {
+    router.use(`/${name}`, requiredPassthrough(handler, `Immich proxy "${name}" not configured`));
+  }
   router.use('/reddit', placeholderPassthrough(passthroughHandlers.reddit, 'reddit'));
 
   router.get('/komga/composite/:bookId/:page', asyncHandler(async (req, res) => {
