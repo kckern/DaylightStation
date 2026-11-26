@@ -68,4 +68,11 @@ public class LongFormTest {
         assertEquals(0.55f, LongForm.fadeVolume(30_000), 0.001);
         assertEquals(0.1f, LongForm.fadeVolume(0), 0.001);
     }
+
+    @Test public void loudTracksComeDownAndNothingIsBoosted() {
+        assertEquals(0.6f, LongForm.levelFor(-4.43), 0.01);
+        assertEquals(1f, LongForm.levelFor(3.0), 0);
+        assertEquals(1f, LongForm.levelFor(Double.NaN), 0);
+        assertEquals(0.1f, LongForm.levelFor(-60), 0);
+    }
 }

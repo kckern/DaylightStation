@@ -534,6 +534,10 @@ targets are Media3 sessions behind one `MediaController`:
   `daylight.playback`), so the notification and the car follow it: remembered per
   collection (its household list, else its album) with the latest choice as the default
   for a new one, and **never applied to music**, whoever asks.
+- **Loudness levelling.** Each track plays at its Plex loudness gain (the track
+  levels route's `quality.gainDb`, from Plex's analysis): a loud master is turned down to
+  meet the quiet ones, nothing is ever raised above full, so nothing clips. A track with
+  no analysis plays at full volume. The sleep timer's fade multiplies with it.
 - **Sleep timer** (⋮, this phone only): off, 15, 30, 45 or 60 minutes, or at the end
   of this item. It lives in the phone's media session (`SleepTimer`, custom command
   `net.kckern.daylight.media.SLEEP` with `minutes`, -1 for the end of the item), so it

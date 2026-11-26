@@ -31,6 +31,15 @@ final class SleepTimer {
     /** The last minute: the volume falls to 10% (LongForm.fadeVolume), as audiobook players do. */
     private final Runnable fade = this::fadeStep;
     private boolean fading;
+    /** Where the fade goes: the session's volume mix (with loudness levelling), else the player itself. */
+    private java.util.function.Consumer<Float> fadeSink;
+
+    void setFadeSink(java.util.function.Consumer<Float> sink) { fadeSink = sink; }
+
+    private void fadeTo(float v) {
+        if (fadeSink != null) fadeSink.accept(v);
+        else if (session != null) session.getPlayer().setVolume(v);
+    }
     private MediaSession session;
     private long until;
     private boolean armed;
@@ -78,7 +87,7 @@ final class SleepTimer {
         if (!armed || session == null || until == UNTIL_END_OF_ITEM) return;
         fading = true;
         long left = until - SystemClock.elapsedRealtime();
-        session.getPlayer().setVolume(LongForm.fadeVolume(left));
+        fadeTo(LongForm.fadeVolume(left));
         if (left > 0) main.postDelayed(fade, 1000);
     }
 
@@ -92,7 +101,7 @@ final class SleepTimer {
 
     private void restoreVolume() {
         main.removeCallbacks(fade);
-        if (fading && session != null) session.getPlayer().setVolume(1f);
+        if (fading) fadeTo(1f);
         fading = false;
     }
 

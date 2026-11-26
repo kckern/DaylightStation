@@ -113,5 +113,11 @@ export function audioQuality(media, stream) {
   if (Number.isFinite(sampleRate) && sampleRate > 0) q.sampleRate = Math.round(sampleRate);
   const bitDepth = Number(stream?.bitDepth);
   if (Number.isFinite(bitDepth) && bitDepth > 0) q.bitDepth = Math.round(bitDepth);
+  // Plex's loudness analysis: the track gain (dB) that brings it to its reference
+  // loudness, and the album's, for players that level volume between tracks.
+  const gain = Number(stream?.gain);
+  if (stream?.gain != null && Number.isFinite(gain)) q.gainDb = Math.round(gain * 100) / 100;
+  const albumGain = Number(stream?.albumGain);
+  if (stream?.albumGain != null && Number.isFinite(albumGain)) q.albumGainDb = Math.round(albumGain * 100) / 100;
   return Object.keys(q).length ? q : null;
 }

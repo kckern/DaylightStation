@@ -67,5 +67,8 @@ describe('audioQuality', () => {
     expect(audioQuality({ audioCodec: 'flac', bitrate: 1411 }, { samplingRate: 96000, bitDepth: 24 }))
       .toEqual({ codec: 'flac', bitrate: 1411, sampleRate: 96000, bitDepth: 24 });
     expect(audioQuality({}, {})).toBeNull();
+    // Plex loudness analysis: the gain to level the track (and its album).
+    expect(audioQuality({}, { codec: 'mp3', gain: '-4.43', albumGain: '-4.431' })).toEqual({ codec: 'mp3', gainDb: -4.43, albumGainDb: -4.43 });
+    expect(audioQuality({}, { codec: 'mp3', gain: 'x' })).toEqual({ codec: 'mp3' });
   });
 });

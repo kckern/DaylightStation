@@ -1105,7 +1105,8 @@ Only Plex tracks have extras today (`PlexAdapter.getTrackLevels` /
   only for a stream carrying `loudness` (an analysed one). `[]` when the track
   was never analysed; the quality is still answered.
 - `quality`: from the track's media and audio stream. `bitrate` in kbps,
-  `sampleRate` in Hz. Unknown fields are left out; `quality` itself is left out
+  `sampleRate` in Hz. `gainDb` / `albumGainDb`: Plex's loudness analysis, the gain that levels the track
+  (or its album), for players that level volume between tracks. Unknown fields are left out; `quality` itself is left out
   when nothing is known.
 - `204`: neither levels nor quality (or a source without extras). `404`: unknown item.
 

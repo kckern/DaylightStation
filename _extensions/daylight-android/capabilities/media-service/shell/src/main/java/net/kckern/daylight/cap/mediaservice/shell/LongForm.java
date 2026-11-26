@@ -91,4 +91,15 @@ final class LongForm {
         if (!key.isEmpty()) memory.put("speed:" + key, s);
         memory.put(DEFAULT_KEY, s);
     }
+
+    /**
+     * Loudness levelling from Plex's analysis: the volume that applies a track's gain
+     * (dB) without ever going above full, so nothing clips. A loud master comes down to
+     * meet the quiet ones; NaN (no analysis) leaves the volume alone.
+     */
+    static float levelFor(double gainDb) {
+        if (Double.isNaN(gainDb)) return 1f;
+        double v = Math.pow(10, gainDb / 20.0);
+        return (float) Math.max(0.1, Math.min(1.0, v));
+    }
 }
