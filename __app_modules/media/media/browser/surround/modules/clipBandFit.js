@@ -9,8 +9,14 @@
 // sets inside the band's height (and the title in at most two lines).
 
 /**
- * The largest size in [floorPx, ceilPx], stepping down by stepPx, for which
- * `ok()` holds after `apply(px)`. Leaves the winning size applied.
+ * The largest size in [floorPx, ceilPx], on a grid of stepPx down from the
+ * ceiling plus the floor itself, for which `ok()` holds after `apply(px)`.
+ * Leaves the winning size applied.
+ *
+ * BINARY SEARCH, because every `ok` forces a layout and this runs on every clip
+ * change on TV hardware. It relies on `ok` being monotonic (a smaller size
+ * never fails where a larger one passed), which holds for every check here:
+ * smaller type is never taller or wider.
  *
  * @param {object} args
  * @param {number} args.ceilPx the size the stylesheet sets (tried first).
@@ -23,12 +29,22 @@
  */
 export function fitDown({ ceilPx, floorPx, stepPx = 1, apply, ok }) {
   if (!(ceilPx > 0) || !(floorPx > 0) || floorPx > ceilPx) return { px: ceilPx, fits: true };
-  for (let px = ceilPx; px >= floorPx - 1e-6; px -= stepPx) {
-    apply(px);
-    if (ok(px)) return { px, fits: true };
+  const sizes = [];
+  for (let px = ceilPx; px > floorPx + 1e-6; px -= stepPx) sizes.push(Number(px.toFixed(2)));
+  sizes.push(floorPx);
+  const passes = (i) => { apply(sizes[i]); return ok(sizes[i]); };
+
+  if (passes(0)) return { px: sizes[0], fits: true };
+  const last = sizes.length - 1;
+  if (last === 0 || !passes(last)) return { px: floorPx, fits: false };
+  let lo = 0; // fails
+  let hi = last; // passes
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (passes(mid)) hi = mid; else lo = mid;
   }
-  apply(floorPx);
-  return { px: floorPx, fits: false };
+  apply(sizes[hi]);
+  return { px: sizes[hi], fits: true };
 }
 
 /** Lines a block of text occupies at this size and leading. */
