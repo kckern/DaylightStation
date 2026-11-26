@@ -108,6 +108,27 @@ catalog.devices().each { d ->
     tasks.matching { it.name ==~ "process${d.id.capitalize()}(Debug|Release)(Main)?Manifest" }.all { it.dependsOn gen }
 }
 
+// Each device's theme: block as resources in its flavor source set, where they outrank
+// shell-kit's default tokens (buildSrc ThemeSource; the defaults are shell-kit res/values
+// and res/values-night). A device with no block gets empty files: the defaults stand.
+catalog.devices().each { d ->
+    def dir = new File(buildDir, "generated/theme/${d.id}")
+    def files = net.kckern.daylight.build.ThemeSource.render(d.theme)
+    def gen = tasks.create("generate${d.id.capitalize()}Theme") {
+        inputs.property('files', files.toString())
+        outputs.dir dir
+        doLast {
+            files.each { path, xml ->
+                def f = new File(dir, path)
+                f.parentFile.mkdirs()
+                f.setText(xml, 'UTF-8')
+            }
+        }
+    }
+    android.sourceSets.getByName(d.id).res.srcDir dir
+    tasks.matching { it.name ==~ "(generate|merge|package)${d.id.capitalize()}(Debug|Release)Resources" }.all { it.dependsOn gen }
+}
+
 // The build-level check of what installing would do to a device: each device's MERGED
 // manifest (the one in its APK) is read back and held to MergedManifestCheck's rules.
 // Part of `check`, so `./gradlew build` fails on a manifest that adds a home candidate.

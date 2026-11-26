@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Type and shape. Roboto Condensed (the system's sans-serif-condensed) is the household
+     font, as on the web app. Seven sizes cover every native screen (DaylightTheme.Type);
+     three corner radii cover every rounded shape (DaylightTheme.Radius). -->
+<resources>
+    <string name="daylight_font_family" translatable="false">sans-serif-condensed</string>
+    <!-- system, light or dark. A device file's theme.mode replaces it. -->
+    <string name="daylight_theme_mode" translatable="false">system</string>
+
+    <dimen name="daylight_type_numeral">44sp</dimen>
+    <dimen name="daylight_type_display">28sp</dimen>
+    <dimen name="daylight_type_headline">22sp</dimen>
+    <dimen name="daylight_type_title">18sp</dimen>
+    <dimen name="daylight_type_body">16sp</dimen>
+    <dimen name="daylight_type_label">14sp</dimen>
+    <dimen name="daylight_type_caption">12sp</dimen>
+
+    <dimen name="daylight_radius_small">10dp</dimen>
+    <dimen name="daylight_radius_medium">16dp</dimen>
+    <dimen name="daylight_radius_large">28dp</dimen>
+</resources>

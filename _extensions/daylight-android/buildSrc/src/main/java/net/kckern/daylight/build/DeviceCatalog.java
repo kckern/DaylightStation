@@ -241,6 +241,8 @@ public final class DeviceCatalog {
             appLinksHost = ((String) host).trim();
         }
 
+        Map<String, Object> theme = ThemeSource.parse(doc.get("theme"), where);
+
         Map<String, Object> defaults = new LinkedHashMap<>();
         Object rawDefaults = doc.get("defaults");
         if (rawDefaults != null) {
@@ -256,7 +258,7 @@ public final class DeviceCatalog {
         return new DeviceSpec(id, pkg, minSdk, targetSdk, abis, port, lifeline, versionCode, versionName,
                 Collections.unmodifiableList(capabilities), Collections.unmodifiableMap(defaults),
                 Collections.unmodifiableList(extraPermissions), Collections.unmodifiableList(serviceTypes),
-                bind, appLinksHost);
+                bind, appLinksHost, theme);
     }
 
     /** SafeConstructor builds only maps, lists and scalars; a tag naming a Java class is refused. */

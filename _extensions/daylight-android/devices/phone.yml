@@ -13,6 +13,11 @@ shell: { versionCode: 115, versionName: "0.1-phone.115" }
 # The household site's host, so an https link to it (in a relayed push, say) can open in
 # the app. Private: resolved from `placeholders:` when this device's manifest is built.
 appLinks: { host: "{phone_link_host}" }
+# The native screens' colors, font and light/dark choice. The defaults are shell-kit's
+# tokens (res/values light, res/values-night dark); mode system follows the phone's own
+# dark-mode setting. Add `light: { primary: "#RRGGBB" }` or a `dark:` line to replace
+# one token for this build only (token names: buildSrc ThemeSource.COLORS).
+theme: { mode: system }
 capabilities:
   - webview-host
   - volume
