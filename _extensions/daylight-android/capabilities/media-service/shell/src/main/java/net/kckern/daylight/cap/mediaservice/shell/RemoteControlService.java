@@ -208,7 +208,8 @@ public class RemoteControlService extends MediaSessionService {
                 SessionCommand command, Bundle args) {
             if (TARGET.equals(command.customAction)) {
                 String device = args.getString(EXTRA_DEVICE, "");
-                if (!device.matches("[a-z0-9][a-z0-9-]{0,63}")) {
+                // A registry device id, or a browser open as a screen (/screen/adhoc).
+                if (!device.matches("[a-z0-9][a-z0-9-]{0,63}") && !device.matches("browser:[A-Za-z0-9_-]{4,64}")) {
                     return Futures.immediateFuture(new SessionResult(SessionResult.RESULT_ERROR_BAD_VALUE));
                 }
                 target(device, args.getString(EXTRA_NAME, device));

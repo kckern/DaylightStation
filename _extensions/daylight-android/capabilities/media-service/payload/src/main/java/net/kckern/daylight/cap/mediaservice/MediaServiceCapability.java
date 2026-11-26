@@ -149,7 +149,8 @@ public final class MediaServiceCapability implements Capability {
                     // only ever a device id of the registry's spelling; the screen asks the payload
                     // which screens exist.
                     String target = query.get("target") == null ? "" : query.get("target");
-                    if (!target.isEmpty() && !"local".equals(target) && !ScreenRemote.ID.matcher(target).matches()) {
+                    if (!target.isEmpty() && !"local".equals(target) && !ScreenRemote.ID.matcher(target).matches()
+                            && !ScreenRemote.BROWSER.matcher(target).matches()) {
                         throw new IllegalArgumentException("expected media/now-playing?target=<local or a device id>");
                     }
                     Launcher l = launcher();

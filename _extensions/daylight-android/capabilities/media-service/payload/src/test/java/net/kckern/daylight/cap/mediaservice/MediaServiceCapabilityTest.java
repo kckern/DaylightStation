@@ -189,8 +189,10 @@ public class MediaServiceCapabilityTest {
         assertTrue(clear.body.getBoolean("accepted"));
         assertEquals(400, cap.call(new JSONObject().put("op", "screen-command").put("device", "office-tv").put("command", "system")).status);
         assertEquals(400, cap.call(new JSONObject().put("op", "screen-session").put("device", "../x")).status);
-        assertEquals(4, sent.size());
-        assertTrue(sent.get(3), sent.get(3).endsWith("/session/queue/clear"));
+        // device config, the household screen list (browsers open as screens), session, play, clear.
+        assertEquals(5, sent.size());
+        assertTrue(sent.get(1), sent.get(1).endsWith("/api/v1/media/screens"));
+        assertTrue(sent.get(4), sent.get(4).endsWith("/session/queue/clear"));
     }
 
     @Test public void aKeyedMediaLinkStartsThePlayerWithAContentIdAndNothingElse() throws Exception {

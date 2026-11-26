@@ -43,6 +43,8 @@ import { bindBackButton, enableGlobalKeyCapture } from '../../lib/fkb.js';
 import getLogger from '../../lib/logging/Logger.js';
 import { useInitialActionGate } from "../../../../__capabilities/screen-host/browser/lifecycle.mjs";
 import { useFleetDeviceIdentity } from "../../../../__capabilities/screen-host/browser/lifecycle.mjs";
+import { resolveScreenDevice, screenName, startScreenAnnounce } from "../../../../__capabilities/screen-host/browser/lifecycle.mjs";
+import { getDeviceId } from '../../lib/deviceIdentity.js';
 import { ActionLoadingShell } from "../../../../__capabilities/screen-host/browser/lifecycle.mjs";
 import { layoutOwnsRouting } from "../../../../__capabilities/screen-host/browser/lifecycle.mjs";
 import { resolveScreenAppPath, preservesScreenPath } from './screenAppPath.js';
@@ -235,6 +237,8 @@ export function ScreenRenderer({ screenId: propScreenId }) {
   const screenId = propScreenId || params.screenId;
 
   const [config, setConfig] = useState(null);
+  /** True on an ad-hoc screen: its device is this browser (`$browser` resolved), not a fleet name. */
+  const [browserScreen, setBrowserScreen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const inputHealthyRef = React.useRef(false);
@@ -243,7 +247,22 @@ export function ScreenRenderer({ screenId: propScreenId }) {
   // Sign this screen's requests with its fleet name (X-Daylight-Device:
   // fleet:<name>) as soon as the served config says which device it is. The
   // Home Line join depends on it; every backend log line benefits.
-  useFleetDeviceIdentity(config?.websocket?.guardrails?.device);
+  // An ad-hoc screen is this browser, not a fleet device: it keeps its browser: id.
+  useFleetDeviceIdentity(browserScreen ? null : config?.websocket?.guardrails?.device);
+
+  // An ad-hoc screen names itself and reports in to the household's screen list while
+  // it is open, so a phone can find it to connect to as a remote.
+  useEffect(() => {
+    if (!browserScreen) return undefined;
+    const id = config?.websocket?.guardrails?.device;
+    const name = screenName(typeof window !== 'undefined' ? window.location.search : '',
+      typeof window !== 'undefined' ? window.localStorage : null);
+    getLogger().child({ component: 'ScreenRenderer', screenId }).info('screen.adhoc.announce', { name });
+    return startScreenAnnounce({
+      id, name,
+      post: (body) => DaylightAPI('api/v1/media/screens/announce', body, 'POST'),
+    });
+  }, [browserScreen, config, screenId]);
 
   // Initial-only menu-flash suppression gate. If the URL had ?play=/?queue=/etc
   // on first mount, suppress the YAML layout until an overlay opens or 5s lapse.
@@ -369,7 +388,11 @@ export function ScreenRenderer({ screenId: propScreenId }) {
     const fetchConfig = async () => {
       try {
         const data = await DaylightAPI(`api/v1/screens/${screenId}`);
-        setConfig(data);
+        // `$browser` (an ad-hoc screen) becomes this browser's own id before anything
+        // subscribes, publishes or acks under the device name.
+        const resolved = resolveScreenDevice(data, getDeviceId());
+        setBrowserScreen(resolved.browserScreen);
+        setConfig(resolved.config);
       } catch (err) {
         setError(`Failed to load screen "${screenId}": ${err.message}`);
       }

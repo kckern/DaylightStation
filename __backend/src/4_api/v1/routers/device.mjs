@@ -26,6 +26,8 @@ const parseLoadQuery = (query = {}) => {
   return content;
 };
 const parseRequestedMinutes = value => Number(value) > 0 ? Number(value) : undefined;
+/** The id a browser acting as a screen is addressed by (frontend/src/lib/deviceIdentity.js). */
+const BROWSER_SCREEN_ID = /^browser:[A-Za-z0-9_-]{4,64}$/;
 const notFound = res => res.status(404).json(buildErrorBody({ error: 'Device not found', code: ERROR_CODES.DEVICE_NOT_FOUND }));
 
 /**
@@ -101,6 +103,16 @@ export function createDeviceRouter({ fleetService, presenceService, sessionServi
   dispatchService, recoveryService, kioskFrictionTracker, excursionGuard, startStatusService, prepareService,
   phoneInbox = null } = {}) {
   const router = express.Router();
+
+  // An ad-hoc screen is a browser (`browser:<token>`, /screen/adhoc): its commands and
+  // session go through the same routes as a configured screen's. Only the token shape a
+  // browser mints is accepted, so no route can be pointed at an arbitrary id.
+  router.param('deviceId', (req, res, next, id) => {
+    if (typeof id === 'string' && id.startsWith('browser:') && !BROWSER_SCREEN_ID.test(id)) {
+      return res.status(400).json(buildErrorBody({ error: 'Invalid browser screen id' }));
+    }
+    return next();
+  });
 
   router.get('/config', (req, res) => res.json(fleetService.configuration(req.query.householdId)));
 

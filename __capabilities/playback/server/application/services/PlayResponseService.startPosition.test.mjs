@@ -19,4 +19,14 @@ describe('PlayResponseService.startPositionFor', () => {
   it('is the playhead for a title in progress', () => {
     expect(svc.startPositionFor(item(true), { contentId: 'plex:1', playhead: 600, duration: 6000 })).toBe(600);
   });
+  // A book 3 minutes in (the phone's Continue listening) resumes; a film that far in is a peek.
+  it('resumes audio from 30 s in, video only past the 3-minute peek floor', () => {
+    const book = { id: 'plex:727120', resumable: true, mediaUrl: '/x', mediaType: 'audio', duration: 17800 };
+    const film = { ...book, mediaType: 'dash_video' };
+    const at = { contentId: 'plex:727120', playhead: 178, duration: 17800 };
+    expect(svc.toPlayResponse(book, at).resume_position).toBe(178);
+    expect(svc.startPositionFor(book, at)).toBe(178);
+    expect(svc.toPlayResponse(film, at).resume_position ?? 0).toBe(0);
+    expect(svc.startPositionFor(book, { ...at, playhead: 12 })).toBe(0);
+  });
 });

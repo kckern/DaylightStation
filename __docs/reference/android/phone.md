@@ -555,6 +555,12 @@ targets are Media3 sessions behind one `MediaController`:
   already shown (`NowPlayingActivity` extra `pad`), for the FHE menu, Charades or any
   menu when no remote is in reach. The list is drawn at once from the last answer
   (prefs `daylight.home`) and refreshed.
+  A browser open as a screen (`/screen/adhoc?name=MacBook`, e.g. Charades on a laptop:
+  `__docs/reference/core/screen-framework.md`, Ad-hoc screens) is listed too while it is
+  open: the payload's `screens` op appends the household screen list's browser screens
+  (`GET /api/v1/media/screens`) seen in the last 2 minutes or reported online, as
+  `{id: "browser:<token>", name, type: "browser"}`; their session and D-pad go to the same
+  device routes with the id's colon encoded.
 - **No jumps on load.** Lines that may be empty (artist, album, quality, the status
   line) keep their space from the first draw; the status line is one line that shrinks
   its text to fit; the cover box is square from the start (a video's wide still is

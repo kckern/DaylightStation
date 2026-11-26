@@ -211,4 +211,50 @@ public class ScreenRemoteTest {
         catch (IllegalArgumentException expected) { }
         assertTrue(calls.isEmpty());
     }
+
+    /** A browser open as a screen (/screen/adhoc) is listed while it reports in; a stale or odd one is not. */
+    @Test public void liveBrowserScreensJoinTheList() throws Exception {
+        long now = java.time.OffsetDateTime.parse("2026-11-26T09:00:00Z").toInstant().toEpochMilli();
+        List<String> seen = new ArrayList<>();
+        Http byUrl = new Http() {
+            @Override public Reply get(String url) {
+                seen.add(url);
+                if (url.endsWith("/api/v1/device/config")) return new Reply(200, "{\"devices\":{\"office-tv\":{\"fleet\":true}}}");
+                return new Reply(200, "{\"screens\":["
+                        + "{\"id\":\"browser:abcd1234ef\",\"name\":\"MacBook\",\"type\":\"browser\",\"lastSeen\":\"2026-11-26T08:59:10Z\"},"
+                        + "{\"id\":\"browser:stale0001\",\"name\":\"Old tab\",\"lastSeen\":\"2026-11-26T08:40:00Z\"},"
+                        + "{\"id\":\"browser:online01\",\"name\":\"\",\"online\":true},"
+                        + "{\"id\":\"browser:x\",\"name\":\"Bad\",\"online\":true},"
+                        + "{\"id\":\"office-tv\",\"name\":\"Office\",\"online\":true}]}");
+            }
+            @Override public Reply postJson(String url, String json) { seen.add("POST " + url); return new Reply(200, "{\"ok\":true}"); }
+            @Override public Reply postFile(String url, String contentType, File file, Map<String, String> headers) { throw new AssertionError(); }
+        };
+        ScreenRemote r = new ScreenRemote(byUrl, path -> "https://home.example" + path, () -> "Phone", () -> "cmd-1", () -> now);
+        org.json.JSONArray items = r.screens().getJSONArray("items");
+        assertEquals(3, items.length());
+        assertEquals("office-tv", items.getJSONObject(0).getString("id"));
+        assertEquals("browser:abcd1234ef", items.getJSONObject(1).getString("id"));
+        assertEquals("MacBook", items.getJSONObject(1).getString("name"));
+        assertEquals("browser", items.getJSONObject(1).getString("type"));
+        assertEquals("Browser", items.getJSONObject(2).getString("name"));
+
+        // Its session and its D-pad go to the device routes with the colon encoded.
+        r.session("browser:abcd1234ef");
+        assertTrue(seen.contains("https://home.example/api/v1/device/browser%3Aabcd1234ef/session"));
+        r.command(new JSONObject().put("device", "browser:abcd1234ef").put("command", "input").put("action", "select"));
+        assertTrue(seen.toString(), seen.contains("POST https://home.example/api/v1/device/browser%3Aabcd1234ef/input"));
+    }
+
+    @Test public void theScreenListStillAnswersWhenTheBrowserListCannot() throws Exception {
+        Http half = new Http() {
+            @Override public Reply get(String url) {
+                if (url.endsWith("/api/v1/device/config")) return new Reply(200, "{\"devices\":{\"office-tv\":{\"fleet\":true}}}");
+                return new Reply(500, "nope");
+            }
+            @Override public Reply postJson(String url, String json) { return new Reply(200, "{}"); }
+            @Override public Reply postFile(String url, String contentType, File file, Map<String, String> headers) { throw new AssertionError(); }
+        };
+        assertEquals(1, new ScreenRemote(half, path -> "https://home.example" + path, () -> "Phone").screens().getJSONArray("items").length());
+    }
 }

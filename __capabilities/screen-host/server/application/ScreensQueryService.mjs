@@ -1,3 +1,5 @@
+import { builtInScreen } from './builtInScreens.mjs';
+
 /**
  * Application queries for screen summaries and expanded screen configuration.
  */
@@ -55,6 +57,12 @@ export class ScreensQueryService {
     // `null` is the repository's explicit not-found result. An existing but
     // empty/scalar YAML document is an invalid config, not a missing file.
     if (config === null) {
+      // No household file: a built-in screen (adhoc), or not found.
+      const builtIn = builtInScreen(screenId);
+      if (builtIn) {
+        this.#logger.debug?.('screens.get.built-in', { screenId });
+        return { outcome: 'found', screen: builtIn };
+      }
       this.#logger.debug?.('screens.get.notfound', { screenId });
       return { outcome: 'not-found' };
     }

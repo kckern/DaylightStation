@@ -28,6 +28,10 @@ import java.util.regex.Pattern;
 final class ScreenRemote {
     /** A device id as the household registry spells them: office-tv, livingroom-tv. */
     static final Pattern ID = Pattern.compile("[a-z0-9][a-z0-9-]{0,63}");
+    /** A browser acting as a screen (/screen/adhoc): its persistent browser identity. */
+    static final Pattern BROWSER = Pattern.compile("browser:[A-Za-z0-9_-]{4,64}");
+    /** A browser screen is listed while it has reported in within this long (it announces every minute). */
+    static final long BROWSER_FRESH_MS = 2 * 60_000;
     private static final Pattern TRANSPORT = Pattern.compile("play|pause|stop|seekAbs|seekRel|skipNext|skipPrev");
     private static final Pattern QUEUE_OP = Pattern.compile("jump|remove|clear|reorder");
     private static final Pattern REPEAT = Pattern.compile("off|one|all");
@@ -39,15 +43,23 @@ final class ScreenRemote {
     private final Supplier<String> name;
     private final Supplier<String> commandIds;
 
+    private final java.util.function.LongSupplier clock;
+
     ScreenRemote(Http http, Function<String, String> url, Supplier<String> name) {
         this(http, url, name, () -> UUID.randomUUID().toString());
     }
 
     ScreenRemote(Http http, Function<String, String> url, Supplier<String> name, Supplier<String> commandIds) {
+        this(http, url, name, commandIds, System::currentTimeMillis);
+    }
+
+    ScreenRemote(Http http, Function<String, String> url, Supplier<String> name, Supplier<String> commandIds,
+                 java.util.function.LongSupplier clock) {
         this.http = http;
         this.url = url;
         this.name = name;
         this.commandIds = commandIds;
+        this.clock = clock;
     }
 
     /**
@@ -74,7 +86,45 @@ final class ScreenRemote {
                         .put("type", type.matches("[a-z0-9-]{1,32}") ? type : ""));
             }
         }
+        addLiveBrowsers(items);
         return Replies.ok().put("items", items);
+    }
+
+    /**
+     * Browsers open as a screen right now (/screen/adhoc, e.g. Charades on a laptop),
+     * from the household screen list: a browser screen seen within BROWSER_FRESH_MS, or
+     * reported online. Type "browser". When the list cannot be read the configured
+     * screens still answer.
+     */
+    private void addLiveBrowsers(JSONArray items) {
+        try {
+            Http.Reply r = http.get(url.apply("/api/v1/media/screens"));
+            if (!r.ok()) return;
+            JSONArray screens = new JSONObject(r.body).optJSONArray("screens");
+            long now = clock.getAsLong();
+            for (int i = 0; screens != null && i < screens.length(); i++) {
+                JSONObject sc = screens.optJSONObject(i);
+                if (sc == null) continue;
+                String id = sc.optString("id", "");
+                if (!BROWSER.matcher(id).matches()) continue;
+                boolean live = sc.optBoolean("online", false) || recent(sc.optString("lastSeen", ""), now);
+                if (!live) continue;
+                String label = sc.optString("name", "").trim();
+                items.put(new JSONObject().put("id", id).put("name", label.isEmpty() ? "Browser" : label).put("type", "browser"));
+            }
+        } catch (Exception listUnavailable) {
+            // The configured screens are still the answer.
+        }
+    }
+
+    private static boolean recent(String iso, long now) {
+        if (iso == null || iso.isEmpty()) return false;
+        try {
+            long at = java.time.OffsetDateTime.parse(iso).toInstant().toEpochMilli();
+            return now - at <= BROWSER_FRESH_MS && at - now <= BROWSER_FRESH_MS;
+        } catch (Exception notIso) {
+            return false;
+        }
     }
 
     /**
@@ -235,7 +285,9 @@ final class ScreenRemote {
         return "/api/v1/device/" + checked(device) + "/session";
     }
 
+    /** The device as a path segment: a fleet id, or a browser screen's id with its colon encoded. */
     private static String checked(String device) {
+        if (device != null && BROWSER.matcher(device).matches()) return device.replace(":", "%3A");
         if (device == null || !ID.matcher(device).matches()) throw new IllegalArgumentException("device");
         return device;
     }
