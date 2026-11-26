@@ -4,7 +4,6 @@ import { FleetContext } from "../fleet/FleetProvider.jsx";
 import { PeekContext } from "../peek/PeekContext.js";
 import mediaLog from "../logging/mediaLog.js";
 import {
-  AIM_IDLE_MS,
   advanceAimLifetime,
   renewAimActivity,
   restoreAimState,
@@ -70,11 +69,8 @@ export function CastTargetProvider({ children }) {
 
   useEffect(() => {
     reconcileLifetime();
-    if (aim.targetIds.length === 0 || exemption === true) return undefined;
-    const remaining = Math.max(0, AIM_IDLE_MS - (Date.now() - aim.activityAt));
-    const timer = setTimeout(reconcileLifetime, remaining);
-    return () => clearTimeout(timer);
-  }, [aim.activityAt, aim.targetIds.length, exemption, reconcileLifetime]);
+    // No idle timer: the aim is sticky, so there is nothing to wait for.
+  }, [exemption, reconcileLifetime]);
 
   useEffect(() => {
     const renew = () => {
@@ -113,6 +109,15 @@ export function CastTargetProvider({ children }) {
     });
   }, []);
 
+  const setTargets = useCallback((ids) => {
+    const targetIds = [...new Set((Array.isArray(ids) ? ids : []).filter((id) => typeof id === 'string' && id))];
+    setAim((previous) => {
+      const next = renewAimActivity({ ...previous, targetIds, exemptionStartedAt: null }, { now: Date.now() });
+      mediaLog.aimActivity({ source: 'search-cycle', targetIds });
+      return next;
+    });
+  }, []);
+
   const clearTargets = useCallback(() => {
     setAim((previous) => {
       const next = renewAimActivity({ ...previous, targetIds: [], exemptionStartedAt: null }, { now: Date.now() });
@@ -122,8 +127,8 @@ export function CastTargetProvider({ children }) {
   }, []);
 
   const value = useMemo(
-    () => ({ mode: aim.mode, targetIds: aim.targetIds, setMode, toggleTarget, clearTargets }),
-    [aim.mode, aim.targetIds, setMode, toggleTarget, clearTargets]
+    () => ({ mode: aim.mode, targetIds: aim.targetIds, setMode, toggleTarget, setTargets, clearTargets }),
+    [aim.mode, aim.targetIds, setMode, toggleTarget, setTargets, clearTargets]
   );
 
   return <CastTargetContext.Provider value={value}>{children}</CastTargetContext.Provider>;

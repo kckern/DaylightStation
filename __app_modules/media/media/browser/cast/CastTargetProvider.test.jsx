@@ -13,7 +13,7 @@ vi.mock("../logging/mediaLog.js", () => {
 });
 
 function Probe() {
-  const { mode, targetIds, setMode, toggleTarget, clearTargets } = useCastTarget();
+  const { mode, targetIds, setMode, toggleTarget, clearTargets, setTargets } = useCastTarget();
   return (
     <div>
       <span data-testid="mode">{mode}</span>
@@ -22,6 +22,7 @@ function Probe() {
       <button data-testid="toggle-lr" onClick={() => toggleTarget('lr')}>lr</button>
       <button data-testid="toggle-ot" onClick={() => toggleTarget('ot')}>ot</button>
       <button data-testid="clear" onClick={clearTargets}>clear</button>
+      <button data-testid="set-two" onClick={() => setTargets(['a', 'b'])}>two</button>
     </div>
   );
 }
@@ -69,6 +70,15 @@ describe('CastTargetProvider', () => {
     expect(screen.getByTestId('targets')).toHaveTextContent('lr');
   });
 
+  it('setTargets replaces the set and logs search-cycle activity', async () => {
+    render(<CastTargetProvider><Probe /></CastTargetProvider>);
+    act(() => { screen.getByTestId('toggle-lr').click(); });
+    act(() => { screen.getByTestId('set-two').click(); });
+    expect(screen.getByTestId('targets')).toHaveTextContent('a,b');
+    const { default: log } = await import("../logging/mediaLog.js");
+    expect(log.aimActivity).toHaveBeenCalledWith(expect.objectContaining({ source: 'search-cycle', targetIds: ['a', 'b'] }));
+  });
+
   it('clearTargets empties the array', () => {
     render(<CastTargetProvider><Probe /></CastTargetProvider>);
     act(() => { screen.getByTestId('toggle-lr').click(); });
@@ -76,17 +86,17 @@ describe('CastTargetProvider', () => {
     expect(screen.getByTestId('targets')).toHaveTextContent('');
   });
 
-  it('shows This device on its first layout pass when the restored aim is expired', () => {
+  it('restores an aim set three hours ago (sticky, no idle expiry)', () => {
     const now = 1_700_000_000_000;
     vi.spyOn(Date, 'now').mockReturnValue(now);
     localStorage.setItem(CAST_TARGET_KEY, JSON.stringify({
-      mode: 'fork', targetIds: ['office'], activityAt: now - (2 * 60 * 60 * 1000),
+      mode: 'fork', targetIds: ['office'], activityAt: now - (3 * 60 * 60 * 1000),
     }));
     const onInitial = vi.fn();
 
     render(<CastTargetProvider><InitialProbe onInitial={onInitial} /></CastTargetProvider>);
 
-    expect(onInitial.mock.calls[0]).toEqual([{ mode: 'fork', targetIds: [] }]);
+    expect(onInitial.mock.calls[0]).toEqual([{ mode: 'fork', targetIds: ['office'] }]);
   });
 
   it('renews the persisted idle lease from a real pointer interaction', () => {
@@ -103,7 +113,7 @@ describe('CastTargetProvider', () => {
     });
   });
 
-  it('returns to This device on reload after a known two-hour idle observation', () => {
+  it('keeps the aim on reload after a known two-hour idle observation', () => {
     const now = 1_700_000_000_000;
     vi.spyOn(Date, 'now').mockReturnValue(now);
     localStorage.setItem(CAST_TARGET_KEY, JSON.stringify({
@@ -121,8 +131,8 @@ describe('CastTargetProvider', () => {
       </ClientIdentityContext.Provider>
     );
 
-    expect(screen.getByTestId('targets')).toBeEmptyDOMElement();
-    expect(JSON.parse(localStorage.getItem(CAST_TARGET_KEY))).toMatchObject({ targetIds: [] });
+    expect(screen.getByTestId('targets')).toHaveTextContent('office');
+    expect(JSON.parse(localStorage.getItem(CAST_TARGET_KEY))).toMatchObject({ targetIds: ['office'] });
   });
 
   it('retains an otherwise-expired aim on first layout when matching sent playback is active', () => {

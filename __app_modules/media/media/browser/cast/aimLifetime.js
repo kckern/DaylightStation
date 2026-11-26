@@ -1,3 +1,6 @@
+// Sticky by owner ruling 2026-11-26: the destination chosen in the search box
+// stays until changed, so nothing expires an aim any more. AIM_IDLE_MS stays
+// exported (unused) and the lifetime plumbing stays so callers keep compiling.
 export const AIM_IDLE_MS = 2 * 60 * 60 * 1000;
 
 const DEFAULT_MODE = 'transfer';
@@ -25,8 +28,8 @@ function defaultState(now) {
 }
 
 export function resolveAimExpiry({ idleMs, matchingPlaybackActive = false }) {
-  if (matchingPlaybackActive) return false;
-  return Number.isFinite(idleMs) && idleMs >= AIM_IDLE_MS;
+  void idleMs; void matchingPlaybackActive;
+  return false;
 }
 
 /**

@@ -26,7 +26,7 @@ describe('aim lifetime — PLACE.2a/RQ-PLACE-03', () => {
     })).toBe(false);
   });
 
-  it('expires a remote aim at the exact two-hour idle boundary', () => {
+  it('never expires a remote aim, even at the old two-hour boundary (sticky)', () => {
     const restored = restoreAimState(stored(), { now: START });
 
     const result = advanceAimLifetime(restored.state, {
@@ -34,8 +34,8 @@ describe('aim lifetime — PLACE.2a/RQ-PLACE-03', () => {
       exemption: false,
     });
 
-    expect(result.expired).toBe(true);
-    expect(result.state).toMatchObject({ mode: 'fork', targetIds: [] });
+    expect(result.expired).toBe(false);
+    expect(result.state).toMatchObject({ mode: 'fork', targetIds: ['office'] });
   });
 
   it('does not expire one millisecond before the idle boundary', () => {
@@ -50,7 +50,7 @@ describe('aim lifetime — PLACE.2a/RQ-PLACE-03', () => {
     expect(result.state.targetIds).toEqual(['office']);
   });
 
-  it('expires a persisted aim on reload when fleet observation is unavailable', () => {
+  it('keeps a persisted aim on reload when fleet observation is unavailable', () => {
     const restored = restoreAimState(stored(), { now: START + AIM_IDLE_MS + 1 });
 
     const result = advanceAimLifetime(restored.state, {
@@ -58,8 +58,8 @@ describe('aim lifetime — PLACE.2a/RQ-PLACE-03', () => {
       exemption: null,
     });
 
-    expect(result.expired).toBe(true);
-    expect(result.state.targetIds).toEqual([]);
+    expect(result.expired).toBe(false);
+    expect(result.state.targetIds).toEqual(['office']);
   });
 
   it('does not credit an unobserved persisted exemption interval after reload', () => {
@@ -72,8 +72,8 @@ describe('aim lifetime — PLACE.2a/RQ-PLACE-03', () => {
       exemption: null,
     });
 
-    expect(result.expired).toBe(true);
-    expect(result.state.targetIds).toEqual([]);
+    expect(result.expired).toBe(false);
+    expect(result.state.targetIds).toEqual(['office']);
   });
 
   it('migrates a legacy timestamp-less record once to a finite conservative lifetime', () => {
@@ -84,7 +84,7 @@ describe('aim lifetime — PLACE.2a/RQ-PLACE-03', () => {
     expect(advanceAimLifetime(restored.state, {
       now: START + AIM_IDLE_MS,
       exemption: false,
-    }).expired).toBe(true);
+    }).expired).toBe(false);
   });
 
   it('falls back safely for corrupted persisted data', () => {
@@ -111,7 +111,7 @@ describe('aim lifetime — PLACE.2a/RQ-PLACE-03', () => {
     expect(paused.expired).toBe(false);
     expect(resumed.expired).toBe(false);
     expect(resumed.state.targetIds).toEqual(['office']);
-    expect(resumed.state.activityAt).toBe(START + AIM_IDLE_MS);
+    expect(resumed.state.activityAt).toBe(START + (2 * 60 * 60 * 1000));
   });
 
   it('starts a new paused interval when an interaction renews activity during an exemption', () => {
