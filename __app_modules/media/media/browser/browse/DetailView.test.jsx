@@ -1,6 +1,6 @@
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, createEvent, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { resetApiResourceCache } from '../../../../../frontend/src/lib/hooks/useApiResource.js';
 
@@ -103,16 +103,40 @@ describe('DetailView Play Now', () => {
     expect(dispatchLeafVerb).toHaveBeenCalledWith('playNow', 'plex:685088', expect.any(Object));
   });
 
-  it('opened from search (focusPlay) lands on PLAY; its activation plays, a stray Enter does not', async () => {
+  // A browser activates a focused button on Enter keydown unless that keydown
+  // is default-prevented — so "plays" here means "the keydown was let through".
+  const enterDown = (el, init = {}) => {
+    const event = createEvent.keyDown(el, { key: 'Enter', ...init });
+    fireEvent(el, event);
+    return event.defaultPrevented;
+  };
+
+  it('opened from search (focusPlay) lands on PLAY; its activation plays', async () => {
     render(<MantineProvider><DetailView contentId="plex:685088" focusPlay /></MantineProvider>);
     const play = screen.getByTestId('detail-play-now');
     await waitFor(() => expect(document.activeElement).toBe(play));
     expect(play).toHaveTextContent('Play here');
-    fireEvent.keyDown(document.body, { key: 'Enter' });
-    expect(dispatchLeafVerb).not.toHaveBeenCalled();
     // The second Enter is the focused button's own activation (a click).
     fireEvent.click(document.activeElement);
     expect(dispatchLeafVerb).toHaveBeenCalledWith('playNow', 'plex:685088', expect.any(Object));
+  });
+
+  it('a held Enter never plays: repeats and any Enter before a keyup are swallowed; a fresh press plays', async () => {
+    render(<MantineProvider><DetailView contentId="plex:685088" focusPlay /></MantineProvider>);
+    const play = screen.getByTestId('detail-play-now');
+    await waitFor(() => expect(document.activeElement).toBe(play));
+    // The Enter that opened the page is still held: auto-repeat lands on PLAY.
+    expect(enterDown(play, { repeat: true })).toBe(true);
+    expect(enterDown(play)).toBe(true); // no keyup seen yet
+    fireEvent.keyUp(play, { key: 'Enter' });
+    expect(enterDown(play, { repeat: true })).toBe(true); // a repeat is never a press
+    expect(enterDown(play)).toBe(false); // a fresh press after the keyup activates
+    expect(dispatchLeafVerb).not.toHaveBeenCalled();
+  });
+
+  it('without focusPlay a first Enter on PLAY is let through', () => {
+    render(<MantineProvider><DetailView contentId="plex:685088" /></MantineProvider>);
+    expect(enterDown(screen.getByTestId('detail-play-now'))).toBe(false);
   });
 
   it('without focusPlay the page does not take focus', async () => {
