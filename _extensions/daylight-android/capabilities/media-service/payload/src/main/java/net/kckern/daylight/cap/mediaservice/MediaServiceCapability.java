@@ -332,7 +332,9 @@ public final class MediaServiceCapability implements Capability {
 
     private List<MediaNode> load(MediaId id, int pageSize) throws Exception {
         List<MediaNode> nodes;
-        if (id.kind == MediaId.Kind.RECENT) {
+        if (id.kind == MediaId.Kind.CONTINUE) {
+            nodes = BrowseTree.continueNodes(api.recent(50), backend, recentLists().list());
+        } else if (id.kind == MediaId.Kind.RECENT) {
             nodes = BrowseTree.fromRecent(api.recent((Integer) core.settings().get(RECENT_LIMIT)), backend);
         } else if (id.kind == MediaId.Kind.CATALOG) {
             nodes = BrowseTree.fromAudioListCatalog(api.rootList(), "", 0, backend);
@@ -362,8 +364,45 @@ public final class MediaServiceCapability implements Capability {
                 api, backend, "daylight-" + core.deviceId(), request.optBoolean("shuffle"));
         JSONArray tracks = new JSONArray();
         for (Track t : r.tracks) tracks.put(t.toJson());
+        String first = mediaIds.isEmpty() ? null : mediaIds.get(0);
+        if (first != null && first.startsWith("c:") && !r.tracks.isEmpty()) rememberList(first.substring(2));
         return new Outcome(200, Replies.ok().put("tracks", tracks).put("startIndex", r.startIndex)
                 .put("startPositionMs", r.startPositionMs).put("selectionResolved", r.selectionResolved));
+    }
+
+    private RecentLists recentLists;
+    private final java.util.concurrent.ExecutorService listNamer = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "daylight-recent-lists");
+        t.setDaemon(true);
+        return t;
+    });
+
+    /** The lists played lately, kept with the payload's state; in memory only where there is none (tests). */
+    synchronized RecentLists recentLists() {
+        if (recentLists != null) return recentLists;
+        java.io.File dir = null;
+        try {
+            Object payloadDir = core == null ? null : core.shell().payloadDir();
+            if (payloadDir instanceof java.io.File) dir = net.kckern.daylight.api.PayloadState.dir((java.io.File) payloadDir);
+        } catch (RuntimeException none) { /* no state dir */ }
+        if (dir == null) {
+            try { dir = java.nio.file.Files.createTempDirectory("recent-lists").toFile(); }
+            catch (java.io.IOException e) { dir = new java.io.File(System.getProperty("java.io.tmpdir")); }
+        }
+        recentLists = new RecentLists(new java.io.File(dir, "recent-lists.json"));
+        return recentLists;
+    }
+
+    /** A list started playing: name it (its title and cover from the list route) and remember it, off the play path. */
+    private void rememberList(String contentId) {
+        if (!ContentId.valid(contentId)) return;
+        listNamer.execute(() -> {
+            try {
+                JSONObject l = api.list(contentId, 1, 0);
+                recentLists().record(contentId, Json.first(Json.str(l, "title"), Json.str(l, "label")),
+                        BrowseTree.art(backend, Json.str(l, "image")), clock.getAsLong());
+            } catch (Exception unnamed) { /* not remembered this time */ }
+        });
     }
 
     /**

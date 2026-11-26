@@ -623,4 +623,33 @@ public class MediaServiceCapabilityTest {
         assertEquals("The book", items.getJSONObject(0).getString("subtitle"));
         assertEquals("plex:2", items.getJSONObject(1).getString("contentId"));
     }
+
+    /** The car's Continue tab: books and talks in progress, then the lists played lately. */
+    @Test public void continueTabHoldsProgressThenRecentLists() throws Exception {
+        assertNull(BrowseTree.rootsProblem("Drive=drive:;Continue=continue;Recent=recent"));
+        api.responses.put("recent 50", "{\"items\":[{\"contentId\":\"plex:727120\",\"title\":\"A book\",\"type\":\"track\",\"playhead\":178,\"duration\":17800}]}");
+        org.json.JSONArray lists = new org.json.JSONArray()
+                .put(new JSONObject().put("contentId", "plex:900").put("title", "80s radio"))
+                .put(new JSONObject().put("contentId", "plex:900").put("title", "80s radio (again)"));
+        java.util.List<MediaNode> nodes = BrowseTree.continueNodes(api.recent(50), null, lists);
+        assertEquals(2, nodes.size());
+        assertEquals("p:plex:727120", nodes.get(0).toJson().getString("id"));
+        assertTrue(nodes.get(0).toJson().getString("subtitle").startsWith("4 h 53 min left"));
+        assertEquals("c:plex:900", nodes.get(1).toJson().getString("id"));
+        assertTrue(nodes.get(1).toJson().getBoolean("playable"));
+    }
+
+    @Test public void recentListsKeepTheNewestFirstOnce() throws Exception {
+        java.io.File dir = java.nio.file.Files.createTempDirectory("rl").toFile();
+        RecentLists lists = new RecentLists(new java.io.File(dir, "recent-lists.json"));
+        lists.record("plex:1", "One", null, 1);
+        lists.record("plex:2", "Two", "https://x/a.jpg", 2);
+        lists.record("plex:1", "One", null, 3);
+        assertEquals(2, lists.list().length());
+        assertEquals("plex:1", lists.list().getJSONObject(0).getString("contentId"));
+        for (int i = 0; i < 20; i++) lists.record("plex:" + (10 + i), "L" + i, null, 10 + i);
+        assertEquals(RecentLists.MAX, lists.list().length());
+        lists.record("../etc", "bad", null, 99);
+        assertEquals("plex:29", lists.list().getJSONObject(0).getString("contentId"));
+    }
 }

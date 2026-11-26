@@ -868,7 +868,7 @@ button to this app's search at all for a sideloaded app.
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `media.roots` | `Recent=recent;Browse=catalog` | The tabs: `Label=target;...`, at most four, a label at most 24 characters, a target `recent`, `catalog` or a container's content id |
+| `media.roots` | `Recent=recent;Browse=catalog` | The tabs: `Label=target;...`, at most four, a label at most 24 characters, a target `recent`, `continue`, `catalog` or a container's content id. The phone's are `Drive=drive:;Continue=continue;Recent=recent`: no folder browsing in the car. **Continue** lists long items in progress first (a tap resumes; "4 h 53 min left · …") and then the lists this phone played lately (a playlist, an album, a household list, a station; a tap plays it again), kept on the phone in the payload state's `recent-lists.json`, at most 8, newest first |
 | `media.recentLimit` | 30 | Entries of the recent tab (1 to 100) |
 | `media.pageSize` | 50 | Entries of one level (10 to 200). A longer container ends with a browsable entry, "More (51 to 100 of 120)" |
 | `media.controllerPins` | empty | The apps that may connect beside this app and the system: `package=sha256, ...` (see "Who may connect") |

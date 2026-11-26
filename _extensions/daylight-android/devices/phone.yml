@@ -95,8 +95,9 @@ defaults:
   # The four buttons of the "Daylight actions" home-screen widget, in order.
   widgets.actions: "journal,meal,meal-photo,media"
   # The tabs a car (and any media browser) shows, at most four: "Label=target;...", a
-  # target being recent, catalog or a container's content id.
-  media.roots: "Drive=drive:;Recent=recent;Library=catalog"
+  # target being recent, continue (long items in progress, then the lists played lately),
+  # catalog or a container's content id. No folder browsing in the car.
+  media.roots: "Drive=drive:;Continue=continue;Recent=recent"
   # The apps that may connect to the media session beside this app and the system (a
   # car, an assistant): "package=sha256 of its signing certificate", comma-separated.
   # Signer verified on the Play-installed Android Auto app. The package must also

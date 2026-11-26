@@ -37,7 +37,7 @@ final class BrowseTree {
         int count = 0;
         for (String entry : (spec == null ? "" : spec).split(";")) {
             if (entry.trim().isEmpty()) continue;
-            if (root(entry) == null) return "must give each tab as Label=target, where a target is recent, catalog or a content id";
+            if (root(entry) == null) return "must give each tab as Label=target, where a target is recent, continue, catalog or a content id";
             count++;
         }
         if (count == 0) return "must name at least one tab, as Label=target";
@@ -62,7 +62,7 @@ final class BrowseTree {
         String target = entry.substring(eq + 1).trim();
         if (label.isEmpty() || label.length() > MAX_LABEL) return null;
         String id;
-        if (MediaId.RECENT.equals(target) || MediaId.CATALOG.equals(target)) id = target;
+        if (MediaId.RECENT.equals(target) || MediaId.CATALOG.equals(target) || MediaId.CONTINUE.equals(target)) id = target;
         else if (ContentId.valid(target)) id = MediaId.container(target);
         else return null;
         return new MediaNode(id, label, "", null, true, false);
@@ -203,6 +203,32 @@ final class BrowseTree {
                     .put("playhead", played).put("duration", duration);
             if (art != null) o.put("art", art);
             out.put(o);
+        }
+        return out;
+    }
+
+    /**
+     * The car's Continue tab: long items in progress first (a tap resumes; the subtitle says
+     * how much is left), then the lists played lately (a tap plays the list again).
+     */
+    static List<MediaNode> continueNodes(JSONObject recent, Backend backend, JSONArray lists) throws org.json.JSONException {
+        List<MediaNode> out = new ArrayList<>();
+        JSONArray going = continueItems(recent, backend, 8);
+        for (int i = 0; i < going.length(); i++) {
+            JSONObject c = going.getJSONObject(i);
+            long left = Math.max(0, c.getLong("duration") - c.getLong("playhead"));
+            String sub = c.optString("subtitle");
+            String leftText = left >= 3600 ? (left / 3600) + " h " + (left % 3600) / 60 + " min left" : Math.max(1, left / 60) + " min left";
+            out.add(new MediaNode(c.getString("id"), c.getString("title"), sub.isEmpty() ? leftText : leftText + " · " + sub,
+                    c.optString("art", null), false, true));
+        }
+        java.util.Set<String> shown = new java.util.HashSet<>();
+        for (int i = 0; lists != null && i < lists.length(); i++) {
+            JSONObject l = lists.optJSONObject(i);
+            if (l == null) continue;
+            String id = l.optString("contentId");
+            if (!ContentId.valid(id) || !shown.add(id)) continue;
+            out.add(new MediaNode(MediaId.container(id), l.optString("title"), "Played lately", l.optString("art", null), false, true));
         }
         return out;
     }
