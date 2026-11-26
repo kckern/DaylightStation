@@ -632,11 +632,14 @@ of the footer: over the picture, the clock off the screen, "Next, from" cut at
 the top. The budget is the room from the footer's top to the frame's bottom,
 less the footer's padding (the christmas garland's reserve) and any other band
 regions. A bottom region's numeric `height` is a floor that grows with its
-content, so the band's own box is never the budget. The title steps down from
-1.75rem to a 0.875rem floor until the title column fits in at most two lines,
-then three if it must, and past that it is clamped at three lines with
-`surround.clip-band.unfittable` (warn). Up next is set in em of one base size
-that steps from 1rem to 0.72rem, its poster is held to the budget, and a band
+content, so the band's own box is never the budget. The title's size is found
+between 1.75rem and a 0.875rem floor so the title column fits in at most two
+lines, then three if it must, and past that it is clamped at three lines with
+`surround.clip-band.unfittable` (warn). Every candidate size forces a layout, so
+`fitDown` binary-searches 1px steps plus the floor itself (a handful of
+layouts per clip change, not one per pixel); it relies on smaller type never
+being taller, and a size it returns as fitting was always measured fitting. Up
+next is set in em of one base size that ranges from 1rem to 0.72rem, its poster is held to the budget, and a band
 still too short drops the other concert's name (the poster beside it shows
 which concert). Up next is capped at 38% of the band, never a fixed 19rem, so
 on a small screen the piece now playing keeps the width. A name that fits keeps
@@ -647,8 +650,12 @@ changes. `ClipBand.measure.test.jsx` checks it in Chromium at every fleet size.
 dispatches `surround-advance` (`{step, source}`), and the host calls the
 Player handle's `advance(step)`, which goes through the change curtain like any
 other queue move (`surround.advance`, info). It takes no focus (`tabIndex -1`),
-so the kiosk's remote keys stay the Player's. Hover styling only applies where
-the screen can hover.
+so the kiosk's remote keys stay the Player's. A gilt chevron after the title
+marks it as tappable (touch screens have no hover); hover styling only applies
+where the screen can hover. Past a break the move is ONE queue move of `step`
+entries (`player/advanceSteps.js`), so the curtain shuts once; the handle
+batches only when that is exactly what single steps would do (no on-deck item,
+the step inside the queue) and steps singly otherwise.
 
 **`poster-card`** (the rail): the poster as large as the rail allows, one
 rotating fact, and the ensemble's mark at the foot from `composer.logo`,
@@ -661,7 +668,10 @@ container's (`fitPlate`, 2.05rem down to 1.5rem) rather than cut by the ellipsis
 at full size. The painted line is checked after the size lands and stepped down
 if the name is still cut (three spans can set wider than the one measured
 string). A line that cannot be set whole even at the floor headlines the piece's
-`short_title` instead (`surround.placard.short-title`, info), and with none
+`short_title` instead (authored on the LIBRARY work,
+`content/library/<domain>/.../<work>.yml`, beside `title` and `year`; the store
+builds `piece` from the work file, and a `short_title` in a surround sidecar is
+not read) (`surround.placard.short-title`, info), and with none
 authored it keeps the ellipsis and warns `surround.placard.unfittable`.
 
 **The change curtain** (`curtain.js`, `.surround-frame__curtain`): when the
