@@ -235,6 +235,44 @@ describe('the clip band, measured: a medley sets inside the room under the pictu
     expect(m.report.titleLines).toBe(1);
   }, 60000);
 
+  // FIT ORDER. The title's column is what Up next's column leaves
+  // (`fit-content` on the grid), so a title fitted against Up next's size from
+  // the LAST clip wraps past its lines once Up next is refitted and widens.
+  // Two clips in one page, as the band lives: a long Up next that shrinks, then
+  // a short one that takes the ceiling back, under a long title. At 1920 the
+  // long Up next already sets at the ceiling, so there is nothing to undo.
+  it.each(FLEET.filter((s) => s.width < 1920))('$name — the title fits against this clip\'s Up next, not the last one\'s', async ({ width, height }) => {
+    const data = payload(64, 'Silent Night');
+    data.clip.next.title = 'Pine Cones and Holly Berries / It’s Beginning to Look a Lot Like Christmas / Here Comes Santa Claus';
+    const first = await layout(page, css, { width, height, data });
+    expect(first.report.nextPx, JSON.stringify(first.report)).toBeLessThan(16);
+    const m = await page.evaluate((title) => {
+      const band = document.querySelector('.clip-band');
+      band.querySelector('.clip-band__title').textContent = title;
+      const nextTitle = band.querySelector('.clip-band__next-title');
+      nextTitle.firstChild.textContent = 'Joy';
+      const titleEl = band.querySelector('.clip-band__title');
+      const report = window.__clipFit.fitClipBand({
+        band,
+        title: titleEl,
+        heading: band.querySelector('.clip-band__heading'),
+        nextText: band.querySelector('.clip-band__next-text'),
+      });
+      const r = titleEl.getBoundingClientRect();
+      const f = parseFloat(getComputedStyle(titleEl).fontSize);
+      const footer = document.querySelector('[data-testid="surround-footer"]').getBoundingClientRect();
+      return {
+        report,
+        lines: Math.round(r.height / (f * 1.12)),
+        title: { top: r.top, bottom: r.bottom },
+        footer: { top: footer.top, bottom: footer.bottom },
+      };
+    }, MEDLEY);
+    expect(m.lines, JSON.stringify(m.report)).toBeLessThanOrEqual(2);
+    expect(m.title.top).toBeGreaterThanOrEqual(m.footer.top - 1);
+    expect(m.title.bottom).toBeLessThanOrEqual(m.footer.bottom + 1);
+  }, 60000);
+
   // The owner's screenshot: "Christmas with Audra McDonald an… · 2004" cut at
   // the ceiling size on a screen where a smaller size sets it whole. At 960 the
   // whole line cannot be set even at the floor, so the short title stands in.

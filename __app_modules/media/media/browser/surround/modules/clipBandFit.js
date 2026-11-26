@@ -130,24 +130,11 @@ export function fitClipBand({ band, title = null, heading = null, nextText = nul
   const rem = rootPx(band);
   const report = { innerPx: Math.round(inner) };
 
-  if (title && heading) {
-    const apply = (f) => { title.style.fontSize = `${f}px`; };
-    const fitsBand = () => heading.getBoundingClientRect().height <= inner + EPS;
-    const lines = (f) => lineCount(title.getBoundingClientRect().height, f, TITLE_LEADING);
-    const ceilPx = TITLE_CEIL_REM * rem;
-    const floorPx = TITLE_FLOOR_REM * rem;
-    title.classList.remove('clip-band__title--clamped');
-    // Two lines at most while any size allows it; a name that cannot be set in
-    // two lines at the floor takes a third rather than being cut. Past three it
-    // is clamped (the stylesheet's line-clamp is 3).
-    let r = fitDown({ ceilPx, floorPx, apply, ok: (f) => lines(f) <= 2 && fitsBand() });
-    if (!r.fits) r = fitDown({ ceilPx, floorPx, apply, ok: (f) => lines(f) <= 3 && fitsBand() });
-    if (!r.fits) title.classList.add('clip-band__title--clamped');
-    report.titlePx = r.px;
-    report.titleLines = lines(r.px);
-    report.titleFits = r.fits;
-  }
-
+  // UP NEXT FIRST. The grid gives Up next `fit-content` and the title the rest,
+  // so the title's width is whatever Up next's size leaves; Up next's own fit
+  // depends only on the band's height. Fitted the other way round, the title is
+  // measured against the LAST clip's Up next size and wraps past its lines when
+  // this clip's Up next grows back toward the ceiling.
   if (nextText) {
     // The whole Up next block is what has to fit, poster included: the poster
     // is 4.4rem tall by default, which is taller than a short band, and the
@@ -172,6 +159,24 @@ export function fitClipBand({ band, title = null, heading = null, nextText = nul
     }
     report.nextPx = r.px;
     report.nextFits = r.fits;
+  }
+
+  if (title && heading) {
+    const apply = (f) => { title.style.fontSize = `${f}px`; };
+    const fitsBand = () => heading.getBoundingClientRect().height <= inner + EPS;
+    const lines = (f) => lineCount(title.getBoundingClientRect().height, f, TITLE_LEADING);
+    const ceilPx = TITLE_CEIL_REM * rem;
+    const floorPx = TITLE_FLOOR_REM * rem;
+    title.classList.remove('clip-band__title--clamped');
+    // Two lines at most while any size allows it; a name that cannot be set in
+    // two lines at the floor takes a third rather than being cut. Past three it
+    // is clamped (the stylesheet's line-clamp is 3).
+    let r = fitDown({ ceilPx, floorPx, apply, ok: (f) => lines(f) <= 2 && fitsBand() });
+    if (!r.fits) r = fitDown({ ceilPx, floorPx, apply, ok: (f) => lines(f) <= 3 && fitsBand() });
+    if (!r.fits) title.classList.add('clip-band__title--clamped');
+    report.titlePx = r.px;
+    report.titleLines = lines(r.px);
+    report.titleFits = r.fits;
   }
   return report;
 }
