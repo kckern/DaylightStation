@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { resetHouseholdAt } from './lib/household.mjs';
-import { A, A_NAME, ITEM, VIEWPORTS, newAppPage, gotoMedia, warmMedia, openReceiver, stopReceiver, receiverState } from './lib/receivers.mjs';
+import { A, A_NAME, startOutcome, ITEM, VIEWPORTS, newAppPage, gotoMedia, warmMedia, openReceiver, stopReceiver, receiverState } from './lib/receivers.mjs';
 import { isPhone, goArea, openSearch, closeSearch, resultRows, resultRow, rowPicture, searchSurface, waitForSearchSettled, whereAmI, playResultHere, openDetailMore } from './lib/search.mjs';
 import { startSseServer, streamItem } from './lib/sseServer.mjs';
 import { aimAt } from './lib/aim.mjs';
@@ -449,10 +449,10 @@ test('[FIND.8b/AC1][FIND.8b/AC4] a tap opens a playable item (PLAY plays it at t
   await expect(page.getByTestId('detail-play-now')).toBeVisible({ timeout: 30000 });
   expect((await receiverState(request, A))?.state ?? 'none', 'a look starts nothing').not.toBe('playing');
   await page.getByTestId('detail-play-now').click();
-  const row = page.locator('[data-testid^="dispatch-row-"]').filter({ hasText: /Arrival/ });
-  await expect(row).toBeVisible({ timeout: 15000 });
-  await expect.poll(async () => (await receiverState(request, A))?.currentItem?.contentId, { timeout: 120000 }).toBe(ARRIVAL);
-  await row.getByTestId('item-action-undo').click();
+  // The start reads on the screen handle with its Undo while it runs ("Starting on …").
+  const undo = startOutcome(page, { screen: A_NAME, title: 'Arrival' }).getByTestId('item-action-undo');
+  await expect(undo).toBeVisible({ timeout: 15000 });
+  await undo.click();
   await expect.poll(async () => (await receiverState(request, A))?.state, { timeout: 60000 }).not.toBe('playing');
 
   // Browse: a leaf plays at the aim and offers Undo; a collection opens.
@@ -463,10 +463,9 @@ test('[FIND.8b/AC1][FIND.8b/AC4] a tap opens a playable item (PLAY plays it at t
   await expect(leaf).toBeVisible({ timeout: 30000 });
   const leafId = (await leaf.getAttribute('data-testid')).replace('result-play-all-', '');
   await leaf.click();
-  await expect.poll(async () => (await receiverState(request, A))?.currentItem?.contentId, { timeout: 120000 }).toBe(leafId);
-  const browseRow = page.locator('[data-testid^="dispatch-row-"]');
-  await expect(browseRow.first().getByTestId('item-action-undo')).toBeVisible({ timeout: 15000 });
-  await browseRow.first().getByTestId('item-action-undo').click();
+  const browseUndo = startOutcome(page, { screen: A_NAME }).getByTestId('item-action-undo');
+  await expect(browseUndo).toBeVisible({ timeout: 15000 });
+  await browseUndo.click();
   await expect.poll(async () => (await receiverState(request, A))?.state, { timeout: 60000 }).not.toBe('playing');
   await page.getByTestId('browse-crumb-parent-1').click().catch(() => {});
   await page.locator('[data-testid^="browse-open-"]').first().click();

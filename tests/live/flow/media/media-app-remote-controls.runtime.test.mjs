@@ -304,8 +304,9 @@ async function runSteerConfirmationJourney(context, sender, {
         await sender.getByTestId('search-mode-close').click();
         await expect(sender.getByTestId('search-mode')).toBeHidden();
       }
-      const steer = sender.getByRole('button', { name: 'Steer it', exact: true });
-      await expect(steer).toBeVisible();
+      // The screen's handle ("▶ Arrival · Acceptance receiver") opens its controls.
+      const steer = sender.getByTestId('screen-handle').filter({ hasText: 'Acceptance receiver' }).getByTestId('screen-handle-open');
+      await expect(steer).toBeVisible({ timeout: 30000 });
       await steer.click();
       await expect(sender.getByTestId('peek-panel')).toBeVisible();
       await expect(sender.getByTestId('peek-panel').getByRole('heading', { name: 'Acceptance receiver' })).toBeVisible();

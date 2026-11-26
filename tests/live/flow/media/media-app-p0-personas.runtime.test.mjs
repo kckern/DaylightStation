@@ -160,8 +160,12 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
         await expect.poll(async () => (await receiverState(request))?.state, { timeout: 120000 }).toBe('playing');
         await shot(d.page, `tap-send-${size}`);
 
-        // The screen is now busy: the warning shows and the send needs a confirming tap.
+        // The screen is now busy with something else (another device started Disclosure Day):
+        // the warning shows and the send needs a confirming tap. (Sending the very item it
+        // plays reads "Playing this" instead, a row with nothing to do.)
         await expect(d.page.getByTestId('dispatch-target-picker')).toHaveCount(0, { timeout: 15000 });
+        expect((await call(request, 'GET', `${base}/load?play=plex%3A697368&dispatchId=${randomUUID()}`)).status).toBe(200);
+        await expect.poll(async () => (await receiverState(request))?.currentItem?.contentId, { timeout: 120000 }).toBe('plex:697368');
         // The laptop's search list closes after a send; bring the result back (typing is not a tap).
         if (!(await d.page.getByTestId(`result-more-${FIXTURE.id}`).isVisible().catch(() => false))) await typeQuery(d);
         await d.page.getByTestId(`result-more-${FIXTURE.id}`).click();

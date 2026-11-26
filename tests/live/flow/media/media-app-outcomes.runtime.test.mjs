@@ -28,7 +28,7 @@ async function receiverState(sender) {
   });
 }
 
-test('[RELY.3a][RELY.6a] a start nobody received stays sent, then may-not-have-started with Steer it and Try again; Try again replays that attempt and the notice clears when the screen plays', async ({ context, page: sender }) => {
+test('[RELY.3a][RELY.6a] a start nobody received stays starting, then may-not-have-started with its controls and Retry; Retry replays that attempt and the notice clears when the screen plays', async ({ context, page: sender }) => {
   test.setTimeout(300000);
   const loads = [];
   sender.on('request', request => {
@@ -45,28 +45,29 @@ test('[RELY.3a][RELY.6a] a start nobody received stays sent, then may-not-have-s
   await sender.getByTestId('result-play-all-plex:55854').click();
   const tappedAt = Date.now();
 
-  // No receiver is open: the press is never shown as playing.
-  const row = sender.locator('[data-testid^="dispatch-row-"]').filter({ hasText: 'Acceptance receiver' }).first();
-  await expect(row).toBeVisible({ timeout: 10000 });
-  const attemptId = (await row.getAttribute('data-testid')).replace(/^dispatch-row-/, '');
-  const attempt = sender.getByTestId(`dispatch-row-${attemptId}`);
-  await expect(sender.getByTestId('dispatch-tray')).not.toContainText('Playing on Acceptance receiver');
-  // O1: inside the 10s window the start offers Undo; once that has passed,
-  // while it is still unresolved, it offers Stop instead.
-  await expect(attempt.getByTestId('item-action-undo')).toBeVisible();
-  await expect(sender.getByTestId(`dispatch-stop-${attemptId}`)).toBeVisible({ timeout: 20000 });
+  // No receiver is open: the press is never shown as playing. The newest start
+  // on a screen reads on that screen's handle ("▶ Arrival · Acceptance receiver").
+  const handle = sender.getByTestId('screen-handle').filter({ hasText: 'Acceptance receiver' }).first();
+  const state = handle.getByTestId('screen-handle-state');
+  await expect(handle).toBeVisible({ timeout: 10000 });
+  await expect(handle).toHaveAttribute('data-status', 'starting');
+  await expect(state).toContainText('Starting on Acceptance receiver');
+  // O1: inside the 10s window the start offers Undo; Stop stays offered while
+  // it is unresolved, and Undo goes once the window has passed.
+  await expect(handle.getByTestId('item-action-undo')).toBeVisible();
+  await expect(handle.getByTestId('screen-handle-stop')).toBeVisible();
+  await expect(handle.getByTestId('item-action-undo')).toHaveCount(0, { timeout: 20000 });
   expect(Date.now() - tappedAt).toBeGreaterThanOrEqual(9000);
-  await expect(attempt.getByTestId('item-action-undo')).toHaveCount(0);
-  await expect(attempt).toHaveAttribute('data-phase', /running|sent/);
+  await expect(handle).toHaveAttribute('data-status', 'starting');
 
   // The screen comes up later; the earlier press must never apply on its own.
   const receiver = await context.newPage();
   await receiver.goto('/screen/living-room', { waitUntil: 'domcontentloaded' });
   await receiverReady(sender);
-  await expect(attempt).toContainText('may not have started on Acceptance receiver', { timeout: 180000 });
-  await expect(attempt).toHaveAttribute('data-phase', 'unconfirmed');
-  await expect(attempt.getByRole('button', { name: /Steer it/ })).toBeVisible();
-  await expect(attempt.getByRole('button', { name: /Try again/ })).toBeVisible();
+  await expect(state).toContainText('Acceptance receiver may not have started', { timeout: 180000 });
+  await expect(handle).toHaveAttribute('data-status', 'failed');
+  await expect(handle.getByTestId('screen-handle-open')).toBeVisible(); // steer it: opens that screen's controls
+  await expect(handle.getByTestId('screen-handle-retry')).toBeVisible();
   await expect(sender.getByTestId('media-outcome-announcer')).toContainText('may not have started');
   expect(Date.now() - tappedAt).toBeGreaterThan(50000);
   const quiet = await receiverState(sender);
@@ -75,10 +76,10 @@ test('[RELY.3a][RELY.6a] a start nobody received stays sent, then may-not-have-s
   expect(loads).toHaveLength(1);
   // It stays until dismissed or until that screen reports the item playing.
   await sender.waitForTimeout(10000);
-  await expect(attempt).toHaveAttribute('data-phase', 'unconfirmed');
+  await expect(handle).toHaveAttribute('data-status', 'failed');
 
-  // Try again replays exactly that attempt: same item, same screen.
-  await sender.getByTestId(`dispatch-retry-${attemptId}`).click();
+  // Retry replays exactly that attempt: same item, same screen.
+  await handle.getByTestId('screen-handle-retry').click();
   const native = receiver.locator('.video-player video');
   await expect(native).toBeVisible({ timeout: 60000 });
   await expect.poll(() => native.evaluate(element => element.readyState >= 2 && !element.paused && element.currentTime > 0), { timeout: 60000 }).toBe(true);
@@ -86,11 +87,10 @@ test('[RELY.3a][RELY.6a] a start nobody received stays sent, then may-not-have-s
   expect(loads).toHaveLength(2);
   expect(new URL(loads[1]).searchParams.get('play')).toBe('plex:55854');
   expect(new URL(loads[1]).searchParams.get('deferredRetry')).toBe('0');
-  // The screen now reports the same item playing: the notice clears.
-  await expect(sender.getByTestId('dispatch-tray')).not.toContainText('may not have started', { timeout: 30000 });
-  await expect(sender.getByTestId('dispatch-tray')).toContainText('Playing on Acceptance receiver', { timeout: 60000 });
-  const confirmed = sender.locator('[data-testid^="dispatch-row-"][data-phase="confirmed"]').filter({ hasText: 'Playing on Acceptance receiver' }).first();
-  await expect(confirmed.getByRole('button', { name: /Steer it/ })).toBeVisible();
+  // The screen now reports the same item playing: the notice clears and the handle reads Playing.
+  await expect(state).not.toContainText('may not have started', { timeout: 30000 });
+  await expect(state).toHaveText(/^Playing/, { timeout: 60000 });
+  await expect(handle.getByTestId('screen-handle-open')).toBeVisible();
   await receiver.close();
 });
 
@@ -112,16 +112,20 @@ test('[RELY.2a] a far start shows its progress in plain words wherever the perso
   // The row's ▶ is PLAY (selecting the row only opens its info view).
   await sender.getByTestId('result-play-all-plex:55854').click();
 
-  const progress = sender.locator('[data-testid^="dispatch-row-"]').filter({ hasText: 'Sending Arrival to Acceptance receiver' });
-  await expect(progress).toBeVisible({ timeout: 10000 });
-  await expect(progress).toHaveAttribute('data-phase', 'running');
+  // The start's progress is the screen's handle: "Starting on Acceptance receiver…", in plain words.
+  const handle = sender.getByTestId('screen-handle').filter({ hasText: 'Acceptance receiver' }).first();
+  const state = handle.getByTestId('screen-handle-state');
+  await expect(handle).toBeVisible({ timeout: 10000 });
+  await expect(handle).toHaveAttribute('data-status', 'starting');
+  await expect(handle.getByTestId('screen-handle-title')).toContainText('Arrival');
+  await expect(state).toContainText('Starting on Acceptance receiver');
   for (const area of ['fleet', 'browse', 'home']) {
     await sender.getByTestId(`app-nav-${area}`).click();
-    await expect(progress).toBeVisible();
+    await expect(handle).toBeVisible();
   }
   release();
-  await expect(sender.getByTestId('dispatch-tray')).toContainText('Playing on Acceptance receiver', { timeout: 60000 });
-  await expect(sender.getByTestId('dispatch-tray').getByRole('button', { name: /Steer it/ })).toBeVisible();
+  await expect(state).toHaveText(/^Playing/, { timeout: 60000 });
+  await expect(handle.getByTestId('screen-handle-open')).toBeVisible();
   await expect.poll(async () => (await receiverState(sender))?.snapshot?.currentItem?.contentId, { timeout: 60000 }).toBe('plex:55854');
   await receiver.close();
 });

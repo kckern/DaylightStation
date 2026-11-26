@@ -1,5 +1,6 @@
 import { markFirstUseDone } from './lib/firstUse.mjs';
 import { test, expect } from '@playwright/test';
+import { expectStarted } from './lib/receivers.mjs';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -421,8 +422,9 @@ test('PLACE.4a — several screens: labelled, aim names both, same-room drift wa
   await shot(page, 'several-screens-drift-phone');
   await page.getByTestId('picker-submit').click();
   const tray = page.getByTestId('dispatch-tray');
-  await expect(tray).toContainText(`Playing on ${A_NAME}`, { timeout: 90000 });
-  await expect(tray).toContainText(`Playing on ${B_NAME}`, { timeout: 90000 });
+  // One record per screen: the newest reads on its screen handle, the other as an outcome row.
+  await expectStarted(page, { screen: A_NAME, timeout: 90000 });
+  await expectStarted(page, { screen: B_NAME, timeout: 90000 });
   for (const id of [A, B]) {
     await expect.poll(async () => (await receiverState(request, id))?.currentItem?.contentId, { timeout: 60000 }).toBe(DISCLOSURE);
   }

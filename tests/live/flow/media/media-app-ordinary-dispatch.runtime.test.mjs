@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { aimAt } from './lib/aim.mjs';
+import { expectHandlePlaying } from './lib/receivers.mjs';
 
 // Requires `media-redesign-server.mjs`: its local EventBus/device composition
 // is the only permitted receiver. This test has no route interception and no
@@ -43,7 +44,8 @@ test('ordinary aimed Play then Queue reaches the virtual screen receiver and tru
     const response = await fetch('/api/v1/device/acceptance-media/receiver-state');
     return response.ok ? response.json() : null;
   }), { timeout: 60000 }).toMatchObject({ snapshot: { currentItem: { contentId: 'plex:55854' } } });
-  await expect(sender.getByTestId('dispatch-tray')).toContainText('Playing on Acceptance receiver', { timeout: 60000 });
+  // The newest start on a screen is the screen handle's ("▶ Arrival · Acceptance receiver", Playing).
+  await expectHandlePlaying(sender, { screen: 'Acceptance receiver', title: 'Arrival' });
 
   const played = await sender.evaluate(async () => (await fetch('/api/v1/device/acceptance-media/receiver-state')).json());
   const playedOwner = played.snapshot?.meta?.playbackOwner;

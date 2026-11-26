@@ -167,3 +167,39 @@ export async function warmMedia(browser) {
   const { context, page } = await newAppPage(browser, VIEWPORTS.laptop);
   try { await gotoMedia(page); } finally { await context.close(); }
 }
+
+/**
+ * The newest start on a screen is shown by the screen handle ("▶ <title> ·
+ * <screen>": Starting on … → Playing), not by an outcome row — the tray leaves
+ * that one record to the handle (DispatchProgressTray handleOwnsPlays).
+ */
+export function screenHandle(page, screen) {
+  return page.getByTestId('screen-handle').filter({ hasText: screen }).first();
+}
+
+export async function expectHandlePlaying(page, { screen, title = null, timeout = 60000 }) {
+  const handle = screenHandle(page, screen);
+  if (title) await expect(handle.getByTestId('screen-handle-title')).toContainText(title, { timeout });
+  await expect(handle.getByTestId('screen-handle-state')).toHaveText(/^Playing/, { timeout });
+  return handle;
+}
+
+/**
+ * A start on a screen, wherever the page shows it: the screen handle for the
+ * newest one (title · screen, Playing), an outcome row for any older one
+ * (confirmed, naming both). `title` may be omitted.
+ */
+export function startOutcome(page, { screen, title = null }) {
+  let rows = page.locator('[data-testid="screen-handle"], [data-testid^="dispatch-row-"]').filter({ hasText: screen });
+  if (title) rows = rows.filter({ hasText: title });
+  return rows.first();
+}
+
+export async function expectStarted(page, { screen, title = null, timeout = 60000 }) {
+  await expect.poll(() => page.evaluate(({ screen, title }) => {
+    const has = (el) => el.textContent.includes(screen) && (!title || el.textContent.includes(title));
+    const handle = [...document.querySelectorAll('[data-testid="screen-handle"]')].find(has);
+    if (handle && /^Playing/.test(handle.querySelector('[data-testid="screen-handle-state"]')?.textContent ?? '')) return true;
+    return [...document.querySelectorAll('[data-testid^="dispatch-row-"][data-phase="confirmed"]')].some(has);
+  }, { screen, title }), { timeout, message: `${title ?? 'a start'} on ${screen} should read Playing` }).toBe(true);
+}

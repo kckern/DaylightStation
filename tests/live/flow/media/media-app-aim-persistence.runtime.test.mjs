@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { expectStarted } from './lib/receivers.mjs';
 import { markFirstUseDone } from './lib/firstUse.mjs';
 import { aimAt, aimLabel, stepChip } from './lib/aim.mjs';
 import { playResult } from './lib/search.mjs';
@@ -130,9 +131,7 @@ test('[PLACE.2a/AC4] the aim is sticky after two hours, with sent playback activ
   await expect(native).toBeVisible({ timeout: 60000 });
   await expect.poll(() => native.evaluate(element => element.readyState >= 2
     && !element.paused && element.currentTime > 0), { timeout: 30000 }).toBe(true);
-  await expect(sender.getByTestId('dispatch-tray')).toContainText(
-    'Playing on Acceptance receiver', { timeout: 60000 },
-  );
+  await expectStarted(sender, { screen: 'Acceptance receiver', title: 'Arrival' });
 
   const readAim = () => sender.evaluate(() => ({
     now: Date.now(),

@@ -4,7 +4,7 @@ import { createHomeAssistantCaller } from '../../../_lib/media-ha-caller.mjs';
 import { resetHouseholdAt } from './lib/household.mjs';
 import {
   A, B, A_NAME, B_NAME, ITEM, VIEWPORTS, call, receiverState, openReceiver, startOn, stopReceiver, resetControls,
-  newAppPage, gotoMedia, warmMedia, openRemote,
+  newAppPage, gotoMedia, warmMedia, openRemote, expectStarted,
 } from './lib/receivers.mjs';
 import { goArea, openSearch, resultRow, playResult, detailVerb, openDetailMore } from './lib/search.mjs';
 import { aimAt, aimLabel } from './lib/aim.mjs';
@@ -53,9 +53,8 @@ test('[PLAY.1a/AC1][PLAY.1a/AC3][PLACE.1a/AC3] Play now plays at the aim from se
   const playedHere = async () => (await page.locator('video').count()) === 0;
   const expectPlayedAtAim = async (id, title) => {
     await expect.poll(() => currentId(request), { timeout: 120000, message: `${title} plays at the aim` }).toBe(id);
-    const row = trayRow(page, title).first();
-    await expect(row, `the confirmation names ${title}`).toBeVisible({ timeout: 20000 });
-    await expect(row, 'and names the screen').toContainText(A_NAME);
+    // The confirmation names the item and the screen (the screen handle, or an outcome row once older).
+    await expectStarted(page, { screen: A_NAME, title });
     expect(await playedHere(), 'nothing played on this device').toBe(true);
   };
 
@@ -178,9 +177,9 @@ test('[PLAY.2a/AC1][PLAY.2a/AC2][PLAY.2a/AC3][PLAY.3a/AC1][PLAY.3a/AC2][PLAY.3a/
   expect(snap.currentItem.contentId, 'starts at the first part').toBe(ALBUM_TRACKS[0]);
   expect(snap.queue.currentIndex).toBe(0);
   expect(snap.config.shuffle, 'Play leaves shuffle off').toBe(false);
-  const row = trayRow(page, 'Baby Joy Joy').first();
-  await expect(row).toContainText(A_NAME);
-  await expect(row.getByTestId('item-action-undo')).toBeVisible();
+  // The start names the collection and the screen (on the screen's handle; its
+  // Undo shows while it is starting, which the wait above has already passed).
+  await expectStarted(page, { screen: A_NAME, title: 'Baby Joy Joy' });
 
   // PLAY.3a/AC2+AC3: Shuffle turns shuffle on, the queue holds the same parts, the screen reads shuffle as on.
   await page.getByTestId('browse-dispatch-shuffle').click();

@@ -6,7 +6,7 @@ import { installFakeClock } from './lib/fakeClock.mjs';
 import { scriptReceiver, SCRIPTED } from './lib/scriptedReceiver.mjs';
 import {
   A, B, A_NAME, B_NAME, ITEM, VIEWPORTS, receiverState, openReceiver, startOn, stopReceiver, pauseReceiver, resetControls,
-  newAppPage, gotoMedia, warmMedia, openHouse, openRemote,
+  newAppPage, gotoMedia, warmMedia, openHouse, openRemote, expectStarted,
 } from './lib/receivers.mjs';
 import { isPhone, goArea, openSearch, closeSearch, resultRow, searchSurface, detailVerb, openDetailMore } from './lib/search.mjs';
 import { aimAt, aimHere, aimLabel } from './lib/aim.mjs';
@@ -173,9 +173,8 @@ test('[PLACE.3a/AC1][PLACE.3a/AC2][PLACE.3a/AC3] Play on… is offered on items 
   await page.getByTestId(`home-tile-recent-${ITEM.ARRIVAL}-verb-playOn`).click();
   await page.getByTestId(`picker-device-${B}`).click();
   await expect.poll(async () => (await receiverState(request, B))?.currentItem?.contentId, { timeout: 120000 }).toBe(ITEM.ARRIVAL);
-  const row = page.locator('[data-testid^="dispatch-row-"]').filter({ hasText: 'Arrival' }).first();
-  await expect(row).toBeVisible({ timeout: 20000 });
-  await expect(row).toContainText(B_NAME);
+  // The start reads on the screen handle (or, once older, an outcome row), naming item and screen.
+  await expectStarted(page, { screen: B_NAME, title: 'Arrival' });
   // The aim is untouched (the chip may now name the screen this browser last
   // chose for a film — a learned habit — but nothing was aimed).
   expect(await storedAim()).toEqual(aimBefore);
@@ -208,7 +207,7 @@ test('[PLACE.5a/AC1][PLACE.5a/AC2] each screen choice shows name, room and wheth
   await expect(line(SCRIPTED.POWER)).toContainText('Playing: Arrival', { timeout: 30000 });
   await expect(line(SCRIPTED.SPEAKER)).toContainText('Paused: Faith');
   await expect(line(A)).toContainText('Ready');
-  await expect(line('acceptance-offline')).toContainText('Off');
+  await expect(line('acceptance-offline')).toContainText(/Asleep|Off/); // a screen that cannot be reached reads Asleep
   // Name and room on each choice.
   await expect(page.getByTestId(`picker-device-${SCRIPTED.POWER}`)).toContainText('Acceptance den TV');
   await expect(page.getByTestId(`picker-device-${SCRIPTED.POWER}`)).toContainText('Acceptance den');

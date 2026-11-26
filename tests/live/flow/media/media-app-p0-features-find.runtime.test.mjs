@@ -131,7 +131,8 @@ for (const { kind, query, id, title } of [
   // (Esc closed the list with the menu: click into the box to bring it back.)
   await search.click({ position: { x: 48, y: 12 } });
   await search.fill(query);
-  await playResult(page, page.getByTestId(`combobox-option-${id}`));
+  // A photo or camera is shown, not watched: the tap itself shows it here.
+  await page.getByTestId(`combobox-option-${id}`).click();
   await expect(page.getByTestId('mini-player-open-nowplaying')).toContainText(title, { timeout: 60000 });
   expect(loads, 'a photo tap is not sent to the aimed screen').toHaveLength(0);
   expect((await state(request))?.currentItem?.contentId ?? null).not.toBe(id);

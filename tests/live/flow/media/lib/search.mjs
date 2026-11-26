@@ -84,11 +84,12 @@ export async function playResult(page, row, { spot = 'beginning' } = {}) {
   await answerSpotChooser(page, { spot, until: async () => (await playEvidence(page)) !== before });
 }
 
-// What a PLAY changes on this page: the handle's words (a play here) or the
-// outcome rows (a play elsewhere).
+// What a started PLAY changes on this page: the handle's words (a play here)
+// or a screen's handle (a play elsewhere). Outcome rows are not evidence: one
+// can appear while the spot chooser is still asking.
 const playEvidence = (page) => page.evaluate(() => [
   document.querySelector('[data-testid="media-mini-player"]')?.textContent ?? '',
-  document.querySelectorAll('[data-testid^="dispatch-row-"]').length,
+  [...document.querySelectorAll('[data-testid="screen-handle"]')].map((el) => el.textContent).join('/'),
 ].join('|'));
 
 /**

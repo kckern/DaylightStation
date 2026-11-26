@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { expectStarted } from './lib/receivers.mjs';
 import { markFirstUseDone } from './lib/firstUse.mjs';
 import { aimAt, aimHere } from './lib/aim.mjs';
 import { playResult } from './lib/search.mjs';
@@ -149,7 +150,7 @@ async function runResultPlayNowJourney({ context, page: sender }, chooseExplicit
     const response = await fetch('/api/v1/device/acceptance-media/receiver-state');
     return response.ok ? response.json() : null;
   }), { timeout: 60000 }).toMatchObject({ snapshot: { currentItem: { contentId: 'plex:55854' } } });
-  await expect(sender.getByTestId('dispatch-tray')).toContainText('Playing on Acceptance receiver', { timeout: 60000 });
+  await expectStarted(sender, { screen: 'Acceptance receiver' });
 
   const played = await sender.evaluate(async () => (await fetch('/api/v1/device/acceptance-media/receiver-state')).json());
   const playedOwner = played.snapshot?.meta?.playbackOwner;
@@ -284,7 +285,7 @@ async function runResultPlayNowJourney({ context, page: sender }, chooseExplicit
   expect(thirdLoadUrl.searchParams.get('queue')).toBeNull();
   const dispatchId = thirdLoadUrl.searchParams.get('dispatchId');
   expect(dispatchId).toBeTruthy();
-  await expect(sender.getByTestId(`dispatch-row-${dispatchId}`)).toContainText('Playing on Acceptance receiver', { timeout: 60000 });
+  await expectStarted(sender, { screen: 'Acceptance receiver', title: 'Arrival' });
   await receiver.close();
 }
 
@@ -361,7 +362,7 @@ for (const [surface, viewport, isPhone] of surfaces) {
       if (settled) remoteAfterPlay = state;
       return settled;
     }, { timeout: 60000 }).toBe(true);
-    await expect(sender.getByTestId('dispatch-tray')).toContainText('Playing on Acceptance receiver', { timeout: 60000 });
+    await expectStarted(sender, { screen: 'Acceptance receiver' });
     await assertSearchIdentity(sender, input, isPhone, id);
     expect(await resultActionIdentity(sender, id)).toEqual(remotePlayActions);
     await assertSearchIdentity(sender, input, isPhone, id);

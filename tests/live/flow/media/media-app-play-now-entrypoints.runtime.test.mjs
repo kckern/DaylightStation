@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { expectStarted } from './lib/receivers.mjs';
 import { revealBrowseRow } from '../../../_lib/mediaBrowseScroll.mjs';
 import { resetHouseholdAt } from './lib/household.mjs';
 import { aimAt } from './lib/aim.mjs';
@@ -142,7 +143,7 @@ test('Browse, Detail, and Recent Play Now each starts a fresh receiver visit and
     await expect.poll(() => newNative.evaluate((video, time) => !video.paused && video.currentTime > time, nativeStart.currentTime), { timeout: 30000 })
       .toBe(true);
     expect(afterVisit.snapshot.queue.items.at(-1).queueItemId).toBe(before.snapshot.queue.items.at(-1).queueItemId);
-    await expect(sender.getByTestId(`dispatch-row-${dispatchId}`)).toContainText('Playing on Acceptance receiver', { timeout: 30000 });
+    await expectStarted(sender, { screen: 'Acceptance receiver' });
   }
   await receiver.close();
 });

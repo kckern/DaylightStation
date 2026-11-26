@@ -148,10 +148,13 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
     await openPlayOn(page, 'Arrival', ARRIVAL);
     await expect(stopHere).toBeChecked(); // Move, remembered
     await page.getByTestId(`picker-device-${OFFLINE}`).click();
-    await expect(page.getByTestId('dispatch-tray')).toContainText('Acceptance guest room TV', { timeout: 30000 });
+    // The start names that screen (the screen handle shows the newest start on a screen).
+    const attempt = page.locator('[data-testid="screen-handle"], [data-testid="dispatch-tray"]').filter({ hasText: 'Acceptance guest room TV' }).first();
+    await expect(attempt).toBeVisible({ timeout: 30000 });
     // That screen never plays it (it is not there), so Move must not have stopped this device.
     await page.waitForTimeout(20000);
-    await expect(page.getByTestId('dispatch-tray')).not.toContainText(/Playing on Acceptance guest room TV/);
+    await expect(attempt).not.toContainText(/Playing on Acceptance guest room TV/);
+    await expect(page.getByTestId('screen-handle').filter({ hasText: 'Acceptance guest room TV' }).getByTestId('screen-handle-state')).not.toHaveText(/^Playing/);
     expect((await media(page))?.paused, 'this device keeps playing when the screen never confirmed').toBe(false);
     await expect(page.getByTestId('mini-toggle')).toHaveAccessibleName('Pause');
     await receiver.close();

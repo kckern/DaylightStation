@@ -249,8 +249,8 @@ for (const [surface, viewport, isPhone] of surfaces) {
       await page.getByTestId('media-search-launcher').click();
       await expect(page.getByTestId('search-mode')).toBeVisible();
     } else {
-      // Click where the words go: the box's right part is the destination chip.
-      await input.click({ position: { x: 48, y: 12 } });
+      // Back into the box (the narrow tablet box is mostly destination chip, so focus it).
+      await input.focus();
     }
     if (isPhone) {
       // The phone's sheet opens a new search session: All again.
