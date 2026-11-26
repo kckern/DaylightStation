@@ -54,6 +54,9 @@ public final class DownloadsActivity extends Activity {
 
     @Override protected void onCreate(Bundle saved) {
         super.onCreate(saved);
+        // Opened cold (Android Settings' Manage space, the notification): the payload answers
+        // every action here, so it is started first.
+        net.kckern.daylight.shellkit.ShellStart.ensure(this);
         t = DaylightTheme.of(this);
         setTitle("On this phone");
         if (getActionBar() != null) getActionBar().setDisplayHomeAsUpEnabled(true);
