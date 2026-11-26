@@ -976,6 +976,16 @@ removed.
   (`track:plex:123`), not its URL: any play path finds it, and a track two collections hold
   is stored once. The stream route `/api/v1/proxy/plex/stream/<id>` redirects to the file
   and serves ranges, so a broken download resumes from the byte it stopped at.
+- **A file changed at home.** The backend's queue and play answers carry an optional
+  `fileVersion` per track (`<partId>:<updatedAt>`). A kept track whose version changed is
+  fetched under a new download key beside the old copy, which keeps playing
+  (`KeepStore.playKey`); the player moves to the new copy when it is whole, and the old one
+  is deleted then (`keep.replaced`). A version seen for the first time on a track already
+  kept is recorded, not fetched again; no field means no change.
+- **Background restricted.** When Android restricts the app in the background (battery
+  "Restricted"), downloads only run while it is open: a one-time "Allow background use"
+  before a keep, and a standing line with the button on On this phone, open the app's
+  settings page.
 - **Running with the app closed.** `KeepService` runs in the foreground (`dataSync`) with one
   grouped notification, "Keeping 2 items · 3 of 26", Pause and Cancel, a tap opens On this
   phone. Waiting downloads are scheduled by `KeepScheduler`, this app's own job
@@ -1023,6 +1033,12 @@ removed.
 - **Finished books.** A kept book whose last part home calls finished (marked finished, or
   heard to 97 %) shows "Finished". With `media.removeFinished` it is removed a day later
   with a notification "Removed <title> from this phone (finished)" and **Undo** for a day.
+- **A kept item plays from the phone first, always** (online too): the payload answers
+  from the kept collection at once, gives home half a second to say where the item was
+  (taken when the phone has nothing unsent for it, as home then knows the newer place,
+  heard on another screen), and otherwise keeps home's answer for the next play. A cold
+  start with home unreachable plays in about 1.3 s on the emulator. Each play logs
+  `play answered from the phone in N ms` (or `by home`).
 - **Playing.** The player reads through a `CacheDataSource` over its HTTP source; if the
   download store cannot open, it streams. Now playing says "Playing from this phone" for a
   kept track. Media calls give up connecting after 3 s and reading after 10 s; a call that
@@ -1043,7 +1059,10 @@ removed.
   downloads paused until it is back. The owner's phone has no card slot.
 - **Not in the backup.** The app has `allowBackup="false"` and its extraction rules exclude
   every domain: a new or restored phone starts with nothing kept.
-- **Telemetry.** `Downloads` events, no titles: `keep.tap`, `keep.asked`, `keep.received`,
+- **Notifications.** The grouped download notification and the Undo notification need the
+  notification permission (`POST_NOTIFICATIONS`, asked by the app's own prompt); without it
+  downloads still run, unseen.
+- **Telemetry.** `Downloads` events, no titles: `keep.tap`, `keep.replaced`, `keep.background_restricted`, `keep.asked`, `keep.received`,
   `keep.ready{tracks, bytes, seconds}`, `keep.failed{reason}`, `keep.removed{reason, bytes}`,
   `keep.damaged`, `keep.resynced{before, after, refused}`, `keep.stalled`, `keep.restored`,
   `keep.verify{ok, damaged}`, `keep.mobile_once`, `keep.screen`; sent offline-first with the
@@ -1054,6 +1073,7 @@ removed.
 | `media.downloadCapMb` | 4096 | The most downloads may take, in MB (0 for no cap). The limit that applies is never more than the free space minus 2 GB |
 | `media.downloadOnCellular` | false | Whether downloads may use mobile data. Off: they wait for Wi-Fi (Use mobile data once lets what is waiting go now) |
 | `media.removeFinished` | false | Remove a kept book a day after it is finished, with Undo for a day |
+| `media.removeFinishedAfterMin` | 1440 | Minutes from finished to removed (at least 1); shortened only to check the Undo notification |
 | `media.downloadLocation` | internal | `internal` or `sd` (a removable card, when the phone has one) |
 
 ### The phone's inbox: Play on Phone and Keep from the web
