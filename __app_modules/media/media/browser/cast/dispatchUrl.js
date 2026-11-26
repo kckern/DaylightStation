@@ -14,6 +14,9 @@ export function buildDispatchUrl({
   // A Media press is never replayed later behind the person's back: ask the
   // backend to skip its 45s deferred retry (RQ-STEER-07). Retry is explicit.
   manualRetryOnly = false,
+  // The phone install the person picked when two are live (phone inbox); the backend
+  // refuses an unaddressed play to a phone with two live installs (CHOOSE_PHONE).
+  installId = null,
 }) {
   if (!deviceId) throw new Error('buildDispatchUrl: deviceId is required');
   if (!dispatchId) throw new Error('buildDispatchUrl: dispatchId is required');
@@ -35,6 +38,7 @@ export function buildDispatchUrl({
     if (typeof title === 'string' && title) params.set('title', title.slice(0, 120));
   }
   if (manualRetryOnly) params.set('deferredRetry', '0');
+  if (typeof installId === 'string' && /^[A-Za-z0-9_-]{8,64}$/.test(installId)) params.set('installId', installId);
   return `api/v1/device/${deviceId}/load?${params.toString()}`;
 }
 

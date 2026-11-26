@@ -5,10 +5,10 @@ import { createDeviceRouter } from './device.mjs';
 import { PhoneInboxService } from '#apps/devices/services/PhoneInboxService.mjs';
 import { NodeApplicationScheduler } from '#adapters/scheduling/NodeApplicationScheduler.mjs';
 
-function setup() {
+function setup(opts = {}) {
   const sent = [];
   const phoneInbox = new PhoneInboxService({ scheduler: new NodeApplicationScheduler(), logger: {} });
-  phoneInbox.connect({ serves: (id) => id === 'phone', publish: (m) => sent.push(m), authorize: (id, token) => id === 'phone' && token === 't' });
+  phoneInbox.connect({ serves: (id) => id === 'phone', publish: (m) => sent.push(m), authorize: (id, token) => (id === 'phone' && token === 't' ? true : 'wrong_token'), allowUnauthenticated: () => opts.allowNoToken === true, ...(opts.store ? { store: opts.store } : {}) });
   const app = express();
   app.use(express.json());
   app.use('/api/v1/device', createDeviceRouter({ phoneInbox }));
@@ -85,6 +85,7 @@ describe('POST /device/:id/ack', () => {
 describe('the right install (ops:docs/superpowers/plans/2026-11-26-phone-downloads-hardening.md §H)', () => {
   const A = 'install-aaaa-1111';
   const B = 'install-bbbb-2222';
+  const auth = (r) => r.set('Authorization', 'Bearer t');
 
   it('refuses a poll, an ack or a keep report without the device token (401, reason only)', async () => {
     const { app } = setup();
@@ -98,9 +99,14 @@ describe('the right install (ops:docs/superpowers/plans/2026-11-26-phone-downloa
     expect((await request(app).post('/api/v1/device/phone/keeps').send({ installId: A, items: [] })).status).toBe(401);
   });
 
+  it('during the transition a tokenless poll is let in, a wrong token still is not', async () => {
+    const { app } = setup({ allowNoToken: true });
+    expect((await request(app).get('/api/v1/device/phone/commands?wait=0')).status).toBe(204);
+    expect((await request(app).get('/api/v1/device/phone/commands?wait=0').set('Authorization', 'Bearer nope')).status).toBe(401);
+  });
+
   it('a web Play on goes to the install in use, never to another install polling as the phone', async () => {
     const { app, phoneInbox } = setup();
-    const auth = (r) => r.set('Authorization', 'Bearer t');
     await auth(request(app).get(`/api/v1/device/phone/commands?wait=0&installId=${A}&model=SM-S921U`));
     phoneInbox.enqueue('phone', envelope('web-1'));
     const other = await auth(request(app).get(`/api/v1/device/phone/commands?wait=0&installId=${B}&model=sdk_gphone64`));
@@ -111,36 +117,66 @@ describe('the right install (ops:docs/superpowers/plans/2026-11-26-phone-downloa
 
   it('rejects a malformed installId', async () => {
     const { app } = setup();
-    const res = await request(app).get('/api/v1/device/phone/commands?wait=0&installId=x').set('Authorization', 'Bearer t');
-    expect(res.status).toBe(400);
+    expect((await auth(request(app).get('/api/v1/device/phone/commands?wait=0&installId=x'))).status).toBe(400);
   });
 
-  it('queues a keep from the web, delivers it, takes the phone\'s report, and shows both', async () => {
+  it('queues a keep, delivers it, takes the ack and the report, and shows each stage', async () => {
     const { app } = setup();
-    const auth = (r) => r.set('Authorization', 'Bearer t');
     await auth(request(app).get(`/api/v1/device/phone/commands?wait=0&installId=${A}&model=SM-S921U`));
     const queued = await request(app).post('/api/v1/device/phone/keep').send({ contentId: 'plex:9', title: 'A book' });
     expect(queued.status).toBe(202);
     expect(queued.body.queued).toMatchObject({ command: 'keep', contentId: 'plex:9', installId: A });
+    expect(queued.body.queued.queuedAt).toBeTruthy();
     let view = (await request(app).get('/api/v1/device/phone/keeps')).body;
     expect(view.waiting.map((w) => w.contentId)).toEqual(['plex:9']);
-    expect(view.installs[0]).toMatchObject({ installId: A, model: 'SM-S921U', current: true, live: true });
+    expect(view.installs[0]).toMatchObject({ installId: A, model: 'SM-S921U', current: true, live: true, gone: false });
     const got = await auth(request(app).get(`/api/v1/device/phone/commands?wait=0&installId=${A}`));
     expect(got.body.commands[0]).toMatchObject({ command: 'keep', params: { contentId: 'plex:9', title: 'A book' }, installId: A });
     await auth(request(app).post('/api/v1/device/phone/ack')).send({ commandId: got.body.commands[0].commandId, ok: true });
+    view = (await request(app).get('/api/v1/device/phone/keeps')).body;
+    expect(view.received.map((r) => r.contentId)).toEqual(['plex:9']);
     const report = await auth(request(app).post('/api/v1/device/phone/keeps'))
-      .send({ installId: A, items: [{ contentId: 'plex:9', title: 'A book', state: 'downloading', done: 3, total: 12, bytes: 5000 }] });
+      .send({ installId: A, freeBytes: 15000000000, limitBytes: 4000000000, items: [{ contentId: 'plex:9', title: 'A book', state: 'downloading', done: 3, total: 12, bytes: 5000 }] });
     expect(report.status).toBe(204);
     view = (await request(app).get('/api/v1/device/phone/keeps')).body;
     expect(view.waiting).toEqual([]);
+    expect(view.received).toEqual([]);
+    expect(view.kept[A]).toMatchObject({ freeBytes: 15000000000, limitBytes: 4000000000 });
     expect(view.kept[A].items[0]).toMatchObject({ contentId: 'plex:9', state: 'downloading', done: 3, total: 12 });
+  });
+
+  it('two live installs and none named: 409 CHOOSE_PHONE with the installs', async () => {
+    const { app } = setup();
+    await auth(request(app).get(`/api/v1/device/phone/commands?wait=0&installId=${A}&model=SM-S921U`));
+    await auth(request(app).get(`/api/v1/device/phone/commands?wait=0&installId=${B}&model=sdk_gphone64`));
+    const res = await request(app).post('/api/v1/device/phone/keep').send({ contentId: 'plex:9' });
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('CHOOSE_PHONE');
+    expect(res.body.installs.map((i) => i.model).sort()).toEqual(['SM-S921U', 'sdk_gphone64']);
+  });
+
+  it('a keep that cannot be stored is 503 with Retry-After, not 202', async () => {
+    const store = { load: () => null, save: async () => { throw new Error('disk full'); } };
+    const { app } = setup({ store });
+    const res = await request(app).post('/api/v1/device/phone/keep').send({ contentId: 'plex:9' });
+    expect(res.status).toBe(503);
+    expect(res.headers['retry-after']).toBe('30');
+    expect(res.body).toMatchObject({ code: 'STORE_UNAVAILABLE', retryable: true });
+  });
+
+  it('cancels a waiting keep', async () => {
+    const { app } = setup();
+    const queued = await request(app).post('/api/v1/device/phone/keep').send({ contentId: 'plex:9' });
+    const res = await request(app).post('/api/v1/device/phone/keep/cancel').send({ commandId: queued.body.queued.commandId });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ cancelled: true });
+    expect((await request(app).post('/api/v1/device/phone/keep/cancel').send({ commandId: 'nope' })).status).toBe(404);
   });
 
   it('validates keep requests and reports', async () => {
     const { app } = setup();
     expect((await request(app).post('/api/v1/device/phone/keep').send({})).status).toBe(400);
     expect((await request(app).post('/api/v1/device/livingroom-tv/keep').send({ contentId: 'plex:1' })).status).toBe(404);
-    const bad = await request(app).post('/api/v1/device/phone/keeps').set('Authorization', 'Bearer t').send({ installId: 'x', items: [] });
-    expect(bad.status).toBe(400);
+    expect((await auth(request(app).post('/api/v1/device/phone/keeps')).send({ installId: 'x', items: [] })).status).toBe(400);
   });
 });

@@ -386,6 +386,21 @@ export class Device {
   }
 
   /**
+   * Take back a queued content command whose acknowledgement never came (devices that
+   * queue commands for a poller, the phone). True when it was still queued.
+   * @param {string} commandId
+   * @returns {boolean}
+   */
+  cancelPendingContent(commandId) {
+    if (typeof this.#contentControl?.cancelPending !== 'function') return false;
+    try { return this.#contentControl.cancelPending(commandId) === true; }
+    catch (err) {
+      this.#logger.warn?.('device.cancelPendingContent.failed', { id: this.#id, error: err?.message });
+      return false;
+    }
+  }
+
+  /**
    * Clear content by loading the device's configured Start URL.
    *
    * Delegates to `contentControl.loadStartUrl()` to return the device to its

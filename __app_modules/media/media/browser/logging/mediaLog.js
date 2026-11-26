@@ -48,6 +48,7 @@ export const mediaLog = {
   phoneKeepFailed:        warn('phone-keep.failed'),
   phoneKeepsRead:         debug('phone-keep.read'),
   phoneKeepsReadFailed:   sampled('phone-keep.read-failed'),
+  phoneKeepsPageShown:    info('phone-keep.page-shown'),
   unmounted:              info('media-app.unmounted'),
   sessionCreated:         info('session.created'),
   sessionReset:           info('session.reset'),

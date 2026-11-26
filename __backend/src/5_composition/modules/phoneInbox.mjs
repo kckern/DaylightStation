@@ -21,17 +21,27 @@ export function getPhoneInboxService({ logger } = {}) {
 /**
  * The inbox's token check: true when the presented token is the device's own, else a
  * reason ("no_token_configured" when the household holds none for it). Compared in
- * constant time over digests, so neither the length nor the content leaks. Never logs
- * either token.
- * @param {{tokenFor:(deviceId:string)=>string}} deps
+ * constant time over digests, so neither the length nor the content leaks. On a miss
+ * the auth file is read again from disk (at most once a minute per device), so a
+ * rotated token works without a restart. Never logs either token.
+ * @param {{tokenFor:(deviceId:string, opts?:{fresh?:boolean})=>string, now?:()=>number, logger?:Object}} deps
  */
-export function createDeviceTokenCheck({ tokenFor }) {
+export function createDeviceTokenCheck({ tokenFor, now = () => Date.now(), logger = null }) {
   const digest = (v) => createHash('sha256').update(String(v)).digest();
+  const lastFresh = new Map();
+  const matches = (expected, presented) => !!expected && timingSafeEqual(digest(expected), digest(presented));
   return (deviceId, presented) => {
-    const expected = tokenFor(deviceId);
-    if (!expected) return 'no_token_configured';
     if (typeof presented !== 'string' || !presented) return 'no_token';
-    return timingSafeEqual(digest(expected), digest(presented)) ? true : 'wrong_token';
+    let expected = tokenFor(deviceId);
+    if (matches(expected, presented)) return true;
+    const at = now();
+    if (at - (lastFresh.get(deviceId) ?? -Infinity) >= 60_000) {
+      lastFresh.set(deviceId, at);
+      expected = tokenFor(deviceId, { fresh: true });
+      logger?.info?.('phone-inbox.token.reloaded', { deviceId, configured: !!expected });
+      if (matches(expected, presented)) return true;
+    }
+    return expected ? 'wrong_token' : 'no_token_configured';
   };
 }
 

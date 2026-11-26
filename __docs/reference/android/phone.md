@@ -677,12 +677,17 @@ for every device.
 
 The phone collects its commands (Play on from the web, Keep on Phone) by long-polling
 `GET /api/v1/device/<id>/commands`. Each poll, ack and keep report carries
-`Authorization: Bearer <the control token this build holds>` and names the install
-(`installId`, made once per install; `model`). A command is addressed to one install, so
-the emulator or a reinstall polling as the same device never takes the phone's commands.
-Keep and unkeep commands from the web are durable on the backend until the phone acks
-them; the phone sends its whole kept list (`POST /api/v1/device/<id>/keeps`, states
-`queued|downloading|ready|failed|refused|removed`) so the web shows what it says. Contract:
+`Authorization: Bearer <the control token this build holds>` (a backend still lets a
+tokenless request in while the device's `content_control.allow_unauthenticated` is not
+`false`) and names the install (`installId`, made once per install; `model`). A command
+is addressed to one install, so the emulator or a reinstall polling as the same device
+never takes the phone's commands. Keep and unkeep commands from the web are stored on the
+backend until the phone acks them; the keep's title is `params.title`, its content
+`params.contentId`. The phone sends its whole kept list with its free space and limit
+(`POST /api/v1/device/<id>/keeps`, lifecycle states such as `checking`, `waiting-wifi`,
+`downloading`, `partly-ready`, `ready`, `damaged`), and the web shows what it says.
+Progress kept offline is sent with `observedAt` (when it was heard): a report older than
+the stored last play never moves the place. Contract:
 `__docs/reference/media/media-app-technical.md` §4.12.
 
 ### Choosing playlists on the phone

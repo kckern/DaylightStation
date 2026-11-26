@@ -40,7 +40,8 @@ import { usePlayDestination } from "../habits/usePlayDestination.js";
 import { usePrepareStart } from "../cast/usePrepareStart.js";
 import { InfoPreview } from "./InfoPreview.jsx";
 import { usePlayingOn } from "../fleet/usePlayingOn.js";
-import { usePhoneKeeps } from "../cast/usePhoneKeeps.js";
+import { usePhoneKeeps, useWatchPhoneKeeps } from "../cast/usePhoneKeeps.jsx";
+import { KEEP_PROBLEM_STATES } from "../cast/phoneKeeps.js";
 
 // More ⋯ entries keep the test ids their buttons had before the owner's
 // 2026-11-26 ruling moved them here.
@@ -106,7 +107,7 @@ function DetailMoreMenu({ contentId, entries, qualitySummary: summary, playNextH
         }
         return (
           <Menu.Item key={entry.kind}
-            data-testid={MORE_TEST_ID[entry.kind] ?? (/^keepOn:/.test(entry.kind) ? 'detail-keep-on' : /^unkeepOn:/.test(entry.kind) ? 'detail-unkeep-on' : undefined)}
+            data-testid={MORE_TEST_ID[entry.kind] ?? (/^keepOn:/.test(entry.kind) ? 'detail-keep-on' : /^unkeepOn:/.test(entry.kind) ? 'detail-unkeep-on' : /^cancelKeepOn:/.test(entry.kind) ? 'detail-cancel-keep' : undefined)}
             leftSection={leftSection}
             rightSection={entry.kind === 'quality' && summary ? <Text size="xs" c="dimmed">{summary}</Text> : null}
             onClick={pick(entry.kind)}>
@@ -133,10 +134,11 @@ export function DetailView({ contentId, focusPlay = false }) {
   const { info, loading, error, reload } = useContentInfo(contentId);
   const { regionProps, retry } = useRetryRegion(reload, loading);
   const { dispatchLeafVerb } = useContentDispatch();
-  const { pop, backDestination } = useNav();
+  const { pop, push, backDestination } = useNav();
   const { run, overlays, nameFor } = useItemVerbs();
   // "Keep on Phone": audio only; the phone reports what it keeps (downloads hardening §H).
   const phoneKeeps = usePhoneKeeps();
+  useWatchPhoneKeeps(info ? { id: contentId, ...info } : null);
   const { destinationFor, labelsFor } = usePlayDestination();
   const favourites = useFavourites();
   const quality = usePlaybackQuality();
@@ -212,8 +214,12 @@ export function DetailView({ contentId, focusPlay = false }) {
         {description && <Text c="dimmed">{description}</Text>}
         {progress && <Text size="sm" data-testid="detail-progress">{progress}</Text>}
         {keep.lines.map((k) => (
-          <Text key={k.key} size="sm" c={k.state === 'failed' || k.state === 'refused' ? 'red' : 'dimmed'}
-            role="status" data-testid="detail-kept" data-state={k.state}>{k.line}</Text>
+          <Group key={k.key} gap="xs" data-testid="detail-kept-row">
+            <Text size="sm" c={KEEP_PROBLEM_STATES.has(k.state) ? 'red' : 'dimmed'}
+              role="status" data-testid="detail-kept" data-state={k.state}>{k.line}</Text>
+            <Button size="compact-xs" variant="subtle" data-testid="detail-kept-open"
+              onClick={() => push('phone-keeps', { deviceId: k.deviceId })}>What's on it</Button>
+          </Group>
         ))}
         {startingOn && <Text size="sm" data-testid="detail-starting" role="status">{startingOn}</Text>}
         {on && !startingOn && (
@@ -262,21 +268,19 @@ export function DetailView({ contentId, focusPlay = false }) {
           <Button variant="default" data-testid="detail-play-on" onClick={() => { stopPreview(); setOneShot({ kind: 'playOn', item: detailItem }); }}>{MENU_LABELS.playOn}</Button>
           <DetailMoreMenu
             contentId={contentId}
-            entries={[
-              ...itemMenuEntries({
-                surface: 'detail',
-                kind: menuItemKind({ collection }),
-                where: { elsewhere, short: whereName },
-                favourite,
-                quality: !!quality && supportsQualityOverrides(detailItem),
-              }),
-              ...(keep.entries.length ? [{ divider: true }, ...keep.entries] : []),
-            ]}
+            entries={itemMenuEntries({
+              surface: 'detail',
+              kind: menuItemKind({ collection }),
+              where: { elsewhere, short: whereName },
+              favourite,
+              quality: !!quality && supportsQualityOverrides(detailItem),
+              keep: keep.entries,
+            })}
             qualitySummary={qualitySummary(quality, detailItem)}
             playNextHold={playNextHold}
             onPick={(kind) => {
               if (kind === 'quality') { quality.openForItem(detailItem); return; }
-              if (/^(keep|unkeep)On:/.test(kind)) { phoneKeeps.run(kind, detailItem); return; }
+              if (phoneKeeps.run(kind, detailItem)) return;
               if (kind === 'favourite' || kind === 'unfavourite' || kind === 'watched' || kind === 'unwatched') { run(kind, detailItem); return; }
               stopPreview();
               if (kind === 'addOn' || kind === 'showBrieflyOn') { setOneShot({ kind, item: detailItem }); return; }

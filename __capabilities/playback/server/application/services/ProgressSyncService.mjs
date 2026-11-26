@@ -28,6 +28,9 @@ export class ProgressSyncService {
     if (!deps.progressWriteRuntime || !deps.clock) throw new TypeError('ProgressSyncService requires progressWriteRuntime and clock');
     this.#runtime = deps.progressWriteRuntime;
     this.#clock = deps.clock;
+    // lastPlayed in the shape play/log stores and readers compare as instants: local
+    // wall clock with its offset ("2026-11-26T12:00:00.000-08:00"). Without one: ISO UTC.
+    this.#stamp = typeof deps.stamp === 'function' ? deps.stamp : (date) => date.toISOString();
 
     /** @type {Map<string, { timer: any, localId: string, latestProgress: Object }>} */
     this._debounceMap = new Map();
@@ -41,6 +44,7 @@ export class ProgressSyncService {
   /** @type {Object} */ #logger;
   #runtime;
   #clock;
+  #stamp;
 
   // ── Public API ───────────────────────────────────────────────────
 
@@ -110,7 +114,7 @@ export class ProgressSyncService {
         contentId,
         playhead: resolution.playhead,
         duration: resolution.duration,
-        lastPlayed: this.#clock.now().toISOString(),
+        lastPlayed: this.#stamp(this.#clock.now()),
         watchTime: local?.watchTime ?? 0,
         now: this.#clock.epoch(),
       });
@@ -158,7 +162,7 @@ export class ProgressSyncService {
         contentId,
         playhead: resolution.playhead,
         duration: resolution.duration,
-        lastPlayed: Number.isFinite(remoteAt) && remoteAt > 0 ? new Date(remoteAt * 1000).toISOString() : null,
+        lastPlayed: Number.isFinite(remoteAt) && remoteAt > 0 ? this.#stamp(new Date(remoteAt * 1000)) : null,
         watchTime: local?.watchTime ?? 0,
         now: this.#clock.epoch(),
       });

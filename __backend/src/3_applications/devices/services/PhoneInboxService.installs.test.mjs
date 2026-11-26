@@ -1,7 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { PhoneInboxService, INSTALL_FRESH_MS, REDELIVER_MS } from './PhoneInboxService.mjs';
+import {
+  PhoneInboxService, INSTALL_FRESH_MS, INSTALL_GONE_MS, REDELIVER_MS, LOAD_RETRY_MS, POLL_PERSIST_MS,
+} from './PhoneInboxService.mjs';
 
-// The right install, every time (ops:docs/superpowers/plans/2026-11-26-phone-downloads-hardening.md §H).
+// ops:docs/superpowers/plans/2026-11-26-phone-downloads-hardening.md §H and
+// ops:docs/superpowers/specs/2026-11-26-phone-downloads-lifecycle.md §2, §3.2, §3.8.
 function fakeTime() {
   let now = 5_000_000;
   const timers = [];
@@ -22,125 +25,256 @@ function fakeTime() {
 
 const A = 'install-aaaa-1111';
 const B = 'install-bbbb-2222';
+const C = 'install-cccc-3333';
 const play = (commandId) => ({ commandId, command: 'queue', targetDevice: 'phone', params: { op: 'play-now', contentId: 'plex:1' } });
 
 function memoryStore() {
   const files = new Map();
-  return { files, load: (id) => (files.has(id) ? JSON.parse(files.get(id)) : null), save: (id, data) => files.set(id, JSON.stringify(data)) };
+  const store = {
+    files, saves: 0, failSaves: false, loadError: null, quarantined: 0,
+    load: (id) => { if (store.loadError) throw store.loadError; return files.has(id) ? JSON.parse(files.get(id)) : null; },
+    save: async (id, data) => { if (store.failSaves) throw new Error('disk full'); store.saves++; files.set(id, JSON.stringify(data)); },
+    quarantine: () => { store.quarantined++; },
+  };
+  return store;
 }
 
 describe('PhoneInboxService: installs, auth and durable keeps', () => {
-  let t; let store; let inbox;
+  let t; let store; let inbox; let logs; let allowNoToken;
   const make = () => {
-    const i = new PhoneInboxService({ clock: t.clock, scheduler: t.scheduler, logger: {} });
-    i.connect({ serves: (id) => id === 'phone', publish: () => {}, store, authorize: (id, token) => (id === 'phone' && token === 'right') });
+    const i = new PhoneInboxService({
+      clock: t.clock, scheduler: t.scheduler,
+      logger: { info: (e) => logs.push(e), warn: (e) => logs.push(e), error: (e) => logs.push(e), sampled: (e) => logs.push(e) },
+    });
+    i.connect({
+      serves: (id) => id === 'phone', publish: () => {}, store,
+      authorize: (id, token) => (id === 'phone' && token === 'right' ? true : 'wrong_token'),
+      allowUnauthenticated: () => allowNoToken,
+    });
     return i;
   };
-  beforeEach(() => { t = fakeTime(); store = memoryStore(); inbox = make(); });
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+  beforeEach(() => { t = fakeTime(); store = memoryStore(); logs = []; allowNoToken = false; inbox = make(); });
 
-  it('authorizes only the device token, and never without a checker', () => {
-    expect(inbox.authorize('phone', 'Bearer right')).toEqual({ ok: true });
-    expect(inbox.authorize('phone', 'Bearer wrong').ok).toBe(false);
-    expect(inbox.authorize('phone', undefined)).toEqual({ ok: false, reason: 'no_token' });
-    expect(inbox.authorize('phone', 'right').ok).toBe(false);
-    const bare = new PhoneInboxService({ clock: t.clock, scheduler: t.scheduler, logger: {} });
-    expect(bare.authorize('phone', 'Bearer right')).toEqual({ ok: false, reason: 'no_authority' });
+  describe('auth', () => {
+    it('checks a token that is present; refuses none unless the transition allows it', () => {
+      expect(inbox.authorize('phone', 'Bearer right')).toEqual({ ok: true });
+      expect(inbox.authorize('phone', 'Bearer wrong')).toEqual({ ok: false, reason: 'wrong_token' });
+      expect(inbox.authorize('phone', undefined)).toEqual({ ok: false, reason: 'no_token' });
+      allowNoToken = true;
+      expect(inbox.authorize('phone', undefined)).toEqual({ ok: true, unauthenticated: true });
+      expect(logs).toContain('phone-inbox.unauthenticated');
+      // A present but wrong token is refused even during the transition.
+      expect(inbox.authorize('phone', 'Bearer wrong').ok).toBe(false);
+    });
   });
 
-  it('a command for one install never reaches another', async () => {
-    await inbox.poll('phone', 0, { installId: A, model: 'SM-S921U' });
-    await inbox.poll('phone', 0, { installId: B, model: 'sdk_gphone64' });
-    inbox.enqueue('phone', { ...play('for-a'), installId: A });
-    expect(await inbox.poll('phone', 0, { installId: B })).toEqual([]);
-    expect((await inbox.poll('phone', 0, { installId: A })).map((e) => e.commandId)).toEqual(['for-a']);
+  describe('Play on', () => {
+    it('a command for one install never reaches another', async () => {
+      await inbox.poll('phone', 0, { installId: A, model: 'SM-S921U' });
+      await inbox.poll('phone', 0, { installId: B, model: 'sdk_gphone64' });
+      inbox.enqueue('phone', { ...play('for-a'), installId: A });
+      expect(await inbox.poll('phone', 0, { installId: B })).toEqual([]);
+      expect((await inbox.poll('phone', 0, { installId: A })).map((e) => e.commandId)).toEqual(['for-a']);
+    });
+
+    it('with one live install an unaddressed play is for it; with two it is refused (choose a phone)', async () => {
+      await inbox.poll('phone', 0, { installId: A, model: 'SM-S921U' });
+      expect(inbox.enqueue('phone', play('one')).installId).toBe(A);
+      await inbox.poll('phone', 0, { installId: B, model: 'sdk_gphone64' });
+      expect(() => inbox.enqueue('phone', play('two'))).toThrow(expect.objectContaining({ code: 'CHOOSE_PHONE' }));
+      expect(inbox.liveInstalls('phone').map((i) => i.model).sort()).toEqual(['SM-S921U', 'sdk_gphone64']);
+    });
+
+    it('with no live install it waits for the phone seen last; another install polling first cannot take it', async () => {
+      await inbox.poll('phone', 0, { installId: B });
+      t.advance(1000);
+      await inbox.poll('phone', 0, { installId: A });
+      t.advance(INSTALL_FRESH_MS + 1);
+      inbox.enqueue('phone', play('late'));
+      expect(await inbox.poll('phone', 0, { installId: B })).toEqual([]);
+      expect((await inbox.poll('phone', 0, { installId: A })).map((e) => e.commandId)).toEqual(['late']);
+    });
+
+    it('a newer poll from the same install answers its older held poll empty', async () => {
+      await inbox.poll('phone', 0, { installId: A });
+      const older = inbox.poll('phone', 25, { installId: A });
+      const newer = inbox.poll('phone', 25, { installId: A });
+      expect(await older).toEqual([]);
+      inbox.enqueue('phone', play('p'));
+      expect((await newer).map((e) => e.commandId)).toEqual(['p']);
+      expect(logs).toContain('phone-inbox.poll.superseded');
+    });
+
+    it('a held poll woken by another install’s command keeps holding', async () => {
+      await inbox.poll('phone', 0, { installId: A });
+      const held = inbox.poll('phone', 10, { installId: B });
+      inbox.enqueue('phone', { ...play('for-a'), installId: A });
+      t.advance(10_000);
+      expect(await held).toEqual([]);
+    });
+
+    it('a play no one collected can be taken back (not delivered, never late)', async () => {
+      await inbox.poll('phone', 0, { installId: A });
+      inbox.enqueue('phone', play('slow'));
+      expect(inbox.cancel('phone', 'slow')).toBe(true);
+      expect(await inbox.poll('phone', 0, { installId: A })).toEqual([]);
+      expect(inbox.cancel('phone', 'slow')).toBe(false);
+    });
   });
 
-  it('an unaddressed command is stamped for the install that polled last', async () => {
-    await inbox.poll('phone', 0, { installId: B });
-    t.advance(1000);
-    await inbox.poll('phone', 0, { installId: A });
-    inbox.enqueue('phone', play('web-play'));
-    expect(await inbox.poll('phone', 0, { installId: B })).toEqual([]);
-    const got = await inbox.poll('phone', 0, { installId: A });
-    expect(got.map((e) => [e.commandId, e.installId])).toEqual([['web-play', A]]);
+  describe('keeps', () => {
+    it('are durable: survive a restart and go only when acked; then read "received" until reported', async () => {
+      await inbox.poll('phone', 0, { installId: A, model: 'SM-S921U' });
+      const env = await inbox.queueKeep('phone', { command: 'keep', contentId: 'plex:9', title: 'A book' });
+      expect(env.installId).toBe(A);
+      inbox = make();
+      const first = await inbox.poll('phone', 0, { installId: A });
+      expect(first.map((e) => [e.command, e.params.contentId, e.params.title])).toEqual([['keep', 'plex:9', 'A book']]);
+      expect(await inbox.poll('phone', 0, { installId: A })).toEqual([]);
+      t.advance(REDELIVER_MS + 1);
+      expect((await inbox.poll('phone', 0, { installId: A })).length).toBe(1);
+      inbox.ack('phone', { commandId: env.commandId, ok: true });
+      let view = inbox.keeps('phone');
+      expect(view.waiting).toEqual([]);
+      expect(view.received.map((r) => r.contentId)).toEqual(['plex:9']);
+      await inbox.reportKeeps('phone', { installId: A, freeBytes: 15e9, limitBytes: 4e9, items: [{ contentId: 'plex:9', state: 'checking' }] });
+      view = inbox.keeps('phone');
+      expect(view.received).toEqual([]);
+      expect(view.kept[A]).toMatchObject({ freeBytes: 15e9, limitBytes: 4e9 });
+    });
+
+    it('a refusal stays visible with the phone’s reason until asked again', async () => {
+      await inbox.poll('phone', 0, { installId: A });
+      const env = await inbox.queueKeep('phone', { command: 'keep', contentId: 'plex:9' });
+      inbox.ack('phone', { commandId: env.commandId, ok: false, error: 'Needs 1.2 GB more room' });
+      expect(inbox.keeps('phone').refused).toEqual([expect.objectContaining({ contentId: 'plex:9', reason: 'Needs 1.2 GB more room' })]);
+      await inbox.queueKeep('phone', { command: 'keep', contentId: 'plex:9' });
+      expect(inbox.keeps('phone').refused).toEqual([]);
+    });
+
+    it('has no TTL', async () => {
+      await inbox.poll('phone', 0, { installId: A });
+      await inbox.queueKeep('phone', { command: 'keep', contentId: 'plex:9' });
+      t.advance(24 * 3600 * 1000);
+      expect((await inbox.poll('phone', 0, { installId: A })).map((e) => e.command)).toEqual(['keep']);
+    });
+
+    it('with no live install waits unaddressed; the first install to poll claims it', async () => {
+      const env = await inbox.queueKeep('phone', { command: 'keep', contentId: 'plex:9' });
+      expect(env.installId).toBeUndefined();
+      const got = await inbox.poll('phone', 0, { installId: C, model: 'new phone' });
+      expect(got.map((e) => [e.commandId, e.installId])).toEqual([[env.commandId, C]]);
+      expect(inbox.keeps('phone').waiting[0].installId).toBe(C);
+    });
+
+    it('two live installs and none named: choose a phone', async () => {
+      await inbox.poll('phone', 0, { installId: A });
+      await inbox.poll('phone', 0, { installId: B });
+      await expect(inbox.queueKeep('phone', { command: 'keep', contentId: 'plex:9' })).rejects.toMatchObject({ code: 'CHOOSE_PHONE' });
+      expect((await inbox.queueKeep('phone', { command: 'keep', contentId: 'plex:9', installId: B })).installId).toBe(B);
+    });
+
+    it('a new install takes over what waited for installs no longer live', async () => {
+      await inbox.poll('phone', 0, { installId: A });
+      const env = await inbox.queueKeep('phone', { command: 'keep', contentId: 'plex:9' });
+      t.advance(INSTALL_FRESH_MS + 1);
+      const got = await inbox.poll('phone', 0, { installId: C, model: 'reinstalled' });
+      expect(got.map((e) => [e.commandId, e.installId])).toEqual([[env.commandId, C]]);
+    });
+
+    it('an evicted install’s keeps go with it', async () => {
+      await inbox.poll('phone', 0, { installId: A });
+      await inbox.queueKeep('phone', { command: 'keep', contentId: 'plex:9', installId: A });
+      await inbox.reportKeeps('phone', { installId: A, items: [{ contentId: 'plex:8', state: 'ready' }] });
+      for (let i = 0; i < 8; i++) { t.advance(1000); await inbox.poll('phone', 0, { installId: `install-other-${i}0000` }); }
+      const view = inbox.keeps('phone');
+      expect(view.installs.find((i) => i.installId === A)).toBeUndefined();
+      expect(view.kept[A]).toBeUndefined();
+      expect(view.waiting.filter((w) => w.installId === A)).toEqual([]);
+    });
+
+    it('can be cancelled before it is handed over; after, cancelling asks for a removal', async () => {
+      await inbox.poll('phone', 0, { installId: A });
+      const one = await inbox.queueKeep('phone', { command: 'keep', contentId: 'plex:9', installId: A });
+      expect(await inbox.cancelKeep('phone', one.commandId)).toEqual({ cancelled: true });
+      expect(inbox.keeps('phone').waiting).toEqual([]);
+      const two = await inbox.queueKeep('phone', { command: 'keep', contentId: 'plex:9', installId: A });
+      await inbox.poll('phone', 0, { installId: A });
+      const after = await inbox.cancelKeep('phone', two.commandId);
+      expect(after).toMatchObject({ cancelled: false, removing: true });
+      expect(inbox.keeps('phone').waiting.map((w) => w.command)).toEqual(['unkeep']);
+      expect(await inbox.cancelKeep('phone', 'nope')).toBeNull();
+    });
+
+    it('takes every lifecycle state and the spec fields; drops unknown ones', async () => {
+      await inbox.poll('phone', 0, { installId: A });
+      const states = ['asked', 'checking', 'needs-room', 'queued', 'waiting-wifi', 'waiting-home', 'waiting-storage', 'downloading', 'paused', 'partly-ready', 'ready', 'updating', 'removing', 'not-available', 'damaged'];
+      await inbox.reportKeeps('phone', { installId: A, items: [
+        ...states.map((state, i) => ({ contentId: `plex:${i}`, state })),
+        { contentId: 'plex:x', state: 'bogus' },
+        { contentId: 'plex:n', state: 'needs-room', neededBytes: 1.2e9, totalBytes: 2e9, failed: 1, reason: 'r', finished: true },
+      ] });
+      const items = inbox.keeps('phone').kept[A].items;
+      expect(items.map((i) => i.state)).toEqual([...states, 'needs-room']);
+      expect(items.at(-1)).toMatchObject({ neededBytes: 1.2e9, totalBytes: 2e9, failed: 1, reason: 'r', finished: true });
+    });
+
+    it('shows an install as gone after 30 days', async () => {
+      await inbox.poll('phone', 0, { installId: A });
+      t.advance(INSTALL_GONE_MS + 1);
+      expect(inbox.keeps('phone').installs[0]).toMatchObject({ installId: A, live: false, gone: true });
+    });
   });
 
-  it('with no fresh install, an unaddressed command still waits for the phone seen last', async () => {
-    await inbox.poll('phone', 0, { installId: B });
-    t.advance(1000);
-    await inbox.poll('phone', 0, { installId: A });
-    t.advance(INSTALL_FRESH_MS + 1);
-    inbox.enqueue('phone', play('late'));
-    // B polling first (an emulator, a stale install) must not take A's command.
-    expect(await inbox.poll('phone', 0, { installId: B })).toEqual([]);
-    expect((await inbox.poll('phone', 0, { installId: A })).map((e) => e.commandId)).toEqual(['late']);
-  });
+  describe('the store', () => {
+    it('an unreadable file is never read as empty: read-only, no saves, keeps refused, retried later', async () => {
+      store.files.set('phone', JSON.stringify({ installs: [{ installId: A, model: 'SM-S921U', lastPollAt: 1 }] }));
+      store.loadError = Object.assign(new Error('EACCES'), { code: 'EACCES' });
+      await inbox.poll('phone', 0, { installId: B });
+      await flush();
+      expect(store.saves).toBe(0);
+      await expect(inbox.queueKeep('phone', { command: 'keep', contentId: 'plex:9' })).rejects.toMatchObject({ code: 'STORE_UNAVAILABLE' });
+      expect(inbox.keeps('phone').storeUnavailable).toBe(true);
+      expect(JSON.parse(store.files.get('phone')).installs[0].installId).toBe(A);
+      // Readable again: what was stored and what this run saw are both kept.
+      store.loadError = null;
+      t.advance(LOAD_RETRY_MS + 1);
+      await inbox.queueKeep('phone', { command: 'keep', contentId: 'plex:9', installId: B });
+      const saved = JSON.parse(store.files.get('phone'));
+      expect(saved.installs.map((i) => i.installId).sort()).toEqual([A, B]);
+    });
 
-  it("a held poll woken by another install's command keeps holding", async () => {
-    await inbox.poll('phone', 0, { installId: A });
-    const held = inbox.poll('phone', 10, { installId: B });
-    inbox.enqueue('phone', { ...play('for-a'), installId: A });
-    t.advance(10_000);
-    expect(await held).toEqual([]);
-  });
+    it('a damaged file is quarantined', async () => {
+      store.loadError = Object.assign(new Error('bad yaml'), { name: 'YAMLException' });
+      inbox.keeps('phone');
+      expect(store.quarantined).toBe(1);
+    });
 
-  it('keeps are durable: they survive a restart and go only when acked', async () => {
-    await inbox.poll('phone', 0, { installId: A, model: 'SM-S921U' });
-    const env = inbox.queueKeep('phone', { command: 'keep', contentId: 'plex:9', title: 'A book' });
-    expect(env.installId).toBe(A);
-    // Backend restart: a new service reads the store.
-    inbox = make();
-    const first = await inbox.poll('phone', 0, { installId: A });
-    expect(first.map((e) => [e.command, e.params.contentId])).toEqual([['keep', 'plex:9']]);
-    // Handed over and not acked: not again at once, again after REDELIVER_MS.
-    expect(await inbox.poll('phone', 0, { installId: A })).toEqual([]);
-    t.advance(REDELIVER_MS + 1);
-    expect((await inbox.poll('phone', 0, { installId: A })).length).toBe(1);
-    inbox.ack('phone', { commandId: env.commandId, ok: true });
-    t.advance(REDELIVER_MS + 1);
-    expect(await inbox.poll('phone', 0, { installId: A })).toEqual([]);
-    inbox = make();
-    expect(inbox.keeps('phone').waiting).toEqual([]);
-  });
+    it('a keep that could not be written is an error, and nothing is queued', async () => {
+      await inbox.poll('phone', 0, { installId: A });
+      await flush();
+      store.failSaves = true;
+      await expect(inbox.queueKeep('phone', { command: 'keep', contentId: 'plex:9' })).rejects.toMatchObject({ code: 'STORE_UNAVAILABLE' });
+      expect(inbox.keeps('phone').waiting).toEqual([]);
+    });
 
-  it('a keep has no TTL: the phone away for a day still gets it', async () => {
-    await inbox.poll('phone', 0, { installId: A });
-    inbox.queueKeep('phone', { command: 'keep', contentId: 'plex:9' });
-    t.advance(24 * 3600 * 1000);
-    expect((await inbox.poll('phone', 0, { installId: A })).map((e) => e.command)).toEqual(['keep']);
-  });
-
-  it('a newer ask replaces a waiting one for the same content and install', async () => {
-    await inbox.poll('phone', 0, { installId: A });
-    inbox.queueKeep('phone', { command: 'keep', contentId: 'plex:9' });
-    inbox.queueKeep('phone', { command: 'unkeep', contentId: 'plex:9' });
-    expect(inbox.keeps('phone').waiting.map((w) => w.command)).toEqual(['unkeep']);
-  });
-
-  it('a poll whose caller left puts a durable keep back without duplicating it', async () => {
-    await inbox.poll('phone', 0, { installId: A });
-    inbox.queueKeep('phone', { command: 'keep', contentId: 'plex:9' });
-    const got = await inbox.poll('phone', 0, { installId: A });
-    inbox.putBack('phone', got);
-    const again = await inbox.poll('phone', 0, { installId: A });
-    expect(again.length).toBe(1);
-    expect(inbox.keeps('phone').waiting.length).toBe(1);
-  });
-
-  it('the phone reports what it keeps; the web sees installs, kept items and what waits', async () => {
-    await inbox.poll('phone', 0, { installId: B, model: 'sdk_gphone64' });
-    t.advance(1000);
-    await inbox.poll('phone', 0, { installId: A, model: 'SM-S921U' });
-    inbox.reportKeeps('phone', { installId: A, items: [
-      { contentId: 'plex:9', title: 'A book', state: 'downloading', done: 3, total: 12, bytes: 1000 },
-      { contentId: 'plex:8', state: 'failed', reason: 'Gone from the library', done: 0, total: 1 },
-      { contentId: 'plex:7', state: 'bogus' },
-    ] });
-    inbox.queueKeep('phone', { command: 'keep', contentId: 'plex:5', title: 'Next' });
-    const view = inbox.keeps('phone');
-    expect(view.installs.map((i) => [i.model, i.current, i.live])).toEqual([['SM-S921U', true, true], ['sdk_gphone64', false, true]]);
-    expect(view.kept[A].items.map((i) => [i.contentId, i.state])).toEqual([['plex:9', 'downloading'], ['plex:8', 'failed']]);
-    expect(view.waiting.map((w) => [w.contentId, w.installId])).toEqual([['plex:5', A]]);
-    expect(() => inbox.reportKeeps('phone', { installId: 'short', items: [] })).toThrow();
+    it('polls do not rewrite the file; an unchanged report is not written again', async () => {
+      await inbox.poll('phone', 0, { installId: A });
+      await flush();
+      const afterFirst = store.saves;
+      for (let i = 0; i < 20; i++) { t.advance(25_000); await inbox.poll('phone', 0, { installId: A }); }
+      await flush();
+      expect(store.saves).toBe(afterFirst);
+      t.advance(POLL_PERSIST_MS + 1);
+      await inbox.poll('phone', 0, { installId: A });
+      await flush();
+      expect(store.saves).toBe(afterFirst + 1);
+      const report = { installId: A, items: [{ contentId: 'plex:9', state: 'ready', bytes: 5 }] };
+      await inbox.reportKeeps('phone', report);
+      const n = store.saves;
+      await inbox.reportKeeps('phone', report);
+      expect(store.saves).toBe(n);
+    });
   });
 });

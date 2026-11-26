@@ -63,6 +63,13 @@ Every other 404 passes through unchanged. `ProxyService` gained the generic
 A genuinely deleted file now also answers 503. Telling the two apart is the
 check endpoint's job, and it answers `missing`.
 
+The stream mint (`GET /api/v1/proxy/plex/stream/:ratingKey`) follows the same rule:
+when Plex could not be asked about the item (its metadata fetch failed, reason
+`transient`) it answers **503** with `retry-after: 10` and `{reason: 'transient',
+retryable: true}`, not 404, so a player or the phone's downloader retries instead of
+calling the track gone. A real miss (`metadata-missing`, `non-playable-type`, …) is
+still 404.
+
 ### 2. Backend — `POST /api/v1/media-source/check`
 
 | Piece | File |

@@ -46,14 +46,14 @@ export function menuItemKind({ collection = false, show = false } = {}) {
 // condition fails are dropped (below), so one row serves every kind.
 const SURFACES = Object.freeze({
   // A search or Browse result row's ⋯ (the row itself only ever opens).
-  row: ['continue', 'openScreen', 'playNow', 'playHere', 'shuffle', 'playNext', 'playFirst', 'add', 'playOn', 'addOn', '|', 'details', 'quality', '|', 'favourite', 'watched', 'unwatched', 'hide'],
+  row: ['continue', 'openScreen', 'playNow', 'playHere', 'shuffle', 'playNext', 'playFirst', 'add', 'playOn', 'addOn', '|', 'details', 'quality', '|', 'keep', '|', 'favourite', 'watched', 'unwatched', 'hide'],
   // A tile, Played earlier row or Now-on card (household/ItemMenu.jsx).
-  tile: ['continue', 'openScreen', 'playNow', 'playHere', 'shuffle', 'playNext', 'playFirst', 'add', 'playOn', 'addOn', 'quality', 'details', '|', 'favourite', 'watched', 'unwatched', 'hide'],
+  tile: ['continue', 'openScreen', 'playNow', 'playHere', 'shuffle', 'playNext', 'playFirst', 'add', 'playOn', 'addOn', 'quality', 'details', '|', 'keep', '|', 'favourite', 'watched', 'unwatched', 'hide'],
   // The info view's More ⋯ (owner ruling 2026-11-26): row 1 there is PLAY,
   // Play here and Play on…, so More holds everything else — the queue verbs
   // (named for the screen they go to; this replaces the old caption line),
   // Show briefly on…, Quality…, then the household verbs.
-  detail: ['shuffleOn', 'playNext', 'playFirst', 'add', 'addOn', '|', 'showBriefly', '|', 'quality', '|', 'favourite', 'watched', 'unwatched'],
+  detail: ['shuffleOn', 'playNext', 'playFirst', 'add', 'addOn', '|', 'showBriefly', '|', 'quality', '|', 'keep', '|', 'favourite', 'watched', 'unwatched'],
 });
 
 /**
@@ -70,11 +70,13 @@ const SURFACES = Object.freeze({
  * @param {boolean} [p.removable] shown in a household list
  * @param {boolean} [p.quality] the item takes quality overrides
  * @param {boolean} [p.household] offer the household verbs at all (favourite, watched, hide)
+ * @param {Array<{kind:string,label:string}>} [p.keep] Keep on Phone entries for this item
+ *   (cast/phoneKeeps.js keepEntries: keep / cancel / remove, one per phone install)
  * @returns {Array<{ kind: string, label: string, hold?: string }|{ divider: true }>}
  */
 export function itemMenuEntries({
   surface, kind = 'leaf', where = {}, playingOn = null, continueLabel = null,
-  favourite = false, watched = null, removable = false, quality = false, household = true,
+  favourite = false, watched = null, removable = false, quality = false, household = true, keep = [],
 }) {
   const order = SURFACES[surface];
   if (!order) throw new Error(`itemMenuEntries: unknown surface ${surface}`);
@@ -108,6 +110,7 @@ export function itemMenuEntries({
       if (out.length && !out[out.length - 1].divider) out.push({ divider: true });
       continue;
     }
+    if (key === 'keep') { for (const k of Array.isArray(keep) ? keep : []) if (k?.kind && k?.label) out.push(k); continue; }
     if (entry[key]) out.push(entry[key]);
   }
   while (out.length && out[out.length - 1].divider) out.pop();

@@ -135,6 +135,16 @@ function FleetCard({ deviceId, startStatus, startedBy }) {
       <AddOnlyNotice deviceId={deviceId} name={name} controls={controls} />
       {!canShowNotes(device) && <RowNotes deviceId={deviceId} name={name} controls={controls} />}
       <Group gap="xs" className="fleet-card-actions">
+        {deviceKind(device) === 'phone' && (
+          <Button
+            data-testid={`fleet-keeps-${deviceId}`}
+            size="compact-sm"
+            variant="default"
+            onClick={() => push('phone-keeps', { deviceId })}
+          >
+            On this phone
+          </Button>
+        )}
         <Button
           data-testid={`fleet-peek-${deviceId}`}
           size="compact-sm"

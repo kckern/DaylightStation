@@ -373,9 +373,9 @@ export function DispatchProvider({ children }) {
     return attemptId;
   }, []);
 
-  const resolveLocal = useCallback((attemptId, { phase, reason = null, ordinal = null, count = null } = {}) => {
+  const resolveLocal = useCallback((attemptId, { phase, reason = null, ordinal = null, count = null, retryAction = null } = {}) => {
     if (!attemptId || !phase) return;
-    dispatch({ type: 'LOCAL_RESOLVED', attemptId, phase, reason, ordinal, count });
+    dispatch({ type: 'LOCAL_RESOLVED', attemptId, phase, reason, ordinal, count, ...(retryAction ? { retryAction } : {}) });
     mediaLog.outcomeResolved({ attemptId, targetId: recordsRef.current.get(attemptId)?.targetId ?? 'local', phase, reason });
   }, []);
 

@@ -1,3 +1,4 @@
+import { stampEpoch } from "../../domain/stampEpoch.mjs";
 import { normalizeSpotDeviceId, recordSpot, seedLegacySpot, retireLegacySpot } from "../../domain/services/mediaSpots.mjs";
 import { isWatchComplete, DEFAULT_RULE } from "#shared/contracts/media/watchCompletion.mjs";
 import { observeHeartbeat } from "../../domain/services/skipInference.mjs";
@@ -42,6 +43,8 @@ export class RecordPlaybackProgress {
     // stamped with when a report says when it was heard (observedAt). Absent =
     // observedAt is ignored and every report is stamped on arrival (as before).
     timestampAt = null,
+    // The household zone: what a bare stored stamp ("YYYY-MM-DD HH:mm:ss") means.
+    timeZone = 'UTC',
     nowEpoch = () => Date.now(),
     nowIso = () => new Date().toISOString(),
     logger = console,
@@ -60,6 +63,7 @@ export class RecordPlaybackProgress {
     this.createMediaProgress = createMediaProgress;
     this.nowTimestamp = nowTimestamp;
     this.timestampAt = typeof timestampAt === 'function' ? timestampAt : null;
+    this.timeZone = timeZone;
     this.nowEpoch = nowEpoch;
     this.nowIso = nowIso;
     this.logger = logger;
@@ -96,15 +100,14 @@ export class RecordPlaybackProgress {
   }
 
   /**
-   * observedAt (epoch ms) as a stored timestamp, or null when absent, unusable or the
-   * use case has no formatter. A time in the future (a phone clock ahead) is now: it
-   * must not lock every later report out.
+   * observedAt (epoch ms) when usable, else null. A time in the future (a phone clock
+   * ahead) is now: it must not lock every later report out.
    */
-  #observedStamp(observedAt) {
-    if (!this.timestampAt || observedAt === null || observedAt === undefined) return null;
+  #observedMs(observedAt) {
+    if (observedAt === null || observedAt === undefined || observedAt === '') return null;
     const ms = Number(observedAt);
     if (!Number.isFinite(ms) || ms < Date.UTC(2020, 0, 1)) return null;
-    return this.timestampAt(Math.min(ms, this.nowEpoch()));
+    return Math.min(ms, this.nowEpoch());
   }
 
   async execute({
@@ -161,31 +164,15 @@ export class RecordPlaybackProgress {
     const existingState = this.mediaProgressMemory
       ? await this.mediaProgressMemory.findProgress(compoundId, progressNamespace)
       : null;
-    // A report heard before the stored last play is history, not the place: it is
-    // not applied (logged), and the stored state answers.
-    const observed = this.#observedStamp(observedAt);
-    if (observed && existingState?.lastPlayed && compareStamps(observed, existingState.lastPlayed) < 0) {
-      this.logger.info?.('play.log.stale_report', {
-        assetId: compoundId, namespace: progressNamespace, observedAt: observed,
-        storedLastPlayed: String(existingState.lastPlayed), playhead: parseInt(seconds, 10),
-        storedPlayhead: existingState.playhead ?? null,
-      });
-      return {
-        response: {
-          type,
-          library: progressNamespace,
-          title: itemMetadata?.title || title,
-          contentId: compoundId,
-          playhead: existingState.playhead,
-          duration: existingState.duration,
-          percent: existingState.percent,
-          playCount: existingState.playCount,
-          lastPlayed: existingState.lastPlayed,
-          watchTime: existingState.watchTime,
-          stale: true,
-        },
-      };
-    }
+    // When this position was heard (a phone replaying progress it kept offline). A
+    // report heard before the stored last play is history, not the place: its
+    // position is not written (lifecycle spec §3.4, "never moves a place backwards");
+    // its listening still counts. Times compare as instants, never as text.
+    const observedMs = this.#observedMs(observedAt);
+    const observed = observedMs !== null && this.timestampAt ? this.timestampAt(observedMs) : null;
+    const storedAt = existingState?.lastPlayed ? stampEpoch(existingState.lastPlayed, this.timeZone) : null;
+    const stale = observedMs !== null && storedAt !== null && observedMs < storedAt;
+    const atEpoch = observedMs ?? this.nowEpoch();
     const normalizedSeconds = parseInt(seconds, 10);
     const normalizedPercent = parseFloat(percent);
     const estimatedDuration = normalizedPercent > 0
@@ -230,7 +217,7 @@ export class RecordPlaybackProgress {
       });
     }
     const completedAt = existingState?.completedAt
-      || (watchComplete ? this.nowTimestamp() : null);
+      || (watchComplete && !stale ? (observed ?? this.nowTimestamp()) : null);
     const lastPlayed = observed ?? this.nowTimestamp();
     const spotFields = spotDevice
       ? {
@@ -242,33 +229,50 @@ export class RecordPlaybackProgress {
         lastDevice: spotDevice,
       }
       : {};
-    const newState = this.createMediaProgress({
-      contentId: compoundId,
-      playhead: normalizedSeconds,
-      duration: estimatedDuration,
-      percent: statePercent,
-      playCount: (existingState?.playCount ?? 0)
-        + (!existingState || normalizedSeconds < referencePlayhead ? 1 : 0),
-      lastPlayed,
-      watchTime: newWatchTime > 0 ? Number(newWatchTime.toFixed(3)) : 0,
-      completedAt,
-      ...spotFields,
-    });
+    const newState = stale
+      // History only: the stored place, last play and completion stand; the listening
+      // time is added.
+      ? this.createMediaProgress({
+        ...existingState,
+        percent: existingState.percent,
+        contentId: compoundId,
+        watchTime: newWatchTime > 0 ? Number(newWatchTime.toFixed(3)) : (existingState.watchTime ?? 0),
+      })
+      : this.createMediaProgress({
+        contentId: compoundId,
+        playhead: normalizedSeconds,
+        duration: estimatedDuration,
+        percent: statePercent,
+        playCount: (existingState?.playCount ?? 0)
+          + (!existingState || normalizedSeconds < referencePlayhead ? 1 : 0),
+        lastPlayed,
+        watchTime: newWatchTime > 0 ? Number(newWatchTime.toFixed(3)) : 0,
+        completedAt,
+        ...spotFields,
+      });
+    if (stale) {
+      this.logger.info?.('play.log.stale_report', {
+        assetId: compoundId, namespace: progressNamespace, observedAt: observed,
+        storedLastPlayed: String(existingState.lastPlayed), playhead: normalizedSeconds,
+        storedPlayhead: existingState.playhead ?? null, watchTimeAdded: Number(sessionWatchTime.toFixed?.(3) ?? sessionWatchTime),
+      });
+    }
 
-    if (this.mediaProgressMemory && !noPlayhead) {
+    if (this.mediaProgressMemory && !noPlayhead && !(stale && !(sessionWatchTime > 0))) {
       await this.mediaProgressMemory.saveProgress(newState, progressNamespace);
       // Writing a fresh state drops a stored skip: the viewer came back to it.
-      if (existingState?.skipped) {
+      if (existingState?.skipped && !stale) {
         this.logger.info?.('play.skip.cleared', { assetId: compoundId, deviceId: spotDevice });
       }
-      if (spotDevice) {
+      if (spotDevice && !stale) {
         await this.#inferSkips(spotDevice, {
-          assetId: compoundId, storagePath: progressNamespace, complete: watchComplete, atEpoch: this.nowEpoch(),
+          assetId: compoundId, storagePath: progressNamespace, complete: watchComplete, atEpoch,
         });
       }
     }
 
-    if (!noPlayhead && this.progressSyncSources?.has(type) && this.progressSyncService) {
+    // A stale report tells neither the remote store nor the media server where it is.
+    if (!stale && !noPlayhead && this.progressSyncSources?.has(type) && this.progressSyncService) {
       const localId = assetId.includes(':') ? assetId.split(':').slice(1).join(':') : assetId;
       this.progressSyncService.onProgressUpdate(compoundId, localId, {
         playhead: normalizedSeconds,
@@ -283,7 +287,7 @@ export class RecordPlaybackProgress {
     // ONE-WAY and strictly advisory: nothing it returns is read back, and a
     // failure must never surface here. A child watching a story does not lose
     // their progress because a dashboard missed a heartbeat.
-    if (!noPlayhead && this.reportPlaybackSession && deviceId) {
+    if (!stale && !noPlayhead && this.reportPlaybackSession && deviceId) {
       try {
         await this.reportPlaybackSession.execute({
           surfaceId: deviceId,
@@ -307,7 +311,7 @@ export class RecordPlaybackProgress {
     if (this.playLedger && spotDevice && terminal) {
       // A stop/finish report ends the screen's session; it is never a start.
       try {
-        await this.playLedger.end?.({ deviceId: spotDevice, at: this.nowEpoch() });
+        await this.playLedger.end?.({ deviceId: spotDevice, at: atEpoch });
       } catch (error) {
         this.logger.warn?.('play.log.ledger_failed', { assetId, error: error.message });
       }
@@ -316,8 +320,8 @@ export class RecordPlaybackProgress {
         await this.playLedger.observe({
           deviceId: spotDevice,
           contentId: compoundId,
-          atEpoch: this.nowEpoch(),
-          startedAt: this.nowIso(),
+          atEpoch,
+          startedAt: observedMs !== null ? new Date(observedMs).toISOString() : this.nowIso(),
           localTime: lastPlayed,
           metadata: {
             ...(itemMetadata || {}),
@@ -341,7 +345,7 @@ export class RecordPlaybackProgress {
       ...(live ? { live: true } : {}),
     });
 
-    if (this.playbackPublications?.progressRecorded) {
+    if (!stale && this.playbackPublications?.progressRecorded) {
       try {
         this.playbackPublications.progressRecorded({
           contentId: compoundId,
@@ -358,7 +362,7 @@ export class RecordPlaybackProgress {
     }
 
     let userProgress = null;
-    if (userId && this.userVideoProgressStore) {
+    if (!stale && userId && this.userVideoProgressStore) {
       // The piano store may judge the lesson sitting first (bounded by its own
       // deadline); a failure there never stops the record.
       if (practice && typeof practice === 'object' && typeof this.userVideoProgressStore.prepareCredit === 'function') {
@@ -419,18 +423,12 @@ export class RecordPlaybackProgress {
         playCount: newState.playCount,
         lastPlayed: newState.lastPlayed,
         watchTime: newState.watchTime,
+        ...(stale ? { stale: true } : {}),
         ...(spotDevice ? { deviceId: spotDevice } : {}),
         userProgress: userProgressPublic,
       },
     };
   }
-}
-
-/** "YYYY-MM-DD HH:mm:ss" (or ISO with T) compared as text: same zone, same order. */
-function compareStamps(a, b) {
-  const norm = (v) => String(v).replace('T', ' ').slice(0, 19);
-  const x = norm(a); const y = norm(b);
-  return x < y ? -1 : x > y ? 1 : 0;
 }
 
 export default RecordPlaybackProgress;

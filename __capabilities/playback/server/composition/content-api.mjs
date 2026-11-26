@@ -15,6 +15,7 @@ import { UpdateContentProgress } from "../application/usecases/UpdateContentProg
 import { MarkContentWatched } from "../application/usecases/MarkContentWatched.mjs";
 import { RecordPlaybackProgress } from "../application/usecases/RecordPlaybackProgress.mjs";
 import { nowTs24, formatLocalTimestamp } from "#system/utils/index.mjs";
+import { DEFAULT_TIMEZONE } from "#domains/core/utils/timezone.mjs";
 import { PlaybackPublications } from "#adapters/eventbus/PlaybackPublications.mjs";
 
 export function createPlaybackSurroundContext({ dataPath, logger, configService, mediaProgressMemory, progressSyncService, progressSyncSources }) {
@@ -66,6 +67,7 @@ export function createPlaybackProgressOperations({ contentCatalog, mediaProgress
     createMediaProgress: (props) => new MediaProgress(props),
     nowTimestamp: nowTs24,
     timestampAt: (ms) => formatLocalTimestamp(new Date(ms)),
+    timeZone: DEFAULT_TIMEZONE,
     logger,
   });
   // Watched / unwatched marks (Media app household list, RQ-FIND-13). Writes

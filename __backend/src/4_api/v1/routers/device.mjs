@@ -196,26 +196,73 @@ export function createDeviceRouter({ fleetService, presenceService, sessionServi
    * without installId it is for the install seen last. 202 {queued:{…}}. `/unkeep` the
    * same with {contentId, installId?}. Any device the inbox does not serve: 404.
    */
+  /** An inbox error as HTTP: the store unavailable is 503 (try again), two phones 409. */
+  const inboxError = (res, err) => {
+    if (err?.code === 'STORE_UNAVAILABLE') {
+      res.set('Retry-After', '30');
+      return res.status(503).json(buildErrorBody({ error: err.message, code: 'STORE_UNAVAILABLE', retryable: true }));
+    }
+    if (err?.code === 'CHOOSE_PHONE') {
+      return res.status(409).json({ ...buildErrorBody({ error: err.message, code: 'CHOOSE_PHONE' }), installs: err.installs ?? [] });
+    }
+    if (err instanceof TypeError) return badRequest(res, err.message);
+    throw err;
+  };
+
+  /**
+   * "Keep on this phone", asked from another device (the web's Media app): a durable
+   * command for the phone, stored before it is answered and kept until the phone acks.
+   * Body {contentId, title?, installId?}: without installId it is for the only live
+   * install, or waits for the first to poll; two live and none named: 409 CHOOSE_PHONE
+   * with {installs}. 202 {queued:{…}}; 503 STORE_UNAVAILABLE (Retry-After) when it could
+   * not be stored. `/unkeep` the same with {contentId, installId?}.
+   *
+   * Trust: like every Media-app route (Play on, the household lists), these take no
+   * credential: the backend is reachable only from the household network and its
+   * perimeter, and a keep only asks the household's own phone to download household
+   * media it would stream anyway. The phone's own requests (poll, ack, report) are the
+   * ones that carry its token.
+   */
   for (const command of ['keep', 'unkeep']) {
-    router.post(`/:deviceId/${command}`, (req, res) => {
+    router.post(`/:deviceId/${command}`, asyncHandler(async (req, res) => {
       const { deviceId } = req.params;
       if (!phoneInbox?.serves(deviceId)) return notFound(res);
       const body = isRecord(req.body) ? req.body : {};
       if (!nonEmpty(body.contentId) || body.contentId.length > 200) return badRequest(res, 'contentId is required');
       if (body.installId !== undefined && !phoneInbox.constructor.installIdOf?.(body.installId)) return badRequest(res, 'installId is not one');
       const origin = req.deviceIdSource === 'header' && nonEmpty(req.deviceId) ? { kind: 'device', id: req.deviceId } : undefined;
-      const envelope = phoneInbox.queueKeep(deviceId, {
-        command, contentId: body.contentId, installId: body.installId,
-        title: typeof body.title === 'string' ? body.title : undefined, origin,
-      });
-      return res.status(202).json({ ok: true, queued: { command, commandId: envelope.commandId, contentId: body.contentId, installId: envelope.installId ?? null } });
-    });
+      try {
+        const envelope = await phoneInbox.queueKeep(deviceId, {
+          command, contentId: body.contentId, installId: body.installId,
+          title: typeof body.title === 'string' ? body.title : undefined, origin,
+        });
+        return res.status(202).json({ ok: true, queued: { command, commandId: envelope.commandId, contentId: body.contentId, installId: envelope.installId ?? null, queuedAt: envelope.ts } });
+      } catch (err) { return inboxError(res, err); }
+    }));
   }
 
   /**
-   * What the phone keeps, as it last said (per install), the installs seen (the one in
-   * use first, `live` when it polled in the last 2 min) and the keep commands still
-   * waiting for it. Read by the web; any device the inbox does not serve: 404.
+   * Cancel a keep still waiting for the phone: removed when it was not yet handed
+   * over (200 {cancelled:true}); already handed over, it is answered by a removal
+   * (200 {cancelled:false, removing:true}). Unknown commandId: 404.
+   */
+  router.post('/:deviceId/keep/cancel', asyncHandler(async (req, res) => {
+    const { deviceId } = req.params;
+    if (!phoneInbox?.serves(deviceId)) return notFound(res);
+    const body = isRecord(req.body) ? req.body : {};
+    if (!nonEmpty(body.commandId) || body.commandId.length > 200) return badRequest(res, 'commandId is required');
+    try {
+      const result = await phoneInbox.cancelKeep(deviceId, body.commandId);
+      if (!result) return res.status(404).json(buildErrorBody({ error: 'No such waiting keep', code: 'NOT_FOUND' }));
+      return res.json({ ok: true, ...result });
+    } catch (err) { return inboxError(res, err); }
+  }));
+
+  /**
+   * What the phone keeps, as it last said (per install, with its free space and
+   * limit), the installs seen (the one in use first; `live` within 2 min, `gone` after
+   * 30 days), the keep commands still waiting (every install), received ones not yet
+   * reported, and refusals. Read by the web; any device the inbox does not serve: 404.
    */
   router.get('/:deviceId/keeps', (req, res) => {
     const { deviceId } = req.params;
@@ -225,18 +272,21 @@ export function createDeviceRouter({ fleetService, presenceService, sessionServi
 
   /**
    * The phone's own list of what it keeps (its truth, the whole list each time):
-   * {installId, items:[{contentId, state: queued|downloading|ready|failed|refused|removed,
-   * title?, done, total, bytes, reason?}]}. Device token required. 204.
+   * {installId, freeBytes?, limitBytes?, items:[{contentId, state, title?, done, total,
+   * bytes, totalBytes?, neededBytes?, failed?, reason?, finished?, trackIds?}]}, state one
+   * of the lifecycle states (KEEP_STATES). Device token (or the unauthenticated
+   * transition). 204; 503 when it could not be stored.
    */
-  router.post('/:deviceId/keeps', (req, res) => {
+  router.post('/:deviceId/keeps', asyncHandler(async (req, res) => {
     const { deviceId } = req.params;
     if (!phoneInbox?.serves(deviceId)) return notFound(res);
     if (!inboxAuthorized(phoneInbox, req, res)) return undefined;
     const body = isRecord(req.body) ? req.body : {};
-    try { phoneInbox.reportKeeps(deviceId, { installId: body.installId, items: body.items }); }
-    catch (err) { return badRequest(res, err.message); }
+    try {
+      await phoneInbox.reportKeeps(deviceId, { installId: body.installId, items: body.items, freeBytes: body.freeBytes, limitBytes: body.limitBytes });
+    } catch (err) { return inboxError(res, err); }
     return res.status(204).end();
-  });
+  }));
 
   /**
    * What input hardware the ASKING device is declared to have.

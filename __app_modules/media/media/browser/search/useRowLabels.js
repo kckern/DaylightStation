@@ -19,6 +19,7 @@ import { usePlayingOn } from "../fleet/usePlayingOn.js";
 import { useFavourites } from "../household/useHousehold.js";
 import { itemMenuEntries, menuItemKind, splitItemMenu } from "../actions/itemMenuTable.js";
 import mediaLog from "../logging/mediaLog.js";
+import { usePhoneKeeps } from "../cast/usePhoneKeeps.jsx";
 
 const logRowMenuMore = (counts) => mediaLog.listMoreExpanded({ surface: 'row-menu', ...counts });
 
@@ -32,6 +33,7 @@ export function useRowExtras() {
   const { destinationFor, labelsFor } = usePlayDestination();
   const { playingOnFor, toggle } = usePlayingOn();
   const favourites = useFavourites();
+  const phoneKeeps = usePhoneKeeps();
   const rowExtrasFor = useCallback((item) => {
     if (!item?.id) return { menu: null, playingOn: null, playBusy: false };
     const { short, sentence } = labelsFor(item);
@@ -56,10 +58,11 @@ export function useRowExtras() {
       where: { elsewhere, short, sentence: where.source === 'ask' ? null : sentence },
       playingOn: on,
       favourite: favourites.has(item.id),
+      keep: phoneKeeps.forItem(item).entries,
     }));
     // Item 6: this row's ▶ alone spins while its start is in flight.
     return { menu, onMenuMore: logRowMenuMore, playingOn, playBusy: isStarting(item.id) };
-  }, [isStarting, destinationFor, labelsFor, playingOnFor, toggle, favourites]);
+  }, [isStarting, destinationFor, labelsFor, playingOnFor, toggle, favourites, phoneKeeps]);
   const screenFor = useCallback((item) => playingOnFor(item?.id)?.deviceId ?? null, [playingOnFor]);
   return { rowExtrasFor, screenFor };
 }
