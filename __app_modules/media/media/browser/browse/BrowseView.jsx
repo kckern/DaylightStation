@@ -110,12 +110,13 @@ export function BrowseView({
   // A row's ▶ and its ⋯ Play say where they play, the same words as search.
   const rowLabelsFor = (row) => {
     const { short, sentence } = labelsFor(row);
-    const elsewhere = destinationFor(row).targetIds.length > 0;
+    const where = destinationFor(row);
+    const elsewhere = where.targetIds.length > 0;
     return {
       playElsewhere: elsewhere,
       play: short,
       playTitle: row.title ? sentence.replace(/^Play/, `Play ${row.title}`) : sentence,
-      playNow: sentence,
+      playNow: where.source === 'ask' ? null : sentence,
       playHere: elsewhere ? 'Play here' : null,
       queueWhere: elsewhere ? short : null,
     };
@@ -202,6 +203,7 @@ export function BrowseView({
     if (!containerId) return;
     log.info('dispatch_header_action', { action, contentId: containerId });
     const route = fn(containerId, containerItem);
+    if (route === 'ask') setOneShot({ kind: 'playOn', item: containerItem });
     log.info('dispatch_header_result', { action, contentId: containerId, route });
   };
 
@@ -301,7 +303,10 @@ export function BrowseView({
                   testId={`browse-open-${id}`}
                   focusId={id}
                   onTap={() => rowIsContainer ? openContainer(row, id) : openDetail(id)}
-                  onPlayAll={isSourceRow ? null : () => (rowIsContainer ? playContainerAsQueue(id, row) : dispatchLeafVerb('playNow', id, row))}
+                  onPlayAll={isSourceRow ? null : () => {
+                    const route = rowIsContainer ? playContainerAsQueue(id, row) : dispatchLeafVerb('playNow', id, row);
+                    if (route === 'ask') setOneShot({ kind: 'playOn', item: { ...row, id } });
+                  }}
                   rowLabels={isSourceRow ? null : rowLabelsFor({ ...row, id })}
                   extraActions={extraActions}
                   onMenuOpenChange={setRowMenuOpen}
@@ -310,7 +315,7 @@ export function BrowseView({
                   if (action.kind === 'playHere') dispatchLeafVerb('playNow', id, row, { targetIds: [] });
                   else if (['playOn', 'addOn'].includes(action.kind)) setOneShot(action);
                   else if (action.kind === 'details') openDetail(id);
-                  else dispatchLeafVerb(action.kind, id, row);
+                  else if (dispatchLeafVerb(action.kind, id, row) === 'ask') setOneShot({ kind: 'playOn', item: { ...row, id } });
                   }}
                 />
                 {rowIsContainer && <IconChevronRight size={18} aria-hidden />}

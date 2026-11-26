@@ -185,7 +185,7 @@ describe('MediaContentSearch', () => {
     expect(comboboxProps.fallbackSearchParams).toBe('');
   });
 
-  it('resets the desktop scope when the transient search closes', () => {
+  it('keeps the desktop scope when the search closes (the kept query keeps its scope)', () => {
     const resetScope = vi.fn();
     searchContext = {
       scopes: [{ key: 'all', label: 'All', params: '' }, { key: 'video', label: 'Video', params: 'mediaType=video' }],
@@ -198,7 +198,7 @@ describe('MediaContentSearch', () => {
     render(<MediaContentSearch />);
 
     fireEvent.click(screen.getByTestId('close-search'));
-    expect(resetScope).toHaveBeenCalledWith('escape');
+    expect(resetScope).not.toHaveBeenCalled();
   });
 
   // ── Task 14 (spec D6): the desktop half of the same tap grammar — a

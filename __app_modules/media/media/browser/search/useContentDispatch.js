@@ -142,13 +142,20 @@ export function useContentDispatch() {
     // changed. A play with no one-off destination goes where its ▶ said.
     const explicit = Array.isArray(opts.targetIds);
     const played = !explicit ? destinationFor(item) : null;
+    // A film nobody has chosen a screen for: the caller opens Play on…
+    // instead (its ▶ read "Play on…"). Queue edits just stay here.
+    if (played?.source === 'ask' && PLAY_KINDS.has(kind)) return 'ask';
     const actionTargets = explicit ? opts.targetIds : (played ? played.targetIds : targetIds);
     const oneOff = explicit || played?.source === 'learned';
     const remote = actionTargets.length > 0;
     const honoured = actionTargets.every(target => honoursStartPosition(target, fleetDevices));
     const resume = resumedFrom != null && honoured ? { startOver: true, resumedFrom } : {};
     if (PLAY_KINDS.has(kind)) {
-      if (!opts.noLearn) recordPlay(item, actionTargets);
+      // Only choices teach: a screen picked (Play on…, Play here), the aim,
+      // or the learned screen's own named ▶. A play that went here because
+      // nothing else was known teaches nothing.
+      const chose = explicit || ['aim', 'learned'].includes(played?.source);
+      if (chose && !opts.noLearn) recordPlay(item, actionTargets);
       mediaLog.playSent({
         contentId: id, kind, targetIds: actionTargets,
         source: explicit ? 'chosen' : (played?.source ?? 'aim'),
@@ -263,6 +270,7 @@ export function useContentDispatch() {
     if (controller || Object.keys(quality?.getOverrides(id) ?? {}).length || !['playNow', 'add'].includes(kind)) return runAction(kind, id, item, opts);
     const title = item?.title ?? null;
     const dest = Array.isArray(opts.targetIds) ? { targetIds: opts.targetIds, source: 'chosen' } : destinationFor(item);
+    if (dest.source === 'ask' && kind === 'playNow') return 'ask';
     if (dest.targetIds.length > 0) {
       castTo(dest.targetIds, dest.source === 'aim' ? mode : 'fork', id, title, { verb: verb === 'add' ? 'queue' : 'play' });
       return 'cast';
@@ -287,6 +295,7 @@ export function useContentDispatch() {
     if (controller || Object.keys(quality?.getOverrides(id) ?? {}).length) return runAction(shuffle ? 'shuffle' : 'playNow', id, { ...item, itemType: 'container' }, { collection: true });
     const title = item?.title ?? null;
     const dest = destinationFor(item);
+    if (dest.source === 'ask') return 'ask';
     if (dest.targetIds.length > 0) {
       castTo(dest.targetIds, dest.source === 'aim' ? mode : 'fork', id, title, { shuffle });
       return 'cast';

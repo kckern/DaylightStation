@@ -33,8 +33,9 @@ export function itemKind(item) {
   if (!item) return null;
   // `format` is the queue input's name for the same fact (resultToQueueInput).
   const mediaType = String(item.mediaType ?? item.format ?? item.metadata?.mediaType ?? '').toLowerCase();
-  if (mediaType === 'video') return 'video';
-  if (mediaType === 'audio') return 'audio';
+  // Player formats name the transport too: hls_video, dash_video.
+  if (mediaType === 'video' || mediaType.endsWith('_video')) return 'video';
+  if (mediaType === 'audio' || mediaType.endsWith('_audio')) return 'audio';
   const type = String(item.type ?? item.metadata?.type ?? '').toLowerCase();
   if (VIDEO_TYPES.has(type)) return 'video';
   if (AUDIO_TYPES.has(type)) return 'audio';
@@ -52,7 +53,7 @@ export function normalizeQuery(text) {
 }
 
 function emptyState() {
-  return { v: SCHEMA_VERSION, picks: {}, screens: {} };
+  return { v: SCHEMA_VERSION, picks: {}, places: {} };
 }
 
 function decode(raw) {
@@ -62,7 +63,10 @@ function decode(raw) {
     return {
       v: SCHEMA_VERSION,
       picks: parsed.picks && typeof parsed.picks === 'object' ? parsed.picks : {},
-      screens: parsed.screens && typeof parsed.screens === 'object' ? parsed.screens : {},
+      // `places`, not the first release's `screens`: those counted a default
+      // play "here" as a choice, so a first ▶ taught "films → here". Only
+      // choices are recorded now; the old field is dropped unread.
+      places: parsed.places && typeof parsed.places === 'object' ? parsed.places : {},
     };
   } catch {
     return null;
@@ -187,19 +191,19 @@ export function createHabitsStore({ getStorage = () => localStorage, now = () =>
       const ids = Array.isArray(targetIds) ? [...new Set(targetIds.filter(id => typeof id === 'string' && id))].sort() : [];
       const key = ids.join(',');
       const at = now();
-      const choices = screenChoices(state.screens[kind]);
+      const choices = screenChoices(state.places[kind]);
       const found = choices.find(choice => choice.targetIds.join(',') === key);
       const next = [
         { targetIds: ids, count: (found?.count ?? 0) + 1, at },
         ...choices.filter(choice => choice !== found),
       ].sort((a, b) => weight(b, at) - weight(a, at)).slice(0, MAX_SCREEN_CHOICES);
-      save({ ...state, screens: { ...state.screens, [kind]: { choices: next } } });
+      save({ ...state, places: { ...state.places, [kind]: { choices: next } } });
       return true;
     },
 
     /** Where deliberate plays of a `kind` item usually go, or null if never. */
     screenFor(kind) {
-      const choices = screenChoices(current().screens[kind]);
+      const choices = screenChoices(current().places?.[kind]);
       if (choices.length === 0) return null;
       const at = now();
       return [...choices].sort((a, b) => weight(b, at) - weight(a, at))[0].targetIds;

@@ -107,6 +107,11 @@ import mediaLog from "../logging/mediaLog.js";
 import { SearchProvider } from "./SearchProvider.jsx";
 import { CastTargetProvider } from "../cast/CastTargetProvider.jsx";
 import { SearchMode } from "./SearchMode.jsx";
+import { habitsStore as seedHabits } from "../habits/mediaHabits.js";
+
+// These tests describe a browser that has chosen to watch here: with nothing
+// chosen, a film's ▶ asks where (Play on…) instead — see habits/playDestination.js.
+beforeEach(() => { seedHabits().recordScreen('video', []); });
 
 // Mirrors how MediaAppShell actually wires this: SearchProvider/CastTargetProvider
 // stay mounted across the app's life; only SearchMode's presence toggles.
@@ -129,7 +134,7 @@ beforeEach(() => {
   dispatchLeafVerbMock.mockReset();
   playContainerAsQueueMock.mockReset();
   navPush.mockReset();
-  localStorage.clear();
+  localStorage.clear(); seedHabits().recordScreen('video', []);
   comboState = { search: null, results: [] };
   comboExtra = {};
   fleetDevices = [];

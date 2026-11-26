@@ -14,14 +14,22 @@ import { LocalSessionContext } from "../session/LocalSessionContext.js";
 import { ClientIdentityContext } from "../identity/ClientIdentityProvider.jsx";
 import { DispatchContext } from "../cast/DispatchProvider.jsx";
 import { moveScreenPlayback, moveFailureReason } from "../cast/screenMove.js";
+import { canPlayOn } from "../habits/playDestination.js";
+import { orderPickerDevices } from "../cast/useDispatchTargetPicker.js";
 import "./SessionControls.scss";
 
-/** Screens playback can move to: content screens other than the source. */
-export function moveDestinations(devices = [], sourceId) {
-  return devices.filter((device) => typeof device?.id === 'string'
+/**
+ * Screens playback can move to: content screens other than the source that
+ * can play this kind of thing (a film never lists a headset; a display listed
+ * for the house view only, with no receiver, is never listed). Stable order:
+ * `preferredIds` first (the screen this browser usually uses), then by name.
+ */
+export function moveDestinations(devices = [], sourceId, { kind = null, preferredIds = [] } = {}) {
+  return orderPickerDevices(devices.filter((device) => typeof device?.id === 'string'
     && device.id !== sourceId
     && !device.id.startsWith('browser:')
-    && (device.content_control || device.fleet === true));
+    && (device.content_control || device.fleet === true)
+    && canPlayOn(device, kind)), preferredIds);
 }
 
 export function MoveToMenu({ sourceId, available = true, title = null, captureLocalMoveNavigation }) {

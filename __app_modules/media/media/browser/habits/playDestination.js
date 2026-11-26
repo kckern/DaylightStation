@@ -4,7 +4,11 @@
 //   1. something is aimed (the header destination)   → there
 //   2. this browser last played this kind of thing on a screen that can still
 //      take it                                       → that screen ("learned")
-//   3. otherwise                                     → this device
+//   3. a film or episode nobody has chosen a screen for yet → ASK: the ▶
+//      reads "Play on…" and opens the screen list (This device included).
+//      One tap the first time; the choice is learned. A video never plays
+//      here by default — that default was the original complaint.
+//   4. otherwise (music, unknown kinds)              → this device
 //
 // The ▶ always says which, by name, so a play is never a surprise: learning
 // only changes what the one-tap button offers, never what a tap on a row does
@@ -37,7 +41,10 @@ export function resolvePlayDestination({ aimIds = [], learnedIds = null, devices
   if (aimIds.length > 0) {
     return { targetIds: aimIds, source: 'aim', devices: aimIds.map(id => devices.find(d => d.id === id)).filter(Boolean) };
   }
-  // Learned "this device" (or this browser's own id) is just here.
+  // Chosen "this device" (or this browser's own id) is here, on purpose.
+  if (Array.isArray(learnedIds) && learnedIds.filter(id => id !== localId).length === 0) {
+    return { targetIds: [], source: 'here', devices: [] };
+  }
   const learned = (learnedIds ?? []).filter(id => id !== localId);
   if (learned.length > 0) {
     const found = learned.map(id => devices.find(d => d.id === id));
@@ -47,6 +54,7 @@ export function resolvePlayDestination({ aimIds = [], learnedIds = null, devices
       return { targetIds: learned, source: 'learned', devices: found };
     }
   }
+  if (kind === 'video') return { targetIds: [], source: 'ask', devices: [] };
   return { targetIds: [], source: 'here', devices: [] };
 }
 
@@ -56,6 +64,7 @@ export function resolvePlayDestination({ aimIds = [], learnedIds = null, devices
  * Screen", "Play here").
  */
 export function destinationLabels(destination, { verb = 'Play' } = {}) {
+  if (destination?.source === 'ask') return { short: `${verb} on…`, sentence: `${verb} on…` };
   if (!destination || destination.targetIds.length === 0) {
     return { short: verb, sentence: `${verb} here` };
   }

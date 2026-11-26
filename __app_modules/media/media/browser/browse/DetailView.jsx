@@ -97,7 +97,10 @@ export function DetailView({ contentId }) {
             data-testid="detail-play-now"
             leftSection={elsewhere ? <IconCast size={18} /> : <IconPlayerPlayFilled size={18} />}
             loading={!collection && pendingResume}
-            onClick={() => (collection ? dispatchLeafVerb('playNow', contentId, detailItem) : run('playNow', detailItem, { entry }))}
+            onClick={() => {
+              const route = collection ? dispatchLeafVerb('playNow', contentId, detailItem) : run('playNow', detailItem, { entry });
+              if (route === 'ask') setOneShot({ kind: 'playOn', item: detailItem });
+            }}
           >
             {labelsFor(detailItem).sentence}
           </Button>
@@ -112,7 +115,7 @@ export function DetailView({ contentId }) {
           )}
           <Button variant="default" data-testid="detail-play-on" onClick={() => setOneShot({ kind: 'playOn', item: detailItem })}>Play on…</Button>
           <ItemQualityButton item={detailItem} />
-          {isContainer(detailItem) && <Button variant="default" onClick={() => dispatchLeafVerb('shuffle', contentId, detailItem)}>{elsewhere ? `Shuffle on ${whereName}` : 'Shuffle'}</Button>}
+          {isContainer(detailItem) && <Button variant="default" onClick={() => { if (dispatchLeafVerb('shuffle', contentId, detailItem) === 'ask') setOneShot({ kind: 'playOn', item: detailItem }); }}>{elsewhere ? `Shuffle on ${whereName}` : 'Shuffle'}</Button>}
           <Button data-testid="detail-play-next" variant="default" leftSection={<IconPlayerTrackNext size={16} />}
                   {...playNextHold.bind}
                   onClick={playNextHold.guardClick(() => dispatchLeafVerb('playNext', contentId, detailItem))}>

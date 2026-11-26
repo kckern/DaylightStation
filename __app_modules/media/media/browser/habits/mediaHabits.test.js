@@ -106,10 +106,10 @@ describe('habits: screens (what kind of thing → where it was played)', () => {
     expect(store.screenFor('video')).toEqual(['livingroom-tv']);
   });
 
-  it('reads the first release\'s stored shape (last screen only)', () => {
+  it('drops the first release\'s screens (they counted default plays as choices)', () => {
     const storage = memoryStorage();
-    storage.setItem(HABITS_KEY, JSON.stringify({ v: 1, picks: {}, screens: { video: { targetIds: ['office-tv'], at: 1 } } }));
-    expect(createHabitsStore({ getStorage: () => storage }).screenFor('video')).toEqual(['office-tv']);
+    storage.setItem(HABITS_KEY, JSON.stringify({ v: 1, picks: {}, screens: { video: { targetIds: [], at: 1 } } }));
+    expect(createHabitsStore({ getStorage: () => storage }).screenFor('video')).toBeNull();
   });
 
   it('remembers the last deliberate screen per kind', () => {
@@ -128,6 +128,8 @@ describe('habits: screens (what kind of thing → where it was played)', () => {
     expect(itemKind({ type: 'episode' })).toBe('video');
     expect(itemKind({ mediaType: 'audio' })).toBe('audio');
     expect(itemKind({ format: 'video' })).toBe('video');
+    expect(itemKind({ format: 'dash_video' })).toBe('video');
+    expect(itemKind({ format: 'hls_video' })).toBe('video');
     expect(itemKind({ metadata: { type: 'album' } })).toBe('audio');
     expect(itemKind({ type: 'game' })).toBeNull();
   });
@@ -151,9 +153,11 @@ describe('where a ▶ goes', () => {
   });
 
   it('never a learned screen that cannot take it, is gone, or is this browser', () => {
-    expect(resolvePlayDestination({ learnedIds: ['speaker-red'], devices, kind: 'video' }).source).toBe('here');
-    expect(resolvePlayDestination({ learnedIds: ['den-tv'], devices, kind: 'video' }).source).toBe('here');
+    // A film with no usable learned screen ASKS; a chosen "this browser" is here.
+    expect(resolvePlayDestination({ learnedIds: ['speaker-red'], devices, kind: 'video' }).source).toBe('ask');
+    expect(resolvePlayDestination({ learnedIds: ['den-tv'], devices, kind: 'video' }).source).toBe('ask');
     expect(resolvePlayDestination({ learnedIds: ['browser:me'], devices, localId: 'browser:me', kind: 'video' }).source).toBe('here');
+    expect(destinationLabels(resolvePlayDestination({ devices, kind: 'video' }))).toEqual({ short: 'Play on…', sentence: 'Play on…' });
     expect(destinationLabels(resolvePlayDestination({ devices }))).toEqual({ short: 'Play', sentence: 'Play here' });
   });
 

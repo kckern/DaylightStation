@@ -78,6 +78,11 @@ vi.mock("../cast/DispatchTargetPicker.jsx", () => ({
 
 import { BrowseView } from "./BrowseView.jsx";
 import { CastTargetProvider } from "../cast/CastTargetProvider.jsx";
+import { habitsStore as seedHabits } from "../habits/mediaHabits.js";
+
+// These tests describe a browser that has chosen to watch here: with nothing
+// chosen, a film's ▶ asks where (Play on…) instead — see habits/playDestination.js.
+beforeEach(() => { seedHabits().recordScreen('video', []); });
 
 function renderBrowse(props = {}) {
   return render(
@@ -102,7 +107,7 @@ beforeEach(() => {
   dispatchLeafVerbMock.mockClear();
   navBack = 'Devices';
   fleetDevices = [];
-  localStorage.clear();
+  localStorage.clear(); seedHabits().recordScreen('video', []);
 });
 
 describe('BrowseView — container dispatch header (Task 15)', () => {

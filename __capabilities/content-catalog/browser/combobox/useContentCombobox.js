@@ -105,6 +105,10 @@ function ancestorToCrumb(crumb, fallbackSource) {
 export function useContentCombobox({
   value, onChange, searchParams = '', fallbackSearchParams, scopeKey, scopeLabel,
   appResults = false, selectContainers = false, allowFreeform = true, logApp = 'admin', retainQueryOnEscape = false,
+  // Media: closing the list never throws the query away — clicking elsewhere,
+  // Tab, Escape, or opening a result. Reopening shows the same words and the
+  // same results; the ✕ (clearSearch) is how it is emptied.
+  retainQueryOnClose = false,
   retainPlayableSelection = false,
 }) {
   const log = useMemo(() => getChildLogger({ component: 'useContentCombobox', app: logApp, sessionLog: true }), [logApp]);
@@ -325,6 +329,10 @@ export function useContentCombobox({
     let cancelled = false;
     const finish = (items) => {
       if (cancelled || searchAttemptRef.current !== attempt) return;
+      // A closed list holding a kept query (retainQueryOnClose) keeps what it
+      // found: the cancelled transport emptying itself is not a new answer.
+      const now = stateRef.current;
+      if (now.mode === Modes.DISPLAY && now.search && items.length === 0) return;
       setRawResultCount(items.length); // pre-cap length (machine slices to RENDER_CAP)
       dispatch({ type: 'RESULTS', items });
     };
@@ -535,6 +543,20 @@ export function useContentCombobox({
   }, [log, readPageWhenIdle]);
 
   // ── Lifecycle: close-commit policy + selection ──
+  // What a close keeps of the search: everything (retainQueryOnClose), the
+  // words on Escape only (retainQueryOnEscape), or nothing.
+  const retained = useCallback((reason, search) => {
+    if (retainQueryOnClose && search) return { retainSearch: search, retainResults: true };
+    if (reason === 'escape' && retainQueryOnEscape) return { retainSearch: search };
+    return { retainSearch: null };
+  }, [retainQueryOnClose, retainQueryOnEscape]);
+
+  const clearSearch = useCallback(() => {
+    retireSearch();
+    dispatch({ type: 'INPUT', text: '' });
+    dispatch({ type: 'RESULTS', items: [] });
+  }, [retireSearch]);
+
   const handleClose = useCallback((reason) => {
     const current = stateRef.current;
     const decision = closeDecision({ search: current.search, value: current.value, allowFreeform }, reason);
@@ -545,9 +567,9 @@ export function useContentCombobox({
       log.info('freeform.revert_on_close', { discarded: current.search, kept: current.value, reason });
     }
     invalidateBrowseLoads();
-    dispatch({ type: 'CLOSE', reason, retainSearch: reason === 'escape' && retainQueryOnEscape ? current.search : null });
+    dispatch({ type: 'CLOSE', reason, ...retained(reason, current.search) });
     cancelPendingSearch();
-  }, [cancelPendingSearch, invalidateBrowseLoads, log, allowFreeform, retainQueryOnEscape]);
+  }, [cancelPendingSearch, invalidateBrowseLoads, log, allowFreeform, retained]);
 
   const select = useCallback((item) => {
     log.info('item_select', { contentId: item.id, title: item.title, prevValue: stateRef.current.value });
@@ -698,7 +720,7 @@ export function useContentCombobox({
       case 'revert':
       case 'dismiss':
         log.info(`commit.${decision.action}`, { discarded: s.search, kept: s.value, reason });
-        invalidateBrowseLoads(); dispatch({ type: 'CLOSE', retainSearch: reason === 'escape' && retainQueryOnEscape ? s.search : null }); cancelPendingSearch();
+        invalidateBrowseLoads(); dispatch({ type: 'CLOSE', ...retained(reason, s.search) }); cancelPendingSearch();
         break;
       case 'none':
       default:
@@ -706,7 +728,7 @@ export function useContentCombobox({
         break;
     }
     return decision;
-  }, [selectContainers, select, drill, cancelPendingSearch, invalidateBrowseLoads, log, allowFreeform, retainQueryOnEscape]);
+  }, [selectContainers, select, drill, cancelPendingSearch, invalidateBrowseLoads, log, allowFreeform, retained]);
 
   // ── 6. Title resolution for the committed value ──
   const resolvedTitle = useContentTitle(isContentIdLike(value) ? value : null);
@@ -768,6 +790,7 @@ export function useContentCombobox({
     pendingSources,
     sourceErrors,
     streamError,
+    clearSearch,
     retrySource: retryStream,
     // D5: true once this query text has widened from `searchParams` to
     // `fallbackSearchParams` after a clean empty settle. Surfaces use this to

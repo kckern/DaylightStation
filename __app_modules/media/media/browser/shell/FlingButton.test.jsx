@@ -23,7 +23,7 @@ import { FlingButton } from "./FlingButton.jsx";
 
 const devices = [
   { id: 'office-tv', name: 'Office TV', location: 'Office', content_control: {} },
-  { id: 'den-tv', name: 'Den TV', fleet: true },
+  { id: 'den-tv', name: 'Den TV', fleet: true, content_control: { type: 'websocket' } },
   { id: 'browser:other', name: 'A phone' },
 ];
 
@@ -123,7 +123,7 @@ describe('FlingButton picker', () => {
     expect(screen.getByTestId('fling-target-den-tv')).toBeInTheDocument();
     expect(screen.queryByTestId('fling-target-browser:other')).toBeNull();
     expect(screen.queryByTestId('fling-start-choice')).toBeNull();
-    expect(log.calls.flingOpened?.[0]?.[0]).toMatchObject({ contentId: 'plex:42', targetIds: ['office-tv', 'den-tv'], offerChoice: false });
+    expect(log.calls.flingOpened?.[0]?.[0]).toMatchObject({ contentId: 'plex:42', targetIds: ['den-tv', 'office-tv'] /* by name */, offerChoice: false });
 
     await act(async () => { fireEvent.click(screen.getByTestId('fling-target-office-tv')); });
     expect(handOff).toHaveBeenCalledWith('office-tv', { mode: 'transfer', startAt: 0, play: true });

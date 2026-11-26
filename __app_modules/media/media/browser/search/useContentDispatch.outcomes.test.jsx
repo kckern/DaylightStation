@@ -31,6 +31,11 @@ import { createLocalSessionController } from "../session/LocalSessionController.
 import { useContentDispatch } from "./useContentDispatch.js";
 import { FleetContext } from "../fleet/FleetProvider.jsx";
 import { habitsStore } from "../habits/mediaHabits.js";
+import { habitsStore as seedHabits } from "../habits/mediaHabits.js";
+
+// These tests describe a browser that has chosen to watch here: with nothing
+// chosen, a film's ▶ asks where (Play on…) instead — see habits/playDestination.js.
+beforeEach(() => { seedHabits().recordScreen('video', []); });
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -134,7 +139,8 @@ describe('useContentDispatch — the ▶ goes where it says (controller-backed)'
 
   it('showing a camera here teaches nothing about where films play', async () => {
     const { result } = renderHook(() => useContentDispatch(), { wrapper });
+    habitsStore().recordScreen('video', ['office-tv']);
     await act(async () => { result.current.dispatch('camera:driveway', { id: 'camera:driveway', title: 'Driveway', type: 'camera', mediaType: 'video' }); await Promise.resolve(); });
-    expect(habitsStore().screenFor('video')).toBeNull();
+    expect(habitsStore().screenFor('video')).toEqual(['office-tv']);
   });
 });

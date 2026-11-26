@@ -167,6 +167,7 @@ export function ContentCombobox({
   destinationInteractionActive = false,
   retainQueryOnEscape = false,
   retainPlayableSelection = false,
+  retainQueryOnClose = false,
 }) {
   const log = useMemo(() => getChildLogger({ component: 'ContentCombobox', app: logApp, sessionLog: true }), [logApp]);
   const {
@@ -175,9 +176,10 @@ export function ContentCombobox({
     openWithSiblings, drill, goUp, goToCrumb, paginate, paginationWindow,
     handleClose, select, commit,
     resolvedTitle, isSearching, pendingSources, sourceErrors, streamError, retrySource, truncatedAt, fellBackToAll, searchState,
+    clearSearch,
   } = useContentCombobox({
     value, onChange, searchParams, fallbackSearchParams, scopeKey, scopeLabel,
-    appResults, selectContainers, allowFreeform, logApp, retainQueryOnEscape, retainPlayableSelection,
+    appResults, selectContainers, allowFreeform, logApp, retainQueryOnEscape, retainPlayableSelection, retainQueryOnClose,
   });
 
   const mode = state.mode;
@@ -325,7 +327,9 @@ export function ContentCombobox({
     if (modeRef.current !== Modes.DISPLAY) return;
     log.info('editing.start', { value });
     openWithSiblings();
-    const q = value || '';
+    // A kept query (retainQueryOnClose) comes back selected: typing replaces
+    // it, arrows and Enter use the results it already found.
+    const q = state.search || value || '';
     // Select the part after the colon so typing replaces just the local id
     // (e.g. "147" in "hymn: 147") while keeping the source prefix.
     requestAnimationFrame(() => {
@@ -340,7 +344,7 @@ export function ContentCombobox({
         el.select();
       }
     });
-  }, [value, openWithSiblings, renderValue, log]);
+  }, [value, state.search, openWithSiblings, renderValue, log]);
 
   // ── Explicit raw commit (freeform-row path only) ──
   // The user explicitly chose the "Use … as raw value" row, so we save the RAW
@@ -737,7 +741,18 @@ export function ContentCombobox({
           aria-label={placeholder}
           autoFocus={!!renderValue}
           leftSection={<IconSearch size={16} />}
-          rightSection={(isSearching || browseLoading) ? <Loader size="xs" /> : (value ? (
+          rightSection={(isSearching || browseLoading) ? <Loader size="xs" /> : (retainQueryOnClose && search ? (
+            <ActionIcon
+              size="sm"
+              variant="subtle"
+              aria-label="Clear search"
+              data-testid="combobox-clear-search"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={(e) => { e.stopPropagation(); log.info('search.cleared', {}); clearSearch(); inputRef.current?.focus(); }}
+            >
+              <IconX size={14} />
+            </ActionIcon>
+          ) : value ? (
             <ActionIcon
               size="sm"
               variant="subtle"

@@ -68,6 +68,19 @@ function SearchResultRow({ onAction, ...props }) {
 // `addTo` ({ deviceId, name }) opens this search for ONE addition to that
 // screen's queue (STEER.1b/AC7, RQ-STEER-22): every pick is added there, the
 // aim is untouched, and the surface closes once the addition is sent.
+// The phone search surface unmounts when it closes; its last words live
+// here for this tab so the next open starts from them.
+const LAST_SEARCH_KEY = 'media-app.last-search';
+function lastSearchText() {
+  try { return sessionStorage.getItem(LAST_SEARCH_KEY) || ''; } catch { return ''; }
+}
+function rememberSearchText(text) {
+  try {
+    if (text) sessionStorage.setItem(LAST_SEARCH_KEY, text);
+    else sessionStorage.removeItem(LAST_SEARCH_KEY);
+  } catch { /* private mode: nothing kept */ }
+}
+
 export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
   const [oneShotAction, setOneShotAction] = useState(null);
   const { scopes, currentScopeKey, currentScope, resetScope } = useSearchContext();
@@ -179,8 +192,11 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
     recordPick(searchTextRef.current, item, 'play');
     // A playable row's own ▶: play it where the ▶ says. Playback is not
     // navigation, so Search stays open for the next pick.
+    // A film nobody has chosen a screen for asks where (its ▶ read "Play on…").
+    const ask = (route, what = item) => { if (route === 'ask') setOneShotAction({ kind: 'playOn', item: what, returnFocusRef: searchInputRef }); };
     if (!isContainer(item)) {
       const route = dispatchLeafVerb('playNow', id, item);
+      ask(route);
       log.info('dispatch', { contentId: id, route, verb: 'play' });
       return;
     }
@@ -188,11 +204,14 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
     const cont = continueFor(item);
     if (cont) {
       mediaLog.collectionContinued({ collectionId: id, contentId: cont.contentId, label: cont.label });
-      const route = dispatchLeafVerb('playNow', cont.contentId, { id: cont.contentId, title: cont.title, type: 'episode', itemType: 'leaf' });
+      const episode = { id: cont.contentId, title: cont.title, type: 'episode', itemType: 'leaf' };
+      const route = dispatchLeafVerb('playNow', cont.contentId, episode);
+      ask(route, episode);
       log.info('dispatch', { contentId: cont.contentId, route, verb: 'continue' });
       return;
     }
     const route = playContainerAsQueue(id, item);
+    ask(route);
     log.info('dispatch', { contentId: id, route, verb: 'playAll' });
   }, [playContainerAsQueue, dispatchLeafVerb, continueFor, log, addTo, addOnce, recordPick]);
 
@@ -218,7 +237,8 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
       return;
     }
     if (action !== 'detail' && action !== 'details') {
-      dispatchLeafVerb(action === 'upNext' ? 'playFirst' : action, id, item);
+      const route = dispatchLeafVerb(action === 'upNext' ? 'playFirst' : action, id, item);
+      if (route === 'ask') setOneShotAction({ kind: 'playOn', item, returnFocusRef: searchInputRef });
       return;
     }
     applyResultRowVerb('detail', item, { queue, push: pushOverSurface });
@@ -246,6 +266,10 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
   } = combo;
   const searchText = state.search ?? '';
   searchTextRef.current = searchText;
+  // Written only once the open has restored the last words (below), so the
+  // first, empty render does not erase them.
+  const restoredRef = useRef(false);
+  useEffect(() => { if (!addTo && restoredRef.current) rememberSearchText(searchText); }, [searchText, addTo]);
   // What this person picked for these words before comes first.
   // A remembered pick holds row 1 from the first keystroke, in the
   // catalog-wide scope only (see MediaContentSearch).
@@ -267,6 +291,11 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
   useEffect(() => {
     resetScope();
     mediaLog.searchModeEntered({});
+    // Reopening search shows the last words and what they find: going back to
+    // the same search is the common case; ✕ in the box clears it.
+    const last = lastSearchText();
+    if (last && !addTo) handleInput(last);
+    restoredRef.current = true;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally once per mount
   }, []);
 
