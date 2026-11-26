@@ -285,4 +285,13 @@ public class ScreenRemoteTest {
         }
         assertTrue(calls.isEmpty());
     }
+
+    /** The phone is a Play-on target for the web, never for itself. */
+    @Test public void theListLeavesOutThisDevice() throws Exception {
+        JSONObject reply = new JSONObject().put("items", new org.json.JSONArray()
+                .put(new JSONObject().put("id", "phone")).put(new JSONObject().put("id", "office-tv")));
+        org.json.JSONArray left = ScreenRemote.without(reply, "phone", "phone").getJSONArray("items");
+        assertEquals(1, left.length());
+        assertEquals("office-tv", left.getJSONObject(0).getString("id"));
+    }
 }

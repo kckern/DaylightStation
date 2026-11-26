@@ -91,6 +91,20 @@ final class ScreenRemote {
     }
 
     /**
+     * The screen list without this device itself: a phone that is a Play-on target for the
+     * web (its own inbox) is never offered to itself, as a target or as a remote.
+     */
+    static JSONObject without(JSONObject reply, String... self) throws Exception {
+        JSONArray items = reply.optJSONArray("items"), kept = new JSONArray();
+        java.util.Set<String> mine = new java.util.HashSet<>(java.util.Arrays.asList(self));
+        for (int i = 0; items != null && i < items.length(); i++) {
+            JSONObject s = items.optJSONObject(i);
+            if (s != null && !mine.contains(s.optString("id"))) kept.put(s);
+        }
+        return reply.put("items", kept);
+    }
+
+    /**
      * Browsers open as a screen right now (/screen/adhoc, e.g. Charades on a laptop),
      * from the household screen list: a browser screen seen within BROWSER_FRESH_MS, or
      * reported online. Type "browser". When the list cannot be read the configured

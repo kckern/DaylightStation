@@ -347,7 +347,7 @@ public final class MediaServiceCapability implements Capability {
             }
             if ("track-levels".equals(op)) return trackDetail(request, true);
             if ("track-lyrics".equals(op)) return trackDetail(request, false);
-            if ("screens".equals(op)) return new Outcome(200, screens.screens());
+            if ("screens".equals(op)) return new Outcome(200, ScreenRemote.without(screens.screens(), core.deviceId(), InboxIdentity.inboxDeviceId(core.deviceId(), runningOnEmulator())));
             if ("screen-session".equals(op)) return new Outcome(200, screens.session(Json.str(request, "device")));
             if ("screen-command".equals(op)) return new Outcome(200, screens.command(request));
             return failure(400, "bad_request");
