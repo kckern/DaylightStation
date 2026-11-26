@@ -34,6 +34,14 @@ describe('fitDown', () => {
     expect(measured).toBeLessThanOrEqual(6);
   });
 
+  it('never rounds a candidate below a floor with more than two decimals', () => {
+    // 11.5249 rounds to 11.52, under the 11.5241 floor.
+    const applied = [];
+    const r = fitDown({ ceilPx: 12.5249, floorPx: 11.5241, apply: (px) => applied.push(px), ok: (px) => px <= 11.6 });
+    expect(r).toEqual({ px: 11.5241, fits: true });
+    expect(applied.every((px) => px >= 11.5241)).toBe(true);
+  });
+
   it('measures once when the ceiling is the floor', () => {
     let measured = 0;
     const ok = (limit) => (px) => { measured += 1; return px <= limit; };

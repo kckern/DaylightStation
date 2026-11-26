@@ -30,7 +30,12 @@
 export function fitDown({ ceilPx, floorPx, stepPx = 1, apply, ok }) {
   if (!(ceilPx > 0) || !(floorPx > 0) || floorPx > ceilPx) return { px: ceilPx, fits: true };
   const sizes = [];
-  for (let px = ceilPx; px > floorPx + 1e-6; px -= stepPx) sizes.push(Number(px.toFixed(2)));
+  for (let px = ceilPx; px > floorPx + 1e-6; px -= stepPx) {
+    // Rounding can land a step on or under a floor with more than two decimals
+    // (a fractional root size); the floor itself closes the list.
+    const rounded = Number(px.toFixed(2));
+    if (rounded > floorPx) sizes.push(rounded);
+  }
   sizes.push(floorPx);
   const passes = (i) => { apply(sizes[i]); return ok(sizes[i]); };
 
