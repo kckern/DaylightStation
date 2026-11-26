@@ -56,7 +56,18 @@ public class ButtonWidgetConfigActivity extends Activity {
             settings.remember(entry.id, entry.title, entry.art);
             PlaylistPicker.cacheCover(this, entry.id, entry.art);
             assign(store, manager, entry.id, reconfiguring);
-        }), new LinearLayout.LayoutParams(-1, -1));
+        }), new LinearLayout.LayoutParams(-1, 0, 1));
+        // A visible way out: Cancel leaves the widget as it was (no pick, nothing changed).
+        android.widget.TextView cancel = new android.widget.TextView(this);
+        net.kckern.daylight.shellkit.DaylightTheme cancelTheme = net.kckern.daylight.shellkit.DaylightTheme.of(this);
+        cancelTheme.style(cancel, net.kckern.daylight.shellkit.DaylightTheme.Type.BODY, cancelTheme.primary, true);
+        cancel.setText("Cancel");
+        cancel.setGravity(android.view.Gravity.END | android.view.Gravity.CENTER_VERTICAL);
+        int pad = Math.round(14 * getResources().getDisplayMetrics().density);
+        cancel.setPadding(pad, pad, pad, pad);
+        cancel.setBackground(cancelTheme.pressable(null));
+        cancel.setOnClickListener(v -> finish());
+        layout.addView(cancel, new LinearLayout.LayoutParams(-1, -2));
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN
                 | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         setContentView(layout);
