@@ -7,8 +7,9 @@ import { ItemQualityButton } from "../quality/PlaybackQualityButtons.jsx";
 // Opening this page never plays anything: it is where a look lands. It does
 // ask the server to prepare the start on that screen (cast/usePrepareStart.js),
 // which touches no screen. A video may be previewed inside its art
-// (InfoPreview: muted, on this device, records nothing); every play verb
-// stops that preview before it dispatches.
+// (InfoPreview: muted, on this device, records nothing); every verb that
+// sends the item anywhere (play, queue, show briefly) stops that preview first —
+// a queue verb landing in an empty local queue starts a play.
 import React, { useEffect, useRef, useState } from 'react';
 import { Stack, Title, Text, Button, Group } from '@mantine/core';
 import { IconPlayerPlayFilled, IconPlayerTrackNext, IconRowInsertTop, IconPlaylistAdd, IconCast } from '@tabler/icons-react';
@@ -147,25 +148,25 @@ export function DetailView({ contentId, focusPlay = false }) {
           {isContainer(detailItem) && <Button variant="default" onClick={() => { stopPreview(); if (dispatchLeafVerb('shuffle', contentId, detailItem) === 'ask') setOneShot({ kind: 'playOn', item: detailItem }); }}>{elsewhere ? `Shuffle on ${whereName}` : 'Shuffle'}</Button>}
           <Button data-testid="detail-play-next" variant="default" leftSection={<IconPlayerTrackNext size={16} />}
                   {...playNextHold.bind}
-                  onClick={playNextHold.guardClick(() => dispatchLeafVerb('playNext', contentId, detailItem))}>
+                  onClick={playNextHold.guardClick(() => { stopPreview(); dispatchLeafVerb('playNext', contentId, detailItem); })}>
             Play Next
           </Button>
           {playNextHold.offered && (
             <Button data-testid="detail-play-next-front" variant="default" leftSection={<IconRowInsertTop size={16} />}
-                    onClick={() => { mediaLog.playNextFrontChosen({ surface: 'detail' }); playNextHold.dismiss(); dispatchLeafVerb('playFirst', contentId, detailItem); }}>
+                    onClick={() => { stopPreview(); mediaLog.playNextFrontChosen({ surface: 'detail' }); playNextHold.dismiss(); dispatchLeafVerb('playFirst', contentId, detailItem); }}>
               At the very front
             </Button>
           )}
           <Button data-testid="detail-up-next" variant="default" leftSection={<IconRowInsertTop size={16} />}
-                  onClick={() => dispatchLeafVerb('playFirst', contentId, detailItem)}>
+                  onClick={() => { stopPreview(); dispatchLeafVerb('playFirst', contentId, detailItem); }}>
             Play First
           </Button>
           <Button data-testid="detail-add" variant="default" leftSection={<IconPlaylistAdd size={16} />}
-                  onClick={() => dispatchLeafVerb('add', contentId, detailItem)}>
+                  onClick={() => { stopPreview(); dispatchLeafVerb('add', contentId, detailItem); }}>
             Add to Queue
           </Button>
-          <Button variant="default" onClick={() => setOneShot({ kind: 'addOn', item: detailItem })}>Add on…</Button>
-          <Button variant="default" data-testid="detail-show-briefly" onClick={() => setOneShot({ kind: 'showBrieflyOn', item: detailItem })}>Show briefly on…</Button>
+          <Button variant="default" onClick={() => { stopPreview(); setOneShot({ kind: 'addOn', item: detailItem }); }}>Add on…</Button>
+          <Button variant="default" data-testid="detail-show-briefly" onClick={() => { stopPreview(); setOneShot({ kind: 'showBrieflyOn', item: detailItem }); }}>Show briefly on…</Button>
         </Group>
         {elsewhere && (
           <Text size="sm" c="dimmed" data-testid="detail-queue-where">

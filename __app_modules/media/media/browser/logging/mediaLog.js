@@ -219,6 +219,7 @@ export const mediaLog = {
   // the art — never a play. `seconds` is how far it got when stopped.
   previewStarted:         info('preview.started'),
   previewStopped:         info('preview.stopped'),
+  previewFailed:          warn('preview.failed'),
 };
 
 export default mediaLog;

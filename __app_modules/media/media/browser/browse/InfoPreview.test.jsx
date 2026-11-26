@@ -6,10 +6,10 @@ import { resetApiResourceCache } from '../../../../../frontend/src/lib/hooks/use
 
 const apiMock = vi.fn(() => Promise.resolve({ items: [] }));
 vi.mock("../../../../../frontend/src/lib/api.mjs", () => ({ DaylightAPI: (...args) => apiMock(...args) }));
-const log = vi.hoisted(() => ({ started: vi.fn(), stopped: vi.fn() }));
+const log = vi.hoisted(() => ({ started: vi.fn(), stopped: vi.fn(), failed: vi.fn() }));
 vi.mock("../logging/mediaLog.js", async (importOriginal) => {
   const real = await importOriginal();
-  const facade = { ...real.default, previewStarted: log.started, previewStopped: log.stopped };
+  const facade = { ...real.default, previewStarted: log.started, previewStopped: log.stopped, previewFailed: log.failed };
   return { ...real, default: facade, mediaLog: facade };
 });
 
@@ -20,6 +20,7 @@ vi.mock("./useContentInfo.js", () => ({ useContentInfo: () => contentState }));
 vi.mock("../search/useContentDispatch.js", () => ({ useContentDispatch: () => ({ dispatchLeafVerb }) }));
 vi.mock("../household/useItemVerbs.jsx", () => ({ useItemVerbs: () => ({ run, overlays: null, nameFor: (id) => id }) }));
 vi.mock("../cast/CastButton.jsx", () => ({ CastButton: () => null }));
+vi.mock("../actions/ItemDestinationPicker.jsx", () => ({ ItemDestinationPicker: () => null }));
 const pop = vi.fn();
 vi.mock("../shell/NavProvider.jsx", () => ({ useNav: () => ({ pop, backDestination: 'Search' }) }));
 
@@ -115,6 +116,30 @@ describe('InfoPreview', () => {
     expect(onStop).toHaveBeenCalled();
   });
 
+  it('uses a glyph of its own, not Mark watched\'s eye', () => {
+    wrap(<InfoPreview item={FILM} />);
+    const btn = screen.getByTestId('detail-preview');
+    expect(btn.querySelector('.tabler-icon-eye')).toBeNull();
+    expect(btn.querySelector('.tabler-icon-movie')).not.toBeNull();
+  });
+
+  it('a file that cannot play logs preview.failed and stops', async () => {
+    wrap(<InfoPreview item={FILM} />);
+    await act(async () => { fireEvent.click(screen.getByTestId('detail-preview')); });
+    fireEvent.error(document.querySelector('video'));
+    expect(log.failed).toHaveBeenCalledWith(expect.objectContaining({ contentId: 'plex:55854', error: expect.any(String) }));
+    expect(log.stopped).toHaveBeenCalled();
+    expect(document.querySelector('video')).toBeNull();
+  });
+
+  it('a refused play() logs preview.failed and stops', async () => {
+    HTMLMediaElement.prototype.play.mockImplementation(() => Promise.reject(new Error('NotSupportedError')));
+    wrap(<InfoPreview item={FILM} />);
+    await act(async () => { fireEvent.click(screen.getByTestId('detail-preview')); });
+    expect(log.failed).toHaveBeenCalledWith({ contentId: 'plex:55854', error: 'NotSupportedError' });
+    expect(document.querySelector('video')).toBeNull();
+  });
+
   it('unmounting stops it', async () => {
     const { unmount } = wrap(<InfoPreview item={FILM} />);
     await act(async () => { fireEvent.click(screen.getByTestId('detail-preview')); });
@@ -137,6 +162,30 @@ describe('DetailView with a preview (Review Focus 4)', () => {
     expect(document.querySelector('video')).toBeNull();
     expect(writes()).toEqual([]);
     expect(calls.some(([url]) => /play\/log|progress/.test(String(url)))).toBe(false);
+  });
+
+  it.each([
+    ['Play Next', 'detail-play-next', 'playNext'],
+    ['Play First', 'detail-up-next', 'playFirst'],
+    ['Add to Queue', 'detail-add', 'add'],
+  ])('%s stops the preview before it sends', async (_name, testId, verb) => {
+    const order = [];
+    log.stopped.mockImplementation(() => order.push('preview-stopped'));
+    dispatchLeafVerb.mockImplementation(() => { order.push('dispatch'); return 'local'; });
+    wrap(<DetailView contentId="plex:55854" />);
+    await act(async () => { fireEvent.click(screen.getByTestId('detail-preview')); });
+    fireEvent.click(screen.getByTestId(testId));
+    expect(dispatchLeafVerb).toHaveBeenCalledWith(verb, 'plex:55854', expect.anything());
+    expect(order).toEqual(['preview-stopped', 'dispatch']);
+    expect(document.querySelector('video')).toBeNull();
+  });
+
+  it.each([['Add on…'], ['Show briefly on…']])('%s stops the preview', async (label) => {
+    wrap(<DetailView contentId="plex:55854" />);
+    await act(async () => { fireEvent.click(screen.getByTestId('detail-preview')); });
+    fireEvent.click(screen.getByRole('button', { name: label }));
+    expect(log.stopped).toHaveBeenCalled();
+    expect(document.querySelector('video')).toBeNull();
   });
 
   it('Back stops it', async () => {

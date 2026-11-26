@@ -25,13 +25,13 @@
 //
 // It starts only on a press of its own control (never on open, focus or
 // hover), plays muted, and carries a "Preview" label on the art. Its control is
-// a default (grey) button with an eye glyph: amber and ▶ belong to PLAY. The
+// a default (grey) button with a film glyph (the eye is Mark watched's): amber and ▶ belong to PLAY. The
 // parent stops it through the ref (`stop()`) before PLAY dispatches; unmount
 // (Back) stops it too. Stopping pauses, removes `src` and calls load(), which
 // aborts the download.
 import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { Button, Image, UnstyledButton } from '@mantine/core';
-import { IconEye, IconPlayerStop, IconVolume, IconVolumeOff } from '@tabler/icons-react';
+import { IconMovie, IconPlayerStop, IconVolume, IconVolumeOff } from '@tabler/icons-react';
 import { itemKind } from "../habits/mediaHabits.js";
 import mediaLog from "../logging/mediaLog.js";
 
@@ -78,6 +78,17 @@ export const InfoPreview = forwardRef(function InfoPreview({ item, onStart, onSt
     onStopRef.current?.();
   }, []);
 
+  // A preview that cannot play says so in the log and gets out of the way.
+  const fail = useCallback((err) => {
+    const live = liveRef.current;
+    if (!live) return;
+    const error = err?.message || err?.name || (err?.target?.error?.message) || 'media-error';
+    mediaLog.previewFailed({ contentId: live.contentId, error: String(error) });
+    stop();
+  }, [stop]);
+  const failRef = useRef(fail);
+  failRef.current = fail;
+
   useImperativeHandle(ref, () => ({ stop }), [stop]);
 
   // Unmount (Back) or a different item stops it.
@@ -90,7 +101,7 @@ export const InfoPreview = forwardRef(function InfoPreview({ item, onStart, onSt
     if (!video) return;
     video.muted = true;
     const started = video.play?.();
-    if (started && typeof started.catch === 'function') started.catch(() => {});
+    if (started && typeof started.catch === 'function') started.catch((err) => failRef.current(err));
   }, [playing]);
 
   if (!src) {
@@ -120,6 +131,7 @@ export const InfoPreview = forwardRef(function InfoPreview({ item, onStart, onSt
                 playsInline
                 disableRemotePlayback
                 preload="auto"
+                onError={(e) => fail(e.currentTarget?.error || e)}
                 poster={item.thumbnail || undefined}
               />
               <span className="detail-preview-label" data-testid="detail-preview-label">Preview</span>
@@ -144,7 +156,7 @@ export const InfoPreview = forwardRef(function InfoPreview({ item, onStart, onSt
         variant="default"
         size="xs"
         aria-pressed={playing}
-        leftSection={playing ? <IconPlayerStop size={14} /> : <IconEye size={14} />}
+        leftSection={playing ? <IconPlayerStop size={14} /> : <IconMovie size={14} />}
         onClick={playing ? stop : start}
       >
         {playing ? 'Stop preview' : 'Preview'}
