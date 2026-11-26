@@ -88,10 +88,36 @@ public class ScreenRemoteTest {
         assertEquals(404, remote.session("office-tv").getInt("status"));
     }
 
+    /** A backend failure, or a 503 that is not a screen being off, is not "off". */
+    @Test public void aBackendFailureIsNotAScreenThatIsOff() throws Exception {
+        status = 500; body = "boom";
+        assertEquals(500, remote.session("office-tv").getInt("status"));
+        status = 503; body = "{\"ok\":false,\"error\":\"sessions not configured\"}";
+        JSONObject r = remote.session("office-tv");
+        assertEquals(500, r.getInt("status"));
+        assertFalse(r.has("snapshot"));
+    }
+
     @Test(expected = MediaApi.Refused.class)
     public void anyOtherStatusIsARefusal() throws Exception {
-        status = 500;
+        status = 418;
         remote.session("office-tv");
+    }
+
+    @Test public void aCommandSentButNotAnsweredSaysSoAndIsNotRetried() throws Exception {
+        ScreenRemote slow = new ScreenRemote(new Http() {
+            @Override public Reply get(String url) { throw new AssertionError(); }
+            @Override public Reply postJson(String url, String json) throws java.io.IOException {
+                calls.add("POST " + url);
+                throw new java.net.SocketTimeoutException("read timed out");
+            }
+            @Override public Reply postFile(String url, String c, File f, Map<String, String> h) { throw new AssertionError(); }
+        }, path -> "https://home.example" + path, () -> "Phone", () -> "cmd-9");
+        JSONObject r = slow.command(new JSONObject().put("device", "office-tv").put("command", "transport").put("action", "pause"));
+        assertTrue(r.getBoolean("ok"));
+        assertFalse(r.getBoolean("accepted"));
+        assertEquals("no_answer", r.getString("code"));
+        assertEquals(1, calls.size());
     }
 
     @Test(expected = IllegalArgumentException.class)

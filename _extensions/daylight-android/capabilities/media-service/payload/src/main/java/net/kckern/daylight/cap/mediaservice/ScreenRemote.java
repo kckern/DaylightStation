@@ -85,10 +85,14 @@ final class ScreenRemote {
         JSONObject reply = Replies.ok().put("status", r.status);
         if (r.status == 200) {
             reply.put("snapshot", artwork(new JSONObject(r.body)));
-        } else if (r.status == 503) {
+        } else if (r.status == 503 && parse(r.body).optBoolean("offline", false)) {
             JSONObject off = parse(r.body);
             if (off.optJSONObject("lastKnown") != null) reply.put("snapshot", artwork(off.getJSONObject("lastKnown")));
             reply.put("lastSeenAt", off.optString("lastSeenAt", ""));
+        } else if (r.status >= 500) {
+            // The backend failed (or its sessions are not set up: a 503 without "offline").
+            // Not the screen being off: the installed player keeps its last answer for a while.
+            reply.put("status", 500);
         } else if (r.status != 204 && r.status != 404) {
             throw new MediaApi.Refused("device session", r.status);
         }
@@ -167,7 +171,14 @@ final class ScreenRemote {
                 throw new IllegalArgumentException("command");
         }
         String target = url.apply(base(device) + path);
-        Http.Reply r = put ? http.putJson(target, body.toString()) : http.postJson(target, body.toString());
+        Http.Reply r;
+        try {
+            r = put ? http.putJson(target, body.toString()) : http.postJson(target, body.toString());
+        } catch (java.net.SocketTimeoutException sentNoAnswer) {
+            // Written and not answered in time: the screen may still do it. Said so, not retried.
+            return Replies.ok().put("status", 0).put("commandId", commandId).put("accepted", false)
+                    .put("code", "no_answer").put("error", "");
+        }
         JSONObject answer = parse(r.body);
         JSONObject reply = Replies.ok().put("status", r.status).put("commandId", commandId).put("accepted", r.ok());
         if (!r.ok()) {

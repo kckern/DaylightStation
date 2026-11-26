@@ -106,6 +106,13 @@ public class NowPlayingActivity extends Activity {
     private final Runnable ticker = this::tickPosition;
     private final Runnable clearVolumeLine = () -> { volumeLine = ""; render(); };
     private ExecutorService io;
+    /** Artwork on its own thread: a slow screens list must not hold a cover back. */
+    private ExecutorService artIo;
+    private final Runnable reconnect = this::connect;
+    /** While on screen with no controller, connect again after this long (doubling to 15 s). */
+    private long reconnectMs = 1000;
+    private boolean started;
+    private String connectionLine = "";
     private final PayloadMedia media = new PayloadMedia();
     private final List<Screen> screens = new ArrayList<>();
     private String screensProblem = "";
@@ -135,8 +142,13 @@ public class NowPlayingActivity extends Activity {
             t.setDaemon(true);
             return t;
         });
+        artIo = Executors.newSingleThreadExecutor(r -> {
+            Thread t = new Thread(r, "Daylight-nowplaying-art");
+            t.setDaemon(true);
+            return t;
+        });
         buildViews();
-        chooseInitialTarget(getIntent());
+        chooseInitialTarget(getIntent(), saved);
         loadScreens();
         Log.i(TAG, "now playing opened, target " + target);
     }
@@ -146,31 +158,59 @@ public class NowPlayingActivity extends Activity {
         setIntent(intent);
         String asked = intent == null ? "" : intent.getStringExtra(EXTRA_TARGET);
         if (asked != null && !asked.isEmpty() && !asked.equals(target)) switchTo(asked, nameOf(asked));
+        else if (controller == null && pending == null && started) connect();
+    }
+
+    /** The target chosen here outlives a rotation; the opening intent's does not override it. */
+    @Override protected void onSaveInstanceState(Bundle out) {
+        super.onSaveInstanceState(out);
+        out.putString(EXTRA_TARGET, target);
     }
 
     @Override protected void onStart() {
         super.onStart();
+        started = true;
+        reconnectMs = 1000;
         connect();
         main.post(ticker);
+        if (screens.isEmpty() || !screensProblem.isEmpty()) loadScreens();
     }
 
     @Override protected void onStop() {
+        started = false;
         main.removeCallbacks(ticker);
+        main.removeCallbacks(reconnect);
         disconnect();
         super.onStop();
     }
 
     @Override protected void onDestroy() {
         if (io != null) io.shutdownNow();
+        if (artIo != null) artIo.shutdownNow();
         super.onDestroy();
+    }
+
+    /**
+     * Lost or never got the player (the service was killed, a bind failed on a cold start):
+     * say so and try again while the screen is open, rather than sit on disabled controls.
+     */
+    private void lostPlayer(String why) {
+        connectionLine = why;
+        render();
+        if (!started) return;
+        main.removeCallbacks(reconnect);
+        main.postDelayed(reconnect, reconnectMs);
+        Log.w(TAG, "now playing: " + why + ", again in " + reconnectMs + " ms");
+        reconnectMs = Math.min(15_000, reconnectMs * 2);
     }
 
     // ── targets ──────────────────────────────────────────────────────────────
 
     private SharedPreferences prefs() { return getSharedPreferences(PREFS, MODE_PRIVATE); }
 
-    private void chooseInitialTarget(Intent intent) {
-        String asked = intent == null ? null : intent.getStringExtra(EXTRA_TARGET);
+    private void chooseInitialTarget(Intent intent, Bundle saved) {
+        String asked = saved != null ? saved.getString(EXTRA_TARGET) : null;
+        if (asked == null || asked.isEmpty()) asked = intent == null ? null : intent.getStringExtra(EXTRA_TARGET);
         if (asked == null || asked.isEmpty()) asked = prefs().getString(EXTRA_TARGET, LOCAL);
         target = asked;
         targetName = LOCAL.equals(asked) ? "This phone" : prefs().getString("name:" + asked, asked);
@@ -188,6 +228,10 @@ public class NowPlayingActivity extends Activity {
         target = id;
         targetName = name;
         prefs().edit().putString(EXTRA_TARGET, id).putString("name:" + id, name).apply();
+        setIntent(new Intent(getIntent()).putExtra(EXTRA_TARGET, id));
+        main.removeCallbacks(reconnect);
+        reconnectMs = 1000;
+        connectionLine = "";
         remoteStatus = "";
         shownArtwork = null;
         renderTargets();
@@ -218,7 +262,18 @@ public class NowPlayingActivity extends Activity {
                 for (Screen sc : found) e.putString("type:" + sc.id, sc.type);
                 e.apply();
                 screensProblem = p;
-                if (!LOCAL.equals(target)) targetName = nameOf(target);
+                if (!LOCAL.equals(target)) {
+                    String named = nameOf(target);
+                    // The pick was sent before the names were known: send it again, named.
+                    if (!named.equals(targetName) && controller != null && controller.isConnected()) {
+                        targetName = named;
+                        Bundle args = new Bundle();
+                        args.putString(RemoteControlService.EXTRA_DEVICE, target);
+                        args.putString(RemoteControlService.EXTRA_NAME, named);
+                        controller.sendCustomCommand(new SessionCommand(RemoteControlService.TARGET, Bundle.EMPTY), args);
+                    }
+                    targetName = named;
+                }
                 renderTargets();
                 render();
             });
@@ -243,7 +298,7 @@ public class NowPlayingActivity extends Activity {
                             render();
                         }
                         @Override public void onDisconnected(MediaController c) {
-                            if (c == controller) { controller = null; render(); }
+                            if (c == controller) { controller = null; lostPlayer("Reconnecting…"); }
                         }
                     })
                     .buildAsync();
@@ -255,6 +310,8 @@ public class NowPlayingActivity extends Activity {
                     MediaController c = mine.get();
                     if (!forTarget.equals(target) || isFinishing()) { c.release(); return; }
                     controller = c;
+                    connectionLine = "";
+                    reconnectMs = 1000;
                     c.addListener(new Player.Listener() {
                         @Override public void onEvents(Player player, Player.Events events) { render(); }
                     });
@@ -268,12 +325,13 @@ public class NowPlayingActivity extends Activity {
                     render();
                 } catch (Exception failed) {
                     Log.w(TAG, "now playing: no media controller: " + failed.getClass().getSimpleName());
-                    status.setText("Could not reach the player");
+                    lostPlayer("Could not reach the player; trying again");
                 }
             }, main::post);
         } catch (RuntimeException failed) {
             Log.w(TAG, "now playing: could not reach the media service: " + failed.getClass().getSimpleName());
-            status.setText("Could not reach the player");
+            pending = null;
+            lostPlayer("Could not reach the player; trying again");
         }
     }
 
@@ -335,7 +393,7 @@ public class NowPlayingActivity extends Activity {
 
         String line;
         if (!volumeLine.isEmpty()) line = volumeLine;
-        else if (c == null) line = pending != null ? "Connecting…" : "";
+        else if (c == null) line = pending != null ? "Connecting…" : connectionLine;
         else if (remote()) line = remoteStatus;
         else line = c.getPlayerError() != null ? "Could not play this" : "";
         status.setText(line);
@@ -423,7 +481,7 @@ public class NowPlayingActivity extends Activity {
         placeholder(hasItem ? R.drawable.daylight_np_note : targetIcon(target), hasItem ? 1f : 0.4f);
         if (uri == null) return;
         String url = uri.toString();
-        io.execute(() -> {
+        artIo.execute(() -> {
             Bitmap bitmap = PlaylistArtwork.load(url, 900);
             main.post(() -> {
                 if (!key.equals(shownArtwork) || bitmap == null) return;
@@ -568,6 +626,7 @@ public class NowPlayingActivity extends Activity {
 
     /** Pick a player: this phone and every screen, the current one checked (Jellyfin's "Play On"). */
     private void openTargets() {
+        if (screens.isEmpty() || !screensProblem.isEmpty()) loadScreens();
         List<String> ids = new ArrayList<>();
         List<String> names = new ArrayList<>();
         ids.add(LOCAL); names.add("This phone");

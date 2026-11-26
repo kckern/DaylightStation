@@ -65,13 +65,23 @@ public final class BackendHttp implements Http {
         return sendJson("PUT", url, json);
     }
 
+    /**
+     * A failure before the body is written (no route, a connect timeout) is NotSentException;
+     * a SocketTimeoutException after it means sent and not answered in time. A caller that
+     * must not repeat a command (a screen's pause) tells the two apart.
+     */
     private Reply sendJson(String method, String url, String json) throws IOException {
-        HttpURLConnection c = open(url, method, READ_MS);
         byte[] bytes = (json == null ? "{}" : json).getBytes(StandardCharsets.UTF_8);
-        c.setDoOutput(true);
-        c.setRequestProperty("Content-Type", "application/json");
-        c.setFixedLengthStreamingMode(bytes.length);
-        try (OutputStream out = c.getOutputStream()) { out.write(bytes); }
+        HttpURLConnection c;
+        try {
+            c = open(url, method, READ_MS);
+            c.setDoOutput(true);
+            c.setRequestProperty("Content-Type", "application/json");
+            c.setFixedLengthStreamingMode(bytes.length);
+            try (OutputStream out = c.getOutputStream()) { out.write(bytes); }
+        } catch (IOException notSent) {
+            throw beforeTheBody(notSent);
+        }
         return finish(c);
     }
 

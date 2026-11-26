@@ -34,11 +34,13 @@ final class ScreenCommands {
     /**
      * SimpleBasePlayer turns every seek-like call into (target index, position, the
      * command that asked). The command says what was meant; the index is only used to
-     * pick the queue entry for a jump.
+     * pick the queue entry for a jump, from the ids as they were shown.
      *
+     * @param ids     the queue ids in the order the controller showed them
+     * @param current the index of the item shown as playing
      * @return null when the call asks for nothing (a jump to an entry that is gone)
      */
-    static JSONObject seek(String device, ScreenSnapshot snap, int index, long positionMs, int command) {
+    static JSONObject seek(String device, List<String> ids, int current, int index, long positionMs, int command) {
         switch (command) {
             case Player.COMMAND_SEEK_TO_NEXT:
             case Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM:
@@ -53,39 +55,41 @@ final class ScreenCommands {
             case Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM:
                 return transport(device, "seekAbs", seconds(positionMs));
             default:
-                if (index == snap.current) return transport(device, "seekAbs", seconds(positionMs));
-                if (index < 0 || index >= snap.entries.size()) return null;
-                return with(queue(device, "jump"), "queueItemId", snap.entries.get(index).queueItemId);
+                if (index == current) return transport(device, "seekAbs", seconds(positionMs));
+                if (index < 0 || index >= ids.size()) return null;
+                return with(queue(device, "jump"), "queueItemId", ids.get(index));
         }
     }
 
     /** Removing every entry is a clear; otherwise one remove per entry, by id. */
-    static List<JSONObject> remove(String device, ScreenSnapshot snap, int fromIndex, int toIndex) {
+    static List<JSONObject> remove(String device, List<String> ids, int fromIndex, int toIndex) {
         List<JSONObject> out = new ArrayList<>();
-        int from = Math.max(0, fromIndex), to = Math.min(snap.entries.size(), toIndex);
+        int from = Math.max(0, fromIndex), to = Math.min(ids.size(), toIndex);
         if (from >= to) return out;
-        if (from == 0 && to == snap.entries.size()) {
+        if (from == 0 && to == ids.size()) {
             out.add(queue(device, "clear"));
             return out;
         }
-        for (int i = from; i < to; i++) {
-            out.add(with(queue(device, "remove"), "queueItemId", snap.entries.get(i).queueItemId));
-        }
+        for (int i = from; i < to; i++) out.add(with(queue(device, "remove"), "queueItemId", ids.get(i)));
         return out;
     }
 
     /** The whole new order, by id, the way Media3 describes a move. */
-    static JSONObject move(String device, ScreenSnapshot snap, int fromIndex, int toIndex, int newIndex) {
-        List<ScreenSnapshot.Entry> order = new ArrayList<>(snap.entries);
+    static JSONObject move(String device, List<String> ids, int fromIndex, int toIndex, int newIndex) {
+        List<String> order = new ArrayList<>(ids);
         int from = Math.max(0, fromIndex), to = Math.min(order.size(), toIndex);
         if (from >= to) return null;
-        List<ScreenSnapshot.Entry> moved = new ArrayList<>(order.subList(from, to));
+        List<String> moved = new ArrayList<>(order.subList(from, to));
         order.subList(from, to).clear();
-        int at = Math.max(0, Math.min(order.size(), newIndex));
-        order.addAll(at, moved);
-        JSONArray ids = new JSONArray();
-        for (ScreenSnapshot.Entry e : order) ids.put(e.queueItemId);
-        return with(queue(device, "reorder"), "items", ids);
+        order.addAll(Math.max(0, Math.min(order.size(), newIndex)), moved);
+        return with(queue(device, "reorder"), "items", new JSONArray(order));
+    }
+
+    /** The queue ids of a snapshot, in its order (what a controller shows for it). */
+    static List<String> ids(ScreenSnapshot snap) {
+        List<String> out = new ArrayList<>();
+        for (ScreenSnapshot.Entry e : snap.entries) out.add(e.queueItemId);
+        return out;
     }
 
     static JSONObject shuffle(String device, boolean enabled) {

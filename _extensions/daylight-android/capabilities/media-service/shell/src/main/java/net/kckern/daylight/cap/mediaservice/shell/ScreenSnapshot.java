@@ -19,7 +19,7 @@ import java.util.List;
  */
 final class ScreenSnapshot {
     /** Where the answer stands, from the backend's status. */
-    enum Reach { PLAYING_OR_PAUSED, IDLE, OFF, NOT_ON, UNREACHABLE }
+    enum Reach { PLAYING_OR_PAUSED, IDLE, OFF, NOT_ON, UNREACHABLE, ERROR }
 
     static final class Entry {
         final String queueItemId;
@@ -67,8 +67,17 @@ final class ScreenSnapshot {
     }
 
     static ScreenSnapshot unreachable() {
-        return new ScreenSnapshot(Reach.UNREACHABLE, "idle", new ArrayList<>(), -1, 0, false, "off", -1, "", "");
+        return unreachable("");
     }
+
+    /** @param why the line to show ("Daylight is starting"); empty: "Can't reach home" */
+    static ScreenSnapshot unreachable(String why) {
+        return new ScreenSnapshot(Reach.UNREACHABLE, "idle", new ArrayList<>(), -1, 0, false, "off", -1,
+                why == null ? "" : why, "");
+    }
+
+    /** No answer about the screen at all: the phone, the network or the backend failed, not the screen. */
+    boolean failed() { return reach == Reach.UNREACHABLE || reach == Reach.ERROR; }
 
     /** @param reply the payload's screen-session answer: {ok, status, snapshot?, lastSeenAt?} */
     static ScreenSnapshot parse(JSONObject reply) {
@@ -80,6 +89,7 @@ final class ScreenSnapshot {
         else if (status == 204) reach = Reach.IDLE;
         else if (status == 503) reach = Reach.OFF;
         else if (status == 404) reach = Reach.NOT_ON;
+        else if (status >= 500) return new ScreenSnapshot(Reach.ERROR, "idle", new ArrayList<>(), -1, 0, false, "off", -1, "", "");
         else return unreachable();
         if (snap == null) {
             return new ScreenSnapshot(reach, "idle", new ArrayList<>(), -1, 0, false, "off", -1, "",
@@ -91,11 +101,14 @@ final class ScreenSnapshot {
         JSONArray items = queue == null ? null : queue.optJSONArray("items");
         int currentIndex = queue == null ? -1 : queue.optInt("currentIndex", -1);
         List<Entry> entries = new ArrayList<>();
+        // One entry per queueItemId: the player's playlist refuses a repeated id (it would
+        // throw on the main thread at every answer), so a repeat in a snapshot is dropped.
+        java.util.Set<String> seen = new java.util.HashSet<>();
         for (int i = 0; items != null && i < items.length(); i++) {
             JSONObject item = items.optJSONObject(i);
             if (item == null) continue;
             String id = item.optString("queueItemId", "");
-            if (id.isEmpty()) continue;
+            if (id.isEmpty() || !seen.add(id)) continue;
             boolean playing = i == currentIndex && currentItem != null;
             // The current item's own fields are the screen's best word on it (its title comes
             // from the play route); a queue entry may still carry a placeholder title.
@@ -106,6 +119,11 @@ final class ScreenSnapshot {
             if (playing) currentIndex = entries.size() - 1;
         }
         if (currentIndex >= entries.size()) currentIndex = -1;
+        // The queue's index may be missing or off while the current item names its entry.
+        if (currentIndex < 0 && currentItem != null && !currentItem.optString("queueItemId", "").isEmpty()) {
+            String named = currentItem.optString("queueItemId", "");
+            for (int i = 0; i < entries.size(); i++) if (entries.get(i).queueItemId.equals(named)) { currentIndex = i; break; }
+        }
         // A screen may play an item that is not in its queue (a brief, a direct load).
         if (currentIndex < 0 && currentItem != null) {
             String id = currentItem.optString("queueItemId", "");
@@ -134,7 +152,8 @@ final class ScreenSnapshot {
         switch (reach) {
             case OFF: return screenName + " is off";
             case NOT_ON: return screenName + " is not on";
-            case UNREACHABLE: return "Can't reach home";
+            case UNREACHABLE: return note.isEmpty() ? "Can't reach home" : note;
+            case ERROR: return "Home could not answer for " + screenName;
             case IDLE: return "Nothing playing on " + screenName;
             // A note says why playback stopped ("Paused by Phone"); while the screen plays it is history.
             default: return "playing".equals(state) ? "" : note;

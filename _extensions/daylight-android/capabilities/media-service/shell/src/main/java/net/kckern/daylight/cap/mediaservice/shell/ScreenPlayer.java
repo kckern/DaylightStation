@@ -13,6 +13,7 @@ import androidx.media3.common.MediaMetadata;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
 import androidx.media3.common.SimpleBasePlayer;
+import androidx.media3.common.Timeline;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.util.concurrent.Futures;
@@ -43,6 +44,16 @@ final class ScreenPlayer extends SimpleBasePlayer {
     private static final String TAG = "Daylight-Media";
     /** How long a refused command's line stays up before the screen's own line returns. */
     private static final long COMMAND_LINE_MS = 8000;
+    /**
+     * Failed reads in a row that keep the last good answer on show (greyed: no commands)
+     * before it is replaced. One VPN blip must not empty the remote, drop the notification
+     * and let the service stop while the TV plays on.
+     */
+    static final int MISS_LIMIT = 3;
+    /** ...and for at least this long, so a 1 s watch poll does not use up MISS_LIMIT in 3 s. */
+    static final long MISS_KEEP_MS = 20_000;
+    /** A command still waiting this long is not sent: a late pause or skip is worse than none. */
+    static final long STALE_COMMAND_MS = 5000;
 
     /** The payload's screen ops. Called on io, never on the main thread. */
     interface Link {
@@ -54,7 +65,12 @@ final class ScreenPlayer extends SimpleBasePlayer {
     interface Status { void changed(String line); }
 
     private final Handler main;
-    private final Executor io;
+    private final Executor reads;
+    /** One command at a time, in tap order. Separate from reads, so a slow read never delays a tap. */
+    private final Executor commandsOut;
+    /** Per kind (play/pause, volume), the newest command; an older one still waiting is dropped. */
+    private final java.util.concurrent.ConcurrentHashMap<String, Long> newest = new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.concurrent.atomic.AtomicLong sequence = new java.util.concurrent.atomic.AtomicLong();
     private final Link link;
     private final Status status;
 
@@ -69,18 +85,33 @@ final class ScreenPlayer extends SimpleBasePlayer {
     private String commandLine = "";
     private long commandLineAt;
     private String shownLine;
+    /** Failed reads in a row; while 1..MISS_LIMIT-1 the last good answer stays, without commands. */
+    private int misses;
+    private long firstMissAt;
+    private String missLine = "";
 
-    ScreenPlayer(Looper looper, Executor io, Link link, Status status) {
+    ScreenPlayer(Looper looper, Executor reads, Executor commands, Link link, Status status) {
         super(looper);
         this.main = new Handler(looper);
-        this.io = io;
+        this.reads = reads;
+        this.commandsOut = commands;
         this.link = link;
         this.status = status;
     }
 
     /** Points the player at a screen. The previous screen's answers still in flight are dropped. */
     void setScreen(String device, String name) {
-        if (device != null && device.equals(this.device)) { refresh(); return; }
+        if (device != null && device.equals(this.device)) {
+            // The same screen, perhaps with its real name now (the list loaded after the pick).
+            if (name != null && !name.isEmpty() && !name.equals(device) && !name.equals(this.name)) {
+                this.name = name;
+                invalidateState();
+                shownLine = null;
+                publishStatus();
+            }
+            refresh();
+            return;
+        }
         generation++;
         this.device = device;
         this.name = name == null || name.isEmpty() ? String.valueOf(device) : name;
@@ -88,8 +119,14 @@ final class ScreenPlayer extends SimpleBasePlayer {
         snapAt = SystemClock.elapsedRealtime();
         reading = false;
         commandLine = "";
+        misses = 0;
+        missLine = "";
         Log.i(TAG, "remote screen " + device);
         invalidateState();
+        // Not the previous screen's line: say what is happening until this one answers.
+        shownLine = null;
+        status.changed("Connecting to " + this.name + "…");
+        shownLine = "Connecting to " + this.name + "…";
         refresh();
     }
 
@@ -105,7 +142,7 @@ final class ScreenPlayer extends SimpleBasePlayer {
         reading = true;
         final long gen = generation;
         final String target = device;
-        io.execute(() -> {
+        reads.execute(() -> {
             ScreenSnapshot answer = read(target);
             main.post(() -> {
                 if (gen != generation) return;
@@ -118,12 +155,30 @@ final class ScreenPlayer extends SimpleBasePlayer {
     private ScreenSnapshot read(String target) {
         try {
             return ScreenSnapshot.parse(link.session(target));
+        } catch (net.kckern.daylight.api.PayloadPort.NotReadyException starting) {
+            return ScreenSnapshot.unreachable("Daylight is starting");
         } catch (Exception unreachable) {
             return ScreenSnapshot.unreachable();
         }
     }
 
     private void apply(ScreenSnapshot answer) {
+        if (answer.failed()) {
+            if (misses == 0) firstMissAt = SystemClock.elapsedRealtime();
+            misses++;
+            missLine = answer.statusLine(name);
+            boolean keep = misses < MISS_LIMIT || SystemClock.elapsedRealtime() - firstMissAt < MISS_KEEP_MS;
+            if (keep && !snap.failed() && snap.reach != ScreenSnapshot.Reach.NOT_ON && device != null) {
+                // Keep showing what the screen last said; commands wait until it answers again.
+                Log.w(TAG, "remote read failed " + misses + "/" + MISS_LIMIT + ", keeping the last answer");
+                invalidateState();
+                publishStatus();
+                return;
+            }
+        } else {
+            misses = 0;
+            missLine = "";
+        }
         ScreenSnapshot.Entry before = snap.currentEntry(), now = answer.currentEntry();
         stalled = "playing".equals(answer.state) && "playing".equals(snap.state) && before != null && now != null
                 && before.queueItemId.equals(now.queueItemId) && answer.positionMs == snap.positionMs;
@@ -134,7 +189,8 @@ final class ScreenPlayer extends SimpleBasePlayer {
     }
 
     private void publishStatus() {
-        String line = !commandLine.isEmpty() && SystemClock.elapsedRealtime() - commandLineAt < COMMAND_LINE_MS
+        String line = misses > 0 && !missLine.isEmpty() ? missLine
+                : !commandLine.isEmpty() && SystemClock.elapsedRealtime() - commandLineAt < COMMAND_LINE_MS
                 ? commandLine : snap.statusLine(name);
         if (line.equals(shownLine)) return;
         shownLine = line;
@@ -196,9 +252,13 @@ final class ScreenPlayer extends SimpleBasePlayer {
     private Commands commands() {
         Commands.Builder c = new Commands.Builder().addAll(
                 COMMAND_GET_CURRENT_MEDIA_ITEM, COMMAND_GET_TIMELINE, COMMAND_GET_METADATA, COMMAND_GET_DEVICE_VOLUME);
-        if (device == null || !snap.online()) return c.build();
-        c.addAll(COMMAND_SET_DEVICE_VOLUME, COMMAND_ADJUST_DEVICE_VOLUME,
-                COMMAND_SET_DEVICE_VOLUME_WITH_FLAGS, COMMAND_ADJUST_DEVICE_VOLUME_WITH_FLAGS);
+        // While reads are failing, the last answer is shown but nothing is offered to send.
+        if (device == null || !snap.online() || misses > 0) return c.build();
+        // A volume the screen did not report is not guessed: a key press would set it from 0.
+        if (snap.volume >= 0) {
+            c.addAll(COMMAND_SET_DEVICE_VOLUME, COMMAND_ADJUST_DEVICE_VOLUME,
+                    COMMAND_SET_DEVICE_VOLUME_WITH_FLAGS, COMMAND_ADJUST_DEVICE_VOLUME_WITH_FLAGS);
+        }
         if (snap.entries.isEmpty()) return c.build();
         c.addAll(COMMAND_PLAY_PAUSE, COMMAND_STOP, COMMAND_SEEK_TO_NEXT, COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
                 COMMAND_SEEK_TO_PREVIOUS, COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM, COMMAND_SEEK_BACK,
@@ -212,7 +272,7 @@ final class ScreenPlayer extends SimpleBasePlayer {
     // ── what Media3 asks of it ───────────────────────────────────────────────
 
     @Override protected ListenableFuture<?> handleSetPlayWhenReady(boolean playWhenReady) {
-        return send(ScreenCommands.playWhenReady(device, playWhenReady));
+        return send(ScreenCommands.playWhenReady(device, playWhenReady), "play-pause");
     }
 
     @Override protected ListenableFuture<?> handlePrepare() {
@@ -231,15 +291,15 @@ final class ScreenPlayer extends SimpleBasePlayer {
     }
 
     @Override protected ListenableFuture<?> handleSeek(int mediaItemIndex, long positionMs, int seekCommand) {
-        return send(ScreenCommands.seek(device, snap, mediaItemIndex, positionMs, seekCommand));
+        return send(ScreenCommands.seek(device, shownIds(), getCurrentMediaItemIndex(), mediaItemIndex, positionMs, seekCommand));
     }
 
     @Override protected ListenableFuture<?> handleRemoveMediaItems(int fromIndex, int toIndex) {
-        return sendAll(ScreenCommands.remove(device, snap, fromIndex, toIndex));
+        return sendAll(ScreenCommands.remove(device, shownIds(), fromIndex, toIndex));
     }
 
     @Override protected ListenableFuture<?> handleMoveMediaItems(int fromIndex, int toIndex, int newIndex) {
-        return send(ScreenCommands.move(device, snap, fromIndex, toIndex, newIndex));
+        return send(ScreenCommands.move(device, shownIds(), fromIndex, toIndex, newIndex));
     }
 
     @Override protected ListenableFuture<?> handleSetShuffleModeEnabled(boolean enabled) {
@@ -251,15 +311,29 @@ final class ScreenPlayer extends SimpleBasePlayer {
     }
 
     @Override protected ListenableFuture<?> handleSetDeviceVolume(int deviceVolume, int flags) {
-        return send(ScreenCommands.volume(device, deviceVolume));
+        return send(ScreenCommands.volume(device, deviceVolume), "volume");
     }
 
     @Override protected ListenableFuture<?> handleIncreaseDeviceVolume(int flags) {
-        return send(ScreenCommands.volume(device, Math.max(0, snap.volume) + ScreenCommands.VOLUME_STEP));
+        // From what is shown (it already carries earlier presses), not the last answer.
+        return send(ScreenCommands.volume(device, getDeviceVolume() + ScreenCommands.VOLUME_STEP), "volume");
     }
 
     @Override protected ListenableFuture<?> handleDecreaseDeviceVolume(int flags) {
-        return send(ScreenCommands.volume(device, Math.max(0, snap.volume) - ScreenCommands.VOLUME_STEP));
+        return send(ScreenCommands.volume(device, getDeviceVolume() - ScreenCommands.VOLUME_STEP), "volume");
+    }
+
+    /**
+     * The queue ids in the order the controller shows them: the list a tapped index means.
+     * Media3 calls a handler before it applies its placeholder, so this is what the person
+     * saw, not the latest answer (which may have moved) nor an earlier one.
+     */
+    private List<String> shownIds() {
+        Timeline timeline = getCurrentTimeline();
+        List<String> ids = new java.util.ArrayList<>(timeline.getWindowCount());
+        Timeline.Window window = new Timeline.Window();
+        for (int i = 0; i < timeline.getWindowCount(); i++) ids.add(String.valueOf(timeline.getWindow(i, window).uid));
+        return ids;
     }
 
     private ListenableFuture<?> sendAll(List<JSONObject> requests) {
@@ -274,12 +348,37 @@ final class ScreenPlayer extends SimpleBasePlayer {
      * with the screen's answer applied. A reply for a screen no longer targeted is dropped.
      */
     private ListenableFuture<?> send(JSONObject request) {
+        return send(request, null);
+    }
+
+    /**
+     * @param kind commands of one kind supersede each other (play/pause, volume): of several
+     *             still waiting, only the newest is sent. Null: every one is sent, in order.
+     */
+    private ListenableFuture<?> send(JSONObject request, String kind) {
         if (request == null || device == null) return Futures.immediateVoidFuture();
         SettableFuture<Void> done = SettableFuture.create();
         final long gen = generation;
         final String target = device;
         final String what = request.optString("command") + " " + request.optString("action", request.optString("queueOp", ""));
-        io.execute(() -> {
+        final long mine = sequence.incrementAndGet();
+        final long queuedAt = SystemClock.elapsedRealtime();
+        if (kind != null) newest.put(kind, mine);
+        commandsOut.execute(() -> {
+            boolean superseded = kind != null && newest.getOrDefault(kind, mine) != mine;
+            boolean stale = SystemClock.elapsedRealtime() - queuedAt > STALE_COMMAND_MS;
+            if (superseded || stale) {
+                Log.i(TAG, "remote command " + what.trim() + " not sent: " + (superseded ? "superseded" : "waited too long"));
+                main.post(() -> {
+                    if (stale && !superseded && gen == generation) {
+                        commandLine = "Too slow to send; try again";
+                        commandLineAt = SystemClock.elapsedRealtime();
+                        publishStatus();
+                    }
+                    done.set(null);
+                });
+                return;
+            }
             JSONObject reply;
             try {
                 reply = link.command(request);
@@ -313,6 +412,7 @@ final class ScreenPlayer extends SimpleBasePlayer {
         if (reply == null || "unreachable".equals(reply.optString("error"))) return "Can't reach home";
         if (!reply.optBoolean("ok", false)) return "Could not send that to " + screen;
         if (reply.optBoolean("accepted", false)) return "";
+        if ("no_answer".equals(reply.optString("code"))) return screen + " did not answer in time; it may still happen";
         int status = reply.optInt("status", 0);
         String code = reply.optString("code", "");
         if (status == 409 && "IDEMPOTENCY_CONFLICT".equals(code)) return "";

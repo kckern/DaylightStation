@@ -479,8 +479,23 @@ targets are Media3 sessions behind one `MediaController`:
   `Phone`), so the screen's notes name the phone.
 - **Reading.** Every second while Now playing is on view, every 5 s while the screen
   plays, every 15 s otherwise; after 10 minutes of the screen not playing and nobody
-  watching, it stops until a command or a viewer comes back. Swiping the app away
-  stops the remote unless the screen is playing.
+  watching, it stops reading and stops itself. Choosing a screen also starts the
+  service, so a paused screen keeps its notification after the app is closed. Swiping
+  the app away stops the remote unless the screen is playing.
+- **When reads fail** (VPN down, backend error, the payload still starting), the last
+  answer stays on show, greyed and with nothing offered to send, and the line says why
+  ("Can't reach home", "Daylight is starting", "Home could not answer for …"). After
+  three failures and 20 s it gives way to the empty state; it recovers on its own at the
+  next good answer. A 503 that is not a screen being off is a backend failure.
+- **Commands** go one at a time, in tap order, on their own thread. Of several play/pause
+  or volume presses still waiting only the newest is sent; any command still waiting
+  after 5 s is dropped ("Too slow to send; try again"). A command sent and not answered
+  in time says "… did not answer in time; it may still happen" and is never re-sent.
+  Queue jumps, removes and moves name the entry the person saw, by `queueItemId`.
+- **Volume** is offered only when the screen reports one.
+- **Now playing** reconnects on its own (1 s, doubling to 15 s) when it loses the
+  player, retries a failed screen list when opened or when the picker opens, and keeps
+  the chosen target across a rotation.
 - **Thumbnails** become URLs on the backend's own origin in the payload; any other
   value is dropped.
 - **Where it opens.** Setup's Play tab ("Now playing"), a `player:` action, and a tap

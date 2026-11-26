@@ -40,8 +40,9 @@ import java.util.concurrent.Executors;
  *
  * It reads the screen's session every second while the Now playing screen is on view
  * (WATCH), every five seconds while the screen plays, and every fifteen otherwise. After
- * ten minutes of a screen not playing and nobody watching it stops reading until a
- * command or a watcher comes back. Host, do not decide: what a command means and which
+ * ten minutes of a screen not playing and nobody watching it stops reading and stops
+ * itself (it then ends once nothing is bound). Choosing a screen in the app also starts
+ * it, so a paused screen keeps its notification after the app is closed. Host, do not decide: what a command means and which
  * screens exist are the payload's (ScreenRemote).
  */
 public class RemoteControlService extends MediaSessionService {
@@ -63,6 +64,7 @@ public class RemoteControlService extends MediaSessionService {
     private final Runnable tick = this::tick;
     private final Set<MediaSession.ControllerInfo> watchers = new HashSet<>();
     private ExecutorService io;
+    private ExecutorService commandIo;
     private ScreenPlayer player;
     private MediaSession session;
     private SharedPreferences prefs;
@@ -81,8 +83,14 @@ public class RemoteControlService extends MediaSessionService {
             t.setDaemon(true);
             return t;
         });
+        // Commands one at a time, in order, on their own thread: a slow read never holds a tap.
+        commandIo = Executors.newSingleThreadExecutor(r -> {
+            Thread t = new Thread(r, "Daylight-remote-commands");
+            t.setDaemon(true);
+            return t;
+        });
         PayloadMedia media = new PayloadMedia();
-        player = new ScreenPlayer(Looper.getMainLooper(), io, new ScreenPlayer.Link() {
+        player = new ScreenPlayer(Looper.getMainLooper(), io, commandIo, new ScreenPlayer.Link() {
             @Override public JSONObject session(String device) throws Exception {
                 return new JSONObject(media.screenSession(device, WAIT_MS));
             }
@@ -105,6 +113,14 @@ public class RemoteControlService extends MediaSessionService {
                 .setSessionActivity(nowPlaying(null))
                 .build();
 
+        // Media3 starts the foreground itself when the screen plays; from the background
+        // Android 12+ may refuse that (a poll is not a tap). Media3 catches it and says so here.
+        setListener(new Listener() {
+            @Override public void onForegroundServiceStartNotAllowedException() {
+                Log.w(TAG, "Android refused the remote's foreground start; the notification shows when the app is next open");
+            }
+        });
+
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         String device = prefs.getString(EXTRA_DEVICE, null);
         if (device != null) target(device, prefs.getString(EXTRA_NAME, device));
@@ -120,6 +136,14 @@ public class RemoteControlService extends MediaSessionService {
 
     private void target(String device, String name) {
         player.setScreen(device, name);
+        // Started as well as bound: the remote outlives the Now playing screen, so a paused TV
+        // keeps its notification. Allowed here: TARGET comes from this app's open screen.
+        // From a cold restart in the background Android may refuse; then it lives while bound.
+        try {
+            startService(new Intent(this, RemoteControlService.class));
+        } catch (RuntimeException backgroundStartRefused) {
+            Log.i(TAG, "remote not started (background): bound only");
+        }
         prefs.edit().putString(EXTRA_DEVICE, device).putString(EXTRA_NAME, name).apply();
         session.setSessionActivity(nowPlaying(device));
         markActive();
@@ -150,6 +174,8 @@ public class RemoteControlService extends MediaSessionService {
         if (!watched && !playing && SystemClock.elapsedRealtime() - activeAt > REST_AFTER_MS) {
             resting = true;
             Log.i(TAG, "remote resting: screen not playing and nobody watching");
+            // No longer kept on its own: it ends once nothing is bound (the notification goes too).
+            stopSelf();
             return;
         }
         player.refresh();
@@ -211,6 +237,8 @@ public class RemoteControlService extends MediaSessionService {
         if (session != null) { session.release(); session = null; }
         if (player != null) { player.release(); player = null; }
         if (io != null) { io.shutdown(); io = null; }
+        if (commandIo != null) { commandIo.shutdown(); commandIo = null; }
+        clearListener();
         Log.i(TAG, "remote service destroyed");
         super.onDestroy();
     }

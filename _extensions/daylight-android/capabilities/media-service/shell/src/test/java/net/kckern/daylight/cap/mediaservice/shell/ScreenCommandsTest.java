@@ -31,43 +31,43 @@ public class ScreenCommandsTest {
     /** The command that asked says what was meant; Media3's computed index does not. */
     @Test public void seeksMapByTheCommandThatAsked() throws Exception {
         ScreenSnapshot s = snap("playing");
-        assertEquals("skipNext", ScreenCommands.seek("d", s, 2, 0, Player.COMMAND_SEEK_TO_NEXT).optString("action"));
-        assertEquals("skipNext", ScreenCommands.seek("d", s, 2, 0, Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM).optString("action"));
-        assertEquals("skipPrev", ScreenCommands.seek("d", s, 1, 0, Player.COMMAND_SEEK_TO_PREVIOUS).optString("action"));
-        JSONObject back = ScreenCommands.seek("d", s, 1, 0, Player.COMMAND_SEEK_BACK);
+        assertEquals("skipNext", ScreenCommands.seek("d", ScreenCommands.ids(s), s.current, 2, 0, Player.COMMAND_SEEK_TO_NEXT).optString("action"));
+        assertEquals("skipNext", ScreenCommands.seek("d", ScreenCommands.ids(s), s.current, 2, 0, Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM).optString("action"));
+        assertEquals("skipPrev", ScreenCommands.seek("d", ScreenCommands.ids(s), s.current, 1, 0, Player.COMMAND_SEEK_TO_PREVIOUS).optString("action"));
+        JSONObject back = ScreenCommands.seek("d", ScreenCommands.ids(s), s.current, 1, 0, Player.COMMAND_SEEK_BACK);
         assertEquals("seekRel", back.optString("action"));
         assertEquals(-10.0, back.optDouble("value"), 0);
-        assertEquals(10.0, ScreenCommands.seek("d", s, 1, 0, Player.COMMAND_SEEK_FORWARD).optDouble("value"), 0);
-        JSONObject abs = ScreenCommands.seek("d", s, 1, 42_500, Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM);
+        assertEquals(10.0, ScreenCommands.seek("d", ScreenCommands.ids(s), s.current, 1, 0, Player.COMMAND_SEEK_FORWARD).optDouble("value"), 0);
+        JSONObject abs = ScreenCommands.seek("d", ScreenCommands.ids(s), s.current, 1, 42_500, Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM);
         assertEquals("seekAbs", abs.optString("action"));
         assertEquals(42.5, abs.optDouble("value"), 0);
     }
 
     @Test public void tappingAnotherEntryJumpsToItById() throws Exception {
-        JSONObject jump = ScreenCommands.seek("d", snap("playing"), 2, 0, Player.COMMAND_SEEK_TO_MEDIA_ITEM);
+        JSONObject jump = ScreenCommands.seek("d", ScreenCommands.ids(snap("playing")), snap("playing").current, 2, 0, Player.COMMAND_SEEK_TO_MEDIA_ITEM);
         assertEquals("queue", jump.optString("command"));
         assertEquals("jump", jump.optString("queueOp"));
         assertEquals("the port op survives", "screen-command", jump.optString("op"));
         assertEquals("q3", jump.optString("queueItemId"));
         // The current entry again is a restart, not a jump.
-        assertEquals("seekAbs", ScreenCommands.seek("d", snap("playing"), 1, 0, Player.COMMAND_SEEK_TO_DEFAULT_POSITION).optString("action"));
-        assertNull(ScreenCommands.seek("d", snap("playing"), 9, 0, Player.COMMAND_SEEK_TO_MEDIA_ITEM));
+        assertEquals("seekAbs", ScreenCommands.seek("d", ScreenCommands.ids(snap("playing")), snap("playing").current, 1, 0, Player.COMMAND_SEEK_TO_DEFAULT_POSITION).optString("action"));
+        assertNull(ScreenCommands.seek("d", ScreenCommands.ids(snap("playing")), snap("playing").current, 9, 0, Player.COMMAND_SEEK_TO_MEDIA_ITEM));
     }
 
     @Test public void removingEverythingIsAClearAndOneEntryIsARemoveById() throws Exception {
-        List<JSONObject> all = ScreenCommands.remove("d", snap("playing"), 0, 3);
+        List<JSONObject> all = ScreenCommands.remove("d", ScreenCommands.ids(snap("playing")), 0, 3);
         assertEquals(1, all.size());
         assertEquals("clear", all.get(0).optString("queueOp"));
         assertEquals("screen-command", all.get(0).optString("op"));
-        List<JSONObject> one = ScreenCommands.remove("d", snap("playing"), 2, 3);
+        List<JSONObject> one = ScreenCommands.remove("d", ScreenCommands.ids(snap("playing")), 2, 3);
         assertEquals(1, one.size());
         assertEquals("remove", one.get(0).optString("queueOp"));
         assertEquals("q3", one.get(0).optString("queueItemId"));
-        assertTrue(ScreenCommands.remove("d", snap("playing"), 5, 9).isEmpty());
+        assertTrue(ScreenCommands.remove("d", ScreenCommands.ids(snap("playing")), 5, 9).isEmpty());
     }
 
     @Test public void aMoveSendsTheWholeNewOrder() throws Exception {
-        JSONObject move = ScreenCommands.move("d", snap("playing"), 2, 3, 0);
+        JSONObject move = ScreenCommands.move("d", ScreenCommands.ids(snap("playing")), 2, 3, 0);
         assertEquals("reorder", move.optString("queueOp"));
         assertEquals("[\"q3\",\"q1\",\"q2\"]", move.optJSONArray("items").toString());
     }
@@ -107,6 +107,8 @@ public class ScreenCommandsTest {
                 new JSONObject("{\"ok\":true,\"status\":409,\"accepted\":false,\"code\":\"IDEMPOTENCY_CONFLICT\"}"), "Office"));
         assertEquals("Can't reach home", ScreenPlayer.commandLine(null, "Office"));
         assertEquals("Can't reach home", ScreenPlayer.commandLine(new JSONObject("{\"ok\":false,\"error\":\"unreachable\"}"), "Office"));
+        assertEquals("Office did not answer in time; it may still happen", ScreenPlayer.commandLine(
+                new JSONObject("{\"ok\":true,\"status\":0,\"accepted\":false,\"code\":\"no_answer\"}"), "Office"));
         assertEquals("Could not send that to Office", ScreenPlayer.commandLine(new JSONObject("{\"ok\":false,\"error\":\"bad_request\"}"), "Office"));
     }
 

@@ -80,4 +80,28 @@ public class ScreenSnapshotTest {
                 + "\"controls\":{\"notes\":[{\"label\":\"Paused by Phone\",\"at\":\"2026-11-26T06:37:00Z\"}]}}}"));
         assertEquals("Paused by Phone", s.statusLine("Office"));
     }
+
+    /** The player's playlist refuses a repeated id; the parser never hands it one. */
+    @Test public void aRepeatedQueueItemIdIsOneEntry() throws Exception {
+        ScreenSnapshot s = ScreenSnapshot.parse(new JSONObject("{\"ok\":true,\"status\":200,\"snapshot\":{\"state\":\"playing\","
+                + "\"currentItem\":{\"contentId\":\"plex:1\",\"queueItemId\":\"a\",\"title\":\"One\"},\"position\":0,"
+                + "\"queue\":{\"currentIndex\":-1,\"items\":[{\"queueItemId\":\"a\",\"contentId\":\"plex:1\"},"
+                + "{\"queueItemId\":\"a\",\"contentId\":\"plex:1\"},{\"queueItemId\":\"b\",\"contentId\":\"plex:2\"}]}}}"));
+        assertEquals(2, s.entries.size());
+        java.util.Set<String> ids = new java.util.HashSet<>();
+        for (ScreenSnapshot.Entry e : s.entries) assertTrue(e.queueItemId, ids.add(e.queueItemId));
+        // currentIndex was -1 but the current item names its entry: that one, not a copy.
+        assertEquals(0, s.current);
+        assertEquals("a", s.currentEntry().queueItemId);
+    }
+
+    @Test public void aBackendFailureIsAFailureNotAScreenState() throws Exception {
+        ScreenSnapshot err = ScreenSnapshot.parse(new JSONObject("{\"ok\":true,\"status\":500}"));
+        assertTrue(err.failed());
+        assertFalse(err.online());
+        assertEquals("Home could not answer for Office", err.statusLine("Office"));
+        assertTrue(ScreenSnapshot.unreachable().failed());
+        assertEquals("Daylight is starting", ScreenSnapshot.unreachable("Daylight is starting").statusLine("Office"));
+        assertFalse(ScreenSnapshot.parse(new JSONObject("{\"ok\":true,\"status\":503}")).failed());
+    }
 }
