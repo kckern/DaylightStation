@@ -60,10 +60,10 @@ function searchSurface(page, isPhone) {
   return isPhone ? page.getByTestId('search-mode') : page.getByTestId('media-search-bar');
 }
 
-// The destination is read and changed where it lives: the destination line inside the phone's
-// search surface, the search box's "▶ <name>" destination chip everywhere else.
+// The destination is read and changed where it lives: the destination chip inside the phone's
+// search sheet, the search box's "▶ <name>" destination chip everywhere else.
 const destinationName = (page, isPhone) => (isPhone
-  ? searchSurface(page, true).getByTestId('destination-line-name')
+  ? searchSurface(page, true).getByTestId('search-destination-chip')
   : page.getByTestId('search-destination-chip'));
 
 async function setDestination(page, isPhone, targetId) {
@@ -71,14 +71,8 @@ async function setDestination(page, isPhone, targetId) {
     if (targetId) await aimAt(page, targetId); else await aimHere(page);
     return;
   }
-  await searchSurface(page, isPhone).getByTestId('destination-line').click();
-  await expect(page.getByTestId('destination-sheet')).toBeVisible();
-  if (!targetId) {
-    await page.getByTestId('picker-this-device').click();
-    return;
-  }
-  await page.getByTestId(`picker-device-${targetId}`).click();
-  await page.getByTestId('picker-submit').click();
+  // Phone: the search sheet's own chip (aimAt/aimHere step it while the sheet is open).
+  if (targetId) await aimAt(page, targetId); else await aimHere(page);
 }
 
 const receiverState = page => page.evaluate(async () =>
@@ -105,7 +99,9 @@ async function resultActionIdentity(page, id) {
     const action = page.getByTestId(actionId);
     return {
       id: actionId,
-      text: (await action.textContent())?.trim(),
+      // Verbs name the screen they act on ("Play Next on Acceptance receiver",
+      // "Play on Acceptance receiver"): compare the verb itself.
+      text: (await action.textContent())?.trim().replace(/ on .+$/, '').replace(/^Play( here)?$/, 'Play Now'),
       enabled: await action.isEnabled(),
     };
   }));

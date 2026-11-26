@@ -97,16 +97,13 @@ async function startArrivalJourney(context, sender, {
   let result;
   if (mobile) {
     // On phones the dock intentionally exposes only a Search launcher; the
-    // ordinary mobile destination control lives inside SearchMode.
+    // search sheet carries its own destination chip.
     await expect(sender.getByTestId('media-search-launcher')).toBeVisible();
     await sender.getByTestId('media-search-launcher').click();
     const searchMode = sender.getByTestId('search-mode');
     await expect(searchMode).toBeVisible();
-    await searchMode.getByTestId('destination-line').click();
-    await expect(sender.getByTestId('destination-sheet')).toBeVisible();
-    await sender.getByTestId('picker-device-acceptance-media').click();
-    await sender.getByTestId('picker-submit').click();
-    await expect(searchMode.getByTestId('destination-line-name')).toHaveText(/^Playing on Acceptance receiver/);
+    await aimAt(sender, 'acceptance-media');
+    await expect(searchMode.getByTestId('search-destination-chip')).toHaveText(/Acceptance receiver/);
     searchInput = sender.getByTestId('search-mode-input');
     result = sender.getByTestId(`search-mode-result-${media.contentId}`);
   } else {
@@ -117,7 +114,8 @@ async function startArrivalJourney(context, sender, {
 
   await searchInput.fill(media.query);
   await expect(result).toBeVisible({ timeout: 30000 });
-  await result.click();
+  // The row's ▶ is PLAY (selecting the row would only open its info view).
+  await sender.getByTestId(`result-play-all-${media.contentId}`).click();
   await expect.poll(() => loads.length, { timeout: 10000 }).toBe(1);
   const { searchModeDismissed = false } = await afterDispatch();
 
@@ -290,10 +288,8 @@ async function runSteerConfirmationJourney(context, sender, {
   const changeAimToThisDevice = async () => {
     if (mobile) {
       const searchMode = sender.getByTestId('search-mode');
-      await searchMode.getByTestId('destination-line').click();
-      await expect(sender.getByTestId('destination-sheet')).toBeVisible();
-      await sender.getByTestId('picker-this-device').click();
-      await expect(searchMode.getByTestId('destination-line-name')).toHaveText(/^Playing on This device/);
+      await aimHere(sender);
+      await expect(searchMode.getByTestId('search-destination-chip')).toHaveText(/This device/);
       return;
     }
     expect(await aimLabel(sender)).toBe('Acceptance receiver');

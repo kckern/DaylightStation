@@ -3,7 +3,8 @@ import { markFirstUseDone } from './lib/firstUse.mjs';
 
 test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 import { revealBrowseRow } from '../../../_lib/mediaBrowseScroll.mjs';
-import { playResult } from './lib/search.mjs';
+import { answerSpotChooser } from './lib/search.mjs';
+import { aimHere } from './lib/aim.mjs';
 
 test.setTimeout(120000);
 
@@ -23,22 +24,31 @@ async function openDetail(page, surface) {
   await page.getByTestId('browse-open-plex:').click();
   await page.getByTestId('browse-open-plex:library/sections/6/all').click();
   await revealBrowseRow(page, 'browse-row-plex:55854');
-  await page.getByTestId('browse-detail-plex:55854').click();
+  await page.getByTestId('browse-open-plex:55854').click();
   await expect(page.getByTestId('detail-view')).toBeVisible({ timeout: 30000 });
 }
 
 async function startLocalPlaybackFromBrowse(page, surface) {
+  // This device, then the row's ▶ (PLAY without leaving Browse: selecting the
+  // row would open its info view instead).
   if (surface === 'phone') {
     await page.getByTestId('media-search-launcher').click();
-    const input = page.getByTestId('search-mode-input');
-    await input.fill('arrival');
-    await playResult(page, page.getByTestId('search-mode-result-plex:55854'));
+    await aimHere(page);
+    await page.getByTestId('search-mode-input').fill('arrival');
   } else {
+    await aimHere(page);
     const input = page.getByRole('textbox', { name: 'Search media…', exact: true });
     await input.fill('arrival');
-    await playResult(page, page.getByTestId('combobox-option-plex:55854'));
   }
+  await page.getByTestId('result-play-all-plex:55854').click();
+  await answerSpotChooser(page);
   await expect(page.getByTestId('mini-player-open-nowplaying')).toBeVisible({ timeout: 30000 });
+  if (surface === 'phone') {
+    const close = page.getByTestId('search-mode-close');
+    if (await close.isVisible().catch(() => false)) await close.click();
+  } else {
+    await page.keyboard.press('Escape');
+  }
   await page.getByTestId('mini-player-open-nowplaying').click();
   await expect(page.getByTestId('now-playing-view')).toBeVisible({ timeout: 30000 });
 }
@@ -93,13 +103,16 @@ test('[RELY.10a] phone: SearchMode consumes one browser Back and sheet Escape ke
   await expect(page.getByTestId('browse-view')).toBeVisible();
   await page.getByTestId('media-search-launcher').click();
   await expect(page.getByTestId('search-mode')).toBeVisible();
-  await page.getByTestId('search-mode-input').fill('Frozen');
-  await page.getByTestId('search-mode').getByTestId('destination-line').click();
-  await expect(page.getByTestId('destination-sheet')).toBeVisible();
+  await page.getByTestId('search-mode-input').fill('Arrival');
+  // A layer over the sheet (a result's ⋯ menu): Escape closes the layer only.
+  await expect(page.getByTestId('result-more-plex:55854')).toBeVisible({ timeout: 40000 });
+  await page.getByTestId('result-more-plex:55854').click();
+  const menu = page.getByRole('menu');
+  await expect(menu).toBeVisible();
   await page.keyboard.press('Escape');
-  await expect(page.getByTestId('destination-sheet')).toBeHidden();
+  await expect(menu).toBeHidden();
   await expect(page.getByTestId('search-mode')).toBeVisible();
-  await expect(page.getByTestId('search-mode-input')).toHaveValue('Frozen');
+  await expect(page.getByTestId('search-mode-input')).toHaveValue('Arrival');
   await page.goBack();
   await expect(page.getByTestId('search-mode')).toBeHidden();
   await expect(page.getByTestId('browse-view')).toBeVisible();
@@ -120,7 +133,8 @@ for (const [surface, viewport] of surfaces.filter(([surface]) => surface !== 'ph
     const resultOptions = page.locator('[data-testid^="combobox-option-"]');
     await expect(resultOptions.first()).toBeVisible({ timeout: 30000 });
     await page.keyboard.press('Escape');
-    await expect(resultOptions).toHaveCount(0);
+    // The box keeps its words and results (retained, hidden) when the list closes.
+    await expect(resultOptions.first()).toBeHidden();
     await expect(input).toHaveValue('Frozen');
     await expect(page).toHaveURL(/view=browse/);
     await page.goBack();

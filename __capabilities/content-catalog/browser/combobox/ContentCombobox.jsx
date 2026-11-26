@@ -757,7 +757,12 @@ export function ContentCombobox({
                 // retains its query keeps it), once the menu has finished.
                 if (onMore(action, item) === 'close') queueMicrotask(() => commitClose('escape'));
               } : null}
-              onAction={onAction}
+              // The same for a caller that takes the row's verbs as actions
+              // (Media passes onAction, so its ⋯ Details arrives here, not
+              // through onMore).
+              onAction={onAction ? (action) => {
+                if (onAction(action) === 'close') queueMicrotask(() => commitClose('escape'));
+              } : null}
               extraActions={resultExtraActions}
               playLabel={resultRowLabels?.(item)?.play ?? null}
               playTitle={resultRowLabels?.(item)?.playTitle ?? null}

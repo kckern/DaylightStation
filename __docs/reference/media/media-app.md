@@ -575,11 +575,14 @@ search exactly as it was: on a wide screen the box takes focus again and its
 kept list (`retainQueryOnClose`) reopens with the same words and the same row
 highlighted — kept by item id, so a list that reordered still lands on it, and
 one that no longer holds it highlights row 1; on a phone the full-screen
-search reopens with the same words (`search/useReturnFromSearchDetail.js`,
-`search.returned`). A row's ⋯ → Details is the same look on a wide screen: the
-list closes with its words kept (the shared combobox's `onMore` returns
-`'close'`), the detail page opens as `{ contentId, from: 'search' }` (no PLAY
-focus: it was asked for details), and Back returns to the list.
+search reopens with the same words and the same narrowing — the shell opens
+it with `keepScope` (MediaAppShell), so a return is the same search session,
+not a new one (`search/useReturnFromSearchDetail.js`, `search.returned`). A
+row's ⋯ → Details is the same look on a wide screen: the list closes with its
+words kept (the shared combobox's `onMore` or `onAction` returns `'close'`;
+Media passes `onAction`, so its Details arrives there), the detail page opens
+as `{ contentId, from: 'search' }` (no PLAY focus: it was asked for details),
+and Back returns to the list.
 
 The destination chip sits inside the search box but is not the box: a press on
 it changes where ▶ plays and leaves the words, the open list and the focus as
@@ -1227,7 +1230,8 @@ shared row:
 └────────────────────────────────────────┘
 ```
 
-Search Mode resets scope to catalog-wide ("All") on every open, autofocuses
+Search Mode resets scope to catalog-wide ("All") on every open (except the
+return from an info view it opened: `keepScope`), autofocuses
 the input, and reuses `useContentCombobox` (the same search state/transport
 machine `MediaContentSearch` uses) but renders its own plain results list
 rather than mounting the Mantine `Combobox` popover, which doesn't fit a

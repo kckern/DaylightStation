@@ -4,7 +4,7 @@ import { playResultHere } from './lib/search.mjs';
 
 test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 
-test('NowPlaying hand-off shows truthful aim plus explicit move/keep choices', async ({ page }) => {
+test('NowPlaying hand-off shows truthful aim plus an explicit move/keep choice', async ({ page }) => {
   await page.addInitScript(() => { try { (() => { const k = 'media-app.first-use-done'; const v = localStorage.getItem(k); localStorage.clear(); if (v) localStorage.setItem(k, v); })(); } catch {} });
   await page.goto('/media');
 
@@ -24,12 +24,17 @@ test('NowPlaying hand-off shows truthful aim plus explicit move/keep choices', a
   // NowPlaying view contains a DispatchTargetPicker for hand-off
   const handoffPicker = page.locator('[data-testid="handoff-section"] [data-testid="dispatch-target-picker"]');
   await expect(handoffPicker).toBeVisible({ timeout: 5000 });
-  // On this (wide) viewport the search box's destination chip carries the aim; unaimed and unlearned it asks.
-  await expect(page.getByTestId('search-destination-chip')).toHaveText(/Choose a screen/);
+  // On this (wide) viewport the search box's destination chip carries the aim:
+  // This device, chosen on purpose for the play above, sticks.
+  await expect(page.getByTestId('search-destination-chip')).toHaveText(/This device/);
   const firstDevice = page.locator('[data-testid="handoff-section"] [data-testid^="picker-device-"]').first();
   await expect(firstDevice).toBeVisible();
-  await firstDevice.click();
-  await expect(handoffPicker.getByTestId('picker-mode-transfer')).toBeEnabled();
-  await expect(handoffPicker.getByTestId('picker-mode-transfer')).toHaveText(/Move playback/i);
-  await expect(handoffPicker.getByTestId('picker-mode-fork')).toHaveText(/Keep playing here too/i);
+  // Move or keep is one explicit "Stop it here" switch, said before any tap
+  // (a tap on a screen sends at once, so this journey does not tap one).
+  const stopHere = handoffPicker.getByRole('switch', { name: 'Stop it here' });
+  await expect(stopHere).toBeAttached();
+  await expect(handoffPicker.locator('label', { hasText: 'Stop it here' })).toBeVisible();
+  const before = await stopHere.isChecked();
+  await handoffPicker.locator('label', { hasText: 'Stop it here' }).click();
+  if (before) await expect(stopHere).not.toBeChecked(); else await expect(stopHere).toBeChecked();
 });

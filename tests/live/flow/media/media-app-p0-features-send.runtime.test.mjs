@@ -105,34 +105,36 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
     await playLiveHere(page);
 
     // ---- Keep ----
+    // Move or Keep is one "Stop it here" switch in Play on…, set before the tap
+    // (a tap on a screen sends at once).
     await openPlayOn(page, 'Arrival', ARRIVAL);
-    const move = page.getByTestId('picker-mode-transfer');
-    const keep = page.getByTestId('picker-mode-fork');
-    await expect(move).toContainText(/stop playing here/i);
-    await expect(keep).toHaveText('Keep playing here too');
-    await expect(move).toHaveAttribute('aria-checked', 'true'); // pre-set to the usual (default) choice
-    const box = await keep.boundingBox();
+    const stopHere = page.getByRole('switch', { name: 'Stop it here' });
+    const stopLabel = page.getByTestId('dispatch-target-picker').locator('label', { hasText: 'Stop it here' });
+    await expect(stopHere).toBeChecked(); // pre-set to the usual (default) choice: Move
+    const box = await stopLabel.boundingBox();
     expect(box.height, '44 px target').toBeGreaterThanOrEqual(44);
-    await keep.click();
-    await expect(keep).toHaveAttribute('aria-checked', 'true');
-    await page.getByTestId(`picker-device-${DEVICE}`).click();
+    await stopLabel.click();
+    await expect(stopHere).not.toBeChecked();
     await page.screenshot({ path: path.join(EVIDENCE, `play-on-ask-${size}.png`) });
-    await page.getByTestId('picker-submit').click();
+    await page.getByTestId(`picker-device-${DEVICE}`).click();
     await expect.poll(async () => (await state(request))?.currentItem?.contentId, { timeout: 120000 }).toBe(ARRIVAL);
     await expect.poll(async () => (await state(request))?.state, { timeout: 120000 }).toBe('playing');
     // This device did exactly what the choice said: it kept playing.
     await page.waitForTimeout(4000);
     expect((await media(page))?.paused).toBe(false);
+    await closeSearchIfOpen(page); // the phone's search sheet covers the handle
     await expect(page.getByTestId('mini-toggle')).toHaveAccessibleName('Pause');
 
     // ---- Remembered, then Move ----
     await reloadAndResumeHere(page);
     await openPlayOn(page, 'Disclosure Day', DISCLOSURE);
-    await expect(page.getByTestId('picker-mode-fork')).toHaveAttribute('aria-checked', 'true'); // last choice, shown before confirming
-    await page.getByTestId('picker-mode-transfer').click();
-    await expect(page.getByTestId('picker-mode-transfer')).toHaveAttribute('aria-checked', 'true');
+    await expect(stopHere).not.toBeChecked(); // last choice, shown before confirming
+    await stopLabel.click();
+    await expect(stopHere).toBeChecked();
     await page.getByTestId(`picker-device-${DEVICE}`).click();
-    await page.getByTestId('picker-submit').click();
+    // The screen is playing Arrival: its row asks "Replace …?" first.
+    const replace = page.getByTestId(`picker-replace-${DEVICE}`);
+    if (await replace.waitFor({ state: 'visible', timeout: 5000 }).then(() => true, () => false)) await replace.click();
     await expect.poll(async () => (await state(request))?.currentItem?.contentId, { timeout: 120000 }).toBe(DISCLOSURE);
     await expect.poll(async () => (await media(page))?.paused ?? true, { timeout: 30000, message: 'Move should stop this device once the screen accepted' }).toBe(true);
     await expect(page.getByTestId('mini-state')).not.toContainText(/Playing on/);
@@ -144,9 +146,8 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
     await page.getByTestId('mini-toggle').click();
     await expect.poll(async () => (await media(page))?.paused, { timeout: 60000 }).toBe(false);
     await openPlayOn(page, 'Arrival', ARRIVAL);
-    await page.getByTestId('picker-mode-transfer').click();
+    await expect(stopHere).toBeChecked(); // Move, remembered
     await page.getByTestId(`picker-device-${OFFLINE}`).click();
-    await page.getByTestId('picker-submit').click();
     await expect(page.getByTestId('dispatch-tray')).toContainText('Acceptance guest room TV', { timeout: 30000 });
     // That screen never plays it (it is not there), so Move must not have stopped this device.
     await page.waitForTimeout(20000);

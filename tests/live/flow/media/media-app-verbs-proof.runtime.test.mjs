@@ -4,9 +4,9 @@ import { createHomeAssistantCaller } from '../../../_lib/media-ha-caller.mjs';
 import { resetHouseholdAt } from './lib/household.mjs';
 import {
   A, B, A_NAME, B_NAME, ITEM, VIEWPORTS, call, receiverState, openReceiver, startOn, stopReceiver, resetControls,
-  newAppPage, gotoMedia, warmMedia,
+  newAppPage, gotoMedia, warmMedia, openRemote,
 } from './lib/receivers.mjs';
-import { goArea, openSearch, resultRow } from './lib/search.mjs';
+import { goArea, openSearch, resultRow, playResult } from './lib/search.mjs';
 import { aimAt, aimLabel } from './lib/aim.mjs';
 
 // The play and line-up verbs, at the aim, on every surface. Aim = a real
@@ -44,6 +44,7 @@ async function searchFor(page, text, id) {
   return input;
 }
 
+// Row menu verbs name the screen they act on ("Play Next on Acceptance receiver").
 const trayRow = (page, text) => page.locator('[data-testid^="dispatch-row-"]').filter({ hasText: text });
 
 // ---------------------------------------------------------------------------
@@ -60,7 +61,8 @@ test('[PLAY.1a/AC1][PLAY.1a/AC3][PLACE.1a/AC3] Play now plays at the aim from se
 
   // Search.
   await searchFor(page, 'Arrival', ITEM.ARRIVAL);
-  await resultRow(page, vp, ITEM.ARRIVAL).click();
+  // Selecting the row opens its info view; PLAY plays it at the aim.
+  await playResult(page, resultRow(page, vp, ITEM.ARRIVAL));
   await expectPlayedAtAim(ITEM.ARRIVAL, 'Arrival');
   await page.keyboard.press('Escape');
 
@@ -73,18 +75,19 @@ test('[PLAY.1a/AC1][PLAY.1a/AC3][PLACE.1a/AC3] Play now plays at the aim from se
   // Home: a recent item and a suggestion ("Usually at this time").
   await gotoMedia(page, '/media');
   await expect(page.getByTestId('home-row-recent')).toBeVisible({ timeout: 60000 });
-  await page.getByTestId(`home-tile-recent-${ITEM.ARRIVAL}-picture`).click();
+  await page.getByTestId(`home-tile-recent-${ITEM.ARRIVAL}-play`).click(); // the tile's ▶ (its picture opens the info view)
   await expectPlayedAtAim(ITEM.ARRIVAL, 'Arrival');
-  await page.getByTestId(`home-tile-time-of-day-${ITEM.FAITH}-picture`).click();
+  await page.getByTestId(`home-tile-time-of-day-${ITEM.FAITH}-play`).click();
   await expectPlayedAtAim(ITEM.FAITH, 'Faith');
 
   // Browsing: the first film in the Movies library.
   await goArea(page, vp, 'browse');
   await page.getByTestId('browse-open-plex:').click();
   await page.locator('[data-testid^="browse-open-plex:library/sections/6/"]').first().click();
-  const leaf = page.locator('[data-testid^="result-play-now-"]').first();
+  // A browse row's ▶ (PLAY; a tap on the row opens its info view).
+  const leaf = page.locator('[data-testid^="result-play-all-plex:"]').first();
   await expect(leaf).toBeVisible({ timeout: 40000 });
-  const leafId = (await leaf.getAttribute('data-testid')).replace('result-play-now-', '');
+  const leafId = (await leaf.getAttribute('data-testid')).replace('result-play-all-', '');
   const leafTitle = (await page.getByTestId(`browse-row-${leafId}`).locator('.media-result-title').innerText()).trim();
   await leaf.click();
   await expectPlayedAtAim(leafId, leafTitle);
@@ -101,7 +104,7 @@ test('[PLAY.5a/AC1][PLAY.5a/AC2][PLAY.6a/AC1][PLACE.1a/AC3] Play next puts items
   // Play next from search, then from details, then from a tile: each lands behind the previous one.
   await searchFor(page, 'Arrival', ITEM.ARRIVAL);
   await page.getByTestId(`result-more-${ITEM.ARRIVAL}`).click();
-  await page.getByRole('menuitem', { name: 'Play Next', exact: true }).click();
+  await page.getByRole('menuitem', { name: /^Play Next( on .+)?$/ }).click();
   await expectQueue([ITEM.DISCLOSURE, ITEM.ARRIVAL], 'Play next from search');
   await page.keyboard.press('Escape');
 
@@ -126,11 +129,12 @@ test('[PLAY.5a/AC1][PLAY.5a/AC2][PLAY.6a/AC1][PLACE.1a/AC3] Play next puts items
   await goArea(page, vp, 'browse');
   await page.getByTestId('browse-open-plex:').click();
   await page.locator('[data-testid^="browse-open-plex:library/sections/6/"]').first().click();
-  const leaf = page.locator('[data-testid^="result-play-now-"]').first();
+  // A browse row's ▶ (PLAY; a tap on the row opens its info view).
+  const leaf = page.locator('[data-testid^="result-play-all-plex:"]').first();
   await expect(leaf).toBeVisible({ timeout: 40000 });
-  const leafId = (await leaf.getAttribute('data-testid')).replace('result-play-now-', '');
+  const leafId = (await leaf.getAttribute('data-testid')).replace('result-play-all-', '');
   await page.getByTestId(`result-more-${leafId}`).click();
-  await page.getByRole('menuitem', { name: 'Add to Queue', exact: true }).click();
+  await page.getByRole('menuitem', { name: /^Add to Queue( on .+)?$/ }).click();
   await expectQueue([ITEM.DISCLOSURE, ITEM.ARRIVAL, ITEM.HOSPITAL, ITEM.FAITH, ITEM.KEEPY, leafId], 'Add from browsing');
 
   // The aim read the same afterwards, and the verbs never touched this device.
@@ -147,7 +151,7 @@ test('[PLAY.2a/AC1][PLAY.2a/AC2][PLAY.2a/AC3][PLAY.3a/AC1][PLAY.3a/AC2][PLAY.3a/
   // AC1: Play and Shuffle are offered on the collection wherever it appears (search row menu, browse header, details, home tile).
   await searchFor(page, 'Baby Joy Joy', ALBUM);
   await page.getByTestId(`result-more-${ALBUM}`).click();
-  await expect(page.getByRole('menuitem', { name: 'Play Now', exact: true })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: /^(Play Now|Play on .+[^…])$/ })).toBeVisible();
   await expect(page.getByRole('menuitem', { name: 'Shuffle', exact: true })).toBeVisible();
   await page.keyboard.press('Escape');
   await gotoMedia(page, `/media?view=detail&contentId=${encodeURIComponent(ALBUM)}`);
@@ -202,7 +206,7 @@ test('[PLAY.7a/AC1][PLAY.7a/AC3] a whole collection can be played next or added 
   // Play next: the whole album lands right behind what is playing, in order.
   await searchFor(page, 'Baby Joy Joy', ALBUM);
   await page.getByTestId(`result-more-${ALBUM}`).click();
-  await page.getByRole('menuitem', { name: 'Play Next', exact: true }).click();
+  await page.getByRole('menuitem', { name: /^Play Next( on .+)?$/ }).click();
   await expect.poll(() => queueIds(request), { timeout: 90000 }).toEqual([ITEM.DISCLOSURE, ...ALBUM_TRACKS]);
   await page.keyboard.press('Escape');
   // Add: from details, to the end, in order (Hospital first so the tail is distinguishable).
@@ -220,7 +224,7 @@ test('[PLAY.2a/AC3][PLAY.7a/AC2] the confirmation of a whole-collection start or
   const { page, done } = await setup(browser, request);
   await searchFor(page, 'Baby Joy Joy', ALBUM);
   await page.getByTestId(`result-more-${ALBUM}`).click();
-  await page.getByRole('menuitem', { name: 'Add to Queue', exact: true }).click();
+  await page.getByRole('menuitem', { name: /^Add to Queue( on .+)?$/ }).click();
   const row = trayRow(page, 'Baby Joy Joy').first();
   await expect(row).toBeVisible({ timeout: 30000 });
   await expect(row).toContainText(/\b6 items\b/);
@@ -230,16 +234,27 @@ test('[PLAY.2a/AC3][PLAY.7a/AC2] the confirmation of a whole-collection start or
 
 test('[PLAY.1a/AC4][PLACE.5a/AC3][PLACE.5a/AC4] when the aimed screen is busy with someone else\'s playback the aim says so before I tap; the tap itself never stops to ask; a routine\'s playback counts too, my own does not', async ({ browser, request, baseURL }) => {
   const { page, done } = await setup(browser, request);
-  const aimBusy = page.getByTestId('aim-busy-origin');
+  // The aim's full label (name, "Busy — started from …") is on the screen's
+  // Remote; details lead with PLAY and the search box chip names the screen.
+  const remoteAim = async () => {
+    await openRemote(page, A, vp);
+    const panel = page.getByTestId('peek-panel');
+    await expect(panel.getByTestId('aim-label')).toContainText(A_NAME, { timeout: 30000 });
+    return panel.getByTestId('aim-busy-origin');
+  };
+  const openDetails = async () => {
+    await gotoMedia(page, `/media?view=detail&contentId=${encodeURIComponent(ITEM.ARRIVAL)}`);
+    await expect(page.getByTestId('detail-view')).toBeVisible({ timeout: 60000 });
+    await expect(page.getByTestId('search-destination-chip')).toContainText(A_NAME);
+  };
   // Another device started it (header names the sender): busy, named.
   const other = await openReceiver(browser, request, B);
   await startOn(request, A, ITEM.DISCLOSURE, { asDevice: B });
-  await gotoMedia(page, `/media?view=detail&contentId=${encodeURIComponent(ITEM.ARRIVAL)}`);
-  await expect(page.getByTestId('detail-view')).toBeVisible({ timeout: 60000 });
-  await expect(page.getByTestId('aim-label')).toContainText(A_NAME);
+  let aimBusy = await remoteAim();
   await expect(aimBusy).toContainText(B_NAME, { timeout: 30000 });
   await expect(aimBusy).toContainText('Busy');
   // The tap never stops to ask: no confirmation dialog, it simply plays.
+  await openDetails();
   await page.getByTestId('detail-play-now').click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect.poll(() => currentId(request), { timeout: 120000 }).toBe(ITEM.ARRIVAL);
@@ -250,15 +265,16 @@ test('[PLAY.1a/AC4][PLACE.5a/AC3][PLACE.5a/AC4] when the aimed screen is busy wi
   await stopReceiver(request, A);
   expect((await ha.load(A, { play: ITEM.DISCLOSURE, routine })).status).toBe(200);
   await expect.poll(() => currentId(request), { timeout: 120000 }).toBe(ITEM.DISCLOSURE);
-  await page.reload();
-  await expect(page.getByTestId('detail-view')).toBeVisible({ timeout: 60000 });
-  await expect(page.getByTestId('aim-busy-origin')).toContainText(routine, { timeout: 30000 });
+  aimBusy = await remoteAim();
+  await expect(aimBusy).toContainText(routine, { timeout: 30000 });
 
   // Mine is not "someone else's": started from this very browser, the label does not say busy.
   await stopReceiver(request, A);
+  await openDetails();
   await page.getByTestId('detail-play-now').click();
   await expect.poll(() => currentId(request), { timeout: 120000 }).toBe(ITEM.ARRIVAL);
-  await expect(page.getByTestId('aim-busy-origin')).toHaveCount(0);
+  aimBusy = await remoteAim();
+  await expect(aimBusy).toHaveCount(0);
   await other.context.close();
   await done();
 });

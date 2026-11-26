@@ -118,12 +118,14 @@ beforeEach(() => { seedHabits().recordScreen('video', []); });
 // stay mounted across the app's life; only SearchMode's presence toggles.
 function Harness({ initialOpen = true }) {
   const [open, setOpen] = useState(initialOpen);
+  const [returned, setReturned] = useState(false);
   return (
     <MantineProvider>
       <CastTargetProvider>
         <SearchProvider>
-          <button data-testid="harness-reopen" onClick={() => setOpen(true)}>reopen</button>
-          {open && <SearchMode onClose={() => setOpen(false)} />}
+          <button data-testid="harness-reopen" onClick={() => { setReturned(false); setOpen(true); }}>reopen</button>
+          <button data-testid="harness-return" onClick={() => { setReturned(true); setOpen(true); }}>return</button>
+          {open && <SearchMode keepScope={returned} onClose={() => setOpen(false)} />}
         </SearchProvider>
       </CastTargetProvider>
     </MantineProvider>
@@ -195,6 +197,18 @@ describe('SearchMode', () => {
     await screen.findByTestId('scope-chip-all');
     expect(screen.getByTestId('scope-chip-all')).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByTestId('scope-chip-ambient')).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('coming back from an info view the search opened keeps the narrowing (same search session)', async () => {
+    render(<Harness />);
+    fireEvent.click(await screen.findByTestId('scope-chip-ambient'));
+    expect(screen.getByTestId('scope-chip-ambient')).toHaveAttribute('aria-pressed', 'true');
+    // The sheet unmounts while the info view shows, then comes back.
+    fireEvent.click(screen.getByTestId('search-mode-close'));
+    fireEvent.click(screen.getByTestId('harness-return'));
+    await screen.findByTestId('scope-chip-ambient');
+    expect(screen.getByTestId('scope-chip-ambient')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByTestId('scope-chip-all')).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('✕ closes the surface', async () => {

@@ -75,11 +75,42 @@ export async function whereAmI(page) {
  * tap or Enter) only OPENS the info view with focus on PLAY; PLAY starts it.
  * Never rely on a row click to start playback.
  */
-export async function playResult(page, row) {
+export async function playResult(page, row, { spot = 'beginning' } = {}) {
   await row.click();
   const play = page.getByTestId('detail-play-now');
   await expect(play, 'selecting a result opens its info view (nothing plays yet)').toBeVisible({ timeout: 30000 });
+  const before = await playEvidence(page);
   await play.click();
+  await answerSpotChooser(page, { spot, until: async () => (await playEvidence(page)) !== before });
+}
+
+// What a PLAY changes on this page: the handle's words (a play here) or the
+// outcome rows (a play elsewhere).
+const playEvidence = (page) => page.evaluate(() => [
+  document.querySelector('[data-testid="media-mini-player"]')?.textContent ?? '',
+  document.querySelectorAll('[data-testid^="dispatch-row-"]').length,
+].join('|'));
+
+/**
+ * PLAY on an item the household has saved spots for asks where to continue
+ * from ("Continue <title> from…", household/SpotChooser.jsx). Answer it the way
+ * a person does when it appears: 'beginning' (default) or a choice index.
+ * The chooser waits on the household's spots, so it can take a few seconds;
+ * `until` ends the wait early once the play has visibly started instead.
+ */
+export async function answerSpotChooser(page, { spot = 'beginning', until = null, waitMs = until ? 10000 : 2500 } = {}) {
+  const chooser = page.getByTestId('spot-chooser');
+  const deadline = Date.now() + waitMs;
+  let asked = false;
+  while (Date.now() < deadline) {
+    if (await chooser.isVisible().catch(() => false)) { asked = true; break; }
+    if (until && await until().catch(() => false)) return false;
+    await page.waitForTimeout(250);
+  }
+  if (!asked) return false;
+  await page.getByTestId(spot === 'beginning' ? 'spot-choice-beginning' : `spot-choice-${spot}`).click();
+  await expect(chooser).toBeHidden({ timeout: 15000 });
+  return true;
 }
 
 /** playResult after choosing This device on purpose, for journeys that play locally (nothing else aimed). */

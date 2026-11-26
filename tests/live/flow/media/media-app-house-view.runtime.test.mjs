@@ -289,7 +289,8 @@ test('HOUSE.4a/6a + AUTO.4a: renaming a routine target warns first; add, merge/u
     await page.getByTestId(`screen-admin-merge-${dupId}`).click();
     await page.getByRole('radio', { name: `Admin tablet ${RUN}`, exact: true }).check();
     await shot(page, 'admin-merge-confirm-tablet');
-    await page.getByTestId('confirm-ok').click();
+    // The shared confirmation names its buttons (ConfirmModal has no test ids).
+    await page.getByRole('dialog').getByRole('button', { name: 'Merge', exact: true }).click();
     await expect(page.getByTestId(`screen-admin-aliases-${adminId}`)).toContainText(`Includes Old tablet ${RUN}`);
     await expect(page.getByTestId(`screen-admin-item-${dupId}`)).toHaveCount(0);
     await shot(page, 'admin-merged-tablet');
@@ -299,11 +300,11 @@ test('HOUSE.4a/6a + AUTO.4a: renaming a routine target warns first; add, merge/u
     // Retire: the routines that point at a screen are shown first.
     await page.getByTestId(`screen-admin-retire-fleet:${DEVICE}`).click();
     await expect(page.getByTestId('screen-admin-retire-routines')).toContainText('Acceptance button: Morning');
-    await page.getByTestId('confirm-cancel').click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Cancel', exact: true }).click();
     const addedId = (await added.getAttribute('data-testid')).replace('screen-admin-item-', '');
     await page.getByTestId(`screen-admin-retire-${addedId}`).click();
     await expect(page.getByTestId('screen-admin-retire-routines')).toContainText('No routines point at it.');
-    await page.getByTestId('confirm-ok').click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Retire', exact: true }).click();
     await expect(page.getByTestId(`screen-admin-retired-${addedId}`)).toBeAttached();
     await page.getByTestId('screen-admin-retired').locator('summary').click();
     await shot(page, 'admin-retired-tablet');

@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { markFirstUseDone } from './lib/firstUse.mjs';
 import { resetHouseholdAt } from './lib/household.mjs';
-import { aimAt } from './lib/aim.mjs';
+import { aimAt, aimHere } from './lib/aim.mjs';
 
 test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 test.beforeEach(async ({ request, baseURL }) => { await resetHouseholdAt(request, baseURL); });
@@ -16,7 +16,9 @@ test.describe('MediaApp — Resume and Recents on Home', () => {
     await search.fill('Arrival');
     const arrival = page.getByRole('option').filter({ hasText: 'Arrival' }).filter({ hasText: 'Movie' });
     await expect(arrival).toHaveCount(1, { timeout: 15000 });
-    await arrival.click();
+    // This device, then the row's ▶ (PLAY; selecting the row only opens its info view).
+    await aimHere(page);
+    await page.getByTestId('result-play-all-plex:55854').click();
     await page.keyboard.press('Escape');
     await expect(page.getByTestId('mini-toggle')).toHaveAccessibleName('Pause', { timeout: 30000 });
     await page.getByTestId('mini-toggle').click();
@@ -44,7 +46,9 @@ test.describe('MediaApp — paused restore after reload', () => {
     await search.fill('Arrival');
     const arrival = page.getByRole('option').filter({ hasText: 'Arrival' }).filter({ hasText: 'Movie' });
     await expect(arrival).toHaveCount(1, { timeout: 15000 });
-    await arrival.click();
+    // This device, then the row's ▶ (PLAY; selecting the row only opens its info view).
+    await aimHere(page);
+    await page.getByTestId('result-play-all-plex:55854').click();
     await page.getByTestId('mini-player-open-nowplaying').click();
     const video = page.getByTestId('now-playing-host').locator('video');
     await expect.poll(() => video.evaluate(el => !el.paused && el.readyState >= 2), { timeout: 30000 }).toBe(true);
@@ -65,8 +69,9 @@ test.describe('MediaApp — paused restore after reload', () => {
 
     // Aim at the virtual receiver (never commanded in this journey).
     await aimAt(page, 'acceptance-media', { fork: true });
-    const aim = page.getByRole('button', { name: /^Playing on Acceptance receiver/ });
-    await expect(aim.first()).toBeVisible();
+    // The search box's destination chip names where ▶ plays.
+    const aim = page.getByTestId('search-destination-chip');
+    await expect(aim).toContainText('Acceptance receiver');
 
     // Still playing; let the durable ≥5s position cadence write the spot.
     await expect.poll(() => video.evaluate(el => !el.paused && el.currentTime > 25), { timeout: 30000 }).toBe(true);
@@ -96,7 +101,7 @@ test.describe('MediaApp — paused restore after reload', () => {
     await expect(page.getByTestId('queue-panel').locator('.queue-item')).toHaveCount(2);
     await expect(page.getByTestId('queue-shuffle')).toHaveAttribute('aria-pressed', 'true');
     await expect(page.getByTestId('queue-repeat')).toHaveText('Repeat all');
-    await expect(page.getByRole('button', { name: /^Playing on Acceptance receiver/ }).first()).toBeVisible();
+    await expect(page.getByTestId('search-destination-chip')).toContainText('Acceptance receiver');
 
     // Play resumes at the restored spot.
     await page.getByTestId('np-toggle').click();

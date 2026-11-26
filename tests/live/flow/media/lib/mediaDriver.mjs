@@ -1,6 +1,7 @@
 // Ordinary-input helpers shared by the accessibility / persona journeys.
 import { expect } from '@playwright/test';
 import { aimHere } from './aim.mjs';
+import { answerSpotChooser } from './search.mjs';
 
 export async function freshPage(page, path = '/media') {
   await page.addInitScript(() => {
@@ -51,20 +52,23 @@ export async function searchFor(page, text) {
 }
 
 /**
- * Search for Arrival and play it here; leaves the handle up. Aims at This
- * device first so PLAY reads "Play here". Selecting the row only opens the
- * info view; PLAY starts it.
+ * Search for Arrival and play it here; leaves the handle up and the person on
+ * the page they searched from. Aims at This device first, then presses the
+ * row's ▶ (PLAY: selecting the row would only open its info view) and closes
+ * the search.
  */
 export async function playArrivalHere(page) {
   await aimHere(page);
   await searchFor(page, 'Arrival');
-  const row = isPhone(page)
-    ? page.getByTestId('search-mode-results').getByText('Arrival', { exact: true }).first()
-    : page.getByRole('option').filter({ hasText: 'Arrival' }).filter({ hasText: 'Movie' });
-  if (!isPhone(page)) await expect(row).toHaveCount(1, { timeout: 15000 });
-  await row.click();
-  const play = page.getByTestId('detail-play-now');
-  await expect(play).toBeVisible({ timeout: 30000 });
+  const play = page.getByTestId('result-play-all-plex:55854');
+  await expect(play).toBeVisible({ timeout: 15000 });
   await play.click();
+  await answerSpotChooser(page);
   await expect(page.getByTestId('mini-player-open-nowplaying')).toContainText('Arrival', { timeout: 30000 });
+  if (isPhone(page)) {
+    const close = page.getByRole('button', { name: 'Close search' });
+    if (await close.isVisible().catch(() => false)) await close.click();
+  } else {
+    await page.keyboard.press('Escape');
+  }
 }

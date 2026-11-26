@@ -53,7 +53,8 @@ for (const [size, viewport] of SIZES) {
       await expect(page.getByTestId('mini-toggle')).toBeVisible();
       const playing = await smallTargets(page);
       expect(playing, `playing: ${fmt(playing)}`).toEqual([]);
-      expect(await offscreenControls(page, ['[data-testid="mini-toggle"]', '[data-testid="mini-next"]', '[data-testid="mini-stop"]', '[data-testid="mini-player-open-nowplaying"]'])).toEqual([]);
+      // A phone hides Next when nothing is queued after it (so the title keeps its width).
+      expect(await offscreenControls(page, ['[data-testid="mini-toggle"]', ...(phone ? [] : ['[data-testid="mini-next"]']), '[data-testid="mini-stop"]', '[data-testid="mini-player-open-nowplaying"]'])).toEqual([]);
 
       // Now Playing: transport, queue editing, the several-screens picker.
       await page.getByTestId('mini-player-open-nowplaying').click();
@@ -70,6 +71,9 @@ for (const [size, viewport] of SIZES) {
       await page.getByTestId('settings-reset-session').click();
       const dialog = page.getByRole('dialog');
       await expect(dialog).toBeVisible();
+      // Measure the dialog at rest: it opens with a short scale-in ("pop") that
+      // draws every control at 90 % for its first frames.
+      await dialog.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished.catch(() => null))));
       const dlg = await smallTargets(page, { scope: '[role="dialog"]' });
       expect(dlg, `dialog: ${fmt(dlg)}`).toEqual([]);
       // Esc dismisses the dialog; the person is back where they were.
@@ -111,7 +115,8 @@ for (const [size, viewport] of SIZES) {
       await page.waitForTimeout(500);
       expect(await noHorizontalScroll(page), 'page scrolls sideways at 200% text').toBe(true);
       // The handle's controls are all still on screen and none sits on another.
-      const ids = ['mini-toggle', 'mini-next', 'mini-stop', 'mini-player-open-nowplaying'];
+      // A phone hides Next when nothing is queued after it (so the title keeps its width).
+      const ids = ['mini-toggle', ...(isPhone(page) ? [] : ['mini-next']), 'mini-stop', 'mini-player-open-nowplaying'];
       const boxes = [];
       for (const id of ids) {
         const b = await page.getByTestId(id).boundingBox();
@@ -217,6 +222,13 @@ for (const [size, viewport] of SIZES) {
       // (bounded), then a few more stops to see what follows it.
       let afterStop = 0;
       for (let i = 0; i < 160 && afterStop < 3; i += 1) {
+        // Tab in the search box cycles where ▶ plays (the destination chip) and
+        // keeps focus there; Esc lets go of the box (a second Esc once the list
+        // is closed), and Tab then moves on.
+        if (await page.evaluate(() => document.activeElement?.matches?.('input[aria-label="Search media…"]'))) {
+          await page.keyboard.press('Escape');
+          await page.keyboard.press('Escape');
+        }
         await page.keyboard.press('Tab');
         // A focused tile in a sideways row scrolls into view (snapping, asynchronously): measure once it has settled.
         await page.evaluate(() => new Promise((resolve) => {
@@ -302,7 +314,8 @@ test.describe('floor and navigation names', () => {
     // The house indicator appears once the house is playing (it hides at 0).
     await expect(page.getByTestId('house-indicator')).toBeVisible({ timeout: 45000 });
     expect(await noHorizontalScroll(page)).toBe(true);
-    expect(await offscreenControls(page, ['[data-testid="mini-toggle"]', '[data-testid="mini-next"]', '[data-testid="mini-stop"]', '[data-testid="media-search-launcher"]', '[data-testid="house-indicator"]'])).toEqual([]);
+    // (Next is hidden on a phone while nothing is queued after what plays.)
+    expect(await offscreenControls(page, ['[data-testid="mini-toggle"]', '[data-testid="mini-stop"]', '[data-testid="media-search-launcher"]', '[data-testid="house-indicator"]'])).toEqual([]);
     await page.getByTestId('mini-player-open-nowplaying').click();
     await expect(page.getByTestId('queue-panel')).toBeVisible({ timeout: 15000 });
     // Back is labelled with the place it returns to, and does return there.
@@ -362,7 +375,7 @@ for (const [size, viewport] of SIZES) {
       await playArrivalHere(page);
       const row = page.locator('[data-testid^="dispatch-row-"]').first();
       await expect(row).toBeVisible({ timeout: 10000 });
-      await expect(page.getByTestId('mini-player-video-dock').or(page.getByTestId('mini-toggle'))).toBeVisible();
+      await expect(page.getByTestId('mini-player-video-dock').or(page.getByTestId('mini-toggle')).first()).toBeVisible();
       await page.waitForTimeout(1000);
       const shift = await layoutShiftDuring(page, async () => {
         await expect(row).toHaveCount(0, { timeout: 25000 });

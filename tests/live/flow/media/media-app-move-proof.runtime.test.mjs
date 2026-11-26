@@ -120,15 +120,24 @@ async function handoffSetup(browser, request) {
   await expect.poll(() => local.evaluate((v) => !v.paused && v.readyState >= 2 && v.currentTime > 5), { timeout: 120000 }).toBe(true);
   const picker = page.getByTestId('handoff-section').getByTestId('dispatch-target-picker');
   await expect(picker).toBeVisible();
-  await picker.getByTestId(`picker-device-${A}`).click();
   return { receiver, context, page, local, picker };
 }
+
+// The hand-off picker (calm picker): one "Stop it here" switch says Move (on) or
+// Keep playing here too (off); a tap on a screen sends at once.
+async function setStopHere(picker, on) {
+  const stop = picker.getByRole('switch', { name: 'Stop it here' });
+  await expect(stop).toBeAttached();
+  if ((await stop.isChecked()) !== on) await picker.locator('label', { hasText: 'Stop it here' }).click();
+  if (on) await expect(stop).toBeChecked(); else await expect(stop).not.toBeChecked();
+}
+
 
 test('[PLACE.8a/AC4] hand-off from Now Playing with "Keep playing here too": the chosen screen starts the same item with the same queue, this device carries on, and the outcome is named', async ({ browser, request }) => {
   const { receiver, context, page, local, picker } = await handoffSetup(browser, request);
   const spot = await local.evaluate((v) => v.currentTime);
-  await picker.getByTestId('picker-mode-fork').click();
-  await picker.getByTestId('picker-submit').click();
+  await setStopHere(picker, false);
+  await picker.getByTestId(`picker-device-${A}`).click();
   await expect.poll(async () => {
     const s = await receiverState(request, A);
     return s?.currentItem?.contentId === ITEM.HOSPITAL ? s.queue.items.map((i) => i.contentId).join(',') : null;
@@ -159,8 +168,8 @@ test('[PLACE.8a/AC4] hand-off from Now Playing with "Keep playing here too": the
 
 test('[PLACE.8a/AC3][PLACE.6a/AC4] hand-off from Now Playing with "Move playback" to an idle screen: the screen starts and this device stops', async ({ browser, request }) => {
   const { receiver, context, page, local, picker } = await handoffSetup(browser, request);
-  await picker.getByTestId('picker-mode-transfer').click();
-  await picker.getByTestId('picker-submit').click();
+  await setStopHere(picker, true);
+  await picker.getByTestId(`picker-device-${A}`).click();
   await expect.poll(async () => (await receiverState(request, A))?.currentItem?.contentId, { timeout: 60000 }).toBe(ITEM.HOSPITAL);
   // This device stopped: its player is gone (or at least paused).
   await expect.poll(async () => (await local.count()) === 0 || await local.evaluate((v) => v.paused || v.ended), { timeout: 60000 }).toBe(true);
@@ -178,24 +187,34 @@ test('[PLACE.6a/AC1][PLACE.6a/AC3] while this device plays and the aim is anothe
   await gotoMedia(page);
   await playHere(page, ITEM.FAITH, 'Faith', phoneVp);
   await aimAt(page, A);
-  // Usual choice (move): said before any tap.
-  const behavior = page.getByTestId('aim-behavior').first();
-  await gotoMedia(page, `/media?view=detail&contentId=${encodeURIComponent(ITEM.ARRIVAL)}`);
-  await expect(page.getByTestId('detail-view')).toBeVisible({ timeout: 60000 });
-  await expect(page.getByTestId('aim-behavior').first()).toContainText('move playback', { timeout: 30000 });
-  // Change it right there: the destination control carries the choice.
+  // Usual choice (move): said before any tap, on the aim line of Now Playing
+  // (details lead with PLAY; the full aim label lives where the aim is read).
+  const npBehavior = page.locator('.now-playing-view').getByTestId('aim-behavior');
+  const openNowPlaying = async () => {
+    await page.getByTestId('mini-player-open-nowplaying').click();
+    await expect(page.getByTestId('now-playing-view')).toBeVisible({ timeout: 30000 });
+  };
+  const closeNowPlaying = async () => {
+    await page.getByTestId('now-playing-back').click();
+    await expect(page.getByTestId('now-playing-view')).toBeHidden({ timeout: 30000 });
+  };
+  await openNowPlaying();
+  await expect(npBehavior).toContainText('move playback', { timeout: 30000 });
+  await closeNowPlaying();
+  // Change it in the destination control, which carries the choice.
   await page.getByTestId('cast-target-chip').click();
   await expect(page.getByTestId('cast-mode-transfer')).toBeChecked();
   await page.getByTestId('cast-mode-fork').check();
   await page.getByTestId('cast-target-chip').click();
-  await expect(page.getByTestId('aim-behavior').first()).toContainText('keep playing here too');
+  await openNowPlaying();
+  await expect(npBehavior).toContainText('keep playing here too');
+  await closeNowPlaying();
   // Remembered: still the choice after a reload, pre-selected and visible before confirming anything.
   await page.reload();
   await expect(page.getByTestId('media-shell')).toBeVisible({ timeout: 60000 });
   await page.getByTestId('cast-target-chip').click();
   await expect(page.getByTestId('cast-mode-fork')).toBeChecked();
   await page.getByTestId('cast-target-chip').click();
-  void behavior;
   await context.close();
   await receiver.context.close();
 });

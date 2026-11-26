@@ -6,10 +6,10 @@ import { installFakeClock } from './lib/fakeClock.mjs';
 import { scriptReceiver, SCRIPTED } from './lib/scriptedReceiver.mjs';
 import {
   A, B, A_NAME, B_NAME, ITEM, VIEWPORTS, receiverState, openReceiver, startOn, stopReceiver, pauseReceiver, resetControls,
-  newAppPage, gotoMedia, warmMedia, openHouse,
+  newAppPage, gotoMedia, warmMedia, openHouse, openRemote,
 } from './lib/receivers.mjs';
 import { isPhone, goArea, openSearch, closeSearch, resultRow, searchSurface } from './lib/search.mjs';
-import { aimAt, aimLabel } from './lib/aim.mjs';
+import { aimAt, aimHere, aimLabel } from './lib/aim.mjs';
 
 // PLACE — where things go: the aim, Play on…, the receiver picker states, and
 // the stale-screen rule. Receivers are real mounted screen pages; the screens
@@ -24,30 +24,31 @@ test.beforeEach(async ({ request, baseURL }) => { await resetHouseholdAt(request
 const AIM = 'dispatch-aim'; // marker only; the aim is read from whichever aim label the surface has
 const aimNodes = (page) => page.locator('[data-testid="search-destination-chip"], [data-testid="destination-control-name"], [data-testid="destination-line-name"], [data-testid="aim-label"]');
 
-// `add`: widen the aim by these screens (the wide screens' search box chip names ONE screen, so
-// several are chosen in the destination sheet of the browse header, the same sheet the phone uses).
+// Several screens are aimed with the phone header's "Playing on" control (one
+// checkbox per screen). The wider screens' search box chip names ONE screen
+// (one destination, shown where you type), so a multi-screen aim is a phone
+// journey. `add`: widen the aim by these screens instead of replacing it.
 async function setAim(page, vp, deviceIds, { add = false } = {}) {
-  if (isPhone(vp)) {
-    await openSearch(page, vp);
-    await page.getByTestId('search-mode').getByTestId('destination-line').click();
-    await expect(page.getByTestId('destination-sheet')).toBeVisible();
-    const toggle = page.getByTestId('picker-multi-toggle');
-    if (deviceIds.length > 1 && await toggle.isVisible().catch(() => false)) await toggle.click();
-    for (const id of deviceIds) await page.getByTestId(`picker-device-${id}`).click();
-    await page.getByTestId('picker-submit').click();
-    await closeSearch(page, vp);
+  if (!isPhone(vp)) {
+    if (add || deviceIds.length !== 1) throw new Error('setAim: the search box chip names one screen; aim several on a phone');
+    await aimAt(page, deviceIds[0]);
     return;
   }
-  if (!add && deviceIds.length === 1) { await aimAt(page, deviceIds[0]); return; }
-  await goArea(page, vp, 'browse');
-  const header = page.getByTestId('browse-dispatch-header');
+  const header = page.getByTestId('cast-target-chip');
   await expect(header).toBeVisible({ timeout: 30000 });
-  await header.getByTestId('destination-line').click();
-  await expect(page.getByTestId('destination-sheet')).toBeVisible();
-  const toggle = page.getByTestId('picker-multi-toggle');
-  if ((add || deviceIds.length > 1) && await toggle.isVisible().catch(() => false)) await toggle.click();
-  for (const id of deviceIds) await page.getByTestId(`picker-device-${id}`).click();
-  await page.getByTestId('picker-submit').click();
+  await header.click();
+  await expect(page.getByTestId('cast-popover')).toBeVisible();
+  if (!add) {
+    for (const box of await page.locator('[data-testid^="cast-target-checkbox-"]').all()) {
+      if (await box.isChecked()) await box.uncheck();
+    }
+  }
+  for (const id of deviceIds) {
+    const box = page.getByTestId(`cast-target-checkbox-${id}`);
+    if (!(await box.isChecked())) await box.check();
+  }
+  await header.click();
+  await expect(page.getByTestId('cast-popover')).toBeHidden();
 }
 
 for (const [label, vp] of Object.entries(VIEWPORTS)) {
@@ -63,7 +64,7 @@ for (const [label, vp] of Object.entries(VIEWPORTS)) {
     await expectAim('browse');
     await page.getByTestId('browse-open-plex:').click();
     await page.locator('[data-testid^="browse-open-plex:library/sections/6/"]').first().click();
-    await expect(page.locator('[data-testid^="result-play-now-"]').first()).toBeVisible({ timeout: 40000 });
+    await expect(page.locator('[data-testid^="result-play-all-plex:"]').first()).toBeVisible({ timeout: 40000 });
     await expectAim('a browsed list');
     await gotoMedia(page, `/media?view=detail&contentId=${encodeURIComponent(ITEM.ARRIVAL)}`);
     await expect(page.getByTestId('detail-view')).toBeVisible({ timeout: 60000 });
@@ -77,43 +78,60 @@ for (const [label, vp] of Object.entries(VIEWPORTS)) {
 
 test('[PLACE.1a/AC2] the aim reads as the screen\'s name and room, "This device (name)", or a list or count of screens', async ({ browser }) => {
   const vp = VIEWPORTS.laptop;
+  // The full aim label (name and room, This device with its name, a list or a
+  // count) is on a screen's Remote; details lead with PLAY and the search box
+  // chip names one destination.
+  const remoteAim = async (pg, viewport) => {
+    await openRemote(pg, A, viewport);
+    return pg.getByTestId('peek-panel').getByTestId('aim-label');
+  };
   // This device, named: the browser knows its own name.
   const named = await browser.newContext({ viewport: vp, serviceWorkers: 'block' });
   await pinBrowserIdentity(named, { clientId: 'dad-phone', name: "Dad's phone" });
   const namedPage = await named.newPage();
   await namedPage.addInitScript(() => { try { localStorage.setItem('media-app.first-use-done', 'journey'); } catch { /* ignore */ } });
-  await gotoMedia(namedPage, `/media?view=detail&contentId=${encodeURIComponent(ITEM.ARRIVAL)}`);
-  await expect(namedPage.getByTestId('aim-label')).toContainText('This device');
-  await expect(namedPage.getByTestId('aim-label')).toContainText("Dad's phone");
+  await gotoMedia(namedPage);
+  await aimHere(namedPage);
+  let label = await remoteAim(namedPage, vp);
+  await expect(label).toContainText('This device');
+  await expect(label).toContainText("Dad's phone");
   await named.close();
 
   const { context, page } = await newAppPage(browser, vp);
-  await gotoMedia(page, `/media?view=detail&contentId=${encodeURIComponent(ITEM.ARRIVAL)}`);
-  await expect(page.getByTestId('detail-view')).toBeVisible({ timeout: 60000 });
+  await gotoMedia(page);
   // One screen: its name and its room.
   await setAim(page, vp, [A]);
-  await expect(page.getByTestId('aim-label').first()).toContainText(`${A_NAME} · `);
+  label = await remoteAim(page, vp);
+  await expect(label).toContainText(`${A_NAME} · `);
   // (the room is the screen's configured location: "Virtual browser" for the fixture screens)
-  await expect(page.getByTestId('aim-label').first()).toContainText('Virtual browser');
-  // Two screens: both names. Four: a count.
-  await setAim(page, vp, [B], { add: true });
-  await gotoMedia(page, `/media?view=detail&contentId=${encodeURIComponent(ITEM.ARRIVAL)}`);
-  await expect(page.getByTestId('detail-view')).toBeVisible({ timeout: 60000 });
-  await expect(page.getByTestId('aim-label').first()).toContainText(`${A_NAME} + ${B_NAME}`);
-  await setAim(page, vp, [SCRIPTED.POWER, SCRIPTED.SPEAKER], { add: true });
-  await gotoMedia(page, `/media?view=detail&contentId=${encodeURIComponent(ITEM.ARRIVAL)}`);
-  await expect(page.getByTestId('detail-view')).toBeVisible({ timeout: 60000 });
-  await expect(page.getByTestId('aim-label').first()).toContainText('4 screens');
+  await expect(label).toContainText('Virtual browser');
   await context.close();
+  // Two screens: both names. Four: a count. (Several screens are aimed on a phone: the
+  // header's "Playing on" control; the wider screens' chip names one destination.)
+  const pvp = VIEWPORTS.phone;
+  const phone = await newAppPage(browser, pvp);
+  await gotoMedia(phone.page);
+  await setAim(phone.page, pvp, [A, B]);
+  label = await remoteAim(phone.page, pvp);
+  await expect(label).toContainText(`${A_NAME} + ${B_NAME}`);
+  await gotoMedia(phone.page);
+  await setAim(phone.page, pvp, [SCRIPTED.POWER, SCRIPTED.SPEAKER], { add: true });
+  label = await remoteAim(phone.page, pvp);
+  await expect(label).toContainText('4 screens');
+  await phone.context.close();
 });
+
 
 test('[PLACE.3a/AC1][PLACE.3a/AC2][PLACE.3a/AC3] Play on… is offered on items everywhere, sends only that item to the chosen screen, names the item and the screen, and leaves the aim as it was', async ({ browser, request }) => {
   const vp = VIEWPORTS.laptop;
   const receiver = await openReceiver(browser, request, B);
   const { context, page } = await newAppPage(browser, vp);
   await gotoMedia(page);
-  const aimBefore = await aimLabel(page);
-  expect(aimBefore).toBe('This device');
+  // A fresh browser has chosen nothing yet: the chip asks.
+  expect(await aimLabel(page)).toBe('Choose a screen');
+  // The aim itself (what was chosen), read where the app keeps it.
+  const storedAim = () => page.evaluate(() => JSON.parse(localStorage.getItem('media-app.cast-target') ?? 'null')?.targetIds ?? []);
+  const aimBefore = await storedAim();
 
   // Offered: search row, a browsed item, details, a home tile.
   const input = await openSearch(page, vp);
@@ -141,8 +159,7 @@ test('[PLACE.3a/AC1][PLACE.3a/AC2][PLACE.3a/AC3] Play on… is offered on items 
   await gotoMedia(page, `/media?view=detail&contentId=${encodeURIComponent(ITEM.ARRIVAL)}`);
   await expect(page.getByTestId('detail-view')).toBeVisible({ timeout: 60000 });
   await expect(page.getByTestId('detail-view').getByRole('button', { name: 'Add on…' })).toBeVisible();
-  // (details name its "Play on…" the Cast button)
-  await expect(page.getByTestId('detail-view').getByRole('button', { name: 'Cast', exact: true })).toBeVisible();
+  await expect(page.getByTestId('detail-view').getByRole('button', { name: 'Play on…', exact: true }).first()).toBeVisible();
   await gotoMedia(page);
   await expect(page.getByTestId('home-row-recent')).toBeVisible({ timeout: 60000 });
   const tile = page.getByTestId(`home-tile-recent-${ITEM.ARRIVAL}`);
@@ -157,14 +174,16 @@ test('[PLACE.3a/AC1][PLACE.3a/AC2][PLACE.3a/AC3] Play on… is offered on items 
   const row = page.locator('[data-testid^="dispatch-row-"]').filter({ hasText: 'Arrival' }).first();
   await expect(row).toBeVisible({ timeout: 20000 });
   await expect(row).toContainText(B_NAME);
-  expect(await aimLabel(page)).toBe(aimBefore);
+  // The aim is untouched (the chip may now name the screen this browser last
+  // chose for a film — a learned habit — but nothing was aimed).
+  expect(await storedAim()).toEqual(aimBefore);
   expect(await page.locator('video').count()).toBe(0);
   await stopReceiver(request, B);
   await context.close();
   await receiver.context.close();
 });
 
-test('[PLACE.5a/AC1][PLACE.5a/AC2] each screen choice shows name, room and whether it is playing (title, time left), paused, idle or off; a screen not heard from for two minutes is marked uncertain', async ({ browser, request }) => {
+test('[PLACE.5a/AC1][PLACE.5a/AC2] each screen choice shows name, room and whether it is playing (title), paused, ready or off; a screen not heard from for two minutes is marked uncertain', async ({ browser, request }) => {
   const vp = VIEWPORTS.laptop;
   const idleReceiver = await openReceiver(browser, request, A);
   await stopReceiver(request, A);
@@ -177,15 +196,16 @@ test('[PLACE.5a/AC1][PLACE.5a/AC2] each screen choice shows name, room and wheth
   await scriptReceiver(request, { deviceId: SCRIPTED.SPEAKER, state: 'paused', title: 'Faith', duration: 200, position: 50 });
   // The picker used by Play on… carries the same status lines.
   await page.keyboard.press('Escape');
-  await gotoMedia(page, `/media?view=detail&contentId=${encodeURIComponent(ITEM.HOSPITAL)}`);
+  // A song, so every kind of screen is offered (a film's picker lists only screens that show video).
+  await gotoMedia(page, `/media?view=detail&contentId=${encodeURIComponent(ITEM.FAITH)}`);
   await expect(page.getByTestId('detail-view')).toBeVisible({ timeout: 60000 });
   await page.getByTestId('detail-view').getByRole('button', { name: 'Add on…' }).click();
   await expect(page.getByTestId('dispatch-target-picker')).toBeVisible();
   const line = (id) => page.getByTestId(`picker-device-status-${id}`);
+  // The calm picker's one "Room · status" line: what plays (no countdown), paused, Ready (idle) or Off.
   await expect(line(SCRIPTED.POWER)).toContainText('Playing: Arrival', { timeout: 30000 });
-  await expect(line(SCRIPTED.POWER)).toContainText(/left/);
   await expect(line(SCRIPTED.SPEAKER)).toContainText('Paused: Faith');
-  await expect(line(A)).toContainText('Idle');
+  await expect(line(A)).toContainText('Ready');
   await expect(line('acceptance-offline')).toContainText('Off');
   // Name and room on each choice.
   await expect(page.getByTestId(`picker-device-${SCRIPTED.POWER}`)).toContainText('Acceptance den TV');

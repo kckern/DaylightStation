@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { aimAt } from './lib/aim.mjs';
-import { playResult } from './lib/search.mjs';
+import { playResult, playResultHere } from './lib/search.mjs';
 
 // Batch B — the handle and the one controls surface, against REAL mounted
 // screen pages served by `tests/_lib/media-redesign-server.mjs` (BASE_URL):
@@ -164,9 +164,9 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
     // End of queue, at the bottom of the queue, with the current choice (STEER.13a/AC1–2).
     const choice = page.getByTestId('queue-end-choice');
     await choice.scrollIntoViewIfNeeded();
-    await expect(choice.getByTestId('queue-end-stop')).toHaveAttribute('aria-checked', 'true');
+    await expect(choice.getByTestId('queue-end-stop')).toHaveAttribute('data-checked', 'true');
     await choice.getByTestId('queue-end-similar').click();
-    await expect(choice.getByTestId('queue-end-similar')).toHaveAttribute('aria-checked', 'true', { timeout: 15000 });
+    await expect(choice.getByTestId('queue-end-similar')).toHaveAttribute('data-checked', 'true', { timeout: 15000 });
     await expect.poll(async () => (await receiverState(request, A))?.controls?.endOfQueue, { timeout: 15000 }).toBe('similar');
 
     // Anyone can turn Add only off (PLAY.10a/AC4).
@@ -409,10 +409,14 @@ test('PLACE.4a — several screens: labelled, aim names both, same-room drift wa
   await page.getByTestId(`result-more-${DISCLOSURE}`).click();
   await page.getByRole('menuitem', { name: 'Play on…', exact: true }).click();
   await expect(page.getByTestId('dispatch-target-picker')).toBeVisible();
-  await expect(page.getByTestId('picker-multi-toggle')).toHaveText('Choose several screens');
-  await page.getByTestId('picker-multi-toggle').click();
-  await page.getByTestId(`picker-device-${A}`).click();
-  await page.getByTestId(`picker-device-${B}`).click();
+  // With two screens aimed, Play on… opens already choosing several, both ticked.
+  await expect(page.getByTestId('picker-multi-toggle')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('picker-multi-toggle')).toHaveText('Choose one screen');
+  for (const id of [A, B]) {
+    const device = page.getByTestId(`picker-device-${id}`);
+    if ((await device.getAttribute('aria-pressed')) !== 'true') await device.click();
+    await expect(device).toHaveAttribute('aria-pressed', 'true');
+  }
   await expect(page.getByTestId('picker-drift-warning')).toContainText(`${A_NAME} and ${B_NAME} are both in Virtual browser`, { timeout: 15000 });
   await shot(page, 'several-screens-drift-phone');
   await page.getByTestId('picker-submit').click();
@@ -482,7 +486,8 @@ test('PLACE.4a — several screens: labelled, aim names both, same-room drift wa
       return row;
     };
     // Play an episode here, and queue the next one (ordinary search verbs).
-    await (await search('Hospital', EP_HOSPITAL)).click();
+    // Selecting a row opens its info view; PLAY plays it, here.
+    await playResultHere(page, await search('Hospital', EP_HOSPITAL));
     await expect(page.getByTestId('mini-player-open-nowplaying')).toBeVisible({ timeout: 30000 });
     await (await search('Keepy Uppy', EP_KEEPY));
     await page.getByTestId(`result-more-${EP_KEEPY}`).click();
@@ -544,7 +549,7 @@ test('PLACE.4a — several screens: labelled, aim names both, same-room drift wa
     // Keep similar playing at the end of the queue, then Stop after this one wins first.
     const choice = np.getByTestId('queue-end-choice');
     await choice.getByTestId('queue-end-similar').click();
-    await expect(choice.getByTestId('queue-end-similar')).toHaveAttribute('aria-checked', 'true');
+    await expect(choice.getByTestId('queue-end-similar')).toHaveAttribute('data-checked', 'true');
     await np.getByTestId('stop-after-current').click();
     await expect(np.getByTestId('stop-after-current')).toHaveAttribute('aria-pressed', 'true');
     await expect.poll(() => media.evaluate((n) => !n.paused && n.currentTime > 0.5), { timeout: 60000 }).toBe(true);

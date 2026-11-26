@@ -5,7 +5,7 @@ import path from 'node:path';
 import { markFirstUseDone } from './lib/firstUse.mjs';
 import { resetHouseholdAt } from './lib/household.mjs';
 import { isPhone } from './lib/mediaDriver.mjs';
-import { aimAt } from './lib/aim.mjs';
+import { aimAt, aimHere } from './lib/aim.mjs';
 import { playResult } from './lib/search.mjs';
 
 // Finding and starting things (P0 features), against the acceptance server's
@@ -86,6 +86,8 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
   test(`[FIND.8b/AC2] ${size}: a collection result's inline play reads Continue S1E… when one is under way, Play otherwise`, async ({ page }) => {
     await page.setViewportSize(viewport);
     await openMedia(page);
+    // This device, chosen on purpose (a fresh browser's ▶ would ask where).
+    await aimHere(page);
     // The seeded household finished Hospital: Bluey's next episode is Keepy Uppy.
     await typeSearch(page, 'Bluey');
     const bluey = page.getByTestId(`result-play-all-${BLUEY}`);
@@ -126,6 +128,8 @@ for (const { kind, query, id, title } of [
   await expect(page.getByTestId(`result-action-playOn-${id}`)).toHaveText('Show on…');
   await page.keyboard.press('Escape');
   // Tap: it shows on THIS device even though the receiver is aimed.
+  // (Esc closed the list with the menu: click into the box to bring it back.)
+  await search.click({ position: { x: 48, y: 12 } });
   await search.fill(query);
   await playResult(page, page.getByTestId(`combobox-option-${id}`));
   await expect(page.getByTestId('mini-player-open-nowplaying')).toContainText(title, { timeout: 60000 });
@@ -133,10 +137,11 @@ for (const { kind, query, id, title } of [
   expect((await state(request))?.currentItem?.contentId ?? null).not.toBe(id);
 
   // Show on… : the picker is named for showing, and the screen shows it.
+  await search.click({ position: { x: 48, y: 12 } });
   await search.fill(query);
   await page.getByTestId(`result-more-${id}`).click();
   await page.getByTestId(`result-action-playOn-${id}`).click();
-  await expect(page.getByText('Show on…', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText(/^Show (.+ )?on…$/).first()).toBeVisible();
   await page.screenshot({ path: path.join(EVIDENCE, `find-show-on-${kind.replace(' ', '-')}-laptop.png`) });
   // A still photo on this device is not "playing" here, so there is nothing to keep or stop: the tap on a screen sends it.
   await expect(page.getByTestId('picker-mode-fork')).toHaveCount(0);

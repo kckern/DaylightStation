@@ -84,7 +84,7 @@ function rememberSearchText(text) {
   } catch { /* private mode: nothing kept */ }
 }
 
-export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
+export function SearchMode({ onClose, addTo = null, restoreSearchFocus, keepScope = false }) {
   const [oneShotAction, setOneShotAction] = useState(null);
   const { scopes, currentScopeKey, currentScope, resetScope } = useSearchContext();
   const { dispatch, dispatchLeafVerb, playContainerAsQueue, addToScreen } = useContentDispatch();
@@ -293,9 +293,11 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
   // Every open resets scope to catalog-wide (spec D1: scope never carries
   // over from a prior search session). This is a
   // mount-once effect — SearchMode is only ever in the tree while open (the
-  // shell conditionally mounts it), so mount === open.
+  // shell conditionally mounts it), so mount === open. Coming BACK from an
+  // info view this search opened is the same search session, not a new one
+  // (`keepScope`): the words, results and narrowing all stay.
   useEffect(() => {
-    resetScope();
+    if (!keepScope) resetScope();
     mediaLog.searchModeEntered({});
     // Reopening search shows the last words and what they find: going back to
     // the same search is the common case; ✕ in the box clears it.

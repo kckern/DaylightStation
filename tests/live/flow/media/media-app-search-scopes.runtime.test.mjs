@@ -79,7 +79,10 @@ async function actionSnapshot(page, id) {
   const ids = ['playNow', 'playNext', 'upNext', 'add', 'detail'];
   const snapshot = await Promise.all(ids.map(async (action) => {
     const item = page.getByTestId(`result-action-${action}-${id}`);
-    return { action, text: await item.textContent(), disabled: await item.isDisabled() };
+    // The same verb whatever the destination: a menu item names the screen it
+    // acts on ("Play Next on Acceptance receiver"), so compare the verb itself.
+    const verb = (await item.textContent()).replace(/ on .+$/, '').replace(/^Play( Now| here)?$/, 'Play');
+    return { action, verb, disabled: await item.isDisabled() };
   }));
   await page.keyboard.press('Escape');
   return snapshot;
@@ -89,10 +92,10 @@ function searchSurface(page, isPhone) {
   return isPhone ? page.getByTestId('search-mode') : page.getByTestId('media-search-bar');
 }
 
-// The destination is read and changed where it lives: the destination line inside the phone's
-// search surface, the search box's "▶ <name>" destination chip everywhere else.
+// The destination is read and changed where it lives: the destination chip inside the phone's
+// search sheet, the search box's "▶ <name>" destination chip everywhere else.
 const destinationName = (page, isPhone) => (isPhone
-  ? searchSurface(page, true).getByTestId('destination-line-name')
+  ? searchSurface(page, true).getByTestId('search-destination-chip')
   : page.getByTestId('search-destination-chip'));
 
 async function setDestination(page, isPhone, targetId) {
@@ -101,14 +104,8 @@ async function setDestination(page, isPhone, targetId) {
     if (targetId) await aimAt(page, targetId); else await aimHere(page);
     return;
   }
-  await searchSurface(page, isPhone).getByTestId('destination-line').click();
-  await expect(page.getByTestId('destination-sheet')).toBeVisible();
-  if (!targetId) {
-    await page.getByTestId('picker-this-device').click();
-    return;
-  }
-  await page.getByTestId(`picker-device-${targetId}`).click();
-  await page.getByTestId('picker-submit').click();
+  // Phone: the search sheet's own chip (aimAt/aimHere step it while the sheet is open).
+  if (targetId) await aimAt(page, targetId); else await aimHere(page);
 }
 
 async function firstLeafId(page) {
@@ -167,6 +164,8 @@ for (const [surface, viewport, isPhone] of surfaces) {
     const id = await firstLeafId(page);
     test.skip(!id, `Live ${selectable.label} search for ${query} returned no leaf result; FIND.1b action parity requires a selectable leaf.`);
 
+    // A fresh browser has no destination yet ("Choose a screen"): start from This device.
+    await setDestination(page, isPhone, null);
     const baseline = {
       query: await input.inputValue(),
       scope: await scopeChip(page, isPhone, selectable.key).getAttribute('aria-pressed'),
@@ -211,7 +210,7 @@ for (const [surface, viewport, isPhone] of surfaces) {
     await expect(input).toBeVisible();
   });
 
-  test(`[FIND.2a/AC2,AC4] ${surface}: selecting a configured kind reruns the same query and reopening resets to All`, async ({ page }) => {
+  test(`[FIND.2a/AC2,AC4] ${surface}: selecting a configured kind reruns the same query; reopening the phone sheet resets to All, the dock keeps it`, async ({ page }) => {
     await page.setViewportSize(viewport);
     const input = await openSearch(page, isPhone);
     const scopes = await readLiveScopes(page);
@@ -250,10 +249,19 @@ for (const [surface, viewport, isPhone] of surfaces) {
       await page.getByTestId('media-search-launcher').click();
       await expect(page.getByTestId('search-mode')).toBeVisible();
     } else {
-      await input.click();
+      // Click where the words go: the box's right part is the destination chip.
+      await input.click({ position: { x: 48, y: 12 } });
     }
-    await expect(scopeChip(page, isPhone, 'all')).toHaveAttribute('aria-pressed', 'true');
-    await expect(scopeChip(page, isPhone, 'video')).toHaveAttribute('aria-pressed', 'false');
+    if (isPhone) {
+      // The phone's sheet opens a new search session: All again.
+      await expect(scopeChip(page, isPhone, 'all')).toHaveAttribute('aria-pressed', 'true');
+      await expect(scopeChip(page, isPhone, 'video')).toHaveAttribute('aria-pressed', 'false');
+    } else {
+      // The dock's box keeps its words on close, and with them their kind, so
+      // the results on reopen are the ones it found (MediaContentSearch).
+      await expect(input).toHaveValue(query);
+      await expect(scopeChip(page, isPhone, 'video')).toHaveAttribute('aria-pressed', 'true');
+    }
   });
 
   test(`[FIND.2a/AC3] ${surface}: configured parent and child scopes are both selectable`, async ({ page }) => {

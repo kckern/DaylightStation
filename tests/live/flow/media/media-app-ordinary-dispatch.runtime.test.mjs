@@ -26,7 +26,8 @@ test('ordinary aimed Play then Queue reaches the virtual screen receiver and tru
   await mediaSearch.fill('arrival');
   const arrival = sender.getByTestId('combobox-option-plex:55854');
   await expect(arrival).toBeVisible({ timeout: 30000 });
-  await arrival.click();
+  // The row's ▶ is PLAY (selecting the row only opens its info view).
+  await sender.getByTestId('result-play-all-plex:55854').click();
   const native = receiver.locator('.video-player video');
   await expect(native).toBeVisible({ timeout: 60000 });
   await expect.poll(() => native.evaluate(element => element.readyState >= 2 && element.currentTime > 0), { timeout: 30000 })

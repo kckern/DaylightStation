@@ -5,6 +5,7 @@ test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 import { revealBrowseRow } from '../../../_lib/mediaBrowseScroll.mjs';
 import { resetHouseholdAt } from './lib/household.mjs';
 import { aimAt, aimHere } from './lib/aim.mjs';
+import { answerSpotChooser } from './lib/search.mjs';
 test.beforeEach(async ({ request, baseURL }) => { await resetHouseholdAt(request, baseURL); });
 
 // FIND.1b's result-row More → Play Now journey already proves Search locally
@@ -24,14 +25,14 @@ const entries = [
     await page.getByTestId('browse-open-plex:library/sections/6/all').click();
     const content = await revealBrowseRow(page, 'browse-row-plex:55854');
     await expect(content).toBeVisible({ timeout: 30000 });
-    return { content, action: page.getByTestId('result-play-now-plex:55854') };
+    return { content, action: page.getByTestId('result-play-all-plex:55854') };
   }],
   ['Detail', async (page, nav) => {
     await page.getByTestId(nav('browse')).click();
     await page.getByTestId('browse-open-plex:').click();
     await page.getByTestId('browse-open-plex:library/sections/6/all').click();
     await revealBrowseRow(page, 'browse-row-plex:55854');
-    await page.getByTestId('browse-detail-plex:55854').click();
+    await page.getByTestId('browse-open-plex:55854').click();
     const content = page.getByTestId('detail-view');
     await expect(content).toBeVisible({ timeout: 30000 });
     return { content, action: page.getByTestId('detail-play-now') };
@@ -45,7 +46,8 @@ const entries = [
     await page.getByTestId(nav('home')).click();
     const content = page.getByTestId('home-tile-recent-plex:55854');
     await expect(content).toBeVisible({ timeout: 10000 });
-    return { content, action: page.getByTestId('home-tile-recent-plex:55854-picture') };
+    // The tile's ▶ plays; a tap on its picture only opens the info view.
+    return { content, action: page.getByTestId('home-tile-recent-plex:55854-play') };
   }],
 ];
 
@@ -96,11 +98,8 @@ function arrivalResult(page, phone) {
 async function setReceiverAim(page, phone) {
   if (phone) {
     const searchSurface = page.getByTestId('search-mode');
-    await searchSurface.getByTestId('destination-line').click();
-    await expect(page.getByTestId('destination-sheet')).toBeVisible();
-    await page.getByTestId('picker-device-acceptance-media').click();
-    await page.getByTestId('picker-submit').click();
-    await expect(searchSurface.getByTestId('destination-line-name')).toHaveText(/^Playing on Acceptance receiver/);
+    await aimAt(page, 'acceptance-media');
+    await expect(searchSurface.getByTestId('search-destination-chip')).toHaveText(/Acceptance receiver/);
     return;
   }
   await aimAt(page, 'acceptance-media');
@@ -110,10 +109,8 @@ async function setLocalAim(page, phone) {
     await page.getByTestId('media-search-launcher').click();
     const searchSurface = page.getByTestId('search-mode');
     await expect(searchSurface).toBeVisible();
-    await searchSurface.getByTestId('destination-line').click();
-    await expect(page.getByTestId('destination-sheet')).toBeVisible();
-    await page.getByTestId('picker-this-device').click();
-    await expect(searchSurface.getByTestId('destination-line-name')).toHaveText(/^Playing on This device/);
+    await aimHere(page);
+    await expect(searchSurface.getByTestId('search-destination-chip')).toHaveText(/This device/);
     return closeSearch(page, true);
   }
   await aimHere(page);
@@ -141,15 +138,22 @@ async function prepare({ context, sender, phone }) {
   }), { timeout: 30000 }).toBe(true);
 
   // A native local play records the actual Recents source; no localStorage seed.
+  // A row's ▶ is PLAY (selecting the row only opens its info view); a fresh
+  // browser has no destination yet, so This device is chosen first.
   const search = await openSearch(sender, phone);
+  await aimHere(sender);
   await search.fill('arrival');
-  await arrivalResult(sender, phone).click();
+  await expect(arrivalResult(sender, phone)).toBeVisible({ timeout: 30000 });
+  await sender.getByTestId('result-play-all-plex:55854').click();
+  await answerSpotChooser(sender);
   const localVideo = sender.locator('.video-player video');
   await expect(localVideo).toBeVisible({ timeout: 60000 });
   await expect.poll(() => localVideo.evaluate(v => v.readyState >= 2 && !v.paused && v.currentTime > 0), { timeout: 30000 }).toBe(true);
   await setReceiverAim(sender, phone);
   await search.fill('arrival');
-  await arrivalResult(sender, phone).click();
+  await expect(arrivalResult(sender, phone)).toBeVisible({ timeout: 30000 });
+  await sender.getByTestId('result-play-all-plex:55854').click();
+  await answerSpotChooser(sender);
   await expect.poll(() => loads.length, { timeout: 10000 }).toBe(1);
   const native = receiver.locator('.video-player video');
   await expect(native).toBeVisible({ timeout: 60000 });
@@ -189,6 +193,7 @@ for (const [name, viewport, phone] of viewports) {
         expect(transports).toHaveLength(transportCount);
 
         await action.click();
+        await answerSpotChooser(sender);
         await expect.poll(() => localPlays.length, { timeout: 30000 }).toBe(localPlayCount + 1);
         const newLocalPlay = localPlays.at(-1);
         expect(newLocalPlay?.session).toBeTruthy();

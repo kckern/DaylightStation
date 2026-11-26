@@ -113,7 +113,7 @@ test('[RELY.4a/AC1][RELY.4a/AC2] Undo restores the previous paused native positi
   // Both queue edits must offer ordinary Undo, preserve entry identities,
   // and retain the paused physical playback node.
   const native = await video.elementHandle();
-  await rows.nth(1).getByRole('button', { name: 'Remove from queue' }).click();
+  await rows.nth(1).getByRole('button', { name: /^Remove .+ from queue$/ }).click();
   await expect(rows).toHaveCount(1);
   await page.getByTestId('item-action-undo').last().click();
   await expect(page.getByTestId(tailVisit)).toBeVisible();
@@ -164,7 +164,7 @@ test('[RELY.4a/AC1] the undo offered after Remove and after Clear lasts 10 secon
   const undo = page.getByTestId('item-action-undo');
 
   // Remove one: Undo is offered now, still there at 9 s, gone after 10 s.
-  await rows.nth(1).getByRole('button', { name: 'Remove from queue' }).click();
+  await rows.nth(1).getByRole('button', { name: /^Remove .+ from queue$/ }).click();
   await expect(rows).toHaveCount(1);
   await expect(undo.last()).toBeVisible();
   await clock.advance(9_000);

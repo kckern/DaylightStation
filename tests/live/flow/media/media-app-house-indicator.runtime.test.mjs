@@ -57,7 +57,9 @@ async function startArrival(context, sender, phone) {
   await expect.poll(() => native.evaluate(element => element.readyState >= 2 && !element.paused && element.currentTime > 0),
     { timeout: 30000 }).toBe(true);
   await expect.poll(async () => (await receiverState(sender))?.snapshot?.state, { timeout: 30000 }).toBe('playing');
-  if (phone) await sender.getByTestId('search-mode-close').click();
+  // The info view replaced the phone's search sheet; close it if it is still up.
+  const close = sender.getByTestId('search-mode-close');
+  if (phone && await close.isVisible().catch(() => false)) await close.click();
   return { receiver, native };
 }
 

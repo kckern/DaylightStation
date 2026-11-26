@@ -41,6 +41,15 @@ async function findArrivalOption(page) {
   return { option, contentId };
 }
 
+// The hand-off picker (calm picker): one "Stop it here" switch says Move (on) or
+// Keep playing here too (off); a tap on a screen sends at once.
+async function setStopHere(picker, on) {
+  const stop = picker.getByRole('switch', { name: 'Stop it here' });
+  await expect(stop).toBeAttached();
+  if ((await stop.isChecked()) !== on) await picker.locator('label', { hasText: 'Stop it here' }).click();
+  if (on) await expect(stop).toBeChecked(); else await expect(stop).not.toBeChecked();
+}
+
 async function selectFirstDevice(picker) {
   const device = picker.locator('[data-testid^="picker-device-"]').first();
   await expect(device).toBeVisible();
@@ -118,10 +127,9 @@ test.describe('Media M0 Move safety', () => {
 
     const handoffPicker = page.getByTestId('handoff-section').getByTestId('dispatch-target-picker');
     await expect(handoffPicker).toBeVisible();
+    // Move (Stop it here on), then a tap on the screen sends.
+    await setStopHere(handoffPicker, true);
     await selectFirstDevice(handoffPicker);
-    await expect(handoffPicker.getByTestId('picker-mode-transfer')).toBeEnabled();
-    await expect(handoffPicker.getByTestId('picker-mode-fork')).toHaveText(/Keep playing here too/i);
-    await handoffPicker.getByTestId('picker-submit').click();
     await expect(handoffPicker.getByTestId('picker-dispatch-failed'))
       .toHaveText(/Playback here was kept/i);
 
@@ -185,9 +193,11 @@ test.describe('Media M0 Move safety', () => {
       const pausedAt = await sourceNative.evaluate(node => node.currentTime);
 
       const picker = page.getByTestId('handoff-section').getByTestId('dispatch-target-picker');
+      // Move (Stop it here on); the screen is busy, so its row asks "Replace …?" first.
+      await setStopHere(picker, true);
       await picker.getByTestId('picker-device-acceptance-media').click();
-      await picker.getByTestId('picker-mode-transfer').click();
-      await picker.getByTestId('picker-submit').click();
+      const replace = picker.getByTestId('picker-replace-acceptance-media');
+      if (await replace.waitFor({ state: 'visible', timeout: 5000 }).then(() => true, () => false)) await replace.click();
 
       const receiverNative = receiver.locator('.video-player video');
       await expect(receiverNative).toHaveCount(1, { timeout: 30000 });

@@ -361,9 +361,12 @@ test('[FIND.8a/AC1] details open in one step from search, browsing, suggestions 
   await goArea(page, vp, 'browse');
   await page.getByTestId('browse-open-plex:').click();
   await page.locator('[data-testid^="browse-open-plex:library/sections/6/"]').first().click();
-  const leaf = page.locator('[data-testid^="browse-detail-"]').first();
+  // A tap on a leaf row opens its details (its ▶ is the only play).
+  const leafPlay = page.locator('[data-testid^="result-play-all-plex:"]').first();
+  await expect(leafPlay).toBeVisible({ timeout: 30000 });
+  const leafId = (await leafPlay.getAttribute('data-testid')).replace('result-play-all-', '');
+  const leaf = page.getByTestId(`browse-open-${leafId}`);
   await expect(leaf).toBeVisible({ timeout: 30000 });
-  const leafId = (await leaf.getAttribute('data-testid')).replace('browse-detail-', '');
   await leaf.click();
   await detailOpen(leafId);
   await context.close();
@@ -382,11 +385,12 @@ test('[FIND.8a/AC3][FIND.8a/AC4] details offer the same play and line-up actions
   const detail = page.getByTestId('detail-view');
   await expect(detail).toBeVisible({ timeout: 60000 });
   // AC3: the same verbs as everywhere else, and the destination is stated.
-  for (const name of ['Play Now', 'Play Next', 'Play First', 'Add to Queue', 'Add on…']) {
-    await expect(detail.getByRole('button', { name }), name).toBeVisible();
+  // The verbs name the screen they act on when it is not this device.
+  for (const name of [new RegExp(`^Play on ${A_NAME}$`), /^Play Next( on .+)?$/, /^Play First( on .+)?$/, /^Add to Queue( on .+)?$/, /^Add on…$/]) {
+    await expect(detail.getByRole('button', { name }).first(), String(name)).toBeVisible();
   }
-  await expect(detail.getByRole('button', { name: /Cast|Play on/ })).toBeVisible();
-  await expect(page.getByTestId('aim-label')).toContainText(A_NAME);
+  await expect(detail.getByRole('button', { name: 'Play on…', exact: true })).toBeVisible();
+  await expect(page.getByTestId('search-destination-chip')).toContainText(A_NAME);
   // AC4: the receiver was neither started, stopped nor changed by looking.
   await page.waitForTimeout(4000);
   const after = await receiverState(request, A);
@@ -450,9 +454,9 @@ test('[FIND.8b/AC1][FIND.8b/AC4] a tap opens a playable item (PLAY plays it at t
   await goArea(page, vp, 'browse');
   await page.getByTestId('browse-open-plex:').click();
   await page.locator('[data-testid^="browse-open-plex:library/sections/6/"]').first().click();
-  const leaf = page.locator('[data-testid^="result-play-now-"]').first();
+  const leaf = page.locator('[data-testid^="result-play-all-plex:"]').first();
   await expect(leaf).toBeVisible({ timeout: 30000 });
-  const leafId = (await leaf.getAttribute('data-testid')).replace('result-play-now-', '');
+  const leafId = (await leaf.getAttribute('data-testid')).replace('result-play-all-', '');
   await leaf.click();
   await expect.poll(async () => (await receiverState(request, A))?.currentItem?.contentId, { timeout: 120000 }).toBe(leafId);
   const browseRow = page.locator('[data-testid^="dispatch-row-"]');

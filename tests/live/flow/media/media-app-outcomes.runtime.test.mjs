@@ -41,7 +41,8 @@ test('[RELY.3a][RELY.6a] a start nobody received stays sent, then may-not-have-s
   await search.fill('arrival');
   const arrival = sender.getByTestId('combobox-option-plex:55854');
   await expect(arrival).toBeVisible({ timeout: 30000 });
-  await arrival.click();
+  // The row's ▶ is PLAY (selecting the row only opens its info view).
+  await sender.getByTestId('result-play-all-plex:55854').click();
   const tappedAt = Date.now();
 
   // No receiver is open: the press is never shown as playing.
@@ -108,7 +109,8 @@ test('[RELY.2a] a far start shows its progress in plain words wherever the perso
   await search.fill('arrival');
   const arrival = sender.getByTestId('combobox-option-plex:55854');
   await expect(arrival).toBeVisible({ timeout: 30000 });
-  await arrival.click();
+  // The row's ▶ is PLAY (selecting the row only opens its info view).
+  await sender.getByTestId('result-play-all-plex:55854').click();
 
   const progress = sender.locator('[data-testid^="dispatch-row-"]').filter({ hasText: 'Sending Arrival to Acceptance receiver' });
   await expect(progress).toBeVisible({ timeout: 10000 });

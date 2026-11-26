@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { revealBrowseRow } from '../../../_lib/mediaBrowseScroll.mjs';
 import { resetHouseholdAt } from './lib/household.mjs';
 import { aimAt } from './lib/aim.mjs';
-import { playResult } from './lib/search.mjs';
+import { playResult, playResultHere } from './lib/search.mjs';
 test.beforeEach(async ({ request, baseURL }) => { await resetHouseholdAt(request, baseURL); });
 
 test.use({ viewport: { width: 1440, height: 900 }, trace: 'retain-on-failure' });
@@ -32,7 +32,7 @@ async function prepareQueuedArrival({ context, sender }) {
   // virtual receiver is aimed; the test never seeds app storage.
   const search = sender.getByRole('textbox', { name: 'Search media…' });
   await search.fill('arrival');
-  await playResult(sender, sender.getByTestId('combobox-option-plex:55854'));
+  await playResultHere(sender, sender.getByTestId('combobox-option-plex:55854'));
   const localVideo = sender.locator('.video-player video');
   await expect(localVideo).toBeVisible({ timeout: 60000 });
   await expect.poll(() => localVideo.evaluate(video => video.readyState >= 2 && video.currentTime > 0), { timeout: 30000 })
@@ -72,14 +72,14 @@ async function openPlayNowEntry(sender, entry) {
     await expect(sender.getByTestId('browse-view')).toBeVisible();
     await sender.getByTestId('browse-open-plex:library/sections/6/all').click();
     await expect(await revealBrowseRow(sender, 'browse-row-plex:55854')).toBeVisible({ timeout: 30000 });
-    await sender.getByTestId('result-play-now-plex:55854').click();
+    await sender.getByTestId('result-play-all-plex:55854').click();
   } else if (entry === 'Detail') {
     await sender.getByTestId('app-nav-browse').click();
     await expect(sender.getByTestId('browse-view')).toBeVisible();
     await sender.getByTestId('browse-open-plex:').click();
     await sender.getByTestId('browse-open-plex:library/sections/6/all').click();
     await revealBrowseRow(sender, 'browse-row-plex:55854');
-    await sender.getByTestId('browse-detail-plex:55854').click();
+    await sender.getByTestId('browse-open-plex:55854').click();
     await expect(sender.getByTestId('detail-view')).toBeVisible({ timeout: 30000 });
     await sender.getByTestId('detail-play-now').click();
   } else {
@@ -88,7 +88,7 @@ async function openPlayNowEntry(sender, entry) {
     await sender.getByTestId('app-nav-browse').click();
     await sender.getByTestId('app-nav-home').click();
     await expect(sender.getByTestId('home-tile-recent-plex:55854')).toBeVisible({ timeout: 10000 });
-    await sender.getByTestId('home-tile-recent-plex:55854-picture').click();
+    await sender.getByTestId('home-tile-recent-plex:55854-play').click(); // the tile's ▶ (its picture opens the info view)
   }
 }
 

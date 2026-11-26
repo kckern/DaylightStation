@@ -82,26 +82,15 @@ async function typeQuery(d) {
   }
 }
 // Selecting a row only opens its info view; the row's ▶ is the one-tap play.
-const playRow = (d) => d.page.getByTestId(`result-play-now-${FIXTURE.id}`).click();
+const playRow = (d) => d.page.getByTestId(`result-play-all-${FIXTURE.id}`).click();
 const resultRow = (d) => d.page.getByTestId(d.phone ? `search-mode-result-${FIXTURE.id}` : `combobox-option-${FIXTURE.id}`);
 const closeSearch = async (d) => { if (d.phone) await d.page.getByTestId('search-mode-close').click(); else await d.page.keyboard.press('Escape'); };
 const aimScope = (d) => d.page.getByTestId('search-mode');
-// Where the aim is changed: the search surface's destination line on a phone;
-// everywhere else the search box's destination chip ("▶ <name>").
-const aimName = (d) => (d.phone ? aimScope(d).getByTestId('destination-line-name') : d.page.getByTestId('search-destination-chip'));
-const aimAtReceiver = async (d) => {
-  if (d.phone) {
-    await aimScope(d).getByTestId('destination-line').click();
-    await d.page.getByRole('button', { name: /^Acceptance receiver Virtual browser/ }).click();
-    await d.page.getByTestId('picker-submit').click();
-    return;
-  }
-  await aimAt(d.page, 'acceptance-media');
-};
-const aimBackHere = async (d) => {
-  if (d.phone) { await aimScope(d).getByTestId('destination-line').click(); await d.page.getByTestId('picker-this-device').click(); return; }
-  await aimHere(d.page);
-};
+// Where the aim is changed: the search box's destination chip ("▶ <name>").
+// Both read the chip (the phone's search sheet has its own).
+const aimName = (d) => (d.phone ? aimScope(d).getByTestId('search-destination-chip') : d.page.getByTestId('search-destination-chip'));
+const aimAtReceiver = async (d) => { await aimAt(d.page, 'acceptance-media'); };
+const aimBackHere = async (d) => { await aimHere(d.page); };
 const nativePlaying = (page) => page.locator('.video-player video').evaluate((v) => !v.paused && v.currentTime > 0).catch(() => false);
 
 for (const [size, viewport] of Object.entries(VIEWPORTS)) {
@@ -182,7 +171,8 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
         await d.page.getByTestId(`picker-device-${DEVICE}`).click();
         await expect(d.page.getByTestId(`cast-busy-warning-${DEVICE}`)).toBeVisible();
         await shot(d.page, `tap-send-busy-${size}`);
-        await d.page.getByTestId('picker-submit').click();
+        // The busy row asks in place ("Replace …?"); its own button confirms.
+        await d.page.getByTestId(`picker-replace-${DEVICE}`).click();
         expect(await taps(d.page), 'a busy screen: tile + confirm').toBe(2);
         expect((await call(request, 'POST', `${base}/session/transport`, { action: 'stop' })).status).toBe(200);
       } finally { await d.context.close(); await receiver.close(); }
@@ -347,7 +337,7 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
         await expect(page.getByRole('dialog')).toBeVisible();
         await shot(page, `fixer-start-fresh-${size}`);
         await usable(page, 'fixer dialog');
-        await page.getByTestId('confirm-ok').click();
+        await page.getByRole('dialog').getByRole('button', { name: 'Start fresh', exact: true }).click();
         await expect(page.getByTestId('mini-player-open-nowplaying')).toHaveCount(0, { timeout: 30000 });
         await aimHere(page);
         await typeQuery(d);

@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { markFirstUseDone } from './lib/firstUse.mjs';
+import { aimHere } from './lib/aim.mjs';
 
 test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 import { randomUUID } from 'node:crypto';
@@ -283,6 +284,8 @@ test.describe('Subtitles on this device (STEER.12a, phone)', () => {
   test('the same control steers playback here', async ({ page }) => {
     const mints = streamMints(page);
     await openMedia(page, `/media?view=detail&contentId=${EP1}`, 'detail-play-now');
+    // This device, chosen on purpose (a fresh browser's PLAY would ask where).
+    await aimHere(page);
     await page.getByTestId('detail-play-now').click();
     await page.getByTestId('mini-player-open-nowplaying').click();
     const video = page.getByTestId('now-playing-host').locator('video');

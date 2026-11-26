@@ -7,7 +7,8 @@ import { markFirstUseDone } from './lib/firstUse.mjs';
 import { installFakeClock } from './lib/fakeClock.mjs';
 import { pinBrowserIdentity, resetHouseholdAt, household, SEED } from './lib/household.mjs';
 import { scriptReceiver, SCRIPTED } from './lib/scriptedReceiver.mjs';
-import { openSearch, resultRow } from './lib/search.mjs';
+import { openSearch, resultRow, playResultHere } from './lib/search.mjs';
+import { aimHere } from './lib/aim.mjs';
 import {
   A, A_NAME, ITEM, VIEWPORTS, call, receiverState, openReceiver, startOn, stopReceiver, resetControls,
   newAppPage, gotoMedia, warmMedia, openHouse, openRemote,
@@ -167,22 +168,29 @@ test('[PLACE.4a/AC6] screens chosen together in neighbouring rooms are warned th
   await pinBrowserIdentity(page);
   await gotoMedia(page);
 
+  // Several screens at once are chosen in Play on… (an item's ⋯ menu in search):
+  // the search box chip names one destination; the picker can choose several.
+  // A song, so the speaker is offered too (a film's Play on… lists screens).
   const chooseTwo = async (a, b) => {
     await page.getByTestId('media-search-launcher').click();
     const searchMode = page.getByTestId('search-mode');
-    await searchMode.getByTestId('destination-line').click();
-    await expect(page.getByTestId('destination-sheet')).toBeVisible();
+    await searchMode.getByTestId('search-mode-input').fill('Faith');
+    await expect(searchMode.getByTestId(`search-mode-result-${ITEM.FAITH}`)).toBeVisible({ timeout: 40000 });
+    await page.getByTestId(`result-more-${ITEM.FAITH}`).click();
+    await page.getByRole('menuitem', { name: 'Play on…', exact: true }).click();
+    await expect(page.getByTestId('dispatch-target-picker')).toBeVisible();
     await page.getByTestId('picker-multi-toggle').click();
     await expect(page.getByTestId(`picker-device-${a}`)).toBeVisible({ timeout: 40000 });
     await page.getByTestId(`picker-device-${a}`).click();
     await page.getByTestId(`picker-device-${b}`).click();
   };
+  // Leave without sending: nothing is played anywhere.
   const leavePicker = async () => {
     await page.keyboard.press('Escape');
-    await page.keyboard.press('Escape');
-    await expect(page.getByTestId('destination-sheet')).toHaveCount(0, { timeout: 15000 });
+    await expect(page.getByTestId('dispatch-target-picker')).toHaveCount(0, { timeout: 15000 });
     const close = page.getByTestId('search-mode-close');
     if (await close.isVisible().catch(() => false)) await close.click();
+    await expect(page.getByTestId('search-mode')).toHaveCount(0, { timeout: 15000 });
   };
 
   // Before anyone says the rooms are neighbours: kitchen speaker and the receiver's room draw no warning.
@@ -258,9 +266,9 @@ test('[RELY.4a/AC3] Start fresh is truly irreversible: it asks first, cancelling
   // Asks first; cancelling is a no-op with no Undo to offer either.
   await page.getByTestId('settings-menu-trigger').click();
   await page.getByRole('menuitem', { name: 'Start fresh' }).click();
-  const dialog = page.getByTestId('confirm-dialog');
+  const dialog = page.getByRole('dialog', { name: 'Start fresh on this device?' });
   await expect(dialog).toBeVisible();
-  await page.getByTestId('confirm-cancel').click();
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(dialog).toBeHidden();
   await expect(page.getByTestId('mini-player-open-nowplaying')).toContainText('Arrival');
   expect(await undoOffers()).toBe(0);
@@ -270,7 +278,7 @@ test('[RELY.4a/AC3] Start fresh is truly irreversible: it asks first, cancelling
   await page.getByRole('menuitem', { name: 'Start fresh' }).click();
   await expect(dialog).toBeVisible();
   await expect(dialog).not.toContainText(/undo/i);
-  await page.getByTestId('confirm-ok').click();
+  await dialog.getByRole('button', { name: 'Start fresh', exact: true }).click();
   await expect(dialog).toBeHidden();
   await expect(page.getByTestId('media-mini-player')).toHaveCount(0, { timeout: 15000 });
   // Look through the window an Undo would have had (the default is 10 seconds): none ever appears.
@@ -289,7 +297,8 @@ test('[STEER.10a/AC2] a minutes sleep timer shows its time left on the handle, f
   await gotoMedia(page);
   const input = await openSearch(page, vp);
   await input.fill('Faith');
-  await resultRow(page, vp, ITEM.FAITH).click();
+  // Selecting a row opens its info view; PLAY plays it, here.
+  await playResultHere(page, resultRow(page, vp, ITEM.FAITH));
   await page.getByTestId('mini-player-open-nowplaying').click();
   const np = page.getByTestId('now-playing-view');
   await expect(np).toBeVisible({ timeout: 30000 });
@@ -393,7 +402,11 @@ test('[STEER.13b/AC3] next-episode behaviour lives in the controls; carry on lis
   await shot(page, 'home-carry-on-next-laptop');
 
   // The behaviour is in the controls of what is playing: Stop after this one, here.
+  // A tap on the tile opens its info view; PLAY plays it, here.
+  await aimHere(page);
   await page.getByTestId('home-tile-carry-on-' + SEED.ARRIVAL + '-picture').click();
+  await expect(page.getByTestId('detail-play-now')).toBeVisible({ timeout: 30000 });
+  await page.getByTestId('detail-play-now').click();
   await page.getByTestId('mini-player-open-nowplaying').click();
   const np = page.getByTestId('now-playing-view');
   await expect(np).toBeVisible({ timeout: 40000 });

@@ -500,6 +500,22 @@ describe('ContentCombobox (hook wiring)', () => {
       expect(currentHook.commit.mock.calls.some(([kind]) => kind === 'escape')).toBe(true);
     });
 
+    it("onAction returning 'close' (⋯ Details from a caller that takes verbs as actions) closes the picker too", async () => {
+      const results = [{ id: 'plex:leaf:1', title: 'A Song', source: 'plex' }];
+      currentHook = makeHook({ state: { ...initialState(''), mode: Modes.SEARCH, search: 'song', results } });
+      const onAction = vi.fn(({ kind }) => (kind === 'details' ? 'close' : undefined));
+      renderCombobox({ onMore: vi.fn(), onAction, retainQueryOnClose: true });
+      fireEvent.click(screen.getByTestId('result-more-plex:leaf:1'));
+      fireEvent.click(await screen.findByTestId('result-action-playNext-plex:leaf:1'));
+      await Promise.resolve();
+      expect(currentHook.commit.mock.calls.some(([kind]) => kind === 'escape')).toBe(false);
+      fireEvent.click(screen.getByTestId('result-more-plex:leaf:1'));
+      fireEvent.click(await screen.findByTestId('result-action-detail-plex:leaf:1'));
+      await Promise.resolve();
+      expect(onAction).toHaveBeenCalledWith(expect.objectContaining({ kind: 'details' }));
+      expect(currentHook.commit.mock.calls.some(([kind]) => kind === 'escape')).toBe(true);
+    });
+
     it('a container row never renders ⋯, and a leaf row never renders ▶, even when both callbacks are passed', () => {
       currentHook = makeHook({
         state: {

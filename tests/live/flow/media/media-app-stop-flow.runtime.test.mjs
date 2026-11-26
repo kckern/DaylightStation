@@ -22,7 +22,7 @@ test.describe('MediaApp — Stop flow', () => {
     // Stop
     await page.getByTestId('mini-stop').click();
 
-    await expect(page.getByTestId('media-mini-player')).toHaveText(/Lonesome Day.*Ready to play.*Resume/s);
+    await expect(page.getByTestId('media-mini-player')).toHaveText(/Lonesome Day.*Ready to play.*Play/s); // a stopped queue restarts with Play (nothing to resume)
     await expect(page.getByTestId('mini-player-open-nowplaying')).toBeVisible();
     await page.getByTestId('mini-player-open-nowplaying').click();
     await expect(page.getByTestId('queue-clear')).toBeVisible();

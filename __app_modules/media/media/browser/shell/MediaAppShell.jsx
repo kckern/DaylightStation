@@ -37,13 +37,17 @@ function ShellInner() {
   const [searchOpen, setSearchOpen] = useState(false);
   // Add to this queue: the one search, for one addition to one screen.
   const [searchAddTo, setSearchAddTo] = useState(null);
+  // True while the sheet is open because the person came back from an info
+  // view it opened: the same search session, so its narrowing stays.
+  const [searchReturned, setSearchReturned] = useState(false);
   const searchLauncher = React.useMemo(() => ({
     // The phone tab bar's Search: the one search, at the thumb (RELY.12a).
-    openSearch: () => { setSearchAddTo(null); setSearchOpen(true); },
+    openSearch: () => { setSearchAddTo(null); setSearchReturned(false); setSearchOpen(true); },
     openAddToQueue: ({ deviceId, name = null }) => {
       if (typeof deviceId !== 'string' || !deviceId) return;
       mediaLog.addToQueueOpened({ deviceId });
       setSearchAddTo({ deviceId, name });
+      setSearchReturned(false);
       setSearchOpen(true);
     },
   }), []);
@@ -54,6 +58,7 @@ function ShellInner() {
     if (searchOpen || searchInputRef.current?.getClientRects().length) return;
     if (!launcherRef.current?.getClientRects().length) return;
     setSearchAddTo(null);
+    setSearchReturned(true);
     setSearchOpen(true);
     mediaLog.searchReturned({ contentId, surface: 'sheet' });
   }, [searchOpen]));
@@ -78,7 +83,7 @@ function ShellInner() {
     <SearchLauncherContext.Provider value={searchLauncher}>
     <DismissStackProvider onBaseDismiss={baseDismiss}>
       <PlaybackFrame className="media-shell" data-testid="media-shell"
-        header={<Dock searchInputRef={searchInputRef} launcherRef={launcherRef} destinationControlRef={destinationControlRef} onOpenSearch={() => setSearchOpen(true)} />}
+        header={<Dock searchInputRef={searchInputRef} launcherRef={launcherRef} destinationControlRef={destinationControlRef} onOpenSearch={() => { setSearchReturned(false); setSearchOpen(true); }} />}
         controls={<>
           <ReconnectingNote />
           <LocalPlaybackOutcomes />
@@ -101,7 +106,7 @@ function ShellInner() {
         navigation={<TabBar />}
         overlays={<>
           <PlaybackQualityHost />
-          {searchOpen && <SearchMode restoreSearchFocus={restoreSearchFocus} addTo={searchAddTo} onClose={() => { setSearchOpen(false); setSearchAddTo(null); }} />}
+          {searchOpen && <SearchMode restoreSearchFocus={restoreSearchFocus} addTo={searchAddTo} keepScope={searchReturned} onClose={() => { setSearchOpen(false); setSearchAddTo(null); setSearchReturned(false); }} />}
         </>}
       >
         <div className="media-shell-body">
