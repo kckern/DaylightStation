@@ -58,6 +58,7 @@ public final class FreematicsActivity extends Activity {
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
+        net.kckern.daylight.shellkit.UiTelemetry.install(this);
         preferences = getSharedPreferences("daylight_freematics", MODE_PRIVATE);
         companion = getSystemService(CompanionDeviceManager.class);
         BluetoothManager manager = getSystemService(BluetoothManager.class);

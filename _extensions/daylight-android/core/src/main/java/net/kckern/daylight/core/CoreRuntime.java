@@ -12,6 +12,7 @@ import java.util.List;
 
 /** Owns the router, the settings and the capabilities for one running payload. */
 public final class CoreRuntime implements CoreContext {
+    private volatile net.kckern.daylight.core.backend.TelemetryRelay telemetry;
     private final ShellServices shell;
     private final String deviceId;
     private final String payloadVersion;
@@ -184,6 +185,13 @@ public final class CoreRuntime implements CoreContext {
             socket.stop();
             throw stoppedDuringStart("after the capabilities started");
         }
+        // The installed screens' telemetry goes to the backend through this port (any device).
+        if (shell.context() != null) {
+            net.kckern.daylight.core.backend.Backend backend = net.kckern.daylight.core.backend.Backend.from(this);
+            telemetry = new net.kckern.daylight.core.backend.TelemetryRelay(backend,
+                    new net.kckern.daylight.core.backend.BackendHttp(backend::deviceHeader));
+            telemetry.attach();
+        }
         shell.note("CORE", "started " + payloadVersion + " with " + capabilities.size() + " capabilities");
         if (settings.loadProblem() != null) shell.note("SETTINGS", settings.loadProblem());
     }
@@ -200,6 +208,9 @@ public final class CoreRuntime implements CoreContext {
             started.clear();
         }
         accessibility.bind(null);
+        net.kckern.daylight.core.backend.TelemetryRelay t = telemetry;
+        telemetry = null;
+        if (t != null) { try { t.detach(); } catch (Throwable ignored) { } }
         for (int i = toStop.size() - 1; i >= 0; i--) {
             try { toStop.get(i).stop(); } catch (Throwable ignored) { }
         }

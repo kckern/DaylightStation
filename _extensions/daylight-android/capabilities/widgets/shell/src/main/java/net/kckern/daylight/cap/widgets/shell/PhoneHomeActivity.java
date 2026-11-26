@@ -74,6 +74,7 @@ public class PhoneHomeActivity extends Activity {
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
+        net.kckern.daylight.shellkit.UiTelemetry.install(this);
         t = DaylightTheme.of(this);
         launcherPicker = Intent.ACTION_CREATE_SHORTCUT.equals(getIntent().getAction());
         if (launcherPicker) setResult(RESULT_CANCELED);

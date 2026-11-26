@@ -51,6 +51,7 @@ public final class CaptureStatusActivity extends Activity {
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
+        net.kckern.daylight.shellkit.UiTelemetry.install(this);
         owner = state == null ? getIntent().getStringExtra(CaptureScope.EXTRA)
                 : state.getString(CaptureScope.EXTRA);
         t = DaylightTheme.of(this);

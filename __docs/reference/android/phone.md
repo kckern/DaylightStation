@@ -1528,6 +1528,37 @@ those need the link key, which never leaves the phone and changes at every
 start. Which field of the Home Assistant companion app
 carries a tap target is not confirmed, and no producer sets one.
 
+## Telemetry: what is tapped, kept until it is sent
+
+Every native screen (Now playing, the phone home, the capture screens, the D-pad) is
+watched by `shell-kit` `UiTelemetry`, installed by the first screen that opens; from
+then on every activity of the app is covered without code of its own. It records:
+
+| Event | Data |
+|---|---|
+| `ui.tap`, `ui.swipe` | `control`: the telemetry tag (`UiTelemetry.tag`), else the control's accessibility label, else its id; a swipe adds `direction` |
+| `ui.screen.shown`, `ui.screen.hidden` | `visibleMs` on hidden |
+| `player.stage`, `player.target`, `player.scrub` (`fromPct`, `toPct`), `player.swipe-skip`, `player.lyrics-seek`, `player.sleep`, `player.time-display`, `player.detail` (`waveform`, `quality`, `lyrics`), `remote.input` (`action`, `direction`, `status`) | Now playing's own; `target` is `local` or `screen` |
+| `telemetry.dropped` | `count`, when the cap (below) threw old events away |
+
+Each event carries an `id`, its own timestamp, and `context` `{app: "phone", component:
+<screen>, sessionId}`. Controls whose labels would carry a title (queue rows, lyric
+lines) are tagged, so titles stay out.
+
+**Offline first.** An event is appended to `files/telemetry/open.jsonl` the moment it
+happens; at 40 events, or when sending, the file is sealed as `batch-<n>.jsonl`.
+Batches go oldest first through the payload's `telemetry` port (`core`
+`TelemetryRelay`) to `POST /api/v1/client-log`, and a batch is deleted only when the
+backend accepted it, so nothing is lost to no network, a killed app or a reboot, and
+a repeat can be told by its event ids. Sending is tried when a screen goes to the
+background, every 30 s while one is shown (doubling to 5 min while it fails), and when
+a network comes back. The store holds at most 1 MB; past that the oldest batches go
+and the next batch reports how many events were lost. Logcat: `adb logcat -s
+Daylight-Telemetry` (`telemetry sent: n batch(es)`, `telemetry kept for later`).
+
+Reading it: `context.source:android AND _msg:"ui.tap" | stats by ("data.control") count()`
+(see `__docs/reference/core/session-logging.md`).
+
 ## What the phone does not have
 
 - **No control API and no lifeline.** Nothing listens on any address. The fleet CLI

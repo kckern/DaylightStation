@@ -69,6 +69,7 @@ public class PhotoCaptureActivity extends Activity {
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
+        net.kckern.daylight.shellkit.UiTelemetry.install(this);
         dest = MemoFiles.dest(getIntent().getStringExtra(MemoFiles.EXTRA_DEST));
         label = MemoFiles.label(getIntent().getStringExtra(MemoFiles.EXTRA_LABEL));
         owner = getIntent().getStringExtra(CaptureScope.EXTRA);

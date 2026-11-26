@@ -47,6 +47,7 @@ import net.kckern.daylight.shellkit.DaylightTheme;
 import net.kckern.daylight.shellkit.DaylightTheme.Type;
 import net.kckern.daylight.shellkit.PlaylistArtwork;
 import net.kckern.daylight.shellkit.ThemeColors;
+import net.kckern.daylight.shellkit.UiTelemetry;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -183,6 +184,7 @@ public class NowPlayingActivity extends Activity {
 
     @Override protected void onCreate(Bundle saved) {
         super.onCreate(saved);
+        UiTelemetry.install(this);
         io = executor("Daylight-nowplaying");
         padIo = executor("Daylight-nowplaying-pad");
         artIo = executor("Daylight-nowplaying-art");
@@ -194,6 +196,16 @@ public class NowPlayingActivity extends Activity {
         chooseInitialTarget(getIntent(), saved);
         loadScreens();
         Log.i(TAG, "now playing opened, target " + target);
+    }
+
+    /** A named event for the household log store (UiTelemetry: on disk first, sent when online). */
+    private void note(String name, Object... kv) {
+        JSONObject d = new JSONObject();
+        try {
+            for (int i = 0; i + 1 < kv.length; i += 2) d.put((String) kv[i], kv[i + 1]);
+            d.put("target", remote() ? "screen" : "local");
+        } catch (Exception ignored) { }
+        UiTelemetry.event("NowPlaying", name, d);
     }
 
     private static ExecutorService executor(String name) {
@@ -288,6 +300,7 @@ public class NowPlayingActivity extends Activity {
 
     private void switchTo(String id, String name) {
         Log.i(TAG, "now playing target " + id);
+        note("player.target", "to", LOCAL.equals(id) ? "local" : id);
         disconnect();
         target = id;
         targetName = name;
@@ -602,6 +615,8 @@ public class NowPlayingActivity extends Activity {
                 lyrics = TrackDetail.lyrics(words);
                 lyricsView.setLyrics(lyrics);
                 Log.i(TAG, "now playing detail: lyrics " + (lyrics.isEmpty() ? "none" : lyrics.synced ? "synced" : "plain"));
+                note("player.detail", "waveform", wave != null && levels != null && TrackDetail.samples(levels).length > 0,
+                        "quality", !quality.isEmpty(), "lyrics", lyrics.isEmpty() ? "none" : lyrics.synced ? "synced" : "plain");
                 render();
             });
         });
@@ -692,6 +707,7 @@ public class NowPlayingActivity extends Activity {
             scrollQueueToCurrent();
         }
         Log.i(TAG, "now playing stage " + s.name().toLowerCase(Locale.ROOT));
+        note("player.stage", "to", s.name().toLowerCase(Locale.ROOT));
         render();
     }
 
@@ -737,6 +753,7 @@ public class NowPlayingActivity extends Activity {
                 words.addView(who);
             }
             row.addView(words, new LinearLayout.LayoutParams(0, -2, 1));
+            UiTelemetry.tag(row, now ? "queue.current" : "queue.row");
             if (jump && !now) {
                 row.setOnClickListener(v -> { if (controller != null) controller.seekToDefaultPosition(index); });
                 row.setContentDescription("Play " + name);
@@ -744,6 +761,7 @@ public class NowPlayingActivity extends Activity {
             if (change) {
                 ImageButton remove = icon(R.drawable.daylight_np_remove, "Remove " + name, theme.inkMuted,
                         () -> controller.removeMediaItem(index));
+                UiTelemetry.tag(remove, "queue.remove");
                 row.addView(remove, new LinearLayout.LayoutParams(dp(44), dp(44)));
             }
             queueList.addView(row, new LinearLayout.LayoutParams(-1, -2));
@@ -800,6 +818,7 @@ public class NowPlayingActivity extends Activity {
                 row.addView(check, new LinearLayout.LayoutParams(dp(24), dp(24)));
             }
             row.setContentDescription(on ? label + ", playing here" : "Play on " + label);
+            UiTelemetry.tag(row, "play-on." + (LOCAL.equals(id) ? "local" : id));
             row.setOnClickListener(v -> { dialog.dismiss(); if (!id.equals(target)) switchTo(id, label); });
             col.addView(row);
         }
@@ -843,6 +862,7 @@ public class NowPlayingActivity extends Activity {
                     Bundle args = new Bundle();
                     args.putInt(SleepTimer.ARG_MINUTES, SLEEP_MINUTES[which]);
                     controller.sendCustomCommand(new SessionCommand(SleepTimer.ACTION, Bundle.EMPTY), args);
+                    note("player.sleep", "minutes", SLEEP_MINUTES[which]);
                     main.postDelayed(this::render, 200);
                 })
                 .show();
@@ -935,6 +955,8 @@ public class NowPlayingActivity extends Activity {
             JSONObject answered = reply;
             Log.i(TAG, "remote input " + what + " -> " + (answered == null ? "unreachable"
                     : (answered.optInt("status", 0) + " " + answered.optString("code", "")).trim()));
+            note("remote.input", "action", action, "direction", direction == null ? "" : direction,
+                    "status", answered == null ? 0 : answered.optInt("status", 0));
             main.post(() -> {
                 if (!device.equals(target)) return;
                 String line = ScreenPlayer.commandLine(answered, name);
@@ -1122,7 +1144,7 @@ public class NowPlayingActivity extends Activity {
         stageBox.addView(artFrame, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
         lyricsView = new LyricsView(this);
         lyricsView.setSeek(ms -> {
-            if (can(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)) { controller.seekTo(ms); clock.reset(); }
+            if (can(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)) { controller.seekTo(ms); clock.reset(); note("player.lyrics-seek"); }
         });
         lyricsView.setVisibility(View.GONE);
         stageBox.addView(lyricsView, new FrameLayout.LayoutParams(-1, -1));
@@ -1158,6 +1180,7 @@ public class NowPlayingActivity extends Activity {
         remaining.setGravity(Gravity.END);
         remaining.setOnClickListener(v -> {
             timeDisplay = timeDisplay.next();
+            note("player.time-display", "mode", timeDisplay.name().toLowerCase(Locale.ROOT));
             prefs().edit().putString("time", timeDisplay.name()).apply();
             tickPosition();
         });
@@ -1173,7 +1196,11 @@ public class NowPlayingActivity extends Activity {
                 long to = (long) (fraction * d);
                 elapsed.setText(clock(to));
                 remaining.setText(timeDisplay.right(to, d));
-                if (done && can(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)) { c.seekTo(to); clock.reset(); }
+                if (done && can(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)) {
+                    note("player.scrub", "fromPct", Math.round(100f * c.getCurrentPosition() / d), "toPct", Math.round(100f * fraction));
+                    c.seekTo(to);
+                    clock.reset();
+                }
             }
             @Override public void onStep(int direction) {
                 if (controller == null) return;
@@ -1312,6 +1339,7 @@ public class NowPlayingActivity extends Activity {
                     boolean allowed = forward ? canSkipNext() : can(Player.COMMAND_SEEK_TO_PREVIOUS);
                     if (e.getActionMasked() == MotionEvent.ACTION_UP && (flick || far) && allowed && controller != null) {
                         view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+                        note("player.swipe-skip", "direction", forward ? "next" : "previous");
                         float out = (forward ? -1 : 1) * view.getWidth();
                         view.animate().translationX(out).alpha(0f).setDuration(160).withEndAction(() -> {
                             if (forward) skipNext(); else controller.seekToPrevious();
@@ -1328,6 +1356,7 @@ public class NowPlayingActivity extends Activity {
             }
         });
         v.setContentDescription("Cover. Swipe left for next, right for previous");
+        UiTelemetry.tag(v, "cover");
     }
 
     /** Every color on the screen, from the theme (the cover's, when it has one). */

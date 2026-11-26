@@ -98,6 +98,7 @@ public class ShareActivity extends Activity {
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        net.kckern.daylight.shellkit.UiTelemetry.install(this);
         if (Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false);
         Intent intent = getIntent();
         boolean plainText = intent != null && Intent.ACTION_SEND.equals(intent.getAction())

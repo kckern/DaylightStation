@@ -58,6 +58,7 @@ final class LyricsView extends ScrollView {
             // A timed empty line is an instrumental gap: a short rest mark, not nothing.
             line.setText(TextUtils.isEmpty(text.trim()) ? (lyrics.synced ? "♪" : " ") : text);
             line.setPadding(0, pad, 0, pad);
+            net.kckern.daylight.shellkit.UiTelemetry.tag(line, "lyrics.line");
             final long at = lyrics.times[i];
             if (lyrics.synced && at >= 0) {
                 line.setOnClickListener(v -> { if (seek != null) seek.seekTo(at); });
