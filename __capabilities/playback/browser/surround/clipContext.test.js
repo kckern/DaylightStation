@@ -38,7 +38,7 @@ describe('clipContext', () => {
       work: 'plex:1',
       index: 0,
       total: 3,
-      next: { title: 'Second Carol', subtitle: 'Snow Concert (2002)', work: 'plex:2', workTitle: null, workYear: null },
+      next: { title: 'Second Carol', subtitle: 'Snow Concert (2002)', work: 'plex:2', workTitle: null, workYear: null, step: 1 },
     });
   });
 
@@ -54,7 +54,8 @@ describe('clipContext', () => {
       getNowPlaying: () => ({ item: null, queuePosition: 0, queueLength: items.length }),
       getQueueSnapshot: () => ({ items, executionOrder: items.map((i) => i.queueItemId) }),
     };
-    expect(clipContext(CLIP, handle).next).toMatchObject({ title: 'Second Carol', work: 'plex:2' });
+    // Three moves: past the commercial and the photo, onto the clip it names.
+    expect(clipContext(CLIP, handle).next).toMatchObject({ title: 'Second Carol', work: 'plex:2', step: 3 });
   });
 
   it('has no next clip at the end of the queue', () => {
@@ -82,7 +83,7 @@ describe('clipContext: the concert a clip is from', () => {
       getQueueSnapshot: () => ({ items, executionOrder: ['a', 'b'] }),
     };
     expect(clipContext(CLIP, handle).next).toEqual({
-      title: 'Far Carol', subtitle: 'Far Concert (1999)', work: 'plex:9', workTitle: 'Far Concert', workYear: 1999,
+      title: 'Far Carol', subtitle: 'Far Concert (1999)', work: 'plex:9', workTitle: 'Far Concert', workYear: 1999, step: 1,
     });
   });
 

@@ -2459,8 +2459,9 @@ const CHIP_MARK_SCALE = 1.35;
 
     /**
      * AND THE EROICA'S PLATE IS UNTOUCHED — the regression this wave promised,
-     * in pixels rather than in markup. A single work has no set line and no
-     * fitted type, so its plate is the plate that shipped.
+     * in pixels rather than in markup. A single work has no set line; its one
+     * title is fitted too (2026-11-25), and the Eroica's sets whole at the
+     * ceiling, so its plate is the plate that shipped.
      */
     it.each(FLEET)('$name — a single work’s plate carries no set line', async ({ width, height }) => {
       await layout(page, css, { width, height, data: EROICA_FULL, position: 1200 });
@@ -2469,14 +2470,14 @@ const CHIP_MARK_SCALE = 1.35;
         const title = root.querySelector('[data-testid="surround-placard-title"]');
         return {
           set: root.querySelector('[data-testid="surround-placard-set"]'),
-          probe: root.querySelector('.surround-work-placard__probe'),
+          probeText: root.querySelector('.surround-work-placard__probe')?.textContent ?? null,
           title: title.textContent,
           fontPx: Number(parseFloat(getComputedStyle(title).fontSize).toFixed(2)),
           lineHeightPx: Number(parseFloat(getComputedStyle(title).lineHeight).toFixed(2)),
         };
       });
       expect(plate.set, 'a single work grew a set line').toBeNull();
-      expect(plate.probe, 'a single work grew a ruler nothing measures').toBeNull();
+      expect(plate.probeText, 'the ruler is left empty after the fit').toBe('');
       expect(plate.title).toBe('Symphony No. 3 in E-flat major, “Eroica”');
       // 2.05rem at the frame's 16px root, and a line box of 1.12 of it — the
       // two numbers the stylesheet has set since design wave 4, unchanged by

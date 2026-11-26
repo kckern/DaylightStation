@@ -259,6 +259,23 @@ describe('SurroundHost', () => {
     expect(mounts[0][1].modules).toEqual(['test-card', 'test-map']);
   });
 
+  it('turns a module\'s surround-advance into one queue move of that step', () => {
+    const player = makePlayer({
+      item: { id: 'plex:663134', title: 'Eroica', surround: SURROUND },
+      media: new FakeMedia(),
+    });
+    player.handle.advance = vi.fn();
+    const { container } = renderHost({ getPlayerHandle: player.get, logger });
+    const frame = container.querySelector('[data-testid="surround-frame"]');
+    act(() => {
+      frame.dispatchEvent(new CustomEvent('surround-advance', { bubbles: true, detail: { step: 2, source: 'clip-band' } }));
+      frame.dispatchEvent(new CustomEvent('surround-advance', { bubbles: true, detail: { step: 0 } }));
+    });
+    expect(player.handle.advance).toHaveBeenCalledTimes(1);
+    expect(player.handle.advance).toHaveBeenCalledWith(2);
+    expect(eventsNamed(logger, 'surround.advance')[0][1]).toMatchObject({ step: 2, source: 'clip-band' });
+  });
+
   it('renders bare children when the mode is off, even for an enriched item', () => {
     const player = makePlayer({
       item: { id: 'plex:663134', surround: SURROUND },

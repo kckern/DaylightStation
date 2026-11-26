@@ -169,6 +169,27 @@ function SurroundStage({ contentId, surround, active, mode, logger, getMediaEl, 
     return () => document.removeEventListener('surround-seek', handler);
   }, [active, getMediaEl, getPlayerHandle, contentId, logger]);
 
+  // A module asks for a queue move (the clip band's Up next, tapped or
+  // clicked). `step` is how many entries ahead: more than one when a break sits
+  // between this clip and the one the band names. The handle's advance goes
+  // through the change curtain like any other queue move.
+  useEffect(() => {
+    if (!active) return undefined;
+    const handler = (e) => {
+      const step = Number(e?.detail?.step);
+      if (!Number.isInteger(step) || step < 1) return;
+      const handle = getPlayerHandle?.();
+      if (typeof handle?.advance !== 'function') {
+        logger.warn('surround.advance.no-handle', { contentId, step });
+        return;
+      }
+      logger.info('surround.advance', { contentId, step, source: e?.detail?.source ?? null });
+      handle.advance(step);
+    };
+    document.addEventListener('surround-advance', handler);
+    return () => document.removeEventListener('surround-advance', handler);
+  }, [active, getPlayerHandle, contentId, logger]);
+
   // Every queue move goes through the frame's curtain first (curtain.js): it
   // shuts, THEN the Player advances, so nothing changes in view. Stable
   // identity; with no frame installed it is a straight pass-through.

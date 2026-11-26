@@ -163,3 +163,26 @@ describe('clip band piece grid: near-square', () => {
     expect(gridShape(51)).toEqual({ cols: 8, rows: 7 });
   });
 });
+
+describe('clip band Up next: a button where there is a move to make', () => {
+  it('asks the host for the queue move to the clip it names, step and all', () => {
+    const data = makeData({ next: { ...makeData().clip.next, step: 3 } });
+    const { container } = render(<ClipBand data={data} position={500} />);
+    const button = container.querySelector('button.clip-band__next');
+    expect(button).not.toBeNull();
+    // No focus: the kiosk's remote keys stay the Player's.
+    expect(button.getAttribute('tabindex')).toBe('-1');
+    const seen = [];
+    const onAdvance = (e) => seen.push(e.detail);
+    document.addEventListener('surround-advance', onAdvance);
+    button.click();
+    document.removeEventListener('surround-advance', onAdvance);
+    expect(seen).toEqual([{ step: 3, source: 'clip-band' }]);
+  });
+
+  it('stays plain text when the payload carries no step', () => {
+    const { container } = render(<ClipBand data={makeData()} position={500} />);
+    expect(container.querySelector('button.clip-band__next')).toBeNull();
+    expect(container.querySelector('div.clip-band__next')).not.toBeNull();
+  });
+});

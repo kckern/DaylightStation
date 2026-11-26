@@ -610,8 +610,9 @@ A queue item with a `segment: {start, end}` plays one piece cut from a whole
 concert. `clipContext.js` puts `data.clip` on the payload: the window, the
 clip's OWN name (`title`, the item's title; no surround payload holds it), the
 whole it was cut from (`work`, the id less its `#n`), and what plays next
-(`next: {title, subtitle, work, workTitle, workYear}`, read from the Player's
-execution order). The host polls the item every 250ms so a change is seen at
+(`next: {title, subtitle, work, workTitle, workYear, step}`, read from the
+Player's execution order; `step` is how many queue moves reach it, more than one
+when a break sits between). The host polls the item every 250ms so a change is seen at
 once, but re-reads the clip context (a deep copy of the queue) only on a change
 or every 2s.
 
@@ -624,13 +625,44 @@ that concert's poster (`/api/v1/display/<work>`, which also warms the rail's
 poster) and reads "Next, from <concert> (<year>)" above the piece; from the same
 concert it is just "Up next" and the name.
 
+*The band's type is measured* (`clipBandFit.js`). A piece's name can be a
+medley ("Pine Cones and Holly Berries / It's Beginning to Look a Lot Like
+Christmas"), and at a fixed 1.75rem that wrapped to five lines and poured out
+of the footer: over the picture, the clock off the screen, "Next, from" cut at
+the top. The budget is the room from the footer's top to the frame's bottom,
+less the footer's padding (the christmas garland's reserve) and any other band
+regions. A bottom region's numeric `height` is a floor that grows with its
+content, so the band's own box is never the budget. The title steps down from
+1.75rem to a 0.875rem floor until the title column fits in at most two lines,
+then three if it must, and past that it is clamped at three lines with
+`surround.clip-band.unfittable` (warn). Up next is set in em of one base size
+that steps from 1rem to 0.72rem, its poster is held to the budget, and a band
+still too short drops the other concert's name (the poster beside it shows
+which concert). Up next is capped at 38% of the band, never a fixed 19rem, so
+on a small screen the piece now playing keeps the width. A name that fits keeps
+the stylesheet size. The fit logs `surround.clip-band.fit` (debug) when it
+changes. `ClipBand.measure.test.jsx` checks it in Chromium at every fleet size.
+
+*Up next is a button* on screens with a mouse or touch: a click or tap
+dispatches `surround-advance` (`{step, source}`), and the host calls the
+Player handle's `advance(step)`, which goes through the change curtain like any
+other queue move (`surround.advance`, info). It takes no focus (`tabIndex -1`),
+so the kiosk's remote keys stay the Player's. Hover styling only applies where
+the screen can hover.
+
 **`poster-card`** (the rail): the poster as large as the rail allows, one
 rotating fact, and the ensemble's mark at the foot from `composer.logo`,
 resolved against `assetBase` like a composer portrait (the Tabernacle logo is
 `library/christmas/tabernacle/logo.svg` on the media mount, named in that
 domain's `_composer.yml`). Title, year and performers are not repeated: the
 poster prints them and the plate (`Title · Year`, for a dated performance with
-no provenance line) names them.
+no provenance line) names them. A single work's plate line is fitted like a
+container's (`fitPlate`, 2.05rem down to 1.5rem) rather than cut by the ellipsis
+at full size. The painted line is checked after the size lands and stepped down
+if the name is still cut (three spans can set wider than the one measured
+string). A line that cannot be set whole even at the floor headlines the piece's
+`short_title` instead (`surround.placard.short-title`, info), and with none
+authored it keeps the ellipsis and warns `surround.placard.unfittable`.
 
 **The change curtain** (`curtain.js`, `.surround-frame__curtain`): when the
 item changes and either side is a clip, two panels close over the whole frame

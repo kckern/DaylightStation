@@ -235,9 +235,11 @@ describe('WorkPlacard — a container names the sounding segment', () => {
     expect(seps[0].textContent).toBe('·');
   });
 
-  it('carries the ruler the fit measures on, and only on a container', () => {
+  it('carries the ruler the fit measures on, on a container and a single work alike', () => {
     expect(at(200).container.querySelector('.surround-work-placard__probe')).not.toBeNull();
-    expect(at(200, EROICA).container.querySelector('.surround-work-placard__probe')).toBeNull();
+    // A single work's title is fitted too (a long dated concert was cut by the
+    // ellipsis at the ceiling while a smaller size would have set it whole).
+    expect(at(200, EROICA).container.querySelector('.surround-work-placard__probe')).not.toBeNull();
   });
 });
 
@@ -285,7 +287,8 @@ const EROICA = {
  */
 const EROICA_PLATE = '<div class="surround-work-placard" data-testid="surround-work-placard">'
   + '<h2 class="surround-work-placard__title" data-testid="surround-placard-title">'
-  + 'Symphony No. 3 in E-flat major, “Eroica”</h2>'
+  + 'Symphony No. 3 in E-flat major, “Eroica”'
+  + '<span class="surround-work-placard__probe" aria-hidden="true"></span></h2>'
   + '<p class="surround-work-placard__meta">Op. 55'
   + '<span class="surround-work-placard__sep" aria-hidden="true">·</span>1803-04'
   + '<span class="surround-work-placard__sep" aria-hidden="true">·</span>Vienna, 1805</p></div>';
