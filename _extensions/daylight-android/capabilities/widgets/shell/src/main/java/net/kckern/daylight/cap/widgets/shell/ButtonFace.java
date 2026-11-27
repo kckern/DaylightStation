@@ -17,7 +17,7 @@ import java.util.Set;
  * no link in the cache: the button then reads "Not set" and a tap opens the chooser.
  */
 final class ButtonFace {
-    static final String APP_NAME = "Daylight";
+    static final String APP_NAME = "Playlist";   // a widget with no playlist name yet (never the brand)
     static final String UNSET_LABEL = "Not set";
     /** A drawable of this module, shown by a button with no action. */
     static final String UNSET_ICON = "ic_widget_button_unset";

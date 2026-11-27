@@ -102,7 +102,7 @@ final class CarList {
             case "bookmark":
                 return "it opens a web page, which is no use while driving";
             case "media":
-                return "household media plays through Daylight's media app in the car";
+                return "household media plays in the car's media app, not as an action";
             case "input":
                 if (target.startsWith("voice:")) return null;
                 if (target.startsWith("text:")) return "a text input needs the phone's keyboard";

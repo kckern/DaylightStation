@@ -20,7 +20,7 @@ import net.kckern.daylight.shellkit.ShellStart;
  */
 final class CaptureScopeWait {
     static final String CHECKING = "Checking capture setup…";
-    static final String UNAVAILABLE = "Could not verify this capture’s account. Reopen the shortcut after Daylight starts.";
+    static final String UNAVAILABLE = "Could not verify this capture’s account. Reopen the shortcut in a moment.";
 
     /** Once the payload runs, how long its account binding may take to appear. */
     static final long BINDING_MS = 5_000;

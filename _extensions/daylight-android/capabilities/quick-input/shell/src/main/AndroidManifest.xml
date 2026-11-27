@@ -72,7 +72,7 @@
             android:name="net.kckern.daylight.cap.quickinput.shell.ShareActivity"
             android:exported="true"
             android:excludeFromRecents="true"
-            android:label="Daylight"
+            android:label="${appLabel}"
             android:launchMode="standard"
             android:taskAffinity=""
             android:theme="@style/Theme.Daylight.Dialog">

@@ -20,7 +20,7 @@ final class TileFace {
 
     /** @param link the slot's link, already checked to be the app's own scheme, or empty */
     static TileFace of(int slot, String label, String icon, String link) {
-        String name = "Daylight " + slot;
+        String name = "Action " + slot;
         if (link == null || link.isEmpty()) return new TileFace(name, DEFAULT_ICON, false, "");
         boolean plain = icon != null && icon.matches("[a-z0-9_]{1,24}");
         return new TileFace(label == null || label.isEmpty() ? name : label, plain ? "ic_action_" + icon : DEFAULT_ICON, true, link);

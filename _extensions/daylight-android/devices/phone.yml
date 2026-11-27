@@ -2,6 +2,9 @@
 # home app. Reaches the backend over the always-on VPN at the address the kiosks use.
 id: phone
 package: net.kckern.daylight.phone
+# The name Android shows for the app: the launcher, Settings, the share sheet, the
+# notification group and the car. The app's own screens never name a brand.
+label: Home
 android: { minSdk: 26, targetSdk: 33 }
 abis: []
 # bind: none. A phone joins networks outside the house, and every app installed on it can
@@ -9,7 +12,7 @@ abis: []
 # all. Its installed components (the link activity, the tiles, the widget) reach the
 # payload in-process. Debugging is over adb: logcat, and run-as for its files.
 control: { port: 8780, lifelinePort: 8781, bind: none }
-shell: { versionCode: 139, versionName: "0.1-phone.139" }
+shell: { versionCode: 180, versionName: "0.1-phone.180" }
 # The household site's host, so an https link to it (in a relayed push, say) can open in
 # the app. Private: resolved from `placeholders:` when this device's manifest is built.
 appLinks: { host: "{phone_link_host}" }
@@ -89,10 +92,10 @@ defaults:
   # The Now playing screen on the last target it showed: this phone or a screen.
   actions.14: "now-playing|Now playing|play|player:"
   # Launcher (long-press) shortcuts, in order, and the action of each quick-settings
-  # slot ("Daylight 1" to "Daylight 4"; an empty entry leaves a slot unassigned).
+  # slot ("Action 1" to "Action 4" until set; an empty entry leaves a slot unassigned).
   actions.shortcuts: "journal,meal,meal-photo,journal-note"
   actions.tiles: "journal,meal,meal-photo,meal-barcode"
-  # The four buttons of the "Daylight actions" home-screen widget, in order.
+  # The four buttons of the "Actions" home-screen widget, in order.
   widgets.actions: "journal,meal,meal-photo,media"
   # The tabs a car (and any media browser) shows, at most four: "Label=target;...", a
   # target being recent, continue (long items in progress, then the lists played lately),

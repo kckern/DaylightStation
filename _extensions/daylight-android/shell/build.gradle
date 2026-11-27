@@ -26,6 +26,9 @@ android {
                 versionCode d.shellVersionCode
                 versionName d.shellVersionName
                 buildConfigField 'String', 'DEVICE_ID', "\"${d.id}\""
+                // The name Android shows for the app (launcher, Settings, share sheet, the car,
+                // the notification group): the device file's label:, default "Home" (D16).
+                manifestPlaceholders.appLabel = d.label
                 buildConfigField 'int', 'LIFELINE_PORT', "${d.lifelinePort}"
                 // lan, loopback or none: where the lifeline listens, if anywhere. The payload reads the same
                 // value from its generated DeviceConfig for the control server.

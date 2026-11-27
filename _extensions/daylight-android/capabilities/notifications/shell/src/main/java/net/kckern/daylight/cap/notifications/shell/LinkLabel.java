@@ -34,7 +34,7 @@ final class LinkLabel {
                     case "text": return "text note";
                     default: return "your capture";
                 }
-            case "open": return "opening Daylight";
+            case "open": return "opening the app";
             default: return "your tap";
         }
     }

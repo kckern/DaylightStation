@@ -280,7 +280,7 @@ public final class FreematicsActivity extends Activity {
                 if (connection != gatt) return;
                 BluetoothGattService service = result == BluetoothGatt.GATT_SUCCESS ? connection.getService(SERVICE) : null;
                 characteristic = service == null ? null : service.getCharacteristic(STATUS);
-                if (characteristic == null) unavailable("Freematics is missing the Daylight Bluetooth firmware service.");
+                if (characteristic == null) unavailable("Freematics is missing the household Bluetooth firmware service.");
                 else readStatus();
             });
         }

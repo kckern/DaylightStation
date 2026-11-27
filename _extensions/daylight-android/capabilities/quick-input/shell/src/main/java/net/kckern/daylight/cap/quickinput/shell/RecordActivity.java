@@ -43,7 +43,7 @@ public class RecordActivity extends Activity {
     private static final int REQUEST_PERMISSIONS = 1;
     private static final String PREFS = "daylight_memo";
     private static final String ASKED_NOTIFICATIONS = "asked_notifications";
-    static final String NOTIFICATIONS_OFF = "Notifications are off for Daylight. "
+    static final String NOTIFICATIONS_OFF = "Notifications are off for this app. "
             + "You can send or cancel this recording here.";
 
     private final Handler main = new Handler(Looper.getMainLooper());

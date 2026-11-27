@@ -12,7 +12,7 @@ import org.json.JSONObject;
 final class LinkAnswer {
     enum Kind { NONE, FRONT, TOAST }
 
-    static final String NOT_READY = "Daylight is still starting. Try again in a moment.";
+    static final String NOT_READY = "Still starting up. Try again in a moment.";
     private static final String FAILED = "That did not work";
     private static final int MAX_MESSAGE = 200;
 

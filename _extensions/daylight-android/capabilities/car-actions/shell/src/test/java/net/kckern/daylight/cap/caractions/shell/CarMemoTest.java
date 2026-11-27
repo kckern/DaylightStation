@@ -51,7 +51,7 @@ public class CarMemoTest {
         assertNull(CarMemo.refusal(5, true, "", false));
         assertEquals(CarMemo.CAR_TOO_OLD, CarMemo.refusal(4, true, "", false));
         assertEquals("Allow the microphone on the phone first", CarMemo.refusal(6, false, "", false));
-        assertEquals("Daylight is not set up for quick inputs", CarMemo.refusal(6, true, "Daylight is not set up for quick inputs", false));
+        assertEquals("Quick inputs aren't set up on this phone", CarMemo.refusal(6, true, "Quick inputs aren't set up on this phone", false));
         assertEquals(CarMemo.BUSY, CarMemo.refusal(6, true, "", true));
         assertEquals(5, CarMemo.MIN_CAR_API);
     }

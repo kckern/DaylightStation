@@ -21,7 +21,7 @@ final class NodeItems {
 
     static MediaItem root() {
         return new MediaItem.Builder().setMediaId(ROOT)
-                .setMediaMetadata(new MediaMetadata.Builder().setTitle("Daylight").setIsBrowsable(true).setIsPlayable(false).build())
+                .setMediaMetadata(new MediaMetadata.Builder().setTitle("Library").setIsBrowsable(true).setIsPlayable(false).build())
                 .build();
     }
 

@@ -29,7 +29,7 @@
          Backup: nothing is backed up or transferred to another device (the two rule
          files exclude every domain), on top of allowBackup="false". -->
     <application
-        android:label="Daylight"
+        android:label="${appLabel}"
         android:usesCleartextTraffic="true"
         android:allowBackup="false"
         android:fullBackupContent="@xml/daylight_backup_rules"

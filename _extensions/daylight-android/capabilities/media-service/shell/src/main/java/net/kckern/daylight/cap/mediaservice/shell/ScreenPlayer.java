@@ -169,7 +169,7 @@ final class ScreenPlayer extends SimpleBasePlayer {
         try {
             return ScreenSnapshot.parse(link.session(target));
         } catch (net.kckern.daylight.api.PayloadPort.NotReadyException starting) {
-            return ScreenSnapshot.unreachable("Daylight is starting");
+            return ScreenSnapshot.unreachable("Starting up…");
         } catch (Exception unreachable) {
             return ScreenSnapshot.unreachable();
         }

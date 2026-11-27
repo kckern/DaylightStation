@@ -427,7 +427,7 @@ public class PhoneHomeActivity extends Activity {
             if (error != null && !error.equals(net.kckern.daylight.shellkit.PayloadReady.STARTING)) {
                 row("Try again", "Try again", "open", "›", this::refresh);
             } else if (error != null) {
-                column.addView(label("They show here as soon as Daylight is running.", Type.LABEL, t.inkMuted));
+                column.addView(label("They show here once started up.", Type.LABEL, t.inkMuted));
             }
             return scroll;
         }
@@ -1587,7 +1587,7 @@ public class PhoneHomeActivity extends Activity {
         Sheet sheet = new Sheet(this).heading("Put a playlist on Home",
                 "Your launcher adds widgets itself, so it takes three steps there.");
         sheet.step(1, "Touch and hold an empty spot on your home screen.")
-                .step(2, "Open Widgets and drag Daylight playlist onto the page.")
+                .step(2, "Open Widgets, find " + getApplicationInfo().loadLabel(getPackageManager()) + " and drag Playlist onto the page.")
                 .step(3, title == null || title.isEmpty()
                         ? "Choose a playlist. You can search the whole list."
                         : "Choose " + title + ". You can search the whole list.")
@@ -1683,7 +1683,7 @@ public class PhoneHomeActivity extends Activity {
         switch (status) {
             case CONFIRM: message = "Confirm in Android"; break;
             case UNCONFIRMED: message = "Placement unconfirmed. Check Android Home before trying again."; break;
-            case REFUSED: message = "Daylight could not ask Android to place it. Tap the item to try again."; break;
+            case REFUSED: message = "Android was not asked to place it. Tap the item to try again."; break;
             case EXTRA_WIDGET:
                 message = "Two widgets were added for this placement. If both are still on Android Home, touch and hold the extra widget, then choose Remove.";
                 break;

@@ -555,7 +555,7 @@ public final class QuickInputCapability implements Capability {
         KeyedOnly(String kind) { this.kind = kind; }
         @Override public String kind() { return kind; }
         @Override public JSONObject handle(String arg, Map<String, String> query, boolean keyed) throws Exception {
-            if (!keyed) return LinkEffect.refused("forbidden", "That link has expired. Open Daylight and try again.");
+            if (!keyed) return LinkEffect.refused("forbidden", "That link has expired. Try it again from the app.");
             return handle(arg, query);
         }
     }

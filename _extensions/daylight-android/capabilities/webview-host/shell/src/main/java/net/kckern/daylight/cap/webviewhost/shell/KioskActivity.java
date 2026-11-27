@@ -52,11 +52,11 @@ public class KioskActivity extends Activity implements KioskHost {
         super.onCreate(savedInstanceState);
         // Nothing is shown over a lock screen here. Whether this device does is its
         // device file's decision, which the controller passes on (showWhenLocked below).
-        showFallback("Daylight is starting…");
+        showFallback("Starting up…");
         try {
             startForegroundService(new Intent().setClassName(this, SHELL_SERVICE));
         } catch (Exception e) {
-            showFallback("The Daylight service could not start: " + e.getMessage());
+            showFallback("Could not start: " + e.getMessage());
         }
         ShellComponents.publish(COMPONENT, this);
     }
@@ -94,7 +94,7 @@ public class KioskActivity extends Activity implements KioskHost {
         }
         if (next == null || isFinishing() || isDestroyed()) {
             slot.clear();
-            showFallback("Daylight is restarting…");
+            showFallback("Restarting…");
             return;
         }
         guard("attach", () -> next.onHostAttached(this));
@@ -118,7 +118,7 @@ public class KioskActivity extends Activity implements KioskHost {
             if (failed == expected) { failed = null; main.removeCallbacks(retryAttach); }
             if (!slot.releaseIf(expected)) return;
             try { expected.onHostDetached(); } catch (Throwable t) { Log.w(TAG, "detach threw", t); }
-            showFallback("Daylight is restarting…");
+            showFallback("Restarting…");
         });
     }
 

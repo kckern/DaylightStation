@@ -640,7 +640,7 @@ public final class BrowseActivity extends Activity {
     static String progressUnavailable(net.kckern.daylight.shellkit.FailureWords.Cause cause) {
         switch (cause) {
             case OFFLINE: return "Progress isn't available offline";
-            case STARTING: return "Progress shows once Daylight has started";
+            case STARTING: return "Progress shows once started up";
             default: return "Progress: " + net.kckern.daylight.shellkit.FailureWords.line(cause);
         }
     }

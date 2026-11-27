@@ -43,7 +43,7 @@ public final class CarActionsCapability implements Capability {
     static final String ANDROID_AUTO = "com.google.android.projection.gearhead";
 
     static final String NOT_ON_LIST = "That is not on the car list";
-    static final String NOT_SET_UP = "Daylight is not set up for quick inputs";
+    static final String NOT_SET_UP = "Quick inputs aren't set up on this phone";
 
     /** Where the host pins go; the surface cache unless a test sets it. */
     interface PinCache { void write(String json); }
