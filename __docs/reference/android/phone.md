@@ -562,7 +562,21 @@ targets are Media3 sessions behind one `MediaController`:
   of this item. It lives in the phone's media session (`SleepTimer`, custom command
   `net.kckern.daylight.media.SLEEP` with `minutes`, -1 for the end of the item), so it
   holds with Now playing closed; stopping playback or clearing the queue cancels it.
+  A playback error does not (the player is left idle by an error too, and a lost
+  connection that comes back keeps the timer).
   Over its last minute the volume fades to 10%, then it pauses and the volume returns.
+- **Playback errors** (this phone's streamed items; `PlaybackRecovery`). Two causes, two
+  answers. Home not reachable (connection failed or timed out, a 5xx, 401, 403, 408 or
+  429): the player stays on the item at its position, Now playing's status line reads
+  "Lost connection to home · will resume", and the item is prepared again after 2, 5, 10
+  and 30 s, then every 30 s while the session lives; it plays on where it was if it was
+  playing. The item itself will not play (a decode or format error, a 404 or 410 for it):
+  the player skips to the next item, at most 3 in a row, then stops on the item with
+  "This item won't play · 3 in a row didn't, so playback stopped"; one item that plays
+  resets the count. A paused item or the last one is not skipped past ("This item won't
+  play"). A kept item plays from the phone, so its errors are never read as a lost
+  connection (a damaged kept file: see Keep, "Whole, or not ready"). Each error is logged
+  as `player error <code> -> SKIP|HOLD|STOP`.
 - **Crossfade between songs** (⋮ → Crossfade, this phone only; `CrossfadeEngine`, rules in
   `Crossfade`). Off, 2, 4, 6, 8 or 12 s; the person's choice is kept on the phone
   (`daylight.player` prefs) and wins over the household default `media.crossfadeSec` (4).
@@ -989,7 +1003,11 @@ One screen, `BrowseActivity` (not exported), in three modes:
   Play on… (Now playing's picker, `TargetPicker`: this phone first, each screen's state, off ones greyed; a screen gets the screen's load, as the web's Play on) and Keep (the
   one Keep flow). A track's ⋮: Play here, Play next, Add to queue, Play on…, Keep.
   Playing goes through the media session (the same media ids the car uses) and opens
-  Now playing.
+  Now playing. A second tap on the same Play or Shuffle within a second, or while the
+  player is still connecting, is dropped (shell-kit `TapGuard`), and taps while the
+  controller connects share its one connection. Every Now playing launch from Browse and
+  the phone home carries `SINGLE_TOP | CLEAR_TOP`, so an open Now playing takes the new
+  item rather than a second one opening; the home's cards use the same guard.
 
 Now playing's artist and album lines open that artist's or album's page, found from the
 playing track's own `albumId`/`artistId` (`parents` op over `/api/v1/info`); only without
@@ -1064,6 +1082,9 @@ removed.
   shows "1.2 GB · 13.8 GB left · on Wi-Fi". Above a quarter of the limit or of the free
   space, one confirmation; over the limit, "Needs 1.2 GB more room" with Manage space; with
   home out of reach, the keep waits ("Waiting for home") and is made when home answers.
+  A waiting keep is held on the phone by the media id it was asked with (`c:<list>`, or
+  `p:<track>` for Now playing's album keep) and shown, and removed, by its content id
+  (`KeepRules.pendingContentId`); Remove drops it even when home does not answer.
 - **Kept from the web.** A `keep` command from the inbox (see "The phone's inbox" below)
   is recorded by the payload and then goes through the same rules on the phone: it is
   Checking until its size is known on an allowed network, then Queued or Needs room. The
@@ -1430,9 +1451,12 @@ any problem fails `DeviceDefaultsTest` at build time.
 `{op: list}` and `{op: run, id}`. A run takes an id on the car list, and only such an
 id (anything else answers "That is not on the car list"), and goes through
 `ActionList.run`, the path a keyed `daylight://action/<id>` link takes. No link is
-built and no key leaves the payload. The tap runs off the main thread; the answer is
-a car toast. Drawing the list, a refresh and the car connecting run nothing: only a
-row's own click does.
+built and no key leaves the payload. The tap runs off the main thread. A car toast
+"Sending <label>…" shows at once and the row's second line reads "Sending…"; further
+taps on that action are ignored until its answer arrives or 12 s pass (the 8 s run wait
+plus a margin; `RunGuard`), so a second tap cannot run a door or the lights twice. The
+answer is a second car toast. Drawing the list, a refresh and the car connecting run
+nothing: only a row's own click does.
 
 **Cold start.** The service starts the shell service, as the media service does.
 With no payload yet the list is one row, "Daylight is starting"; when a payload

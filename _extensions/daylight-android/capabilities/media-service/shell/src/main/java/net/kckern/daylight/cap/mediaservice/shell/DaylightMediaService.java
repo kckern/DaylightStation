@@ -178,6 +178,38 @@ public class DaylightMediaService extends MediaLibraryService {
     private final Runnable widgetTick = this::publishPlaylistProgress;
     private int widgetTrackNumber;
     private long handoffGeneration;
+    /** Skip or hold after a playback error (H2): see PlaybackRecovery. Main thread only. */
+    private final PlaybackRecovery recovery = new PlaybackRecovery();
+    private MediaItem heldItem;
+    private final Runnable retryHeld = this::retryHeld;
+
+    /** A streamed item home could not serve: stay on it and prepare again with backoff. */
+    private void holdForHome(MediaItem failed) {
+        heldItem = failed;
+        widgetUpdates.removeCallbacks(retryHeld);
+        long wait = recovery.nextRetryMs();
+        Log.i(TAG, "lost connection to home: retrying in " + wait + " ms at " + player.getCurrentPosition() + " ms");
+        widgetUpdates.postDelayed(retryHeld, wait);
+    }
+
+    /** Prepares the held item again where it was; playWhenReady survives the error, so it plays on if it was playing. */
+    private void retryHeld() {
+        ExoPlayer p = player;
+        MediaItem held = heldItem;
+        if (current != this || p == null || held == null || p.getCurrentMediaItem() != held
+                || p.getPlayerError() == null) return;
+        p.prepare();
+    }
+
+    /** The HTTP status behind an IO_BAD_HTTP_STATUS error, or -1. */
+    private static int httpStatus(PlaybackException error) {
+        for (Throwable t = error.getCause(); t != null; t = t.getCause()) {
+            if (t instanceof androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) {
+                return ((androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) t).responseCode;
+            }
+        }
+        return -1;
+    }
     private boolean playedQueue;
 
     @Override
@@ -246,7 +278,11 @@ public class DaylightMediaService extends MediaLibraryService {
         // Loudness levelling: each track at its Plex gain (never above full), times the
         // sleep timer's fade; the two meet here so neither undoes the other.
         player.addListener(new Player.Listener() {
-            @Override public void onMediaItemTransition(MediaItem item, int reason) { level(item); loadChapters(item); }
+            @Override public void onMediaItemTransition(MediaItem item, int reason) {
+                level(item);
+                loadChapters(item);
+                recovery.moved();
+            }
         });
         player.addListener(new Player.Listener() {
             @Override public void onEvents(Player player, Player.Events events) {
@@ -275,6 +311,15 @@ public class DaylightMediaService extends MediaLibraryService {
                 if (skipDamagedKept(failed, error)) return;
                 if (failed == null || failed.localConfiguration == null
                         || !"audio".equals(failed.localConfiguration.uri.getQueryParameter("stream"))) return;
+                boolean kept;
+                try { kept = KeepStore.get(DaylightMediaService.this).isKept(failed.mediaId); }
+                catch (RuntimeException broken) { kept = false; }
+                PlaybackRecovery.Action action = recovery.onError(error.errorCode, httpStatus(error), kept,
+                        player.getPlayWhenReady(), player.hasNextMediaItem());
+                Log.w(TAG, "player error " + error.getErrorCodeName() + " -> " + action
+                        + (action == PlaybackRecovery.Action.SKIP ? " (" + recovery.skips() + " in a row)" : ""));
+                if (action == PlaybackRecovery.Action.HOLD) { holdForHome(failed); return; }
+                if (action != PlaybackRecovery.Action.SKIP) return;
                 widgetUpdates.post(() -> {
                     if (current != DaylightMediaService.this || player.getCurrentMediaItem() != failed
                             || player.getPlayerError() != error || !player.getPlayWhenReady()
@@ -287,6 +332,8 @@ public class DaylightMediaService extends MediaLibraryService {
 
             @Override public void onIsPlayingChanged(boolean playing) {
                 if (playing) {
+                    recovery.played();
+                    widgetUpdates.removeCallbacks(retryHeld);
                     // Playing makes the app foreground: bring the shell (and its inbox long poll)
                     // back if Android stopped it while the app sat in the background.
                     ShellStart.ensure(DaylightMediaService.this);
@@ -628,6 +675,8 @@ public class DaylightMediaService extends MediaLibraryService {
         if (radioPrefs != null) radioPrefs.unregisterOnSharedPreferenceChangeListener(driveChanged);
         if (current == this) current = null;
         widgetUpdates.removeCallbacks(widgetTick);
+        widgetUpdates.removeCallbacks(retryHeld);
+        recovery.release();
         PlaylistWidgetState.progress(this, null, null);
         PlaylistWidgetState.show(this, displayedPlaylist, Phase.READY);
         updateTrackArtwork(null, null);

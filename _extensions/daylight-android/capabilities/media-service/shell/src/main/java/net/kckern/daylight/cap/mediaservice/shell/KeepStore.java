@@ -444,8 +444,20 @@ final class KeepStore {
             return true;
         } catch (Exception failed) {
             prefs.edit().remove("removing." + contentId).apply();
-            return false;
+            // A keep still waiting for home lives only on this phone: it goes without home.
+            boolean waitingOnly = removePendingFor(contentId) && !keptHas(contentId);
+            if (waitingOnly) event("keep.removed", eventOf("reason", reason));
+            return waitingOnly;
         }
+    }
+
+    private boolean keptHas(String contentId) {
+        for (JSONObject k : keptItemsOrEmpty()) if (k != null && contentId.equals(k.optString("contentId"))) return true;
+        return false;
+    }
+
+    private static JSONObject eventOf(String key, String value) {
+        try { return new JSONObject().put(key, value); } catch (Exception never) { return new JSONObject(); }
     }
 
     private void clearItem(String cid) {
@@ -454,7 +466,7 @@ final class KeepStore {
             e.remove(p + cid);
         }
         e.apply();
-        removePending("c:" + cid);
+        removePendingFor(cid);
     }
 
     /** Remove all (confirmed on screen, with the total). */
@@ -1017,6 +1029,17 @@ final class KeepStore {
         prefs.edit().putString("pending", p.toString()).apply();
     }
 
+    /** Drops every waiting keep the row {@code contentId} stands for ("c:" or "p:"); true if any went. */
+    private synchronized boolean removePendingFor(String contentId) {
+        JSONArray p = pending();
+        List<String> all = new ArrayList<>();
+        for (int i = 0; i < p.length(); i++) all.add(p.optString(i));
+        List<String> left = KeepRules.pendingWithout(all, contentId);
+        if (left.size() == all.size()) return false;
+        prefs.edit().putString("pending", new JSONArray(left).toString()).apply();
+        return true;
+    }
+
     private synchronized void removePending(String mediaId) {
         JSONArray p = pending(), out = new JSONArray();
         for (int i = 0; i < p.length(); i++) if (!mediaId.equals(p.optString(i))) out.put(p.optString(i));
@@ -1137,7 +1160,7 @@ final class KeepStore {
             JSONArray away = pending();
             for (int i = 0; i < away.length(); i++) {
                 String mid = away.optString(i);
-                String cid = mid.startsWith("c:") ? mid.substring(2) : mid.startsWith("p:") ? mid.substring(2).split("\\|")[0] : mid;
+                String cid = KeepRules.pendingContentId(mid);
                 JSONObject e = new JSONObject().put("contentId", cid).put("title", "").put("trackIds", new JSONArray())
                         .put("done", 0).put("total", 0).put("failed", 0).put("bytes", 0).put("state", KeptIndex.WAITING_HOME);
                 index.put(e);

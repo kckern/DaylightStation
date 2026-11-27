@@ -10,6 +10,7 @@ import android.graphics.Bitmap;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.text.Editable;
 import android.text.InputType;
 import android.text.TextUtils;
@@ -78,6 +79,7 @@ public final class BrowseActivity extends Activity {
     private int generation;
     private ListenableFuture<MediaController> pending;
     private MediaController controller;
+    private final net.kckern.daylight.shellkit.TapGuard playGuard = new net.kckern.daylight.shellkit.TapGuard();
 
     /** Opens the search, the library, or one level of it. */
     static void open(Context c, String mode, String parent, String kind, String title, String subtitle, String art) {
@@ -153,6 +155,9 @@ public final class BrowseActivity extends Activity {
         io.shutdownNow();
         covers.shutdownNow();
         if (pending != null) MediaController.releaseFuture(pending);
+        else if (controller != null) controller.release();
+        pending = null;
+        controller = null;
     }
 
     @Override public boolean onOptionsItemSelected(MenuItem item) {
@@ -685,14 +690,28 @@ public final class BrowseActivity extends Activity {
 
     // ── playing ─────────────────────────────────────────────────────────────
 
+    /**
+     * Runs {@code then} on the connected controller. Taps while it connects share the one
+     * future (each used to build its own controller, and the earlier one was never released).
+     */
     private void withController(java.util.function.Consumer<MediaController> then) {
-        if (controller != null && controller.isConnected()) { then.accept(controller); return; }
-        SessionToken token = new SessionToken(this, new ComponentName(this, DaylightMediaService.class));
-        pending = new MediaController.Builder(this, token).buildAsync();
+        if (controller != null && controller.isConnected()) {
+            try { then.accept(controller); } finally { playGuard.done(); }
+            return;
+        }
+        if (pending == null || pending.isDone()) {
+            // None yet, or a finished one whose controller has gone: releasing the future releases that controller.
+            if (pending != null) MediaController.releaseFuture(pending);
+            controller = null;
+            SessionToken token = new SessionToken(this, new ComponentName(this, DaylightMediaService.class));
+            pending = new MediaController.Builder(this, token).buildAsync();
+        }
         final ListenableFuture<MediaController> mine = pending;
         mine.addListener(() -> {
+            if (isDestroyed() || mine != pending) { playGuard.done(); return; }
             try { controller = mine.get(); then.accept(controller); }
             catch (Exception failed) { Toast.makeText(this, "Could not start playback", Toast.LENGTH_SHORT).show(); }
+            finally { playGuard.done(); }
         }, main::post);
     }
 
@@ -702,9 +721,13 @@ public final class BrowseActivity extends Activity {
      * "Nothing playing" while the player fetches it.
      */
     private void play(String mediaId, boolean shuffle, String name, String by, String cover) {
+        // A second tap on the same item within a second, or while the first is starting, is dropped.
+        if (!playGuard.admit((shuffle ? "shuffle|" : "play|") + mediaId, SystemClock.elapsedRealtime())) return;
         action(shuffle ? "shuffle" : "play");
+        // One Now playing: an open one takes the new item (onNewIntent reads the Starting extras).
         startActivity(Starting.put(new Intent(this, NowPlayingActivity.class)
-                .putExtra(NowPlayingActivity.EXTRA_TARGET, NowPlayingActivity.LOCAL), mediaId, name, by, cover));
+                .putExtra(NowPlayingActivity.EXTRA_TARGET, NowPlayingActivity.LOCAL)
+                .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP), mediaId, name, by, cover));
         withController(c -> {
             c.setShuffleModeEnabled(shuffle);
             c.setMediaItem(new MediaItem.Builder().setMediaId(mediaId).build());

@@ -46,6 +46,7 @@ import java.util.concurrent.Executors;
 /** The phone launcher. Incoming intents never select or run an action. */
 public class PhoneHomeActivity extends Activity {
     private static final String NOW_PLAYING = "net.kckern.daylight.cap.mediaservice.shell.NowPlayingActivity";
+    private final net.kckern.daylight.shellkit.TapGuard playGuard = new net.kckern.daylight.shellkit.TapGuard();
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private JSONArray pages = new JSONArray();
     private JSONArray configuredActions = new JSONArray();
@@ -344,7 +345,8 @@ public class PhoneHomeActivity extends Activity {
         nowNext.setVisibility(now.canNext && now.transport != null ? View.VISIBLE : View.GONE);
         nowStrip.setContentDescription((now.playing ? "" : "Paused: ") + now.title + (where.isEmpty() ? "" : ", " + where) + ". Open Now playing");
         final String target = now.target;
-        nowStrip.setOnClickListener(v -> startActivity(new Intent(open).putExtra("target", target)));
+        nowStrip.setOnClickListener(v -> startActivity(new Intent(open).putExtra("target", target)
+                .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP)));
         if (!now.artworkUrl.equals(nowArtUrl)) loadNowArt(now.artworkUrl);
         tickNowStrip();
     }
@@ -604,7 +606,8 @@ public class PhoneHomeActivity extends Activity {
             }
             row("Browse library", "Audiobooks, music, playlists, talks", "play", "›", () -> openBrowse("library"));
             section("Player");
-            row("Now playing", "Control this phone or a screen", "play", "›", () -> startActivity(nowPlaying));
+            row("Now playing", "Control this phone or a screen", "play", "›", () -> startActivity(new Intent(nowPlaying)
+                    .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP)));
         }
         row("Drive playlists", "The playlists on the car's Drive tab", "play", "›", this::showMediaChoices);
         row("Driving Radio", "Set the default and day rules", "play", "›", this::showDrivingRadio);
@@ -811,7 +814,11 @@ public class PhoneHomeActivity extends Activity {
      * Starting extras, set by name: that class is another capability's).
      */
     private void playHere(String mediaId, String title, String subtitle, String art) {
-        Intent now = new Intent().setClassName(this, NOW_PLAYING).putExtra("target", "local");
+        // A quick double tap on a card starts it once, with one Now playing.
+        if (!playGuard.admit(mediaId, android.os.SystemClock.elapsedRealtime())) return;
+        playGuard.done();   // PlayActivity takes it from here; only the window holds a repeat
+        Intent now = new Intent().setClassName(this, NOW_PLAYING).putExtra("target", "local")
+                .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         if (title != null && !title.isEmpty()) {
             now.putExtra("starting.id", mediaId).putExtra("starting.title", title)
                     .putExtra("starting.subtitle", subtitle == null ? "" : subtitle).putExtra("starting.art", art == null ? "" : art);
@@ -1037,7 +1044,7 @@ public class PhoneHomeActivity extends Activity {
                 if (id.isEmpty() || "speaker".equals(sc.optString("type"))) continue;
                 row(name, "Remote control for " + name, "remote", "›", () -> startActivity(new Intent(remote)
                         .putExtra("target", id).putExtra("pad", true)
-                        .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)));
+                        .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP)));
             }
         } finally {
             column = saved;

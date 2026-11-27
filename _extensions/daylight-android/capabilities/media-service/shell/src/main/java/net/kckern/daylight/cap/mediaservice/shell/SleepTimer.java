@@ -15,7 +15,8 @@ import androidx.media3.session.MediaSession;
  * in the session, not the screen, so it holds while Now playing is closed, and it says
  * what it is doing in the session extras (EXTRA_UNTIL) for any controller to show.
  * Set by the SLEEP custom command with ARG_MINUTES: a positive count, END_OF_ITEM, or 0
- * to cancel. Playback stopping or the queue clearing cancels it too.
+ * to cancel. Playback stopping or the queue clearing cancels it too; a playback error
+ * (a lost connection the player is retrying) does not.
  */
 final class SleepTimer {
     static final String ACTION = "net.kckern.daylight.media.SLEEP";
@@ -64,7 +65,9 @@ final class SleepTimer {
             }
         }
         @Override public void onPlaybackStateChanged(int state) {
-            if (armed && (state == Player.STATE_ENDED || state == Player.STATE_IDLE)) cancel();
+            // An error leaves the player IDLE too; the timer holds through a lost connection
+            // (the player retries), and ends only when the person stops or the queue ends.
+            if (armed && PlaybackRecovery.endsSleepTimer(state, session.getPlayer().getPlayerError() != null)) cancel();
         }
     };
 

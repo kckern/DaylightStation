@@ -395,6 +395,12 @@ public class NowPlayingActivity extends Activity {
 
     private boolean remote() { return !LOCAL.equals(target); }
 
+    /** This phone's player error, by cause: home unreachable (it retries) or the item itself. */
+    private static String errorLine() {
+        String why = PlaybackRecovery.statusNow();
+        return why.isEmpty() ? PlaybackRecovery.WONT_PLAY : why;
+    }
+
     private void connect() {
         if (pending != null || controller != null) return;
         Class<?> service = remote() ? RemoteControlService.class : DaylightMediaService.class;
@@ -626,7 +632,7 @@ public class NowPlayingActivity extends Activity {
         if (!volumeLine.isEmpty()) line = volumeLine;
         else if (c == null) line = pending != null ? "Connecting…" : connectionLine;
         else if (remote()) line = remoteStatus;
-        else line = c.getPlayerError() != null ? "Could not play this" : "";
+        else line = c.getPlayerError() != null ? errorLine() : "";
         if (failedStart != null) line = failedStart.failedLine(remote() ? targetName : "");
         if (line.isEmpty() && !remote()) line = SleepTimer.describeNow();
         // A kept track says where it plays from (the spec's offline mark).
