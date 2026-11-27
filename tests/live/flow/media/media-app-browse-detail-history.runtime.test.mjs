@@ -7,7 +7,9 @@ test.setTimeout(60000);
 for (const entrypoint of ['Details', 'More → Open detail']) {
   test(`Browse ${entrypoint} preserves exact path, scroll, and triggering leaf on browser Back`, async ({ page }) => {
     await page.addInitScript(() => { try { localStorage.clear(); } catch {} });
-    const items = Array.from({ length: 24 }, (_, index) => ({
+    // Browse rows fall into two columns on a wide screen (2026-11-27), so the
+    // target sits far enough down to need a scroll.
+    const items = Array.from({ length: 48 }, (_, index) => ({
       id: `demo:e${index + 1}`, title: `Episode ${index + 1}`,
       itemType: 'item', type: 'episode', index: index + 1,
     }));
@@ -18,7 +20,7 @@ for (const entrypoint of ['Details', 'More → Open detail']) {
         : items;
       return route.fulfill({ json: { items: rows, total: rows.length } });
     });
-    await page.route('**/api/v1/info/**', route => route.fulfill({ json: items[19] }));
+    await page.route('**/api/v1/info/**', route => route.fulfill({ json: items[39] }));
 
     await page.goto('/media');
     await page.getByTestId('app-nav-browse').click();
@@ -26,24 +28,24 @@ for (const entrypoint of ['Details', 'More → Open detail']) {
     await expect(page.locator('.browse-crumb--current')).toHaveText('Season 2');
     // A leaf row's tap opens its info view; its ⋯ menu keeps Open detail
     // behind More (four verbs lead).
-    const action = page.getByTestId(entrypoint === 'Details' ? 'browse-open-demo:e20' : 'result-more-demo:e20');
+    const action = page.getByTestId(entrypoint === 'Details' ? 'browse-open-demo:e40' : 'result-more-demo:e40');
     await action.scrollIntoViewIfNeeded();
     const canvas = page.getByTestId('media-canvas');
     const before = await canvas.evaluate(node => node.scrollTop);
     expect(before).toBeGreaterThan(0);
     if (entrypoint === 'Details') await action.click();
     else {
-      await openRowMenuAll(page, 'demo:e20');
+      await openRowMenuAll(page, 'demo:e40');
       await page.getByRole('menuitem', { name: 'Open detail' }).click();
     }
-    await expect(page.getByTestId('detail-view').getByRole('heading')).toHaveText('Episode 20');
+    await expect(page.getByTestId('detail-view').getByRole('heading')).toHaveText('Episode 40');
     await expect(page).toHaveURL(/view=detail/);
 
     await page.goBack();
 
     await expect(page).toHaveURL(/path=demo%2Fseason-2/);
     await expect(page.locator('.browse-crumb--current')).toHaveText('Season 2');
-    await expect(page.getByTestId('browse-open-demo:e20')).toBeFocused();
+    await expect(page.getByTestId('browse-open-demo:e40')).toBeFocused();
     await expect.poll(() => canvas.evaluate(node => node.scrollTop)).toBe(before);
   });
 }

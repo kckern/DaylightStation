@@ -101,7 +101,8 @@ test.describe('MediaApp — browse lifecycle', () => {
   });
 
   test('[FIND.5a/AC4] browser Back restores the exact browse scroll and focused collection', async ({ page }) => {
-    const rootItems = Array.from({ length: 24 }, (_, index) => ({
+    // Two row columns on a wide screen (2026-11-27): enough rows to scroll.
+    const rootItems = Array.from({ length: 48 }, (_, index) => ({
       id: `demo:c${index + 1}`,
       title: `Collection ${String(index + 1).padStart(2, '0')}`,
       itemType: 'container',
@@ -114,15 +115,15 @@ test.describe('MediaApp — browse lifecycle', () => {
     });
 
     await openBrowse(page);
-    const target = page.getByTestId('browse-open-demo:c20');
+    const target = page.getByTestId('browse-open-demo:c40');
     await target.scrollIntoViewIfNeeded();
     const before = await page.getByTestId('media-canvas').evaluate(node => node.scrollTop);
     expect(before).toBeGreaterThan(0);
     await target.click();
-    await expect(page.locator('.browse-crumb--current')).toHaveText('Collection 20');
+    await expect(page.locator('.browse-crumb--current')).toHaveText('Collection 40');
 
     await page.goBack();
-    await expect(page.getByTestId('browse-open-demo:c20')).toBeFocused();
+    await expect(page.getByTestId('browse-open-demo:c40')).toBeFocused();
     await expect.poll(() => page.getByTestId('media-canvas').evaluate(node => node.scrollTop)).toBe(before);
   });
 
