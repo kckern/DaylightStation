@@ -704,6 +704,20 @@ public class DaylightMediaService extends MediaLibraryService {
         if (p == null || !p.getPlayWhenReady() || p.getMediaItemCount() == 0) stopSelf();
     }
 
+    /**
+     * A start while running (a browse screen's wake, MiniPlayerState.wake): the item it holds is
+     * reported again, so a screen whose note was cleared shows the bar for it, paused or playing.
+     */
+    @Override
+    public int onStartCommand(Intent intent, int flags, int startId) {
+        int result = super.onStartCommand(intent, flags, startId);
+        ExoPlayer p = player;
+        if (p != null && p.getMediaItemCount() > 0) {
+            net.kckern.daylight.shellkit.NowPlayingNote.report(NowPlayingNotes.entry("local", "This phone", p));
+        }
+        return result;
+    }
+
     @Override
     public void onDestroy() {
         if (radioPrefs != null) radioPrefs.unregisterOnSharedPreferenceChangeListener(driveChanged);

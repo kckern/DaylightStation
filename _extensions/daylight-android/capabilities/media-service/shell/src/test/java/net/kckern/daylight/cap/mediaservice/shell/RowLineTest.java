@@ -81,4 +81,16 @@ public class RowLineTest {
         assertEquals(2, RowLine.partNumber(rows, "p:plex:3"));
         assertEquals(0, RowLine.partNumber(rows, "c:plex:1"));
     }
+
+    /** A compact row's sheet header says what its second line used to. */
+    @Test public void theSheetHeaderLine() throws Exception {
+        JSONObject guest = new JSONObject().put("title", "Track").put("artist", "Alex Lifeson");
+        assertEquals("Alex Lifeson", RowLine.sheetLine("album", guest, "Rush", null));
+        assertEquals("Rush", RowLine.sheetLine("album", new JSONObject().put("artist", "Rush"), "Rush", null));
+        JSONObject part = new JSONObject().put("durationSec", 1800);
+        assertEquals("30 min", RowLine.sheetLine("book", part, "", null));
+        assertEquals("Finished", RowLine.sheetLine("book", part, "", new JSONObject().put("playhead", 1790)));
+        assertTrue(RowLine.sheetLine("book", part, "", new JSONObject().put("playhead", 600)).endsWith("left"));
+        assertEquals("Boethius", RowLine.sheetLine("", row(), "", null));
+    }
 }

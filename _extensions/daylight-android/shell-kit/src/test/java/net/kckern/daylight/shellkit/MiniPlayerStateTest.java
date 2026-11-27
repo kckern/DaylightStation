@@ -14,6 +14,15 @@ public class MiniPlayerStateTest {
         assertTrue(MiniPlayerState.shown(e("local", "Book", false, 0, false, ""), "", 10));
     }
 
+    /** A paused item is up like a playing one; with no entry and a saved queue the screen wakes the service. */
+    @Test public void pausedShowsAndAMissingEntryWakesTheSavedQueue() {
+        assertTrue(MiniPlayerState.shown(e("local", "Spindrift", false, 0, false, ""), "", 600_000));
+        assertTrue(MiniPlayerState.shown(e("local", "Spindrift", true, 0, false, ""), "", 600_000));
+        assertTrue(MiniPlayerState.wake(null, true));
+        assertFalse(MiniPlayerState.wake(null, false));
+        assertFalse(MiniPlayerState.wake(e("local", "Spindrift", false, 0, false, ""), true));
+    }
+
     @Test public void aSwipeDownHoldsUntilTheNextItem() {
         NowPlayingNote.Entry a = e("local", "Book", true, 0, false, "");
         String hid = MiniPlayerState.key(a);

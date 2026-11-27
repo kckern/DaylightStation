@@ -426,7 +426,7 @@ public final class DownloadsActivity extends Activity {
         LinearLayout text = new LinearLayout(this);
         text.setOrientation(LinearLayout.VERTICAL);
         text.setPadding(dp(12), 0, dp(4), 0);
-        h.name = t.text(this, "", Type.BODY, t.ink, true);
+        h.name = t.listTitle(this, "");
         h.name.setMaxLines(1);
         h.name.setEllipsize(TextUtils.TruncateAt.END);
         text.addView(h.name);

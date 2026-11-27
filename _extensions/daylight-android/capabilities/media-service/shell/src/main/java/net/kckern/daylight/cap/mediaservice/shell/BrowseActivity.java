@@ -57,11 +57,13 @@ import java.util.concurrent.Executors;
  * level, and a level of the library. A level of one thing (an album, a playlist, a station,
  * an artist, an author, a book, a series) is a detail page, chosen by its kind (MediaKind):
  * a header with one primary circular button, at most four secondary icon buttons and a ⋮
- * overflow; an author's or artist's page is about the person (portrait, facts, summary).
+ * overflow beside the cover; an author's or artist's page is about the person (portrait, facts, summary).
  * Row second lines never repeat the page (RowLine). A detail page opened from a list pages
  * left and right through that list (Neighbours); Back returns to the list scrolled to the
- * entry shown. The name is shown once: the top bar holds only Back until the header's name
- * scrolls away. The mini player (shell-kit MiniPlayer) is at the bottom of every level.
+ * entry shown. The name is in the top bar next to Back; the page takes its colours from its
+ * cover (DetailLook). An album's tracks and a book's parts are one compact numbered line
+ * each; a row's menu is its long-press. The mini player (shell-kit MiniPlayer) is at the
+ * bottom of every level.
  * Lookup, not discovery: nothing is proposed. Every list is drawn from its last answer at
  * once and replaced in place; rows have a fixed height, so nothing jumps. Offline it shows
  * what is on this phone and says so. Not exported.
@@ -95,7 +97,19 @@ public final class BrowseActivity extends Activity {
     private final List<View> rowViews = new ArrayList<>();
     /** Search: each group's rows, for paging a page opened from one through the rest of its group. */
     private final java.util.Map<String, List<JSONObject>> searchGroups = new java.util.HashMap<>();
-    private TextView progressLine, nameView, barTitle;
+    private TextView progressLine, barTitle;
+    /** A detail page's root: its background is the cover's gradient (DetailLook). */
+    private LinearLayout page;
+    /** "13 tracks · 1 h 3 min" over the list, with its hairline (DetailLook.countLine). */
+    private TextView countLine;
+    private View countRule;
+    /** The header cover's colour (CoverColor), and the cover it came from. */
+    private int coverAccent = net.kckern.daylight.shellkit.CoverColor.NONE;
+    private String accentUrl = "";
+    /** A book's parts' places from home ({id: {playhead, duration, finished}}), for the sheet's header. */
+    private JSONObject partPlaces;
+    /** The title playing on this phone as the rows were drawn: a change redraws the rows. */
+    private String playingShown = "";
     private LinearLayout azStrip;
     private ScrollView scroller;
     private volatile int generation;
@@ -111,7 +125,6 @@ public final class BrowseActivity extends Activity {
     private boolean aboutAnswered;
     private Neighbours neighbours = Neighbours.NONE;
     private GestureDetector swipe;
-    private boolean barTitleShown;
 
     /** Opens the search, the library, or one level of it. */
     static void open(Context c, String mode, String parent, String kind, String title, String subtitle, String art) {
@@ -156,11 +169,10 @@ public final class BrowseActivity extends Activity {
         if (getActionBar() != null) {
             getActionBar().setDisplayHomeAsUpEnabled(true);
             if (detail()) {
-                // A detail page: the bar holds only Back while the header shows the name.
+                // A detail page: its name is in the bar next to Back, always (2026-11-27, as Plexamp).
                 barTitle = t.text(this, title, Type.TITLE, t.ink, true);
                 barTitle.setSingleLine(true);
                 barTitle.setEllipsize(TextUtils.TruncateAt.END);
-                barTitle.setAlpha(0f);
                 getActionBar().setDisplayShowTitleEnabled(false);
                 getActionBar().setDisplayShowCustomEnabled(true);
                 getActionBar().setCustomView(barTitle);
@@ -168,7 +180,7 @@ public final class BrowseActivity extends Activity {
         }
         setTitle(MODE_SEARCH.equals(mode) ? "Search" : MODE_LIBRARY.equals(mode) ? "Library" : title.isEmpty() ? "Library" : title);
 
-        LinearLayout page = new LinearLayout(this);
+        page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
         page.setBackgroundColor(t.background);
         // A rotation keeps what was typed (audit: the text was lost).
@@ -179,7 +191,6 @@ public final class BrowseActivity extends Activity {
         column.setOrientation(LinearLayout.VERTICAL);
         column.setPadding(dp(16), dp(8), dp(16), dp(24));
         scroller.addView(column);
-        scroller.setOnScrollChangeListener((v, x, y, ox, oy) -> fadeBarTitle());
         page.addView(scroller, new LinearLayout.LayoutParams(-1, 0, 1));
         // The mini player: its list ends above it, so the last row is never under it.
         mini = net.kckern.daylight.shellkit.MiniPlayer.attach(this, "Browse");
@@ -214,6 +225,10 @@ public final class BrowseActivity extends Activity {
     @Override protected void onStart() {
         super.onStart();
         mini.start();
+        // The row that plays shows the playing glyph: redrawn as the item changes.
+        playingShown = playingTitle();
+        net.kckern.daylight.shellkit.NowPlayingNote.listen(playingChanged);
+        if (started && !rows.isEmpty()) redrawRows();
         // Back from Now playing or On this phone: the book's progress and Keep's state are read again.
         if (started && detail()) fillHeader();
         started = true;
@@ -253,6 +268,7 @@ public final class BrowseActivity extends Activity {
 
     @Override protected void onStop() {
         main.removeCallbacks(keepWatch);
+        net.kckern.daylight.shellkit.NowPlayingNote.unlisten(playingChanged);
         mini.stop();
         super.onStop();
     }
@@ -319,13 +335,35 @@ public final class BrowseActivity extends Activity {
         about = null;
         aboutAnswered = false;
         progressLine = null;
-        nameView = null;
+        partPlaces = null;
+        countLine = null;
+        countRule = null;
         headerBox = new LinearLayout(this);
         headerBox.setOrientation(LinearLayout.VERTICAL);
         column.addView(headerBox);
+        if (detail() && MediaKind.listsRows(kind) && !MediaKind.aboutPerson(kind)) {
+            // The summary line over the list, flush right, and a hairline under it (as Plexamp).
+            countLine = t.text(this, "\u00A0", Type.LABEL, t.inkMuted, false);
+            countLine.setGravity(Gravity.END);
+            countLine.setPadding(0, dp(4), 0, dp(6));
+            column.addView(countLine, new LinearLayout.LayoutParams(-1, -2));
+            countRule = new View(this);
+            countRule.setBackgroundColor(t.outline);
+            column.addView(countRule, new LinearLayout.LayoutParams(-1, Math.max(1, dp(1) / 2)));
+        }
         fillHeader();
         status = t.text(this, "", Type.LABEL, t.inkMuted, false);
-        status.setMinHeight(dp(20));
+        if (detail()) {
+            // A detail page's status takes no room while it has nothing to say: the list starts under the header.
+            status.setVisibility(View.GONE);
+            status.addTextChangedListener(new TextWatcher() {
+                @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) { }
+                @Override public void onTextChanged(CharSequence s, int a, int b, int c) { }
+                @Override public void afterTextChanged(Editable e) { status.setVisibility(e.length() == 0 ? View.GONE : View.VISIBLE); }
+            });
+        } else {
+            status.setMinHeight(dp(20));
+        }
         column.addView(status);
         // The A–Z strip of a long level: its height is reserved only once a level is long.
         azStrip = new LinearLayout(this);
@@ -338,12 +376,12 @@ public final class BrowseActivity extends Activity {
         column.addView(results);
         keyed = new net.kckern.daylight.shellkit.KeyedRows<>(results, new net.kckern.daylight.shellkit.KeyedRows.Rows<JSONObject>() {
             @Override public String key(JSONObject n) { return n.optString("id"); }
-            @Override public String signature(JSONObject n) { return n.toString() + "|" + bookSignature(n); }
+            @Override public String signature(JSONObject n) { return n.toString() + "|" + bookSignature(n) + "|" + isPlayingRow(n); }
             @Override public View create(JSONObject n) { return row(n, null); }
             // A changed row is drawn again; an unchanged one is not touched.
             @Override public View update(View old, JSONObject n) { return row(n, null); }
         });
-        if (barTitle != null) { barTitle.setText(title); barTitle.setAlpha(0f); barTitleShown = false; }
+        if (barTitle != null) barTitle.setText(title);
     }
 
     private void startLevel() {
@@ -355,8 +393,9 @@ public final class BrowseActivity extends Activity {
         }
         // A person's header; or a page opened by a link with no name yet (daylight://media/book/<id>):
         // its title, by-line and cover come from home's info.
-        // An album's too: its artist and year for the by-line ("Rush · 2007").
-        if ((MediaKind.aboutPerson(kind) || "album".equals(MediaKind.normal(kind)) || (detail() && title.isEmpty())) && "level".equals(mode)) loadAbout();
+        // An album's too: its artist and year for the by-line ("Rush · 2007"); a book's for its
+        // author, whose page the by-line opens.
+        if ((MediaKind.aboutPerson(kind) || "album".equals(MediaKind.normal(kind)) || "book".equals(kind) || (detail() && title.isEmpty())) && "level".equals(mode)) loadAbout();
         prefetchNeighbours();
     }
 
@@ -641,6 +680,7 @@ public final class BrowseActivity extends Activity {
         rowViews.clear();
         rowViews.addAll(keyed.views());
         drawStrip();
+        refreshCount();
         if (progressLine != null) loadProgress();
         // An artist's album count is the rows once home gives no count of its own.
         if (MediaKind.aboutPerson(kind)) refreshFacts();
@@ -751,7 +791,12 @@ public final class BrowseActivity extends Activity {
             String why = reason;
             main.post(() -> {
                 if (isFinishing() || progressLine == null) return;
+                partPlaces = got;
                 progressLine.setText(progressWords(ids, lengths, got, progressUnavailable(causeOf(said, why))));
+                // The whole book's parts, not only the loaded page of them.
+                long total = 0;
+                for (String id : ids) total += lengths.containsKey(id) ? lengths.get(id) : 0;
+                showCount(ids.size(), total);
             });
         });
     }
@@ -877,14 +922,21 @@ public final class BrowseActivity extends Activity {
     /** The collection itself, as the player and Keep take it (c:<id>), whatever id reached this page. */
     private String self() { return parent.startsWith("c:") ? parent : "c:" + contentIdOf(parent); }
 
+    /** The header's cover or portrait, square. */
+    private static final int COVER_DP = 132;
+
     /**
-     * The header: on the library's first level a line; on a detail page the cover or
-     * portrait, the name, the facts or by-line, the progress of a book, the primary
-     * circular button at the right edge, the neighbours, the summary, the icon row and ⋮.
+     * The header (2026-11-27, after Plexamp's album page): on the library's first level a line;
+     * on a detail page the cover or portrait on the left and, right of it, a collection's
+     * by-line (an album's artist opens the artist), a book's progress, the primary circular
+     * button tinted from the cover (DetailLook.playFill) and a row of the secondary icons and
+     * ⋮. The page's name is in the top bar. A person's page has the facts and the summary right
+     * of the portrait (clamped to the lines that fit; More opens the rest below, full width) and
+     * the action row (round play with "Continue <book>", ⋮) under it. Then the neighbours.
      */
     private void fillHeader() {
         headerBox.removeAllViews();
-        headerBox.setPadding(0, dp(8), 0, dp(8));
+        headerBox.setPadding(0, dp(8), 0, dp(4));
         if (MODE_LIBRARY.equals(mode)) {
             headerBox.addView(t.text(this, "Everything the household keeps, by library.", Type.LABEL, t.inkMuted, false));
             return;
@@ -894,77 +946,150 @@ public final class BrowseActivity extends Activity {
         JSONObject cont = about == null ? null : about.optJSONObject("continue");
         MediaKind.ActionSet set = MediaKind.actions(kind, "book".equals(kind) || cont != null);
 
-        // A person's page while home's about is on its way: the facts, the Continue row and the
-        // summary keep their places (no jump when it lands, 2026-11-27).
+        // A person's page while home's about is on its way: the facts, the summary and the
+        // Continue row keep their places (no jump when it lands, 2026-11-27).
         boolean loading = person && about == null && !aboutAnswered;
         LinearLayout top = new LinearLayout(this);
-        top.setGravity(Gravity.CENTER_VERTICAL);
+        top.setGravity(Gravity.TOP);
         ImageView cover = new ImageView(this);
         cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
         cover.setClipToOutline(true);
-        net.kckern.daylight.shellkit.CoverGlyph.behind(cover, t, net.kckern.daylight.shellkit.CoverGlyph.of(kind), dp(112), dp(8));
+        net.kckern.daylight.shellkit.CoverGlyph.behind(cover, t, net.kckern.daylight.shellkit.CoverGlyph.of(kind), dp(COVER_DP), dp(8));
         cover.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        top.addView(cover, new LinearLayout.LayoutParams(dp(112), dp(112)));
+        top.addView(cover, new LinearLayout.LayoutParams(dp(COVER_DP), dp(COVER_DP)));
         String portrait = about == null ? "" : about.optString("portrait", "");
-        loadCover(cover, !portrait.isEmpty() && (person || art.isEmpty()) ? portrait : art, 320);
-        LinearLayout words = new LinearLayout(this);
-        words.setOrientation(LinearLayout.VERTICAL);
-        words.setPadding(dp(14), 0, dp(8), 0);
-        nameView = t.text(this, title, Type.TITLE, t.ink, true);
-        fitName(nameView);
-        words.addView(nameView);
-        String by = person ? RowLine.facts(kind, about, childRows()) : byLine();
-        if (person || !by.isEmpty()) {
-            // A person's facts line is always there (blank until home answers): it never pushes the header.
-            TextView facts = t.text(this, by.isEmpty() ? "\u00A0" : by, Type.LABEL, t.inkMuted, false);
+        loadHeaderCover(cover, !portrait.isEmpty() && (person || art.isEmpty()) ? portrait : art);
+        LinearLayout side = new LinearLayout(this);
+        side.setOrientation(LinearLayout.VERTICAL);
+        side.setPadding(dp(14), 0, 0, 0);
+        TextView rest = null;
+        if (person) rest = personSide(side, loading);
+        else collectionSide(side, set, cont);
+        // A person's side is the portrait's height exactly: what arrives later moves nothing below it.
+        top.addView(side, new LinearLayout.LayoutParams(0, person ? dp(COVER_DP) : -2, 1));
+        headerBox.addView(top);
+        if (rest != null) headerBox.addView(rest);
+        if (person) headerBox.addView(personActions(set, cont, loading));
+        if (neighbours.pages()) headerBox.addView(neighbourLine());
+        if (progressLine != null && !rows.isEmpty()) loadProgress();
+    }
+
+    /** Right of a collection's cover: its by-line, a book's progress, the primary, then the icons and ⋮. */
+    private void collectionSide(LinearLayout side, MediaKind.ActionSet set, JSONObject cont) {
+        String by = byLine();
+        // An album's or a book's by-line keeps its line while home's about is on its way: the list never moves for it.
+        boolean waits = ("album".equals(MediaKind.normal(kind)) || "book".equals(kind)) && about == null && !aboutAnswered;
+        if (!by.isEmpty() || waits) {
+            TextView facts = t.text(this, by.isEmpty() ? "\u00A0" : by, Type.BODY, t.inkMuted, false);
             facts.setTag("facts");
             facts.setMaxLines(2);
             facts.setEllipsize(TextUtils.TruncateAt.END);
-            if (!person) linkArtist(facts);
-            words.addView(facts);
+            linkArtist(facts);
+            side.addView(facts);
         }
         if ("book".equals(kind)) {
-            // A book: how far in and what is left, under its title (filled once its parts are known).
+            // A book: how far in and what is left (filled once its parts are known).
             progressLine = t.text(this, " ", Type.LABEL, t.inkMuted, false);
-            progressLine.setPadding(0, dp(4), 0, 0);
-            words.addView(progressLine);
+            progressLine.setPadding(0, dp(2), 0, 0);
+            side.addView(progressLine);
         }
         String autoLine = KeepLabels.collectionLine(this, contentIdOf(parent));
-        if (!autoLine.isEmpty()) words.addView(t.text(this, autoLine, Type.LABEL, t.inkMuted, false));
-        // A person's name and facts have the whole width beside the portrait: the primary and ⋮
-        // are on their own row under it (they squeezed "William Sha / kespeare" and "182 / h").
-        top.addView(words, new LinearLayout.LayoutParams(0, -2, 1));
-        if (!person && set.primary != null) top.addView(primaryButton(set.primary, cont), new LinearLayout.LayoutParams(dp(56), dp(56)));
-        headerBox.addView(top);
-        if (person) headerBox.addView(personActions(set, cont, loading));
-
-        if (neighbours.pages()) headerBox.addView(neighbourLine());
-
-        // An album's about is read for its artist and year only: its review would arrive late and push the tracks down.
-        String summary = about == null || "album".equals(MediaKind.normal(kind)) ? "" : about.optString("summary", "");
-        if (!summary.isEmpty()) headerBox.addView(summaryView(summary));
-        else if (loading) headerBox.addView(summaryPlaceholder());
-
+        if (!autoLine.isEmpty()) side.addView(t.text(this, autoLine, Type.LABEL, t.inkMuted, false));
+        if (set.primary != null) {
+            LinearLayout holder = new LinearLayout(this);
+            holder.setGravity(Gravity.CENTER_HORIZONTAL);
+            holder.setPadding(0, dp(10), 0, dp(4));
+            holder.addView(primaryButton(set.primary, cont), new LinearLayout.LayoutParams(dp(56), dp(56)));
+            side.addView(holder, new LinearLayout.LayoutParams(-1, -2));
+        }
         if (!set.secondary.isEmpty() || !set.overflow.isEmpty()) {
             LinearLayout icons = new LinearLayout(this);
             icons.setGravity(Gravity.CENTER_VERTICAL);
-            icons.setPadding(0, dp(8), 0, 0);
-            for (MediaKind.Action a : set.secondary) icons.addView(secondaryButton(a), new LinearLayout.LayoutParams(dp(48), dp(48)));
-            View gap = new View(this);
-            icons.addView(gap, new LinearLayout.LayoutParams(0, 1, 1));
+            for (MediaKind.Action a : set.secondary) icons.addView(secondaryButton(a), new LinearLayout.LayoutParams(0, dp(44), 1));
             if (!set.overflow.isEmpty()) {
                 ImageButton more = iconButton(R.drawable.daylight_np_more, "More actions for " + title);
                 more.setOnClickListener(v -> overflow(v, set.overflow));
                 UiTelemetry.tag(more, "browse.overflow");
-                icons.addView(more, new LinearLayout.LayoutParams(dp(48), dp(48)));
+                icons.addView(more, new LinearLayout.LayoutParams(0, dp(44), 1));
             }
-            headerBox.addView(icons);
+            side.addView(icons, new LinearLayout.LayoutParams(-1, -2));
         }
-        if (progressLine != null && !rows.isEmpty()) loadProgress();
     }
 
     /**
-     * A person's action row under the header: the primary (the round play with "Continue
+     * Right of a person's portrait: the facts, then the summary in the lines that fit beside the
+     * portrait (DetailLook.summaryLines) with More under it. More opens the rest below the
+     * portrait, full width; with no summary the facts sit alone, centred. While home's answer
+     * is on its way the summary's lines are kept blank. Answers the view for the rest (or null).
+     */
+    private TextView personSide(LinearLayout side, boolean loading) {
+        String summary = about == null ? "" : about.optString("summary", "");
+        boolean withSummary = !summary.isEmpty() || loading;
+        side.setGravity(withSummary ? Gravity.TOP : Gravity.CENTER_VERTICAL);
+        String line = RowLine.facts(kind, about, childRows());
+        // The facts line is always there (blank until home answers): it never pushes the header.
+        TextView facts = t.text(this, line.isEmpty() ? " " : line, Type.BODY, t.inkMuted, false);
+        facts.setTag("facts");
+        facts.setMaxLines(2);
+        facts.setEllipsize(TextUtils.TruncateAt.END);
+        side.addView(facts);
+        if (!withSummary) return null;
+        TextView text = t.text(this, loading ? " " : summary, Type.BODY, t.ink, false);
+        text.setPadding(0, dp(6), 0, 0);
+        text.setEllipsize(TextUtils.TruncateAt.END);
+        text.setMaxLines(1);
+        if (loading) text.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        side.addView(text, new LinearLayout.LayoutParams(-1, 0, 1));
+        TextView more = link("More", "browse.summary_more", null);
+        more.setTextColor(t.inkMuted);
+        more.setPadding(0, dp(2), dp(16), 0);
+        more.setVisibility(View.INVISIBLE);
+        side.addView(more);
+        if (loading) return null;
+        TextView rest = t.text(this, "", Type.BODY, t.ink, false);
+        rest.setPadding(0, dp(2), 0, 0);
+        rest.setVisibility(View.GONE);
+        final int[] cut = { 0 };
+        more.setOnClickListener(v -> {
+            boolean open = rest.getVisibility() != View.VISIBLE;
+            action(open ? "summary_more" : "summary_less");
+            // Open: the lines beside the portrait read on into the rest below (no "…" between them).
+            text.setEllipsize(open ? null : TextUtils.TruncateAt.END);
+            more.setText(open ? "Less" : "More");
+            if (!open) { rest.setVisibility(View.GONE); return; }
+            // The rest starts where the lines beside the portrait end, as the text itself broke them.
+            text.post(() -> {
+                android.text.Layout shown = text.getLayout();
+                int n = shown == null ? 0 : Math.min(text.getMaxLines(), shown.getLineCount());
+                if (n > 0 && text.getVisibility() == View.VISIBLE) cut[0] = shown.getLineEnd(n - 1);
+                rest.setText(DetailLook.rest(summary, cut[0]));
+                rest.setVisibility(View.VISIBLE);
+            });
+        });
+        // The clamp, once the side's height and width are known (and again when the facts wrap).
+        side.addOnLayoutChangeListener((v, l, tp, r, b, ol, ot, or, ob) -> {
+            int width = text.getWidth() - text.getPaddingLeft() - text.getPaddingRight();
+            if (width <= 0) return;
+            int lines = DetailLook.summaryLines(side.getHeight(), facts.getHeight() + text.getPaddingTop(), more.getHeight(), text.getLineHeight());
+            android.text.StaticLayout full = android.text.StaticLayout.Builder.obtain(summary, 0, summary.length(), text.getPaint(), width)
+                    .setLineSpacing(text.getLineSpacingExtra(), text.getLineSpacingMultiplier()).setIncludePad(text.getIncludeFontPadding())
+                    .setBreakStrategy(text.getBreakStrategy()).setHyphenationFrequency(text.getHyphenationFrequency()).build();
+            boolean cutShort = full.getLineCount() > lines;
+            int at = !cutShort ? summary.length() : lines <= 0 ? 0 : full.getLineEnd(lines - 1);
+            if (text.getMaxLines() == Math.max(1, lines) && cut[0] == at) return;
+            cut[0] = at;
+            v.post(() -> {
+                text.setVisibility(lines <= 0 ? View.INVISIBLE : View.VISIBLE);
+                text.setMaxLines(Math.max(1, lines));
+                more.setVisibility(cutShort ? View.VISIBLE : View.INVISIBLE);
+                if (rest.getVisibility() == View.VISIBLE) rest.setText(DetailLook.rest(summary, at));
+            });
+        });
+        return rest;
+    }
+
+    /**
+     * A person's action row under the portrait: the primary (the round play with "Continue
      * <book>", Shuffle for an artist) or nothing, and the ⋮ at the end. Its height is kept
      * while home's answer is on its way, so the Continue that arrives moves nothing.
      */
@@ -999,52 +1124,105 @@ public final class BrowseActivity extends Activity {
         return row;
     }
 
-    /** The summary's place while home's answer is on its way: four blank lines and the More line, as the summary takes. */
-    private View summaryPlaceholder() {
-        View box = summaryView("\u00A0\n\u00A0\n\u00A0\n\u00A0");
-        box.setAlpha(0f);
-        box.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
-        return box;
+    /** The header's cover; its colour tints the page, the bar and the primary (DetailLook). */
+    private void loadHeaderCover(ImageView into, String url) {
+        into.setTag(url);
+        if (url == null || url.isEmpty()) { into.setImageDrawable(null); applyAccent(net.kckern.daylight.shellkit.CoverColor.NONE, ""); return; }
+        Bitmap hit = net.kckern.daylight.shellkit.PlaylistArtwork.cached(url, 320);
+        if (hit != null) { into.setImageBitmap(hit); applyAccent(url.equals(accentUrl) ? coverAccent : accentOf(hit), url); return; }
+        covers.execute(() -> {
+            Bitmap b = net.kckern.daylight.shellkit.PlaylistArtwork.load(url, 320);
+            int a = b == null ? net.kckern.daylight.shellkit.CoverColor.NONE : accentOf(b);
+            main.post(() -> {
+                if (isDestroyed() || !url.equals(into.getTag())) return;
+                if (b != null) into.setImageBitmap(b);
+                applyAccent(a, url);
+            });
+        });
     }
 
-    /**
-     * The name never breaks inside a word: two lines at the title size, else one size down,
-     * else the smaller size cut with "…" (NameFit). Worked out once its width is known.
-     */
-    private void fitName(TextView name) {
-        name.setMaxLines(NameFit.MAX_LINES);
-        name.setEllipsize(TextUtils.TruncateAt.END);
-        name.setHyphenationFrequency(android.text.Layout.HYPHENATION_FREQUENCY_NONE);
-        final float titlePx = name.getTextSize();
-        name.addOnLayoutChangeListener((v, l, top, r, bottom, ol, ot, or, ob) -> {
-            int width = r - l - name.getPaddingLeft() - name.getPaddingRight();
-            if (width <= 0 || Integer.valueOf(width).equals(name.getTag(R.id.daylight_browse_row_id))) return;
-            name.setTag(R.id.daylight_browse_row_id, width);
-            android.graphics.Paint p = new android.graphics.Paint(name.getPaint());
-            NameFit.Fit fit = NameFit.of(name.getText().toString(), width, titlePx, (text, size) -> { p.setTextSize(size); return p.measureText(text); });
-            if (Math.abs(name.getTextSize() - fit.sizePx) > 0.5f) name.post(() -> name.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, fit.sizePx));
-        });
+    private static int accentOf(Bitmap b) {
+        Bitmap small = Bitmap.createScaledBitmap(b, 32, 32, true);
+        int[] px = new int[32 * 32];
+        small.getPixels(px, 0, 32, 0, 0, 32, 32);
+        return net.kckern.daylight.shellkit.CoverColor.of(px);
+    }
+
+    private boolean accentPainted;
+
+    /** The cover's colour on the page: a gradient from it into the page, the bar over it, the primary's fill. */
+    private void applyAccent(int accent, String url) {
+        accentUrl = url;
+        if (accentPainted && accent == coverAccent) return;
+        accentPainted = true;
+        coverAccent = accent;
+        int top = DetailLook.gradientTop(t.background, accent, t.dark);
+        int mid = DetailLook.gradientMiddle(t.background, accent, t.dark);
+        page.setBackground(new android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[] { top, mid, t.background }));
+        if (getActionBar() != null) getActionBar().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(top));
+        if (t.dark) getWindow().setStatusBarColor(top);
+        View primary = headerBox.findViewWithTag("primary");
+        if (primary instanceof ImageButton) tintPrimary((ImageButton) primary);
+    }
+
+    /** The primary's fill: the cover's colour, dark and quiet, with a glyph that reads on it. */
+    private void tintPrimary(ImageButton b) {
+        int fill = DetailLook.playFill(t.background, coverAccent, t.dark);
+        b.setImageTintList(ColorStateList.valueOf(DetailLook.playGlyph(fill)));
+        b.setBackground(t.pressable(DaylightTheme.round(fill, dp(28))));
     }
 
     /** The by-line under a page's name: an album's "Rush · 2007" (RowLine.albumBy), else the row's subtitle. */
     private String byLine() {
-        return "album".equals(MediaKind.normal(kind)) ? RowLine.albumBy(subtitle, about) : subtitle;
+        if ("album".equals(MediaKind.normal(kind))) return RowLine.albumBy(subtitle, about);
+        if (subtitle.isEmpty() && "book".equals(kind) && about != null) return about.optString("byline", "");
+        return subtitle;
     }
 
     /** An album's by-line opens its artist's page (home's about names the artist's id). */
     private void linkArtist(TextView line) {
         String artistId = about == null ? "" : about.optString("bylineId", "");
         String artist = about == null ? "" : about.optString("byline", "");
-        if (!"album".equals(MediaKind.normal(kind)) || artistId.isEmpty() || artist.isEmpty()) return;
+        boolean book = "book".equals(kind);
+        if (!("album".equals(MediaKind.normal(kind)) || book) || artistId.isEmpty() || artist.isEmpty()) return;
+        // It looks like a link (2026-11-27): the artist in ink with a "›", the year after it muted.
+        String said = line.getText().toString();
+        android.text.SpannableStringBuilder b = new android.text.SpannableStringBuilder();
+        b.append(artist).append(" ›");
+        b.setSpan(new android.text.style.ForegroundColorSpan(t.ink), 0, b.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        if (said.startsWith(artist)) b.append(said.substring(artist.length()));
+        line.setText(b);
         line.setBackground(t.pressable(null));
         line.setMinHeight(dp(32));
         line.setGravity(Gravity.CENTER_VERTICAL);
-        line.setContentDescription(line.getText() + ", go to " + artist);
+        line.setContentDescription((book ? "Open author " : "Open artist ") + artist);
         UiTelemetry.tag(line, "browse.album_artist");
         line.setOnClickListener(v -> {
-            action("go_to_artist");
-            open(this, "level", "c:" + artistId, "artist", artist, "", "");
+            action(book ? "go_to_author" : "go_to_artist");
+            open(this, "level", "c:" + artistId, book ? "author" : "artist", artist, "", "");
         });
+    }
+
+    /** The summary line from the loaded rows; a level still paging (a More row) waits for its whole count. */
+    private void refreshCount() {
+        if (countLine == null) return;
+        int n = 0;
+        long total = 0;
+        for (JSONObject r : rows) {
+            String id = r.optString("id");
+            if (id.startsWith("m:")) { if (!"book".equals(kind)) showCount(0, 0); return; }
+            if (!id.startsWith("p:")) continue;
+            n++;
+            total += Math.max(0, r.optLong("durationSec", 0));
+        }
+        showCount(n, total);
+    }
+
+    private void showCount(int n, long totalSec) {
+        if (countLine == null) return;
+        String line = DetailLook.countLine(kind, n, totalSec);
+        countLine.setText(line.isEmpty() ? "\u00A0" : line);
     }
 
     /** Book rows shown on an author's page (the facts' count before home gives one). */
@@ -1061,12 +1239,12 @@ public final class BrowseActivity extends Activity {
         else if (!line.isEmpty()) fillHeader();
     }
 
-    /** The one primary action: a 56 dp filled circle in the accent at the header's right edge. */
+    /** The one primary action: a 56 dp circle filled with the cover's colour, dark and quiet (DetailLook.playFill). */
     private View primaryButton(MediaKind.Action a, JSONObject cont) {
         ImageButton b = new ImageButton(this);
         b.setImageResource(a == MediaKind.Action.SHUFFLE_ARTIST ? R.drawable.daylight_np_shuffle : R.drawable.daylight_np_play);
-        b.setImageTintList(ColorStateList.valueOf(net.kckern.daylight.shellkit.ThemeColors.readableOn(t.primary)));
-        b.setBackground(t.pressable(DaylightTheme.round(t.primary, dp(28))));
+        b.setTag("primary");
+        tintPrimary(b);
         b.setScaleType(ImageView.ScaleType.CENTER);
         String said;
         Runnable run;
@@ -1200,45 +1378,6 @@ public final class BrowseActivity extends Activity {
         line.addView(prev, new LinearLayout.LayoutParams(0, -2, 1));
         line.addView(next, new LinearLayout.LayoutParams(0, -2, 1));
         return line;
-    }
-
-    /** The biography, four lines with More that opens it in place. */
-    private View summaryView(String summary) {
-        LinearLayout box = new LinearLayout(this);
-        box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(0, dp(10), 0, 0);
-        TextView text = t.text(this, summary, Type.BODY, t.ink, false);
-        text.setMaxLines(4);
-        text.setEllipsize(TextUtils.TruncateAt.END);
-        box.addView(text);
-        TextView more = link("More", "browse.summary_more", null);
-        more.setTextColor(t.inkMuted);
-        more.setPadding(0, dp(4), dp(4), 0);
-        more.setOnClickListener(v -> {
-            boolean open = text.getMaxLines() == 4;
-            text.setMaxLines(open ? Integer.MAX_VALUE : 4);
-            more.setText(open ? "Less" : "More");
-        });
-        more.setVisibility(View.INVISIBLE);
-        box.addView(more);
-        // "More" only when there is more than four lines of it.
-        text.post(() -> {
-            android.text.Layout l = text.getLayout();
-            boolean cut = l != null && l.getLineCount() > 0 && l.getEllipsisCount(l.getLineCount() - 1) > 0;
-            more.setVisibility(cut ? View.VISIBLE : View.GONE);
-        });
-        return box;
-    }
-
-    /** The top bar's name: shown only once the header's name has scrolled out of view. */
-    private void fadeBarTitle() {
-        if (barTitle == null || nameView == null) return;
-        int nameBottom = headerBox.getTop() + nameView.getBottom() + ((View) nameView.getParent()).getTop()
-                + ((View) nameView.getParent().getParent()).getTop();
-        boolean show = scroller.getScrollY() > nameBottom;
-        if (show == barTitleShown) return;
-        barTitleShown = show;
-        barTitle.animate().alpha(show ? 1f : 0f).setDuration(160).start();
     }
 
     /** Chapters: Now playing's chapter list; the book resumes first when it is not the one playing. */
@@ -1424,35 +1563,31 @@ public final class BrowseActivity extends Activity {
         final boolean playable = n.optBoolean("playable", id.startsWith("p:"));
         final String rowKind = MediaKind.normal(n.optString("kind", ""));
         final String pageKind = searchGroup != null || !"level".equals(mode) ? "" : kind;
-        String pageArtist = "album".equals(MediaKind.normal(kind)) && about != null && !about.optString("byline").isEmpty() ? about.optString("byline") : subtitle;
+        List<MediaKind.RowAction> menu = searchGroup != null ? MediaKind.searchRowMenu(rowKind) : MediaKind.rowMenu(pageKind);
+        // An album's tracks, a book's parts, a series' lectures: one compact numbered line each
+        // (2026-11-27), no cover again on every row (a compilation's own art too).
+        int part = playable && !browsable && isPartPage(pageKind) ? RowLine.partNumber(rows, id) : 0;
+        if (part > 0) return compactRow(n, part, pageKind, menu);
+        String pageArtist = pageArtist();
         final String line = id.startsWith("m:") ? "" : RowLine.of(pageKind, n, pageArtist, bookOf(n));
+        boolean playing = isPlayingRow(n);
         LinearLayout row = new LinearLayout(this);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setBackground(t.pressable(null));
         row.setTag(R.id.daylight_browse_row_id, id);
-        // A book's or series' parts: the part's number in a quiet square, not the book's
-        // cover again on every row; a cover only where the part has its own picture.
-        int part = playable && !browsable && isPartPage(pageKind) && !n.optBoolean("ownArt") ? RowLine.partNumber(rows, id) : 0;
-        if (part > 0) {
-            TextView number = t.text(this, String.valueOf(part), Type.TITLE, t.inkMuted, false);
-            number.setGravity(Gravity.CENTER);
-            number.setBackground(DaylightTheme.round(t.surfaceVariant, dp(8)));
-            number.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-            row.addView(number, new LinearLayout.LayoutParams(dp(48), dp(48)));
-        } else {
-            ImageView img = new ImageView(this);
-            img.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            img.setClipToOutline(true);
-            net.kckern.daylight.shellkit.CoverGlyph.behind(img, t, net.kckern.daylight.shellkit.CoverGlyph.of(browsable
-                    ? (MediaKind.hasBooks(pageKind) ? "book" : rowKind.isEmpty() ? MediaKind.childKind(pageKind, id) : rowKind)
-                    : MediaKind.spoken(pageKind) ? "book" : "track"), dp(48), dp(8));
-            row.addView(img, new LinearLayout.LayoutParams(dp(48), dp(48)));
-            loadCover(img, cover, 144);
-        }
+        ImageView img = new ImageView(this);
+        img.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        img.setClipToOutline(true);
+        net.kckern.daylight.shellkit.CoverGlyph.behind(img, t, net.kckern.daylight.shellkit.CoverGlyph.of(browsable
+                ? (MediaKind.hasBooks(pageKind) ? "book" : rowKind.isEmpty() ? MediaKind.childKind(pageKind, id) : rowKind)
+                : MediaKind.spoken(pageKind) ? "book" : "track"), dp(48), dp(8));
+        row.addView(img, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        loadCover(img, cover, 144);
         LinearLayout words = new LinearLayout(this);
         words.setOrientation(LinearLayout.VERTICAL);
         words.setPadding(dp(12), 0, dp(4), 0);
-        TextView top = t.text(this, id.startsWith("m:") ? "More" : name, Type.BODY, t.ink, !id.startsWith("m:"));
+        // One list-title style: regular weight; bold only for the row that is playing.
+        TextView top = id.startsWith("m:") ? t.listTitle(this, "More") : playing ? t.text(this, name, Type.BODY, t.ink, true) : t.listTitle(this, name);
         top.setMaxLines(1);
         top.setEllipsize(TextUtils.TruncateAt.END);
         words.addView(top);
@@ -1461,13 +1596,8 @@ public final class BrowseActivity extends Activity {
         bottom.setEllipsize(TextUtils.TruncateAt.END);
         words.addView(bottom);
         row.addView(words, new LinearLayout.LayoutParams(0, -2, 1));
-        List<MediaKind.RowAction> menu = searchGroup != null ? MediaKind.searchRowMenu(rowKind) : MediaKind.rowMenu(pageKind);
-        if (playable && !browsable && !menu.isEmpty()) {
-            ImageButton more = iconButton(R.drawable.daylight_np_more, "More for " + name);
-            more.setOnClickListener(v -> rowMenu(v, menu, n));
-            UiTelemetry.tag(more, "browse.track_menu");
-            row.addView(more, new LinearLayout.LayoutParams(dp(44), dp(48)));
-        }
+        // A playable row's menu is its long-press (and TalkBack's "More options"): no ⋮ (2026-11-27).
+        if (playable && !browsable) attachMenu(row, menu, n);
         MediaKind.Tap tap = id.startsWith("m:") ? MediaKind.Tap.OPEN : MediaKind.rowTap(pageKind, browsable, playable);
         row.setOnClickListener(v -> {
             if (id.startsWith("m:")) { loadMore(n); return; }
@@ -1480,17 +1610,117 @@ public final class BrowseActivity extends Activity {
             }
         });
         UiTelemetry.tag(row, browsable ? "browse.row" : "browse.track");
-        row.setContentDescription((part > 0 ? "Part " + part + ", " : "") + name + (line.isEmpty() ? "" : ", " + line));
+        row.setContentDescription(name + (line.isEmpty() ? "" : ", " + line) + (playing ? ", playing" : ""));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(ROW_DP));
         row.setLayoutParams(lp);
         return row;
     }
 
+    /**
+     * An album's track or a book's part on one line, about 48 dp (2026-11-27): a muted number
+     * in a fixed column (the playing glyph in its place for the row that plays), the title in
+     * the list style, the length flush right in tabular figures. A tap plays from it; a
+     * long-press opens its sheet, whose header says what the second line used to (a
+     * compilation's own artist, a part's place).
+     */
+    private View compactRow(JSONObject n, int number, String pageKind, List<MediaKind.RowAction> menu) {
+        final String id = n.optString("id");
+        final String name = n.optString("title", "Untitled");
+        final String sub = n.optString("subtitle", "");
+        final String cover = n.optString("artUrl", "");
+        final long seconds = n.optLong("durationSec", 0);
+        boolean playing = isPlayingRow(n);
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setBackground(t.pressable(null));
+        row.setTag(R.id.daylight_browse_row_id, id);
+        row.setMinimumHeight(dp(48));
+        if (playing) {
+            ImageView glyph = new ImageView(this);
+            glyph.setImageResource(net.kckern.daylight.shellkit.R.drawable.daylight_ic_play);
+            glyph.setImageTintList(ColorStateList.valueOf(t.primary));
+            glyph.setScaleType(ImageView.ScaleType.FIT_END);
+            glyph.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            row.addView(glyph, new LinearLayout.LayoutParams(dp(32), dp(18)));
+        } else {
+            TextView num = t.text(this, String.valueOf(number), Type.LABEL, t.inkMuted, false);
+            num.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+            num.setFontFeatureSettings("tnum");
+            num.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            row.addView(num, new LinearLayout.LayoutParams(dp(32), -2));
+        }
+        TextView titleView = playing ? t.text(this, name, Type.BODY, t.ink, true) : t.listTitle(this, name);
+        titleView.setMaxLines(1);
+        titleView.setEllipsize(TextUtils.TruncateAt.END);
+        titleView.setPadding(dp(14), 0, dp(8), 0);
+        row.addView(titleView, new LinearLayout.LayoutParams(0, -2, 1));
+        TextView length = t.text(this, DetailLook.rowLength(pageKind, seconds), Type.LABEL, t.inkMuted, false);
+        length.setFontFeatureSettings("tnum");
+        length.setPadding(0, 0, dp(4), 0);
+        length.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        row.addView(length, new LinearLayout.LayoutParams(-2, -2));
+        row.setOnClickListener(v -> play(id, false, name, sub, cover, null, -1, MediaKind.spoken(kind)));
+        attachMenu(row, menu, n);
+        UiTelemetry.tag(row, "browse.track");
+        row.setContentDescription(DetailLook.rowSpoken(pageKind, number, name, seconds) + (playing ? ", playing" : ""));
+        row.setLayoutParams(new LinearLayout.LayoutParams(-1, -2));
+        return row;
+    }
+
+    /** A row's menu: long-press (with a haptic tick) and TalkBack's "More options for <title>" open its sheet. */
+    private void attachMenu(View row, List<MediaKind.RowAction> menu, JSONObject n) {
+        if (menu.isEmpty()) return;
+        String name = n.optString("title", "Untitled");
+        row.setOnLongClickListener(v -> {
+            v.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);
+            action("row_menu");
+            rowMenu(v, menu, n);
+            return true;
+        });
+        row.setAccessibilityDelegate(new View.AccessibilityDelegate() {
+            @Override public void onInitializeAccessibilityNodeInfo(View host, android.view.accessibility.AccessibilityNodeInfo info) {
+                super.onInitializeAccessibilityNodeInfo(host, info);
+                info.addAction(new android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction(R.id.daylight_browse_row_menu, "More options for " + name));
+            }
+            @Override public boolean performAccessibilityAction(View host, int action, Bundle args) {
+                if (action == R.id.daylight_browse_row_menu) { rowMenu(host, menu, n); return true; }
+                return super.performAccessibilityAction(host, action, args);
+            }
+        });
+    }
+
+    /** The album's own artist (its by-line), for a track's "only when not the album's". */
+    private String pageArtist() {
+        return "album".equals(MediaKind.normal(kind)) && about != null && !about.optString("byline").isEmpty() ? about.optString("byline") : subtitle;
+    }
+
+    /** The title this phone (or the screen shown in the mini player) is playing, or "". */
+    private static String playingTitle() {
+        net.kckern.daylight.shellkit.NowPlayingNote.Entry e = net.kckern.daylight.shellkit.NowPlayingNote.current();
+        return e == null || e.starting ? "" : e.title;
+    }
+
+    /** Whether this row is what is playing: its title is the mini player's (a page's rows only). */
+    private boolean isPlayingRow(JSONObject n) {
+        if (!"level".equals(mode)) return false;
+        String playing = playingTitle();
+        return !playing.isEmpty() && playing.equalsIgnoreCase(n.optString("title")) && n.optString("id").startsWith("p:");
+    }
+
+    /** The mini player's item changed: the rows that were or now are playing are drawn again. */
+    private final net.kckern.daylight.shellkit.NowPlayingNote.Listener playingChanged = () -> main.post(() -> {
+        if (isDestroyed() || rows.isEmpty() || !"level".equals(mode)) return;
+        String now = playingTitle();
+        if (now.equals(playingShown)) return;
+        playingShown = now;
+        redrawRows();
+    });
+
     /** A page whose playable rows are a book's parts, a series' lectures or an album's tracks (numbered, not covered). */
     private static boolean isPartPage(String pageKind) {
         String k = MediaKind.normal(pageKind);
-        // An album's tracks too: the album's cover on every row said nothing (2026-11-27); a
-        // compilation's track with its own picture keeps it (ownArt).
+        // An album's tracks too: the album's cover on every row said nothing (2026-11-27), and a
+        // compilation's own art goes too: the number is enough.
         return "book".equals(k) || "series".equals(k) || "album".equals(k);
     }
 
@@ -1535,9 +1765,12 @@ public final class BrowseActivity extends Activity {
 
     private void rowMenu(View anchor, List<MediaKind.RowAction> actions, JSONObject n) {
         final String id = n.optString("id"), name = n.optString("title", "Untitled"), sub = n.optString("subtitle", ""), cover = n.optString("artUrl", "");
+        // The sheet's header says what a compact row has no second line for: a compilation's own
+        // artist, a part's place (RowLine.sheetLine).
+        String said = "level".equals(mode) ? RowLine.sheetLine(kind, n, pageArtist(), partPlaces == null ? null : partPlaces.optJSONObject(contentIdOf(id))) : sub;
         net.kckern.daylight.shellkit.ItemSheet sheet = net.kckern.daylight.shellkit.ItemSheet.of(this, "Browse")
                 .item(cover.isEmpty() ? art : cover, MediaKind.spoken(kind) ? net.kckern.daylight.shellkit.CoverGlyph.Kind.BOOK : net.kckern.daylight.shellkit.CoverGlyph.Kind.TRACK,
-                        name, sub, "");
+                        name, said, "");
         for (MediaKind.RowAction a : actions) {
             switch (a) {
                 case PLAY_NEXT: sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_play_next, "Play next", () -> enqueue(id, true, name)); break;

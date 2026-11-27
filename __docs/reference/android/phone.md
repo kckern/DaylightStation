@@ -1346,14 +1346,21 @@ until it is updated, and the payload notes it. Kinds: **album, playlist, station
 A station is a radio-station playlist sequenced at home (the audio-lists catalog marks it
 `station: true`): it plays whole and lists no tracks.
 
-A detail page's actions are one `ActionSet` per kind: one **primary** action, a 56 dp
-filled circular button in the accent at the header's right edge ("Play <title>",
-"Resume <title>"); at most four **secondary** 48 dp icon buttons under the header, muted,
-no fill, each with a content description and a long-press tooltip; the rarer actions in
-**⋮**. No pill buttons; the accent is only the primary button, selected states and
-progress.
+A detail page is laid out after Plexamp's album page. The page's name is in the top bar
+next to Back, always, one line, cut with "…". The cover (132 dp) is on the left; right of
+it the by-line, a book's progress and its keep line, then the **primary** action, a 56 dp
+circular button ("Play <title>", "Resume <title>"), then one row of the **secondary** icon
+buttons (muted, no fill, each with a content description and a long-press tooltip) and
+**⋮** with the rarer actions, all in that right-hand column. The page takes its colours
+from the cover (`CoverColor`, `DetailLook`): a gradient from the cover's colour into the
+page background (and the bar over it, as Now playing's backdrop), and the primary filled
+with the cover's colour made dark and quiet with a glyph that reads on it, never the
+bright accent. Under the header, flush right and muted, the summary line "13 tracks · 1 h
+3 min" (a book "5 parts · 3 h 2 min": the whole book, every part; a series' lectures) with
+a hairline under it, then the list at once (an empty status line takes no room). No pill
+buttons.
 
-| Kind | Primary | Icons | ⋮ | Row tap | Row ⋮ |
+| Kind | Primary | Icons | ⋮ | Row tap | Row long-press |
 |---|---|---|---|---|---|
 | Album, playlist | Play | Shuffle · Play on · Keep | Add to Your playlists | plays from that track | Play next · Add to queue · Go to album · Go to artist |
 | Station | Play | Play on · Keep | | (no rows) | |
@@ -1368,8 +1375,25 @@ on its chapter list (resuming the book first when it is not the one playing). Yo
 playlists is music only. Now playing on a book, a talk or a course (long-form) has no
 shuffle, repeat, lyrics or crossfade; speed, chapters, ±30 s and sleep stay.
 
-**Artist and author pages keep a ⋮** beside the primary (today it holds "Search for
-<name>"; it is where collection-wide actions on a person go).
+**Artist and author pages keep a ⋮** at the end of their action row (today it holds
+"Search for <name>"; it is where collection-wide actions on a person go).
+
+**An album's tracks and a book's parts are one compact line each** (about 48 dp): a small
+muted number in a fixed 32 dp column, right-aligned; the title in the list-title style,
+one line, cut with "…"; the length flush right, muted, in tabular figures ("4:46", a
+part's "9 min"). No cover on these rows (a compilation's track with its own art too: the
+number is enough), no second line and no ⋮. A tap plays from it; a **long-press** (with a
+haptic tick) opens its item sheet, whose header says what the second line used to: a
+compilation's or guest's own artist, a part's place ("12 min left", "Finished") or its
+length (`RowLine.sheetLine`). The row playing shows a small play glyph in place of its
+number and its title in bold. TalkBack hears "Track 3, Workin' Them Angels, 4 minutes 46
+seconds" and has a **More options for <title>** action that opens the same sheet
+(`DetailLook.rowSpoken`). Playlist and search rows keep their covers and second lines,
+and their menus are the same long-press and action: no row has a ⋮.
+
+**One list-title style** (`DaylightTheme.listTitle`): a row's title in every list (tracks,
+parts, books, albums, search, Continue listening, On this phone) is regular weight in ink.
+Bold is for a page's title in the bar, section headings and the row that is playing.
 
 **One item sheet** (design sweep D17, shell-kit `ItemSheet` on `BottomSheet`) is every
 long-press and ⋮ in the phone app; there is no PopupMenu. A modal bottom sheet with a scrim
@@ -1379,7 +1403,7 @@ item itself: its cover (or kind glyph), title, by-line and state ("Kept automati
 for a state), then, after a divider, the destructive rows in the error colour (Remove from
 Continue listening, Remove from this phone, Clear queue): `SheetRows` orders them. The
 verbs are the kind's (`MediaKind`). It serves the Continue long-press, the Play tab's
-tiles and On this phone rows, a detail page's ⋮, a row's ⋮ and Now playing's ⋮.
+tiles and On this phone rows, a detail page's ⋮, a row's long-press and Now playing's ⋮.
 
 **The speed sheet** (D19, `SpeedSheet`, arithmetic in `SpeedSteps`) is the one speed
 control, on Now playing's speed button and a book page's Speed: a compact card over the
@@ -1398,35 +1422,36 @@ when it answers, animated; then one collapsed **Off · N** row that opens in pla
 screens (dimmed, not pickable). Off starts collapsed every time; the screen in use is never
 filed under Off (`PickerGroups`).
 
-**The author page is about the author.** The header is the portrait (info's
-`thumbnail`, cached) with the name and a facts line beside it, with the whole width
-("Italy · 1 book · 3 h": country when known · book count · total length; a music artist:
-"Iceland · Art Pop · 9 albums"; a number and its unit never break apart). Under it, a row
-of its own: the primary (the round play with "Continue <book>", Shuffle for an artist, or
-nothing) and ⋮. Then the summary clamped to four lines with **More** (opens in place).
-The name never breaks inside a word (`NameFit`): two lines at the title size, else one
-size down, else that size ending in "…". While home's answer is on its way the facts line,
-the action row and the summary keep their places (blank), so nothing moves when it lands;
-they close only when home never answers. The book count, the total, each book's length
+**The author page is about the author.** The name is in the top bar next to Back (from
+the opening row's title at once). The header is the portrait (info's `thumbnail`, cached)
+and, right of it, the facts line ("Italy · 1 book · 3 h": country when known · book count ·
+total length; a music artist: "Iceland · Art Pop · 9 albums"; a number and its unit never
+break apart), then the summary in the lines that fit beside the portrait
+(`DetailLook.summaryLines`) with **More** under it. More opens the rest of the summary in
+place below the portrait, full width, reading on from the last line beside it (Less closes
+it). With no summary the facts sit alone, centred beside the portrait. Under the portrait,
+the action row: the primary (the round play with "Continue <book>", Shuffle for an artist,
+or nothing) and ⋮; then the neighbours line; then the rows. While home's answer is on its
+way the facts line, the summary's lines and the action row keep their places (blank), so
+nothing moves when it lands; they close only when home never answers. The book count, the total, each book's length
 and progress, and which one to continue come from one source, the `about` op: home's
 info and every page of the author's tracks (`/api/v1/list/<id>/allLeaves`, 500 at a
 time: an author of 660 tracks has books past the first 500) with the household's recent
 list. Never the rows' or a search row's count.
 
-**An album page** says who and when under its name ("Rush · 2007"; `about` answers the
-album's `year` and its artist's id, `bylineId`); the line opens the artist's page. Its
-tracks show their number in place of the album's cover on every row, as a book's parts
-do; a compilation's track with its own picture (`ownArt`) keeps it. An album page shows
-no review. **A name is shown once**: on a detail page the top bar holds only
-Back while the header is on screen; the name fades into the bar when the header's name
-scrolls out of view.
+**An album page** says who and when right of its cover ("Rush › · 2007"; `about` answers
+the album's `year` and its artist's id, `bylineId`); the artist, in ink with a "›", opens
+the artist's page ("Open artist Rush" for TalkBack). A book's author line does the same
+for the author's page ("Open author …"); the line keeps its place while `about` is on its
+way. An album or book page shows no review.
 
 **Row second lines never repeat the page** (`RowLine`): under an author the book's year
 and, once started, what is left ("1998 · 2 h 10 min left": see **Time left**), or its length with no year;
 under a music artist year and track count ("2007 · 13 tracks"); on an album the track's
 length, with its artist only when it is not the album's; in search, lists and Continue the
 author or artist stays. Year, length, track count and artist are home's (the payload
-passes them with each row).
+passes them with each row). An album's tracks and a book's parts have no second line (see
+the compact rows above).
 
 **Swipe through neighbours** (`Neighbours`). A detail page opened from a list pages left
 and right through exactly that list in its order: an author page through the library's
@@ -1495,7 +1520,13 @@ item's end, Play/Pause (flips at once; the player's report corrects it) and Next
 swipe up opens Now playing on that target, drawn from the same entry; swipe down hides it
 on that screen until the next item (playback goes on). It reads `NowPlayingNote`, which
 the two media services write: one connection to the player for the app, no polling. It
-slides away when nothing is loaded and never says "Nothing playing".
+slides away when nothing is loaded and never says "Nothing playing". A paused item shows
+it like a playing one. Android stops a paused media service about a minute after the app
+goes to the background, which cleared the note (2026-11-27: back from another app, an
+album page had no bar while a song sat paused): so each screen, as it shows with no entry
+for this phone and a saved queue, starts the media service (`MiniPlayerState.wake`,
+`ShellStart.wakeSavedQueue`), which restores the queue paused, or, already running,
+reports its item again (`onStartCommand`), and the bar comes back.
 
 | Payload op | Answers | Endpoint |
 |---|---|---|

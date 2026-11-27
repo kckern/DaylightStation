@@ -124,6 +124,8 @@ public final class MiniPlayer {
         if (listening) return;
         listening = true;
         NowPlayingNote.listen(changed);
+        // A paused item the service let go of (stopped in the background) comes back: the bar follows its report.
+        if (MiniPlayerState.wake(NowPlayingNote.forTarget("local"), ShellStart.savedQueue(activity))) ShellStart.wakeSavedQueue(activity);
         draw();
     }
 

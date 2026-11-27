@@ -20,6 +20,17 @@ public final class MiniPlayerState {
         return !key(e).equals(dismissed);
     }
 
+    /**
+     * Whether a browse screen wakes the media service as it shows: when this phone has no
+     * entry and a queue was saved. Android stops a paused media service about a minute after
+     * the app goes to the background (2026-11-27: the owner came back from Plexamp to an
+     * album page with no bar while Spindrift sat paused); woken, the service restores the
+     * queue, paused, and reports it, so a paused item always has the bar.
+     */
+    public static boolean wake(NowPlayingNote.Entry local, boolean savedQueue) {
+        return local == null && savedQueue;
+    }
+
     /** "Starting…"; the chapter; "On <screen>" for a screen; else the by-line. */
     public static String line(NowPlayingNote.Entry e) {
         if (e == null) return "";

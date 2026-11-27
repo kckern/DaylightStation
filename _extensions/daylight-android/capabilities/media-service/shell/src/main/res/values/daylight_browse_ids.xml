@@ -3,4 +3,6 @@
 <resources>
     <item name="daylight_browse_row_id" type="id" />
     <item name="daylight_keep_bar_attempt" type="id" />
+    <!-- A row's "More options for <title>" accessibility action (its long-press sheet). -->
+    <item name="daylight_browse_row_menu" type="id" />
 </resources>

@@ -61,6 +61,12 @@ public final class ShellStart {
     static final String MEDIA_SERVICE = "net.kckern.daylight.cap.mediaservice.shell.DaylightMediaService";
     static final String SAVED_QUEUE = "queue/state.json";
 
+    /** Whether the media service saved a queue (MiniPlayerState.wake). */
+    static boolean savedQueue(Context context) {
+        try { return new java.io.File(context.getFilesDir(), SAVED_QUEUE).isFile(); }
+        catch (RuntimeException unreadable) { return false; }
+    }
+
     /**
      * A queue saved before the app was stopped comes back when the app opens (paused, never
      * playing): the media service restores it when it is created, and its mini player and
@@ -68,7 +74,7 @@ public final class ShellStart {
      */
     static void wakeSavedQueue(Context context) {
         try {
-            if (!new java.io.File(context.getFilesDir(), SAVED_QUEUE).isFile()) return;
+            if (!savedQueue(context)) return;
             context.startService(new Intent().setClassName(context, MEDIA_SERVICE));
         } catch (RuntimeException refusedOrAbsent) {
             // A background start refused, or a build without the media service: it comes back on the next play.

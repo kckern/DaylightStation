@@ -139,6 +139,15 @@ public final class DaylightTheme {
         return style(view, type, color, isBold);
     }
 
+    /**
+     * The one list-title style (2026-11-27): a row's title in every list (tracks, parts, books,
+     * search, Continue, On this phone) is regular weight in ink. Bold is for a page's title,
+     * section headings and the row that is playing.
+     */
+    public TextView listTitle(Context context, CharSequence text) {
+        return text(context, text, Type.BODY, ink, false);
+    }
+
     public float radius(Radius radius) {
         switch (radius) {
             case SMALL: return res.getDimension(R.dimen.daylight_radius_small);

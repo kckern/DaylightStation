@@ -58,6 +58,36 @@ final class RowLine {
         }
     }
 
+    /**
+     * The by-line in a row's sheet header on a page whose rows are one compact line each
+     * (2026-11-27): what the row's second line used to say. A track's artist when it is not
+     * the album's (a compilation, a guest), else the album's; a part's place ("12 min left",
+     * "Finished") once started, else its length; elsewhere the row's own subtitle.
+     *
+     * @param place the part's place from home ({playhead, duration, finished}), or null
+     */
+    static String sheetLine(String pageKind, JSONObject row, String pageArtist, JSONObject place) {
+        String artist = row.optString("artist", "");
+        switch (MediaKind.normal(pageKind)) {
+            case "album": {
+                boolean guest = !artist.isEmpty() && !pageArtist.isEmpty() && !artist.equalsIgnoreCase(pageArtist);
+                return guest ? artist : !pageArtist.isEmpty() ? pageArtist : artist;
+            }
+            case "book": case "series": {
+                long seconds = row.optLong("durationSec", 0);
+                if (place != null) {
+                    long d = seconds > 0 ? seconds : Math.max(0, place.optLong("duration"));
+                    long at = Math.max(0, Math.min(d, place.optLong("playhead")));
+                    if (place.optBoolean("finished") || (d > 0 && at >= d * 0.97)) return "Finished";
+                    if (at > 0) return net.kckern.daylight.shellkit.TimeLeft.words(d - at);
+                }
+                return seconds > 0 ? spokenLength(seconds) : "";
+            }
+            default:
+                return row.optString("subtitle", "");
+        }
+    }
+
     /** "2 h 10 min left" (the whole book from its place, at 1×: TimeLeft), "Finished", or "" for a book not started. */
     static String progress(JSONObject book) {
         if (book.optBoolean("finished")) return "Finished";

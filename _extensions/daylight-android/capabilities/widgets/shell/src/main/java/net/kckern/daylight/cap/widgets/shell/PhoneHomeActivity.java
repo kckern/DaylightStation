@@ -780,7 +780,7 @@ public class PhoneHomeActivity extends Activity {
         LinearLayout words = new LinearLayout(this);
         words.setOrientation(LinearLayout.VERTICAL);
         words.setPadding(dp(12), 0, 0, 0);
-        h.name = t.text(this, "", Type.BODY, t.ink, true);
+        h.name = t.listTitle(this, "");
         h.name.setMaxLines(2);
         h.name.setEllipsize(android.text.TextUtils.TruncateAt.END);
         words.addView(h.name);
@@ -1047,7 +1047,7 @@ public class PhoneHomeActivity extends Activity {
         LinearLayout words = new LinearLayout(this);
         words.setOrientation(LinearLayout.VERTICAL);
         words.setPadding(dp(12), 0, 0, 0);
-        TextView name = t.text(this, title, Type.BODY, t.ink, true);
+        TextView name = t.listTitle(this, title);
         name.setMaxLines(2);
         name.setEllipsize(android.text.TextUtils.TruncateAt.END);
         words.addView(name);
@@ -1288,7 +1288,7 @@ public class PhoneHomeActivity extends Activity {
         LinearLayout words = new LinearLayout(this);
         words.setOrientation(LinearLayout.VERTICAL);
         words.setPadding(dp(12), 0, dp(4), 0);
-        TextView name = t.text(this, title, Type.BODY, t.ink, true);
+        TextView name = t.listTitle(this, title);
         name.setMaxLines(1);
         name.setEllipsize(android.text.TextUtils.TruncateAt.END);
         words.addView(name);
