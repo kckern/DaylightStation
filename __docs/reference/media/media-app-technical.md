@@ -2842,6 +2842,8 @@ dot-delimited namespaces. Every event SHOULD include `clientId`,
 | `media-app.unmounted` | info | App unmounts. | — |
 | `item.opened` | info | A tap opened a playable item's detail page (a look — nothing played). | `contentId`, `via` (`tap`, `tile`, `open`, `played-earlier`) |
 | `search.destination-cycled` | info | Tab, Shift+Tab or a click moved the search box's destination chip. | `from`, `to`, `via` (`tab`\|`click`) |
+| `dest.list-opened` | info | The destination chip's ▾ list opened (▾, Alt+↓ or ↓ on the chip). Opening contacts nothing. | `current` (row id or null), `screens` |
+| `dest.list-picked` | info | A destination was picked from that list (sticky, like a cycle step). | `from`, `to` (`local` = This device), `rank` |
 | `search.returned` | info | Back or Esc from a search-opened info view restored the search. | `contentId`, `surface` (`dock`\|`sheet`) |
 | `play.prepared` | info | The look-time prepare answered (never started anything). | `contentId`, `targetIds`, `ms` |
 | `play.prepare-unavailable` | warn | The server has no prepare route; logged once. | — |

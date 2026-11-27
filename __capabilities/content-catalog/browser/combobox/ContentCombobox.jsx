@@ -965,7 +965,9 @@ export function ContentCombobox({
                 onMouseDown={(e) => e.stopPropagation()}
                 onTouchStart={(e) => e.stopPropagation()}
               >{inputAccessory}</span>
-              {rightControl}
+              {/* One fixed slot for the loader / clear control, so the
+                  accessory never shifts when one replaces the other. */}
+              <span className="content-combobox-right-control" data-testid="combobox-right-control">{rightControl}</span>
             </span>
           ) : rightControl}
         />

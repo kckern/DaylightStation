@@ -226,6 +226,21 @@
   > * { pointer-events: auto; }
 }
 
+// The loader / clear control's slot beside an accessory: always its full
+// width, whichever (if either) is showing.
+.content-combobox-right-control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 100%;
+  // Empty, it is still the input (as the section's own empty part is).
+  pointer-events: none;
+
+  > * { pointer-events: auto; }
+}
+
 .content-combobox-input-accessory {
   display: inline-flex;
   align-items: center;

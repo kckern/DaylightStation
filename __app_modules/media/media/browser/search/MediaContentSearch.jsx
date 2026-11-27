@@ -111,9 +111,17 @@ export function MediaContentSearch({ inputRef: suppliedInputRef, destinationWrap
   // provider nothing is handled and Tab closes the search as before.
   const { cycle: cycleDestination } = useDestinationCycle();
   const handleTabKey = useCallback((dir) => cycleDestination(dir, 'tab'), [cycleDestination]);
-  const destinationChip = DestinationWrapper
-    ? <DestinationWrapper><DestinationChip controlRef={destinationControlRef} /></DestinationWrapper>
-    : <DestinationChip controlRef={destinationControlRef} />;
+  // The careful choice: the chip's ▾ list, also opened by Alt+↓ in the box.
+  const [destListOpen, setDestListOpen] = useState(false);
+  const chip = (
+    <DestinationChip
+      controlRef={destinationControlRef}
+      listOpen={destListOpen}
+      onListOpenChange={setDestListOpen}
+      returnFocusRef={inputRef}
+    />
+  );
+  const destinationChip = DestinationWrapper ? <DestinationWrapper>{chip}</DestinationWrapper> : chip;
   // The header's destination control is in use: keep this search open (FIND.1b).
   const { active: destinationInteractionActive } = useDestinationInteraction();
 
@@ -215,7 +223,17 @@ export function MediaContentSearch({ inputRef: suppliedInputRef, destinationWrap
         <ScopeChips />
         <div
           className="media-search-input-wrap"
-          onKeyDownCapture={(e) => { viaRef.current = e.key === 'Enter' ? 'enter' : 'tap'; }}
+          onKeyDownCapture={(e) => {
+            // Alt+↓ in the box opens the destination list (before the
+            // combobox reads ↓ as a move through the results).
+            if (e.key === 'ArrowDown' && e.altKey && e.target?.tagName === 'INPUT') {
+              e.preventDefault();
+              e.stopPropagation();
+              setDestListOpen(true);
+              return;
+            }
+            viaRef.current = e.key === 'Enter' ? 'enter' : 'tap';
+          }}
           onPointerDownCapture={() => { viaRef.current = 'tap'; }}
         >
           <ContentCombobox
@@ -263,7 +281,7 @@ export function MediaContentSearch({ inputRef: suppliedInputRef, destinationWrap
             // results shown on reopen are the ones it found.
             // A one-shot Play on… / Add on… picker is a destination choice made FOR this search: its
             // modal takes focus, which must not read as leaving the search (FIND.1a/AC5).
-            destinationInteractionActive={destinationInteractionActive || oneShotAction !== null}
+            destinationInteractionActive={destinationInteractionActive || oneShotAction !== null || destListOpen}
           />
         </div>
       </div>

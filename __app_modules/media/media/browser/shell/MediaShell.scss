@@ -645,7 +645,7 @@ $amber-ink: $on-accent;
   position: relative;
   flex: 1;
   min-width: 0;
-  max-width: 560px;
+  max-width: 720px;
 
   .media-search-controls {
     display: flex;
@@ -653,9 +653,13 @@ $amber-ink: $on-accent;
     gap: var(--mantine-spacing-xs);
     min-width: 0;
 
+    // The scope chips give way (scroll sideways) when they need more room;
+    // the search box beside them never does.
     .media-scope-chips {
-      flex: 0 0 auto;
+      flex: 0 1 auto;
       min-width: 0;
+      overflow-x: auto;
+      scrollbar-width: none;
     }
   }
 
@@ -664,14 +668,27 @@ $amber-ink: $on-accent;
   // covers dock-row placement.
   .scope-error { color: var(--mantine-color-red-5); display: inline-flex; }
 
-  .media-search-input-wrap { flex: 1 1 160px; min-width: 120px; }
+  // One fixed width per breakpoint (owner ruling 2026-11-27): the box never
+  // resizes when the destination's name changes, the ▾ list opens, or a scope
+  // chip is chosen. The destination slot inside it is fixed too (Search.scss),
+  // so the text field keeps one width as well.
+  --media-search-box: 22rem;
+  .media-search-input-wrap {
+    flex: 0 0 var(--media-search-box);
+    width: var(--media-search-box);
+    min-width: 0;
+  }
 
   // Laptop: the dock row has room the three controls were not given — the aim
   // label read "Browser ac5…" and the scope chips were clipped mid-chip.
   @media (min-width: 1100px) {
     max-width: 920px;
+    --media-search-box: 27.5rem;
+  }
 
-    .media-search-input-wrap { flex-basis: 260px; }
+  @media (min-width: 1400px) {
+    max-width: 1040px;
+    --media-search-box: 37.5rem;
   }
 }
 

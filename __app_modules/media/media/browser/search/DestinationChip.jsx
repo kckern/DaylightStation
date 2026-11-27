@@ -16,10 +16,10 @@
 // reads the unaimed state and the dead aim is let go. Until then (loading,
 // empty, errored) the aim is still where row ▶ sends, so the chip names it.
 // The phone header's "Playing on" control reads the same label
-// (useDestinationLabel), so the two never disagree.
-import React, { useCallback, useContext, useEffect, useMemo } from 'react';
+// (useDestinationLabel), so the two never disagree. The ▾ joined to the chip
+// opens the careful choice: every destination as a list (DestinationList.jsx).
+import React, { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { UnstyledButton } from '@mantine/core';
-import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import { CastTargetContext } from "../cast/CastTargetProvider.jsx";
 import { FleetContext } from "../fleet/FleetProvider.jsx";
 import { ClientIdentityContext } from "../identity/ClientIdentityProvider.jsx";
@@ -27,6 +27,7 @@ import { deviceName } from "../fleet/deviceDisplay.js";
 import { aimKey, destinationCycle, nextDestination } from "../habits/destinationCycle.js";
 import { usePlayDestination } from "../habits/usePlayDestination.js";
 import mediaLog from "../logging/mediaLog.js";
+import { DestinationList } from "./DestinationList.jsx";
 import "./Search.scss";
 
 const NO_IDS = Object.freeze([]);
@@ -138,7 +139,22 @@ export function useDestinationCycle() {
     return true;
   }, [setTargets, order, current, targetIds]);
 
-  return { current, cycle };
+  // The careful choice (the chip's ▾ list): the same write as a cycle step,
+  // so the pick is sticky and nothing is woken. `rank` is the row's 1-based
+  // place in the list as it was shown.
+  const pick = useCallback((ids, { rank = null } = {}) => {
+    if (!setTargets) return false;
+    const next = Array.isArray(ids) ? ids : NO_IDS;
+    setTargets(next, { here: next.length === 0 });
+    mediaLog.destListPicked({
+      from: current.unaimed && !current.stale ? 'unaimed' : aimKey(targetIds),
+      to: aimKey(next),
+      rank,
+    });
+    return true;
+  }, [setTargets, current, targetIds]);
+
+  return { current, cycle, pick, order, usualIds: usualKey ? usualKey.split(',') : NO_IDS };
 }
 
 /**
@@ -156,15 +172,29 @@ export function useDestinationLabel() {
 }
 
 /**
- * @param {{ compact?: boolean, controlRef?: React.Ref }} props - `compact`: the phone's
- *   narrow search row. `controlRef`: the shell's destination-control ref, so focus
- *   leaving a vanished phone destination control (Now Playing on resize) lands here.
+ * @param {{ compact?: boolean, controlRef?: React.Ref, listOpen?: boolean,
+ *   onListOpenChange?: (open: boolean) => void, returnFocusRef?: React.RefObject }} props
+ *   `compact`: the phone's narrow search row. `controlRef`: the shell's destination-control
+ *   ref, so focus leaving a vanished phone destination control (Now Playing on resize) lands
+ *   here. `listOpen` / `onListOpenChange`: the ▾ list's state, when the search surface opens
+ *   it too (Alt+↓ in the box); uncontrolled otherwise. `returnFocusRef`: the search input,
+ *   where focus goes when the list closes.
+ *
+ * The chip and its ▾ have one fixed width per breakpoint (Search.scss), so the
+ * search box never changes width with the name it shows; a long name
+ * ellipsises and the tooltip / accessible name carry it whole.
  */
-export function DestinationChip({ compact = false, controlRef = null } = {}) {
+export function DestinationChip({
+  compact = false, controlRef = null, listOpen, onListOpenChange, returnFocusRef = null,
+} = {}) {
   const aim = useContext(CastTargetContext);
   const fleet = useContext(FleetContext);
   const identity = useContext(ClientIdentityContext);
-  const { current, cycle } = useDestinationCycle();
+  const destination = useDestinationCycle();
+  const { current, cycle } = destination;
+  const [ownListOpen, setOwnListOpen] = useState(false);
+  const open = listOpen ?? ownListOpen;
+  const setOpen = onListOpenChange ?? setOwnListOpen;
 
   // Let go of an aim at a screen that is gone — only once the fleet has
   // actually answered (a restored aim must survive the first, empty render).
@@ -183,7 +213,7 @@ export function DestinationChip({ compact = false, controlRef = null } = {}) {
   const here = current.label === HERE_LABEL;
   const shown = asks && compact ? ASK_SHORT_LABEL : current.label;
   return (
-    <>
+    <span className="media-destination-group" data-testid="search-destination-group" data-compact={compact || undefined}>
       <UnstyledButton
         ref={controlRef}
         data-testid="search-destination-chip"
@@ -191,22 +221,34 @@ export function DestinationChip({ compact = false, controlRef = null } = {}) {
         data-here={here || undefined}
         data-asks={asks || undefined}
         aria-label={`Plays on ${current.label}. Change where things play`}
-        title="Where a film's ▶ plays — Tab to change"
+        title={`Plays on ${current.label} — Tab to change, ▾ to choose from a list`}
         // The search box keeps its focus, words and open list.
         onMouseDown={(e) => e.preventDefault()}
+        onKeyDown={(e) => {
+          if (e.key !== 'ArrowDown' || open) return;
+          e.preventDefault();
+          e.stopPropagation();
+          setOpen(true);
+        }}
         onClick={() => {
           // Reaching for the destination answers the naming prompt anchored here.
           if (identity?.firstUse) identity.completeFirstUse?.('skipped');
           cycle(1, 'click');
         }}
       >
-        {!here && !asks && <UiIcon name="television" size={16} className="media-destination-chip-icon" />}
         <span className="media-destination-chip-text">▶ {shown}</span>
       </UnstyledButton>
+      <DestinationList
+        open={open}
+        onOpenChange={setOpen}
+        compact={compact}
+        returnFocusRef={returnFocusRef}
+        cycle={destination}
+      />
       <span className="media-sr-only" role="status" aria-live="polite" data-testid="search-destination-announcement">
         {`Plays on ${current.label}`}
       </span>
-    </>
+    </span>
   );
 }
 

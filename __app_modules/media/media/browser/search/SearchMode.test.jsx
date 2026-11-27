@@ -355,6 +355,28 @@ describe('SearchMode', () => {
     expect(screen.queryByTestId('search-learned-where')).toBeNull();
   });
 
+  it('Alt+↓ in the input opens the destination list; a pick sets the destination and focus returns to the box', async () => {
+    const devices = [
+      { id: 'office-tv', type: 'linux-pc', name: 'Office Screen', content_control: { provider: 'ws' } },
+      { id: 'livingroom-tv', type: 'shield-tv', name: 'Living Room TV', content_control: { provider: 'fully-kiosk' } },
+    ];
+    seedHabits().recordScreen('video', ['office-tv']);
+    render(
+      <FleetContext.Provider value={{ devices, loading: false, error: null, identity: { deviceId: 'browser:me' } }}>
+        <Harness />
+      </FleetContext.Provider>
+    );
+    const input = await screen.findByTestId('search-mode-input');
+    act(() => { fireEvent.keyDown(input, { key: 'ArrowDown', altKey: true }); });
+    expect(screen.getByTestId('dest-list')).toBeInTheDocument();
+    act(() => { fireEvent.click(screen.getByTestId('dest-list-row-livingroom-tv')); });
+    expect(screen.queryByTestId('dest-list')).toBeNull();
+    expect(screen.getByTestId('search-destination-chip')).toHaveTextContent('▶ Living Room TV');
+    expect(document.activeElement).toBe(input);
+    // Still searching: the pick never closes Search.
+    expect(screen.getByTestId('search-mode')).toBeInTheDocument();
+  });
+
   it('Tab / Shift+Tab in the input cycle the chip and keep focus in the box', async () => {
     const devices = [
       { id: 'office-tv', type: 'linux-pc', name: 'Office Screen', content_control: { provider: 'ws' } },

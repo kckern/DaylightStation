@@ -97,6 +97,8 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus, keepScop
   const { push } = useNav();
   const { scoresFor, rememberedFor, recordPick } = usePlayDestination();
   const { cycle: cycleDestination } = useDestinationCycle();
+  // The careful choice: the chip's ▾ list, also opened by Alt+↓ in the box.
+  const [destListOpen, setDestListOpen] = useState(false);
   const log = useMemo(() => getLogger().child({ component: 'search-mode' }), []);
   // The words on screen when a row is opened or played (set below, read by
   // the handlers, which are defined before the combobox that owns the text).
@@ -430,12 +432,27 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus, keepScop
           // Tab / Shift+Tab in the box cycle where ▶ plays (an add-to-one-screen
           // search has no destination to change).
           onKeyDown={(e) => {
+            if (e.key === 'ArrowDown' && e.altKey && !addTo) {
+              // Stopped here: the same keydown reaching the document would
+              // read as a press outside the list it just opened.
+              e.preventDefault();
+              e.stopPropagation();
+              setDestListOpen(true);
+              return;
+            }
             if (e.key === 'ArrowDown' && idleActive) { if (moveInRecents(1)) e.preventDefault(); return; }
             if (e.key !== 'Tab' || addTo || e.altKey || e.ctrlKey || e.metaKey) return;
             if (cycleDestination(e.shiftKey ? -1 : 1, 'tab')) e.preventDefault();
           }}
         />
-        {!addTo && <DestinationChip compact />}
+        {!addTo && (
+          <DestinationChip
+            compact
+            listOpen={destListOpen}
+            onListOpenChange={setDestListOpen}
+            returnFocusRef={searchInputRef}
+          />
+        )}
       </div>
 
       {addTo && (

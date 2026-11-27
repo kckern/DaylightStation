@@ -313,15 +313,30 @@
   min-height: 46px;
 }
 
+// The chip and its ▾ share ONE fixed slot per breakpoint (owner ruling
+// 2026-11-27): the box never changes width with the name it shows ("Portal"
+// vs "Living Room TV" vs "This device"). A long name ellipsises; the chip's
+// tooltip and accessible name carry it whole.
+.media-destination-group {
+  --media-dest-slot: 13.5rem;
+  display: inline-flex;
+  align-items: stretch;
+  flex: 0 0 var(--media-dest-slot);
+  width: var(--media-dest-slot);
+  height: 100%;
+  min-height: 44px;
+  border-left: 1px solid var(--media-control-line);
+}
+
 .media-destination-chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
   height: 100%;
   min-height: 44px;
-  max-width: 14rem;
-  padding: 0 10px;
-  border-left: 1px solid var(--media-control-line);
+  padding: 0 4px 0 10px;
   color: var(--media-text);
   font-size: 0.875rem;
   font-weight: 500;
@@ -337,25 +352,75 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-
-  // The device icon is the phone's short form (below).
-  .media-destination-chip-icon { display: none; flex-shrink: 0; }
 }
 
-// Tablet widths: the dock's search input can be 120–160 px wide (MediaShell
-// .media-search-input-wrap) with a 36 px clear control beside the chip, so
-// the chip gives up its width first: a long name ellipsises.
+// The ▾ joined to the chip's right edge: opens the destination list.
+.media-destination-list-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 32px;
+  min-height: 44px;
+  border-left: 1px solid chalk(0.06);
+  color: var(--media-muted);
+  cursor: pointer;
+
+  &:hover { background: chalk(0.06); color: var(--media-text); }
+  &:focus-visible { outline: 2px solid var(--media-accent); outline-offset: -2px; }
+  &[aria-expanded="true"] { background: chalk(0.08); color: var(--media-text); }
+}
+
+// Tablet widths: the dock's search box is narrower, so the slot is too.
 @media (max-width: 1099px) {
-  .media-search-input-wrap .media-destination-chip { max-width: 8rem; }
+  .media-search-input-wrap .media-destination-group { --media-dest-slot: 10rem; }
 }
 
 // Phone search surface: the chip rides the input's row as its own 44 px
-// control — device icon + name, capped so the input keeps most of the row.
-.search-mode-header .media-destination-chip {
-  flex: 0 1 auto;
-  max-width: min(30%, 9rem);
+// control — the name, then a 40 px ▾ — in a fixed slot, so the input keeps
+// one width (and its whole placeholder) whatever the name. The ▾ says it is
+// a control, so the device icon gives its room to the name.
+.search-mode-header .media-destination-group {
+  --media-dest-slot: 7.75rem;
   border: 1px solid var(--media-control-line);
   border-radius: var(--mantine-radius-sm);
+  overflow: hidden;
 
-  .media-destination-chip-icon { display: inline-block; }
+  .media-destination-chip { padding: 0 2px 0 8px; }
+  .media-destination-list-toggle { flex-basis: 40px; }
 }
+
+// ---- Destination list (the ▾'s careful choice) --------------------------------
+// Portaled out of the app root on desktop, so Mantine tokens, not --media-*.
+.media-dest-list {
+  min-width: 17rem;
+  max-width: min(22rem, calc(100vw - 32px));
+
+  .media-dest-list-row { min-height: 44px; }
+  .media-dest-list-row[data-current] { background: chalk(0.05); }
+
+  .media-dest-list-row-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .media-dest-list-row-name {
+    color: var(--mantine-color-dark-0);
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .media-dest-list-row-status {
+    color: var(--mantine-color-dark-1);
+    font-size: 0.75rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+
+    &[data-tone="active"] { color: var(--mantine-color-dark-0); }
+  }
+}
+
+.media-dest-list--compact { min-width: min(17rem, calc(100vw - 32px)); }

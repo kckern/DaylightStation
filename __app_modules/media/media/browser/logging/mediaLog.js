@@ -99,6 +99,8 @@ export const mediaLog = {
   // or a click), and an aimed screen that left the fleet being let go.
   searchDestinationCycled: info('search.destination-cycled'),
   searchDestinationStale: info('search.destination-stale'),
+  destListOpened:         info('dest.list-opened'),
+  destListPicked:         info('dest.list-picked'),
   aimRestored:            info('aim.restored'),
   aimActivity:            sampled('aim.activity', { maxPerMinute: 30, aggregate: true }),
   aimExpired:             info('aim.expired'),

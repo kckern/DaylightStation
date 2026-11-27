@@ -529,7 +529,7 @@ one deliberate step down from the one above, and Esc or Back always goes up.
 
 | # | Intent | Allowed effects | Gesture |
 |---|---|---|---|
-| 0 | Aim | sets the destination (sticky) | Tab / Shift+Tab in the search box, or click the chip |
+| 0 | Aim | sets the destination (sticky) | Tab / Shift+Tab in the search box, or click the chip; ▾ / Alt+↓ picks from a list |
 | 1 | Find | none (remembered picks rank first) | type |
 | 2 | Scan | none | ↓ ↑ / hover |
 | 3 | Look | opens the info view; remembers the pick | Enter / click / tap a row |
@@ -564,6 +564,35 @@ fresh clears it, and it never hides the "Usual" screen in Play on…. The header
 (`useDestinationLabel`), so the two never disagree; the first-use hint points
 at the chip.
 Cycling logs `search.destination-cycled {from, to, via}`.
+
+**Cycle for a quick choice, or pick from a list** (owner ruling 2026-11-27).
+A ▾ joined to the chip's right edge opens every destination as a list
+(`search/DestinationList.jsx`): the screens the cycle walks, in the shared
+ranking (`fleet/screenRanking.js` — the usual film screen, then habit weight,
+then what is on now, then by name), the top three then **More (k)** that
+expands in place (`TopMoreMenu`), and **This device**. Each row reads its live
+state from `castCopy.pickerRowState` (Asleep, Ready, Playing: <title>) and the
+current destination carries a ✓. Opening the list only reads the fleet store:
+nothing is woken, powered or contacted. A pick writes the same sticky aim a
+cycle step writes. Keyboard: **Alt+↓** in the box (or ↓ on the chip or the ▾)
+opens it on the current row; ↑ ↓ move, Enter picks, Esc or Tab closes and
+keeps the choice; either way focus returns to the search box, whose words and
+open results stay as they were. The phone's search uses the same list as a
+dropdown below the chip (the phone search's menus are dropdowns, not sheets);
+its ▾ is 40 px wide. Logged as `dest.list-opened {current, screens}` and
+`dest.list-picked {from, to, rank}` (rank: the row's 1-based place in the
+ranked list; This device is last).
+
+**The box keeps one width.** The chip and its ▾ share one fixed slot per
+breakpoint (13.5rem on wide screens, 10rem under 1100 px, 7.75rem on the
+phone's search row), so a long name ellipsises (the tooltip and accessible
+name carry it whole) and the text field never changes width with the name
+shown. The loader and the clear control share one fixed slot after it
+(ContentCombobox `.content-combobox-right-control`), so the chip never shifts
+when one replaces the other. The dock's search box has a fixed width per
+breakpoint (`--media-search-box`: 22rem, 27.5rem from 1100 px, 37.5rem from
+1400 px); the scope chips beside it give way (scroll sideways) when they need
+more room, never the box.
 
 **A tap is a look.** Tapping a search row, a start-page tile, a browse row or
 a Played earlier row opens the item: a playable item's detail page (poster,

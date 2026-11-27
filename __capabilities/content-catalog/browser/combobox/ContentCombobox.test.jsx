@@ -726,8 +726,19 @@ describe('ContentCombobox (hook wiring)', () => {
     const accessory = screen.getByTestId('combobox-input-accessory');
     const clear = screen.getByTestId('combobox-clear-search');
     expect(accessory).toContainElement(screen.getByTestId('chip'));
-    expect(accessory.parentElement).toBe(clear.parentElement);
-    expect(accessory.compareDocumentPosition(clear) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // The clear control sits in its own fixed slot after the accessory, so the
+    // accessory never shifts when the loader and the clear control trade places.
+    const slot = screen.getByTestId('combobox-right-control');
+    expect(slot).toContainElement(clear);
+    expect(accessory.parentElement).toBe(slot.parentElement);
+    expect(accessory.compareDocumentPosition(slot) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('keeps the control slot beside an accessory even when no control is showing', () => {
+    currentHook = makeHook({ state: { ...initialState(''), mode: Modes.SEARCH, search: '' } });
+    renderCombobox({ inputAccessory: <span data-testid="chip">chip</span> });
+    expect(screen.queryByTestId('combobox-clear-search')).toBeNull();
+    expect(screen.getByTestId('combobox-right-control')).toBeEmptyDOMElement();
   });
 
   it('a press on the accessory is inside the search: the list stays open (no outside commit)', async () => {
