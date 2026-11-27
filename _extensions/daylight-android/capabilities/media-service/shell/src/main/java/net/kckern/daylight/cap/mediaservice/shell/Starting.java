@@ -109,15 +109,22 @@ final class Starting {
         if (p != null) previousAtTap(p);
     }
 
-    /** The phone's last answered play request (LibraryCallback): its content id and when (elapsedRealtime). */
-    private static volatile String answeredId = "";
-    private static volatile long answeredAt = -1;
-
-    /** The media service answered a play request for {@code mediaId} at {@code at}; the player takes the items next. */
-    static void answered(String mediaId, long at) {
-        answeredId = bareId(cut(mediaId));
-        answeredAt = at;
+    /** An answered play request: its content id and when (elapsedRealtime). */
+    private static final class Answer {
+        final String id;
+        final long at;
+        Answer(String id, long at) { this.id = id; this.at = at; }
     }
+
+    /** This phone's last answered play request (LibraryCallback), in this process. */
+    private static volatile Answer last;
+
+    /** This phone's player took the items answering a play request for {@code mediaId} at {@code at}. */
+    static void answered(String mediaId, long at) {
+        last = new Answer(bareId(cut(mediaId)), at);
+    }
+
+    static void clearForTests() { last = null; }
 
     /**
      * Whether the service answered this tap and the player's state was seen at or after that
@@ -126,8 +133,12 @@ final class Starting {
      * album reloads the track that was playing (2026-11-27: it sat on "Starting…").
      */
     boolean reloadedSinceAnswer(long seenAt) {
-        long at = answeredAt;
-        return at >= askedAt && seenAt >= at && answeredId.equals(tappedId());
+        // This phone's answers only; a start known by no id (from the bar, a screen's) never matches one.
+        if (!NowPlayingActivity.LOCAL.equals(target)) return false;
+        String want = tappedId();
+        Answer a = last;
+        if (want.isEmpty() || a == null) return false;
+        return a.at >= askedAt && seenAt >= a.at && a.id.equals(want);
     }
 
     private static String cut(String id) {

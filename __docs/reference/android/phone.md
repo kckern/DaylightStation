@@ -565,7 +565,8 @@ from the phone, under 2 s from home).
   the album showed "Starting…" with a blank cover over its own playing track until the
   track changed or the start "failed"). With the previous item unknown, a change after
   the tap, a matching name or playing for 1.5 s counts as landed. Once the media service
-  has answered the tap (`Starting.answered`, in process) and the player has changed since,
+  has answered the tap (`Starting.answered`, in process, stamped once the player has taken
+  the items; only for a start on this phone with a known id) and the player has changed since,
   what it holds is the answer, even the item that played before: a re-tapped album
   reloads the track that was playing and lands at once (`Starting.reloadedSinceAnswer`).
   The mini player
@@ -581,7 +582,8 @@ from the phone, under 2 s from home).
   item), goes through at once, so a re-tapped album is not held; a tap of the list the
   bar's item already plays from writes no start. A start that fails (a widget's, a
   refused play from the car or a browse page, a browse page whose player did not answer)
-  gives the bar back what played before at once (`NowPlayingNote.abandonStart`). This
+  gives the bar back what played before at once (`NowPlayingNote.abandonStart`, only
+  for that start's own id, so a late failure never undoes a newer tap). This
   phone's entries carry the player's content id; a screen's carry the content id its
   session reports, and a screen that reports none falls back to titles. Now playing opened from a bar
   that shows a start shows that start.

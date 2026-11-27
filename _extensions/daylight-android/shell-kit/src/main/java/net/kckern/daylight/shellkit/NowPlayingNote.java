@@ -176,15 +176,19 @@ public final class NowPlayingNote {
     /**
      * A start that failed (a widget's, the car's, a browse page's): the bar goes back to what
      * the player held at the tap, or to nothing, at once, and its reports count again; not
-     * after 30 s of holding them back. Nothing changes when no start is showing.
+     * after 30 s of holding them back. Only the start of {@code mediaId} (the id its note was
+     * given): a late failure never undoes a newer start. Nothing changes when no start is
+     * showing.
      */
-    public static void abandonStart(String target) {
+    public static void abandonStart(String target, String mediaId) {
         boolean changed = false;
         synchronized (NowPlayingNote.class) {
             Entry now = "local".equals(target) ? local : remote;
-            Over over = startedOver.remove(target);
+            Over over = startedOver.get(target);
+            if (over == null || !over.tapped.equals(contentId(mediaId))) return;
+            startedOver.remove(target);
             if (now != null && now.starting && now.target.equals(target)) {
-                Entry back = over == null || over.held == NOTHING ? null : over.held;
+                Entry back = over.held == NOTHING ? null : over.held;
                 if ("local".equals(target)) local = back; else remote = back;
                 changed = true;
             }

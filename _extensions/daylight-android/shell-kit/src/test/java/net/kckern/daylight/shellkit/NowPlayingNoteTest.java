@@ -125,7 +125,7 @@ public class NowPlayingNoteTest {
     @Test public void aFailedStartGivesBackWhatPlayedBefore() {
         NowPlayingNote.report(track("Y", "plex:1", "", 1_000));
         NowPlayingNote.starting("local", "This phone", "X", "", "", 2_000, "c:plex:2");
-        NowPlayingNote.abandonStart("local");
+        NowPlayingNote.abandonStart("local", "c:plex:2");
         assertEquals("Y", NowPlayingNote.forTarget("local").title);
         org.junit.Assert.assertFalse(NowPlayingNote.forTarget("local").starting);
         // Y's reports count at once again (nothing is held).
@@ -134,11 +134,11 @@ public class NowPlayingNoteTest {
         // Nothing before: nothing after.
         NowPlayingNote.clearForTests();
         NowPlayingNote.starting("local", "This phone", "X", "", "", 1_000, "c:plex:2");
-        NowPlayingNote.abandonStart("local");
+        NowPlayingNote.abandonStart("local", "c:plex:2");
         assertNull(NowPlayingNote.forTarget("local"));
         // No start showing: nothing changes.
         NowPlayingNote.report(track("Z", "plex:3", "", 3_000));
-        NowPlayingNote.abandonStart("local");
+        NowPlayingNote.abandonStart("local", "c:plex:2");
         assertEquals("Z", NowPlayingNote.forTarget("local").title);
     }
 
@@ -158,5 +158,27 @@ public class NowPlayingNoteTest {
     @Test public void theSameItemIsToldByItsContentIdOnBothSides() {
         org.junit.Assert.assertTrue(NowPlayingNote.sameItem(track("A", "p:plex:1|plex:9", "", 0), track("B", "plex:1", "", 0)));
         org.junit.Assert.assertFalse(NowPlayingNote.sameItem(track("A", "c:plex:1", "", 0), track("A", "plex:2", "", 0)));
+    }
+
+    @Test public void aLateFailureNeverUndoesANewerStart() {
+        NowPlayingNote.report(track("Y", "plex:1", "", 1_000));
+        NowPlayingNote.starting("local", "This phone", "X", "", "", 2_000, "c:plex:2");
+        NowPlayingNote.starting("local", "This phone", "Z", "", "", 2_100, "c:plex:3");
+        NowPlayingNote.abandonStart("local", "c:plex:2"); // X's failure, after Z was tapped
+        assertEquals("Z", NowPlayingNote.forTarget("local").title);
+        org.junit.Assert.assertTrue(NowPlayingNote.forTarget("local").starting);
+        NowPlayingNote.abandonStart("local", "c:plex:3");
+        assertEquals("Y", NowPlayingNote.forTarget("local").title);
+    }
+
+    @Test public void aSecondStartOverAShowingOneTakesItsId() {
+        NowPlayingNote.report(track("Y", "plex:1", "", 1_000));
+        NowPlayingNote.starting("local", "This phone", "Starting…", "", "", 2_000, "");
+        // The widget's action names its item: the start now waits for that id.
+        NowPlayingNote.starting("local", "This phone", "Morning", "", "", 2_100, "c:plex:60");
+        NowPlayingNote.report(track("Y", "plex:1", "", 2_200));
+        assertEquals("Y's report is still held", "Morning", NowPlayingNote.forTarget("local").title);
+        NowPlayingNote.report(track("Track 1", "plex:61", "plex:60", 2_300));
+        assertEquals("Track 1", NowPlayingNote.forTarget("local").title);
     }
 }

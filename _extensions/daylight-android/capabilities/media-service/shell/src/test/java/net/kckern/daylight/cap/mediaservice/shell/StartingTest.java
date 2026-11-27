@@ -5,6 +5,8 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class StartingTest {
+    @org.junit.Before public void forgetAnswers() { Starting.clearForTests(); }
+
     @Test public void startingThenSlowThenFailedWithRetryOnThisPhone() {
         Starting s = new Starting("local", "c:plex:1", "The Book", "The Author", "", 1_000);
         assertEquals(Starting.Phase.STARTING, s.phase(1_000));
@@ -160,11 +162,21 @@ public class StartingTest {
 
     @Test public void reTappingThePlayingAlbumLandsOnceThePlayerReloadedIt() {
         Starting s = new Starting("local", "c:plex:50", "The Album", "", "", 1_000);
-        s.previousAtTap("plex:77"); // its first track was playing
-        assertFalse(s.landed("plex:77", "", false, true, true, true, false));
-        // The service answered the tap and the player changed after that: what it holds is the answer.
-        assertTrue(s.landed("plex:77", "", false, true, false, false, true));
-        assertFalse("never our own request", s.landed("c:plex:50", "", true, true, false, false, true));
+        s.previousAtTap("plex:77"); // its track was playing, and the player reloads that same track
+        assertFalse("not answered yet", s.landed("plex:77", "", false, true, true, true, s.reloadedSinceAnswer(1_100)));
+        Starting.answered("c:plex:50", 1_200);
+        assertFalse("seen before the answer", s.landed("plex:77", "", false, true, true, true, s.reloadedSinceAnswer(1_150)));
+        assertTrue("seen after it", s.landed("plex:77", "", false, true, false, false, s.reloadedSinceAnswer(1_250)));
+        assertFalse("never our own request", s.landed("c:plex:50", "", true, true, false, false, s.reloadedSinceAnswer(1_250)));
+    }
+
+    @Test public void aStartWithNoIdOrOnAScreenIsNeverReloadedByAnAnswer() {
+        Starting.answered("", 1_200);
+        Starting noId = new Starting("local", "", "Mix", "", "", 1_000); // a start from the bar, known by title only
+        assertFalse(noId.reloadedSinceAnswer(1_250));
+        Starting.answered("c:plex:50", 1_200);
+        Starting screen = new Starting("office-tv", "c:plex:50", "The Album", "", "", 1_000);
+        assertFalse("this phone's answer is not a screen's", screen.reloadedSinceAnswer(1_250));
     }
 
     @Test public void theAnswerToATapCountsOnlyForThatTapAndAfterIt() {

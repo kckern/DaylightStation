@@ -52,9 +52,16 @@ final class QueueTag {
 
     /** The id asked for, from the tagged start item; "" when it carries no tag. */
     static String askedOf(List<MediaItem> items, int start) {
-        if (items == null || items.isEmpty()) return "";
-        MediaItem first = items.get(Math.max(0, Math.min(start, items.size() - 1)));
-        Object tag = first.localConfiguration == null ? null : first.localConfiguration.tag;
+        if (items == null) return "";
+        List<Object> tags = new java.util.ArrayList<>(items.size());
+        for (MediaItem item : items) tags.add(item.localConfiguration == null ? null : item.localConfiguration.tag);
+        return askedOfTags(tags, start);
+    }
+
+    /** The same over the items' local tags (the start clamped into the list). Pure. */
+    static String askedOfTags(List<?> tags, int start) {
+        if (tags == null || tags.isEmpty()) return "";
+        Object tag = tags.get(Math.max(0, Math.min(start, tags.size() - 1)));
         return tag instanceof QueueTag ? ((QueueTag) tag).sourceId : "";
     }
 

@@ -60,6 +60,8 @@ public class PlayActionService extends Service {
     private int currentStartId;
     private final Runnable poll = this::step;
     private boolean failed;
+    /** The id the mini player's start note was last given for this attempt (NowPlayingNote.abandonStart). */
+    private String noteId = "";
 
     @Override public IBinder onBind(Intent intent) { return null; }
 
@@ -128,7 +130,8 @@ public class PlayActionService extends Service {
         attempt = requested;
         if (!requested.title.isEmpty()) enterForeground(requested.title);
         // The mini player switches to it at once (named when the action's answer names it, below).
-        NowPlayingNotes.starting(requested.playlist, new String[] { requested.title, "", "" });
+        noteId = requested.playlist == null ? "" : requested.playlist;
+        NowPlayingNotes.starting(noteId, new String[] { requested.title, "", "" });
         PlaylistWidgetState.show(this, requested.playlist, Phase.STARTING);
         ShellStart.ensure(this);
         Thread ask = new Thread(() -> {
@@ -151,7 +154,11 @@ public class PlayActionService extends Service {
                 if (!title.isEmpty() && requested.title.isEmpty()) {
                     requested.title = title;
                     enterForeground(title);
-                    if (!requested.played()) NowPlayingNotes.starting(id, new String[] { title, "", "" });
+                }
+                // The start note takes the action's item (and its name), so a failure gives way only for it.
+                if (id != null && !requested.played()) {
+                    noteId = id;
+                    NowPlayingNotes.starting(id, new String[] { requested.title, "", "" });
                 }
                 if (id == null) fail(requested); else connect(requested, id);
             });
@@ -233,7 +240,7 @@ public class PlayActionService extends Service {
                         : net.kckern.daylight.shellkit.FailureWords.networkValidated(this) ? PlayStart.Why.UNKNOWN : PlayStart.Why.OFFLINE;
                 finish(PlayStart.failure(attempt.title, cause), currentStartId);
                 // The mini player goes back to what played before, at once.
-                net.kckern.daylight.shellkit.NowPlayingNote.abandonStart("local");
+                net.kckern.daylight.shellkit.NowPlayingNote.abandonStart("local", noteId);
                 return;
             }
             case RELEASE: finish(null, currentStartId); return;

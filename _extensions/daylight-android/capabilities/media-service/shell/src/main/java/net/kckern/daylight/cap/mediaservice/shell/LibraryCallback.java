@@ -280,10 +280,11 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
         try {
             io.execute(() -> {
                 try { future.set(NodeItems.tracks(resolve(requested, C.INDEX_UNSET, C.TIME_UNSET).tracks)); }
-                catch (Throwable e) { future.setException(failure(e)); }
+                catch (Throwable e) { future.setException(failure(e)); abandon(requested); }
             });
         } catch (RuntimeException stopping) {
             future.setException(stopping);
+            abandon(requested);
         }
         return future;
     }
@@ -328,11 +329,12 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
                             QueueTag.tag(NodeItems.tracks(r.tracks), r.startIndex, requested, shuffle), r.startIndex, position),
                             order != null);
                 } catch (Throwable e) {
-                    refused(session, future, e);
+                    refused(session, future, e, requested);
                 }
             });
         } catch (RuntimeException stopping) {
             future.setException(stopping);
+            abandon(requested);
         }
         return future;
     }
@@ -348,24 +350,42 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
     /** Hands the queue over; when the order was chosen, the player's shuffle goes off in the same step. */
     private void answer(MediaSession session, SettableFuture<MediaSession.MediaItemsWithStartPosition> future,
                         MediaSession.MediaItemsWithStartPosition items, boolean ownOrder) {
-        // Now playing showing this tap as starting: what the player holds from now on is the answer (Starting.reloadedSinceAnswer).
-        Starting.answered(QueueTag.askedOf(items.mediaItems, items.startIndex), android.os.SystemClock.elapsedRealtime());
+        // Now playing showing this tap as starting: what the player holds once it has taken the
+        // items is the answer (Starting.reloadedSinceAnswer). Stamped after they are handed
+        // over, on the player's thread, so a controller connecting before then is not "after".
+        final String asked = QueueTag.askedOf(items.mediaItems, items.startIndex);
         // With the queue, a new source sets its own shuffle (QueueTag); the old one is left as it was for Undo.
-        if (!ownOrder || QueueController.live() != null) { future.set(items); return; }
+        if (!ownOrder || QueueController.live() != null) {
+            future.set(items);
+            main.post(() -> noteAnswered(asked));
+            return;
+        }
         main.post(() -> {
             try { session.getPlayer().setShuffleModeEnabled(false); } catch (RuntimeException released) { /* gone */ }
             future.set(items);
+            main.post(() -> noteAnswered(asked));
         });
     }
 
-    private void refused(MediaSession session, SettableFuture<?> future, Throwable e) {
+    /** Main thread. An answer whose request id is unknown (a voice search, an already tagged start) is not noted. */
+    private static void noteAnswered(String asked) {
+        if (!asked.isEmpty()) Starting.answered(asked, android.os.SystemClock.elapsedRealtime());
+    }
+
+    /** A request that failed: the mini player's start for it, if it is still the one showing, gives way (NowPlayingNote.abandonStart). */
+    private void abandon(List<MediaItem> requested) {
+        final String id = requested == null || requested.isEmpty() ? "" : requested.get(0).mediaId;
+        main.post(() -> net.kckern.daylight.shellkit.NowPlayingNote.abandonStart("local", id));
+    }
+
+    private void refused(MediaSession session, SettableFuture<?> future, Throwable e, List<MediaItem> requested) {
         future.setException(failure(e));
         main.post(() -> {
             androidx.media3.common.Player p = session.getPlayer();
             if (p instanceof QueuePlayer) ((QueuePlayer) p).clearStarting();
-            // The mini player goes back to what played before (a car's or a browse page's start).
-            net.kckern.daylight.shellkit.NowPlayingNote.abandonStart("local");
         });
+        // The mini player goes back to what played before (a car's or a browse page's start).
+        abandon(requested);
         // Media3 drops a refused set without a player error: tell Now playing, which is
         // showing the tapped item as starting, so it says so now and not after 30 s.
         // With the payload's code (unreachable, backend_refused, not_found...), so the line says why.
@@ -405,7 +425,7 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
                         answer(session, future, items(alone.get(), requested), ownOrder);
                         break;
                     case FAIL:
-                        refused(session, future, why == null ? new IllegalStateException("nothing to play") : why);
+                        refused(session, future, why == null ? new IllegalStateException("nothing to play") : why, requested);
                         break;
                     default: break;
                 }
@@ -421,10 +441,11 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
                 Log.i(TAG, "first tap: the track alone in " + (android.os.SystemClock.elapsedRealtime() - t0) + " ms"
                         + (music ? "" : " (long or with a place: waits for the list)") + " -> " + use);
                 if (use == FirstTap.Use.SINGLE) answer(session, future, items(one, requested), ownOrder);
-                else if (use == FirstTap.Use.FAIL) refused(session, future, new IllegalStateException("nothing to play"));
+                else if (use == FirstTap.Use.FAIL) refused(session, future, new IllegalStateException("nothing to play"), requested);
             });
         } catch (RuntimeException stopping) {
             future.setException(stopping);
+            abandon(requested);
         }
     }
 

@@ -1861,7 +1861,8 @@ public final class BrowseActivity extends Activity {
      * Runs {@code then} on the connected controller. Taps while it connects share the one
      * future (each used to build its own controller, and the earlier one was never released).
      */
-    private void withController(java.util.function.Consumer<MediaController> then) {
+    /** @param mediaId what is being played, so a failure here gives back the mini player's start for it */
+    private void withController(String mediaId, java.util.function.Consumer<MediaController> then) {
         if (controller != null && controller.isConnected()) {
             try { then.accept(controller); } finally { playGuard.done(); }
             return;
@@ -1884,7 +1885,7 @@ public final class BrowseActivity extends Activity {
             catch (Exception failed) {
                 Toast.makeText(this, "This phone's player didn't answer. Try again", Toast.LENGTH_SHORT).show();
                 // A start already shown on the mini player goes back to what played before.
-                net.kckern.daylight.shellkit.NowPlayingNote.abandonStart(NowPlayingActivity.LOCAL);
+                net.kckern.daylight.shellkit.NowPlayingNote.abandonStart(NowPlayingActivity.LOCAL, mediaId);
             }
             finally { playGuard.done(); }
         }, main::post);
@@ -1927,7 +1928,7 @@ public final class BrowseActivity extends Activity {
         // The queue's source: what "Next from …" names (queue spec §3).
         String source = QueueVerbs.label(mediaId, name, title, MODE_SEARCH.equals(mode) && field != null ? field.getText().toString() : "");
         QueueVerbs.notePlay(source);
-        withController(c -> {
+        withController(mediaId, c -> {
             MediaItem request = QueueTag.request(NowPlayingActivity.playRequest(mediaId, shuffle), source);
             if (atMs >= 0) c.setMediaItem(request, atMs);
             else c.setMediaItem(request);
@@ -1940,7 +1941,7 @@ public final class BrowseActivity extends Activity {
         action(next ? "play_next" : "add_to_queue");
         // The queue's own verbs: Play next to the end of the next block, Add to queue before the source (QueueVerbs).
         if (QueueVerbs.enqueue(this, mediaId, next, name)) return;
-        withController(c -> {
+        withController(mediaId, c -> {
             MediaItem item = new MediaItem.Builder().setMediaId(mediaId).build();
             boolean empty = c.getMediaItemCount() == 0;
             if (empty) {
