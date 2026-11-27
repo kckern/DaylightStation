@@ -60,6 +60,18 @@ explicit **end-of-content watchdog** (`paused && currentTime ≥ duration−0.5 
 no-progress for 3s → onAdvance()`), not just "the other layer will catch it."
 *(2026-05-23; commit bcc284228)*
 
+The same gap opens short of `duration` when an HLS playlist promises more than
+the content holds. Plex's direct-stream playlist for a copied long-GOP video
+lists 3 s segments the segmenter never wrote and answers them with a 188-byte
+blank ("we overestimated the number of segments"); hls.js cannot parse those,
+never calls `endOfStream()`, and a PLAYING element parks about 1 s before
+`duration` (plex:266151: 438.0 of 439), outside the 0.5 s window. The watchdog
+also ends a playing element starved at the end of its buffer when that buffered
+end is within 1.5 s of `duration` (`isStarvedAtTail`, armed by `waiting`;
+logged `playback.end-of-content-advance {via: 'starved-tail'}`). A paused
+element is never ended this way, and the terminal gate still checks the
+position against the catalog end. *(2026-11-26)*
+
 ### Global mutable state on the hook function object
 `useCommonMediaController` carries dictionaries on the *function object*
 (`__appliedStartByKey`, `__lastPosByKey`, `__lastSeekByKey`) to survive remounts.

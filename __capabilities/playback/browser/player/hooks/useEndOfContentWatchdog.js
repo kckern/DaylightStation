@@ -19,6 +19,18 @@ import { useEffect, useRef } from 'react';
 import { createEndOfContentWatchdog } from '../lib/endOfContentWatchdog.js';
 import { getLogger } from '../../../../../frontend/src/lib/logging/Logger.js';
 
+/** End of the buffered range that holds the playhead, or null. */
+function bufferedEndAt(node) {
+  try {
+    const ranges = node.buffered;
+    const t = node.currentTime;
+    for (let i = 0; i < (ranges?.length ?? 0); i += 1) {
+      if (ranges.start(i) <= t + 0.05 && t <= ranges.end(i) + 0.05) return ranges.end(i);
+    }
+  } catch (_) { /* detached element */ }
+  return null;
+}
+
 export function useEndOfContentWatchdog({
   mediaRef,
   getMediaEl,            // dash-video hides the real <video> in a shadow root
@@ -67,7 +79,8 @@ export function useEndOfContentWatchdog({
           currentTime: node.currentTime,
           duration: node.duration,
           paused: node.paused,
-          seeking: node.seeking
+          seeking: node.seeking,
+          bufferedEnd: bufferedEndAt(node)
         };
       },
       thresholdSeconds,
@@ -80,12 +93,16 @@ export function useEndOfContentWatchdog({
     el.addEventListener('pause', tick);
     el.addEventListener('play', tick);
     el.addEventListener('seeked', tick);
+    // A starved element stops at the end of its buffer with `waiting`, which
+    // is the moment it parks (no timeupdate follows).
+    el.addEventListener('waiting', tick);
 
     return () => {
       el.removeEventListener('timeupdate', tick);
       el.removeEventListener('pause', tick);
       el.removeEventListener('play', tick);
       el.removeEventListener('seeked', tick);
+      el.removeEventListener('waiting', tick);
       watchdogRef.current?.reset();
       watchdogRef.current = null;
     };

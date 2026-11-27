@@ -165,4 +165,19 @@ describe('useEndOfContentWatchdog', () => {
     expect(onAdvance).toHaveBeenCalledTimes(1);
   });
 
+
+  it('ends a playing element that parks (waiting) at the end of its buffer just short of duration', () => {
+    // 2026-11-26 plex:266151: buffered to 438.003 of a declared 439, the blank
+    // tail segment never parsed, so the element waited forever and `ended`
+    // never fired. `waiting` is the event it parks with.
+    const buffered = { length: 1, start: () => 0, end: () => 438.003 };
+    const el = makeFakeEl({ currentTime: 438.0, duration: 439, paused: false, buffered });
+    const onAdvance = vi.fn();
+    renderHook(() =>
+      useEndOfContentWatchdog({ mediaRef: { current: el }, sourceKey: 'src-a', onAdvance, idleMs: 3000 })
+    );
+    act(() => { el._fire('waiting'); });
+    act(() => { vi.advanceTimersByTime(3001); });
+    expect(onAdvance).toHaveBeenCalledTimes(1);
+  });
 });

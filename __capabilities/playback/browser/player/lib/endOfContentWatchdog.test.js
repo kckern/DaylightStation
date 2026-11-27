@@ -201,3 +201,61 @@ describe('endOfContentWatchdog — frozen-but-not-paused at duration (2026-07-10
     expect(onAdvance).not.toHaveBeenCalled();
   });
 });
+
+// 2026-11-26: Plex's direct-stream HLS playlist for plex:266151 declared 439 s,
+// the content ended at 438.018 and the 1 s tail segment came back blank. The
+// element played to 438.0, buffered to 438.003, and parked — playing, not
+// paused — 1 s before `duration`: `ended` never fired, and the 0.5 s
+// at-duration window never opened. The next-episode countdown never started.
+describe('createEndOfContentWatchdog — starved at the buffered tail', () => {
+  beforeEach(() => vi.useFakeTimers({ now: 1_000_000 }));
+  afterEach(() => vi.useRealTimers());
+
+  const parked = { currentTime: 438.0, duration: 439, bufferedEnd: 438.003, paused: false, seeking: false };
+
+  it('ends a playing element parked at the end of its buffer within the tail of duration', () => {
+    const onAdvance = vi.fn();
+    const log = vi.fn();
+    const wd = createEndOfContentWatchdog({ onAdvance, getMediaInfo: () => parked, idleMs: 3000, log });
+    wd.tick();
+    vi.advanceTimersByTime(3001);
+    expect(onAdvance).toHaveBeenCalledTimes(1);
+    expect(log).toHaveBeenCalledWith('playback.end-of-content-advance', expect.objectContaining({ via: 'starved-tail' }));
+  });
+
+  it('still ends when the clock crept up to the buffered end after the last event', () => {
+    const onAdvance = vi.fn();
+    let info = { ...parked, currentTime: 437.8 };
+    const wd = createEndOfContentWatchdog({ onAdvance, getMediaInfo: () => info, idleMs: 3000, log: vi.fn() });
+    wd.tick();
+    info = parked; // played on to the end of the buffer with no further event
+    vi.advanceTimersByTime(3001);
+    expect(onAdvance).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(3001);
+    expect(onAdvance).toHaveBeenCalledTimes(1);
+  });
+
+  it('never ends a paused element short of duration (the viewer paused near the end)', () => {
+    const onAdvance = vi.fn();
+    const wd = createEndOfContentWatchdog({ onAdvance, getMediaInfo: () => ({ ...parked, paused: true }), idleMs: 3000, log: vi.fn() });
+    wd.tick();
+    vi.advanceTimersByTime(10000);
+    expect(onAdvance).not.toHaveBeenCalled();
+  });
+
+  it('never ends a starved element far from the end (an ordinary mid-stream stall)', () => {
+    const onAdvance = vi.fn();
+    const wd = createEndOfContentWatchdog({ onAdvance, getMediaInfo: () => ({ ...parked, currentTime: 300, bufferedEnd: 300.1 }), idleMs: 3000, log: vi.fn() });
+    wd.tick();
+    vi.advanceTimersByTime(10000);
+    expect(onAdvance).not.toHaveBeenCalled();
+  });
+
+  it('waits while data is still buffered ahead of the playhead near the end', () => {
+    const onAdvance = vi.fn();
+    const wd = createEndOfContentWatchdog({ onAdvance, getMediaInfo: () => ({ ...parked, currentTime: 437.0, bufferedEnd: 438.003 }), idleMs: 3000, log: vi.fn() });
+    wd.tick();
+    vi.advanceTimersByTime(10000);
+    expect(onAdvance).not.toHaveBeenCalled();
+  });
+});
