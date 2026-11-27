@@ -183,7 +183,7 @@ export function QueuePanel({ target = 'local', availability = null, showPlayedEa
             <ActionIcon
               variant="subtle"
               color="gray"
-              size={40}
+              size={44}
               className="queue-item-more"
               data-testid={`queue-menu-${it.queueItemId}`}
               aria-label={`More for ${rowLabel}`}

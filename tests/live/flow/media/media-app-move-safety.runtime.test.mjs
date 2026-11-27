@@ -145,12 +145,15 @@ test.describe('Media M0 Move safety', () => {
     ).toBeGreaterThan(timeBeforePicker + 0.25);
     expect(deviceAttempts.some(({ path }) => /\/session\/handoff$/.test(path))).toBe(true);
 
-    // Stop intentionally retains the queue. Assert the existing contract:
+    // Close the Play on… picker (it stays open to say what happened), then Stop.
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('handoff-section')).toHaveCount(0);
+    // Now Playing's Stop intentionally retains the queue. Assert the existing contract:
     // native media is paused/ended and the retained queue remains reachable.
     await pressStop(page);
     await expect.poll(() => page.locator('video, audio')
       .evaluateAll((nodes) => nodes.every((node) => node.paused || node.ended))).toBe(true);
-    await expect(page.getByTestId('mini-player-open-nowplaying')).toBeVisible();
+    await expect(page.getByTestId('now-playing-title')).toContainText('Ready to play');
   });
 
   test('paused Arrival moves at the same paused native position before the unchanged source stops', async ({ page, context }) => {

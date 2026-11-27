@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { queueVerb } from './lib/playerBar.mjs';
 import { stopHere } from './lib/playerBar.mjs';
 import { markFirstUseDone } from './lib/firstUse.mjs';
 import { installFakeClock } from './lib/fakeClock.mjs';
@@ -23,7 +24,7 @@ function observePlaybackRequests(page) {
 }
 
 async function expectHeldQueueThenPlay(page, requests) {
-  await expect(page.getByTestId('queue-panel').locator('.queue-item-title')).toHaveText([`1.${title}`]);
+  await expect(page.getByTestId('queue-panel').locator('.queue-item-title')).toHaveText([title]);
   // Observe an actual interval, not merely the render before async Add settles.
   const samples = await page.evaluate(async () => {
     const values = [];
@@ -35,8 +36,11 @@ async function expectHeldQueueThenPlay(page, requests) {
   });
   expect(samples).toEqual(Array(10).fill(0));
   expect(requests, 'Add must not request playback before explicit Play').toEqual([]);
-  // A held queue has no current item, so its existing Play is in the mini-player.
-  await page.getByTestId('mini-toggle').click();
+  // A held queue has no current item; on Now Playing the hero's Play starts it
+  // (the bottom bar never shows there), elsewhere the bottom bar's.
+  const heroPlay = page.getByTestId('now-playing-view').getByTestId('np-toggle');
+  if (await heroPlay.isVisible().catch(() => false)) await heroPlay.click();
+  else await page.getByTestId('mini-toggle').click();
   const video = page.getByTestId('now-playing-host').locator('video');
   await expect(video).toHaveCount(1, { timeout: 30000 });
   await expect.poll(() => video.evaluate(el => !el.paused && el.readyState >= 2), { timeout: 30000 }).toBe(true);
@@ -74,8 +78,8 @@ test('[FIND.1a/AC5] keyboard opens row actions and adds without clearing search 
   await expect(page.getByTestId('mini-state')).toHaveText('Ready to play');
   await expect(page.locator('video')).toHaveCount(0);
   await page.getByTestId('mini-player-open-nowplaying').click();
-  // QueuePanel's title button includes its visible one-based index.
-  await expect(page.getByTestId('queue-panel').locator('.queue-item-title')).toHaveText([`1.${title}`]);
+  // QueuePanel's title button is the title alone (the index is its own column).
+  await expect(page.getByTestId('queue-panel').locator('.queue-item-title')).toHaveText([title]);
   await expectHeldQueueThenPlay(page, requests);
 });
 
@@ -113,7 +117,9 @@ test('[RELY.4a/AC1][RELY.4a/AC2] Undo restores the previous paused native positi
   // Both queue edits must offer ordinary Undo, preserve entry identities,
   // and retain the paused physical playback node.
   const native = await video.elementHandle();
-  await rows.nth(1).getByRole('button', { name: /^Remove .+ from queue$/ }).click();
+  // A row's edits are in its ⋯ (Now Playing ruling 2026-11-27).
+  await rows.nth(1).getByRole('button', { name: /^More for / }).click();
+  await rows.nth(1).getByRole('menuitem', { name: /^Remove from queue/ }).click();
   await expect(rows).toHaveCount(1);
   await page.getByTestId('item-action-undo').last().click();
   await expect(page.getByTestId(tailVisit)).toBeVisible();
@@ -167,7 +173,9 @@ test('[RELY.4a/AC1] the undo offered after Remove and after Clear lasts 10 secon
   const undo = page.getByTestId('item-action-undo');
 
   // Remove one: Undo is offered now, still there at 9 s, gone after 10 s.
-  await rows.nth(1).getByRole('button', { name: /^Remove .+ from queue$/ }).click();
+  // A row's edits are in its ⋯ (Now Playing ruling 2026-11-27).
+  await rows.nth(1).getByRole('button', { name: /^More for / }).click();
+  await rows.nth(1).getByRole('menuitem', { name: /^Remove from queue/ }).click();
   await expect(rows).toHaveCount(1);
   await expect(undo.last()).toBeVisible();
   await clock.advance(9_000);
@@ -212,7 +220,7 @@ test('[FIND.1a/AC5] pointer Add retains search, then the first nonfocus outside 
   expect(await page.evaluate(() => window.__outsideClickWasNonfocus)).toBe(true);
   await expect(result).not.toBeVisible();
   await page.getByTestId('mini-player-open-nowplaying').click();
-  await expect(page.getByTestId('queue-panel').locator('.queue-item-title')).toHaveText([`1.${title}`]);
+  await expect(page.getByTestId('queue-panel').locator('.queue-item-title')).toHaveText([title]);
   await expectHeldQueueThenPlay(page, requests);
 });
 
@@ -253,7 +261,9 @@ test('[PLAY.6a/AC1][STEER.8a/AC2] add without interrupting, then jump to a same-
   const entries = page.getByTestId('queue-panel').locator('.queue-item-title');
   await expect(entries).toHaveCount(2);
   expect(await originalVisit.evaluate(el => el.isConnected && el.paused), 'Add must retain the paused physical visit').toBe(true);
-  await entries.nth(1).click();
+  // A row opens its info view; Play Now (the row's ⋯) jumps to it.
+  const secondId = (await page.getByTestId('queue-panel').locator('.queue-item').nth(1).getAttribute('data-testid')).replace('queue-item-', '');
+  await (await queueVerb(page.getByTestId('queue-panel'), 'jump', secondId)).click();
   await expect.poll(() => video.evaluate(el => !el.paused && el.readyState >= 2
     && el.currentTime > 0 && el.currentTime < 3), {
     timeout: 30000, message: 'A new same-title queue entry must actually restart, not only update the selected row',

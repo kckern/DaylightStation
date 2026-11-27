@@ -41,7 +41,7 @@ $np-amber-ink: $on-accent;
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    min-height: 40px;
+    min-height: 44px;
     padding: 0 10px;
     border-radius: var(--mantine-radius-sm);
     color: var(--mantine-color-dark-1);
@@ -228,7 +228,6 @@ $np-amber-ink: $on-accent;
     .np-where { font-size: 13px; white-space: nowrap; }
     .np-where:first-child, .now-playing-title + .np-where { grid-column: 1 / -1; }
     .np-subtitle + .np-where::before { content: '\00a0·\00a0'; color: var(--mantine-color-dark-2); }
-    .np-seekbar .np-seek-track { height: 36px; }
     .np-icon-btn--primary { width: 52px; height: 52px; }
   }
 }
@@ -342,12 +341,16 @@ $np-amber-ink: $on-accent;
   display: flex;
   flex-direction: column;
   gap: var(--mantine-spacing-xs);
+  min-width: 0;
+  max-width: 100%;
 }
 
 // Three zones: lead (title, expanded only) · centre (transport) · end (settings).
 .np-bar {
   display: flex;
   align-items: center;
+  min-width: 0;
+  max-width: 100%;
   gap: var(--mantine-spacing-sm);
   flex-wrap: wrap;
 
@@ -374,6 +377,10 @@ $np-amber-ink: $on-accent;
   }
 
   .np-bar-lead {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+
     .now-playing-title { font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .np-subtitle { font-size: 13px; }
     .np-where { display: none; }
@@ -460,15 +467,11 @@ $np-amber-ink: $on-accent;
   }
 }
 
-// The bar's secondary controls are quieter than the transport.
+// The bar's secondary controls are quieter than the transport (still 44 px targets, NF-DEV-02).
 .np-bar-end .np-icon-btn {
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   background: transparent;
-}
-
-@media (pointer: coarse) {
-  .np-bar-end .np-icon-btn { width: 44px; height: 44px; }
 }
 
 // Speed shows in the bar only when it is not 1× (it is set in ⚙).
@@ -494,8 +497,8 @@ $np-amber-ink: $on-accent;
   align-items: center;
   justify-content: center;
   gap: 4px;
-  min-width: 40px;
-  min-height: 40px;
+  min-width: 44px;
+  min-height: 44px;
   padding: 0 10px;
   background: transparent;
   border: 1px solid var(--media-control-line);
@@ -511,7 +514,7 @@ $np-amber-ink: $on-accent;
 }
 
 .np-play-on {
-  min-height: 40px;
+  min-height: 44px;
 }
 
 .np-volume-group {
@@ -522,7 +525,7 @@ $np-amber-ink: $on-accent;
 
   .np-volume {
     width: 96px;
-    height: 40px;
+    height: 44px;
     margin: 0;
     cursor: pointer;
     &, &[type="range"] { accent-color: var(--mantine-color-dark-0); }
@@ -719,4 +722,12 @@ $np-amber-ink: $on-accent;
     .np-art--remote { width: 112px; }
     .peek-item-title { font-size: 18px; }
   }
+}
+
+// A track chip names the choice, shortened to fit the bar.
+.pf-chip--compact .pf-chip-short {
+  max-width: 7em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

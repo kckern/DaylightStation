@@ -3,6 +3,7 @@ import { closeMenus, pressStop, rateControl, stopHere, volumeStep } from './lib/
 import { markFirstUseDone } from './lib/firstUse.mjs';
 import { playResultHere, playResult } from './lib/search.mjs';
 import { aimHere } from './lib/aim.mjs';
+import { showFleetCard } from './lib/receivers.mjs';
 
 test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 
@@ -196,6 +197,8 @@ test('[PLACE.1a/AC3][PLACE.1a/AC4][STEER.1b] opening a screen\'s controls does n
   await page.goto('/media');
   await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible({ timeout: 30000 });
   await page.getByRole('navigation', { name: 'Primary' }).getByRole('button', { name: /^(?:\d+\s+)?Devices$/ }).click();
+  // A screen not heard from lately sits under the Devices page's More.
+  await showFleetCard(page, 'fleet-peek-acceptance-media');
   await page.getByTestId('fleet-peek-acceptance-media').click();
   await expect(page.getByTestId('peek-panel')).toBeVisible();
   await playMovie(page);
@@ -398,7 +401,8 @@ test('[STEER.6a/AC1][STEER.6a/AC2][STEER.7a/AC2] stop ends actual playback and k
   await page.getByTestId('now-playing-back').click();
   await page.getByTestId('mini-player-open-nowplaying').click();
   await expect(page.getByTestId('now-playing-view')).toContainText(title);
-  await page.getByTestId('mini-toggle').click();
+  // On Now Playing the hero's own Play restarts it (the bottom bar is not shown here).
+  await page.getByTestId('np-toggle').click();
   const restartedVideo = page.getByTestId('now-playing-host').locator('video');
   await expect(restartedVideo).toHaveCount(1, { timeout: 30000 });
   await expect.poll(() => restartedVideo.evaluate(el => !el.paused && el.currentTime > 0 && el.readyState >= 2), {

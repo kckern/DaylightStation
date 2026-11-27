@@ -86,7 +86,6 @@ function TrackMenu({ kind, tracks, selected, onSelect, disabled, compact = false
   const list = isSubs ? tracks.subtitles : tracks.audio;
   const current = list.find((t) => t.id === selected) ?? null;
   const label = isSubs ? `Subtitles: ${current?.label ?? 'Off'}` : `Audio: ${current?.label ?? list[0]?.label ?? '—'}`;
-  const short = isSubs ? (current?.language ?? current?.label ?? 'Off') : (current?.language ?? current?.label ?? list[0]?.label ?? '—');
   return (
     // flip + size: open toward the larger free side and never past the
     // viewport — a file can carry dozens of subtitle streams.
@@ -101,7 +100,8 @@ function TrackMenu({ kind, tracks, selected, onSelect, disabled, compact = false
           className="pf-chip pf-chip--compact np-rate-btn"
         >
           {isSubs ? <IconBadgeCc size={18} aria-hidden /> : <IconLanguage size={18} aria-hidden />}
-          <span className="pf-chip-short">{String(short).slice(0, 12)}</span>
+          <span className="media-sr-only">{isSubs ? 'Subtitles: ' : 'Audio: '}</span>
+          <span className="pf-chip-short">{isSubs ? (current?.label ?? 'Off') : (current?.label ?? list[0]?.label ?? '—')}</span>
         </UnstyledButton>
       ) : (
         <Button

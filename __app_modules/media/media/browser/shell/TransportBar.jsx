@@ -287,7 +287,7 @@ export function TransportBar({
                 data-testid="np-settings"
                 className="np-icon-btn"
                 variant="default"
-                size={coarse ? 44 : 40}
+                size={44}
                 radius="xl"
                 aria-label="Playback settings"
                 title="Playback settings"
@@ -325,7 +325,7 @@ export function TransportBar({
                 data-testid="np-more"
                 className="np-icon-btn"
                 variant="default"
-                size={coarse ? 44 : 40}
+                size={44}
                 radius="xl"
                 aria-label="More"
                 title="More"

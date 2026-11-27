@@ -131,7 +131,7 @@ async function openRemote(page, id, viewport) {
   await expect(page.getByTestId(`fleet-peek-${id}`)).toBeVisible({ timeout: 30000 });
   await page.getByTestId(`fleet-peek-${id}`).click();
   await expect(page.getByTestId('peek-panel')).toBeVisible();
-  await expect(page.getByTestId('session-controls-panel')).toBeVisible();
+  await expect(page.getByTestId('peek-panel').getByTestId('np-transport')).toBeVisible();
 }
 
 for (const [label, viewport] of Object.entries(VIEWPORTS)) {

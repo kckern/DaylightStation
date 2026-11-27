@@ -173,7 +173,7 @@ test('[PLACE.8a/AC3][PLACE.6a/AC4] hand-off from Now Playing with "Move playback
   await picker.getByTestId(`picker-device-${A}`).click();
   await expect.poll(async () => (await receiverState(request, A))?.currentItem?.contentId, { timeout: 60000 }).toBe(ITEM.HOSPITAL);
   // This device stopped: its player is gone (or at least paused).
-  await expect.poll(async () => (await local.count()) === 0 || await local.evaluate((v) => v.paused || v.ended), { timeout: 60000 }).toBe(true);
+  await expect.poll(() => local.evaluateAll((vs) => vs.length === 0 || vs.every((v) => v.paused || v.ended)), { timeout: 60000 }).toBe(true);
   await stopReceiver(request, A);
   await context.close();
   await receiver.context.close();

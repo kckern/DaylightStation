@@ -22,7 +22,7 @@ test.describe('MediaApp — Stop flow', () => {
     // Stop: the bar is gone at once — no "Ready to play / Resume" leftover.
     await page.getByTestId('mini-stop').click();
     await expect(page.getByTestId('media-mini-player')).toHaveCount(0);
-    const row = page.getByTestId('dispatch-tray').filter({ hasText: /Stopped Lonesome Day/ });
+    const row = page.locator('[data-testid^="dispatch-row-"]').filter({ hasText: /Stopped Lonesome Day/ });
     await expect(row).toBeVisible({ timeout: 5000 });
 
     // Undo restores it (paused) while the toast offers it.
