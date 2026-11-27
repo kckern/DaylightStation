@@ -155,7 +155,12 @@ public class PhotoCaptureActivity extends Activity {
         // A pending system-camera result can still be delivered after recreation, even
         // when the current pairing has already changed. Retain it for its original owner.
         if (rawName != null && (!cameraApproved || !draft.cameraResult().isFile())) {
-            render();
+            // Held, never a "Checking capture setup…" that does not end (audit): the photo is
+            // kept for its account, with Try again.
+            bindingWait.hold(this, "Your photo", () -> {
+                render();
+                bindingWait.await(this, owner, this::showAuthorizedDraft, this::bindingUnavailable, checkingLine);
+            });
             return;
         }
         say(bindingWait.why());

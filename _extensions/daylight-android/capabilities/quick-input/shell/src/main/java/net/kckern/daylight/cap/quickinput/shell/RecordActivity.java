@@ -207,16 +207,22 @@ public class RecordActivity extends Activity {
         super.onResume();
         if (isFinishing()) return;
         if (deferredState != null) {
-            bindingWait.await(this, owner, () -> {
-                Bundle restored = deferredState;
-                deferredState = null;
-                begin(restored);
-                if (!isFinishing()) onResumeReady();
-            }, () -> { say(bindingWait.why()); finish(); }, checkingLine);
+            awaitRestore();
             return;
         }
         if (closeIfOwnerChanged()) return;
         onResumeReady();
+    }
+
+    /** A recreated recorder waits for its account; when it runs out the draft is held, with Try again (audit). */
+    private void awaitRestore() {
+        if (checkingLine != null && checkingLine.getParent() == null) setContentView(checkingLine);
+        bindingWait.await(this, owner, () -> {
+            Bundle restored = deferredState;
+            deferredState = null;
+            begin(restored);
+            if (!isFinishing()) onResumeReady();
+        }, () -> bindingWait.hold(this, "Your recording", this::awaitRestore), checkingLine);
     }
 
     private void onResumeReady() {

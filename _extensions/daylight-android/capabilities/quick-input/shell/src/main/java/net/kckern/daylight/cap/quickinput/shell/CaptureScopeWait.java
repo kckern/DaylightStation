@@ -14,7 +14,7 @@ import net.kckern.daylight.shellkit.ShellStart;
 /**
  * A recreated screen (after Android stopped the app, a camera's return) waits for the
  * payload to verify its account before showing a draft. While Daylight itself starts it
- * says "Starting Daylight…" and waits as long as the loader gives a payload to start; once
+ * says "Starting up…" and waits as long as the loader gives a payload to start; once
  * the payload is up, the account has a few seconds to be confirmed. Only then, or when the
  * loader gave up, is the capture called unavailable, with words that say which.
  */
@@ -52,7 +52,7 @@ final class CaptureScopeWait {
         await(screen, owner, ready, unavailable, null);
     }
 
-    /** @param status a line that shows "Starting Daylight…" or "Checking capture setup…" while it waits */
+    /** @param status a line that shows "Starting up…" or "Checking capture setup…" while it waits */
     void await(Activity screen, String owner, Runnable ready, Runnable unavailable, TextView status) {
         cancel();
         long began = SystemClock.elapsedRealtime();
@@ -83,4 +83,36 @@ final class CaptureScopeWait {
     }
 
     void cancel() { main.removeCallbacksAndMessages(null); }
+
+    /** The line a held draft shows: what is kept, then why it cannot open yet. */
+    static String heldWords(String what, String why) {
+        return what + " is saved on this phone. " + (why == null || why.isEmpty() ? UNAVAILABLE : why);
+    }
+
+    /**
+     * The wait ran out with a restored draft or a camera result pending (audit: the screen
+     * gave up, or sat on "Checking capture setup…"): the screen says the draft is kept and
+     * why it cannot open yet, with Try again (the wait once more) and Close. Nothing is lost:
+     * the draft stays on disk for its account.
+     */
+    void hold(Activity screen, String what, Runnable retry) {
+        android.widget.LinearLayout page = new android.widget.LinearLayout(screen);
+        page.setOrientation(android.widget.LinearLayout.VERTICAL);
+        int pad = CaptureUi.dp(screen, 20);
+        page.setPadding(pad, pad, pad, pad);
+        net.kckern.daylight.shellkit.DaylightTheme t = net.kckern.daylight.shellkit.DaylightTheme.of(screen);
+        page.setBackgroundColor(t.background);
+        page.addView(CaptureUi.text(screen, heldWords(what, why), net.kckern.daylight.shellkit.DaylightTheme.Type.BODY, t.ink, false));
+        page.addView(new android.view.View(screen), new android.widget.LinearLayout.LayoutParams(0, 0, 1));
+        TextView again = CaptureUi.primary(screen, "Try again");
+        again.setOnClickListener(v -> retry.run());
+        android.widget.LinearLayout.LayoutParams lp = new android.widget.LinearLayout.LayoutParams(-1, -2);
+        lp.topMargin = CaptureUi.dp(screen, 20);
+        page.addView(again, lp);
+        TextView close = CaptureUi.textButton(screen, "Close");
+        close.setOnClickListener(v -> screen.finish());
+        page.addView(close, new android.widget.LinearLayout.LayoutParams(-1, -2));
+        screen.setContentView(page);
+        net.kckern.daylight.shellkit.UiTelemetry.event("Capture", "capture.restore_held", new org.json.JSONObject());
+    }
 }

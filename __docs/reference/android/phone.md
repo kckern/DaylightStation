@@ -2355,6 +2355,11 @@ continues to support legacy uploads with its existing aggregate controls.
 - **Reachable from the Capture tab** (H16): its first row is **Capture status** with the
   counts, "1 needs attention · 2 waiting to send · 3 sent" (`CaptureCounts`), read from
   the payload for the bound account; a tap opens it.
+- **A restored draft is held, never dropped.** A text, voice or photo screen recreated
+  after Android stopped the app waits for its account (`CaptureScopeWait`); when the wait
+  runs out it says "Your text is saved on this phone. <why>" with **Try again** (the wait
+  once more) and **Close**, instead of a toast and closing, or a "Checking capture setup…"
+  that never ends for a camera result still pending (`capture.restore_held`).
 - **No blank return.** The rows stay while the screen is away and the next answer redraws
   only what changed; a failed answer keeps the rows with the reason above them. A Try
   again shows "Sending…" on its row until the payload answers. A capture waiting its turn

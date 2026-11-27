@@ -31,4 +31,11 @@ public class CaptureScopeWaitTest {
     @Test public void aLoaderFailureSaysSo() {
         assertEquals(Step.FAILED, CaptureScopeWait.step(ME, null, false, "start() threw", 3_000, 0, 0));
     }
+
+    @org.junit.Test public void aHeldDraftSaysItIsKeptAndWhy() {
+        org.junit.Assert.assertEquals("Your text is saved on this phone. " + CaptureScopeWait.UNAVAILABLE,
+                CaptureScopeWait.heldWords("Your text", ""));
+        org.junit.Assert.assertEquals("Your photo is saved on this phone. Could not start.",
+                CaptureScopeWait.heldWords("Your photo", "Could not start."));
+    }
 }

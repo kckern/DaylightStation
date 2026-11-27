@@ -85,11 +85,7 @@ public class TextInputActivity extends Activity {
         super.onResume();
         if (isFinishing()) return;
         if (deferredState != null) {
-            bindingWait.await(this, owner, () -> {
-                Bundle selected = deferredState;
-                deferredState = null;
-                open(getIntent(), selected);
-            }, this::bindingUnavailable, checkingLine);
+            awaitRestore();
         } else if (!CaptureScope.currentIs(owner)) {
             bindingUnavailable();
         }
@@ -98,6 +94,16 @@ public class TextInputActivity extends Activity {
     @Override protected void onPause() {
         bindingWait.cancel();
         super.onPause();
+    }
+
+    /** A recreated text screen waits for its account; when it runs out the draft is held, with Try again (audit). */
+    private void awaitRestore() {
+        if (checkingLine != null && checkingLine.getParent() == null) setContentView(checkingLine);
+        bindingWait.await(this, owner, () -> {
+            Bundle selected = deferredState;
+            deferredState = null;
+            open(getIntent(), selected);
+        }, () -> bindingWait.hold(this, "Your text", this::awaitRestore), checkingLine);
     }
 
     private void bindingUnavailable() {
