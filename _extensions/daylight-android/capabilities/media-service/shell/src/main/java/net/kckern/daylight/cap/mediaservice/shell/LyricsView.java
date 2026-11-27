@@ -69,6 +69,24 @@ final class LyricsView extends ScrollView {
         scrollTo(0, 0);
     }
 
+    /**
+     * A new track's lyrics are being asked for: one line saying so, in the lyrics' own
+     * place, so the view stays the lyrics across a track change instead of falling back
+     * to the cover and back again.
+     */
+    void setLoading(String words) {
+        lyrics = TrackDetail.Lyrics.NONE;
+        current = -2;
+        column.removeAllViews();
+        column.setPadding(0, dp(8), 0, dp(24));
+        TextView line = new TextView(getContext());
+        line.setText(words);
+        line.setPadding(0, dp(8), 0, dp(8));
+        if (theme != null) theme.style(line, DaylightTheme.Type.TITLE, theme.inkMuted, false);
+        column.addView(line, new LinearLayout.LayoutParams(-1, -2));
+        scrollTo(0, 0);
+    }
+
     TrackDetail.Lyrics lyrics() { return lyrics; }
 
     /** Follows the song to {@code positionMs}. */
@@ -95,7 +113,7 @@ final class LyricsView extends ScrollView {
 
     private void restyle() {
         if (theme == null) return;
-        for (int i = 0; i < column.getChildCount(); i++) {
+        for (int i = 0; i < column.getChildCount() && i < lyrics.lines.length; i++) {
             TextView line = (TextView) column.getChildAt(i);
             boolean on = lyrics.synced && i == current;
             int color = !lyrics.synced ? theme.ink : on ? theme.ink : DaylightTheme.withAlpha(theme.ink, 0x70);

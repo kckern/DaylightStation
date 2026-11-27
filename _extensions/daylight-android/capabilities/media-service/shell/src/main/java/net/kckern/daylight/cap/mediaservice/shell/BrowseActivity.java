@@ -640,7 +640,7 @@ public final class BrowseActivity extends Activity {
         final String self = parent.startsWith("c:") ? parent : "c:" + contentIdOf(parent);
         actions.addView(button(book ? "Resume" : "Play", "browse.play", () -> play(self, false, title, subtitle, art)));
         if (!book) actions.addView(button("Shuffle", "browse.shuffle", () -> play(self, true, title, subtitle, art)));
-        actions.addView(button("Play on…", "browse.play_on", () -> playOn(self, title)));
+        actions.addView(button("Play on…", "browse.play_on", () -> playOn(self, title, subtitle, art)));
         actions.addView(button("Keep", "browse.keep", () -> KeepFlow.start(this, self)));
         android.widget.HorizontalScrollView actionScroll = new android.widget.HorizontalScrollView(this);
         actionScroll.setHorizontalScrollBarEnabled(false);
@@ -701,7 +701,7 @@ public final class BrowseActivity extends Activity {
             TextView more = t.text(this, "⋮", Type.TITLE, t.inkMuted, false);
             more.setGravity(Gravity.CENTER);
             more.setContentDescription("More for " + name);
-            more.setOnClickListener(v -> trackMenu(v, id, name));
+            more.setOnClickListener(v -> trackMenu(v, id, name, sub, cover));
             UiTelemetry.tag(more, "browse.track_menu");
             row.addView(more, new LinearLayout.LayoutParams(dp(44), dp(48)));
         }
@@ -763,7 +763,7 @@ public final class BrowseActivity extends Activity {
         });
     }
 
-    private void trackMenu(View anchor, String id, String name) {
+    private void trackMenu(View anchor, String id, String name, String sub, String cover) {
         PopupMenu menu = new PopupMenu(this, anchor);
         menu.getMenu().add(0, 1, 0, "Play here");
         menu.getMenu().add(0, 2, 0, "Play next");
@@ -772,10 +772,10 @@ public final class BrowseActivity extends Activity {
         menu.getMenu().add(0, 5, 0, "Keep on this phone");
         menu.setOnMenuItemClickListener(item -> {
             switch (item.getItemId()) {
-                case 1: play(id, false, name, "", ""); break;
+                case 1: play(id, false, name, sub, cover); break;
                 case 2: enqueue(id, true, name); break;
                 case 3: enqueue(id, false, name); break;
-                case 4: playOn(id, name); break;
+                case 4: playOn(id, name, sub, cover); break;
                 case 5: KeepFlow.start(this, id); break;
                 default: break;
             }
@@ -814,7 +814,8 @@ public final class BrowseActivity extends Activity {
     /**
      * Plays here and opens Now playing. A container plays whole (a book resumes); a track plays
      * from itself in its list. Now playing opens on the tapped item at once (Starting), not on
-     * "Nothing playing" while the player fetches it.
+     * "Nothing playing" while the player fetches it. A shuffle is asked of home with the
+     * request (the queue that was playing is never shuffled first).
      */
     private void play(String mediaId, boolean shuffle, String name, String by, String cover) {
         // A second tap on the same item within a second, or while the first is starting, is dropped.
@@ -823,10 +824,10 @@ public final class BrowseActivity extends Activity {
         // One Now playing: an open one takes the new item (onNewIntent reads the Starting extras).
         startActivity(Starting.put(new Intent(this, NowPlayingActivity.class)
                 .putExtra(NowPlayingActivity.EXTRA_TARGET, NowPlayingActivity.LOCAL)
+                .putExtra(Starting.EXTRA_LONG, kind.startsWith("book"))
                 .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP), mediaId, name, by, cover));
         withController(c -> {
-            c.setShuffleModeEnabled(shuffle);
-            c.setMediaItem(new MediaItem.Builder().setMediaId(mediaId).build());
+            c.setMediaItem(NowPlayingActivity.playRequest(mediaId, shuffle));
             c.prepare();
             c.play();
         });
@@ -845,47 +846,44 @@ public final class BrowseActivity extends Activity {
 
     /**
      * Play on: the same picker as Now playing's (this phone first, each screen's state, off
-     * ones greyed). This phone plays here; a screen gets the screen's load, as the web's Play on.
+     * ones greyed), open at once from the screens the phone home last saw; each screen is
+     * checked in parallel and the list refreshed behind it. This phone plays here; a screen
+     * opens Now playing on that screen, showing the item starting, and the load is sent
+     * from there.
      */
-    private void playOn(String mediaId, String name) {
+    private void playOn(String mediaId, String name, String by, String cover) {
         action("play_on");
+        SharedPreferences home = getSharedPreferences("daylight.home", MODE_PRIVATE);
+        String cachedJson = home.getString("screens", "");
+        List<TargetPicker.Target> targets = new ArrayList<>();
+        targets.add(new TargetPicker.Target(TargetPicker.LOCAL, "This phone", ""));
+        targets.addAll(NowPlayingActivity.cachedScreens(cachedJson));
+        TargetPicker.Shown shown = TargetPicker.show(this, t, targets, "", targets.size() == 1 ? "Looking for screens…" : "",
+                media, main, (id, label, snapshot) -> {
+                    if (TargetPicker.LOCAL.equals(id)) { play(mediaId, false, name, by, cover); return; }
+                    action("play_on_screen");
+                    startActivity(Starting.put(new Intent(this, NowPlayingActivity.class)
+                            .putExtra(NowPlayingActivity.EXTRA_TARGET, id)
+                            .putExtra(Starting.EXTRA_TARGET_NAME, label)
+                            .putExtra(RemoteControlService.EXTRA_SNAPSHOT, snapshot)
+                            .putExtra(Starting.EXTRA_PLAY, true)
+                            .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP), mediaId, name, by, cover));
+                });
+        // The list itself, refreshed behind the open picker: new screens are added, the cache kept.
         screenIo.execute(() -> {
-            List<TargetPicker.Target> targets = new ArrayList<>();
-            targets.add(new TargetPicker.Target(TargetPicker.LOCAL, "This phone", ""));
-            String problem = "";
+            String fresh = null, problem = "";
             try {
-                JSONArray s = new JSONObject(media.screens(6000)).optJSONArray("items");
-                for (int i = 0; s != null && i < s.length(); i++) {
-                    JSONObject o = s.optJSONObject(i);
-                    targets.add(new TargetPicker.Target(o.optString("id"), o.optString("name", o.optString("id")), o.optString("type")));
-                }
+                JSONObject reply = new JSONObject(media.screens(6000));
+                JSONArray items = reply.optJSONArray("items");
+                if (items != null) fresh = items.toString();
             } catch (Exception e) { problem = "Can't reach home: only this phone"; }
-            String note = problem;
+            String list = fresh, note = problem;
             main.post(() -> {
                 if (isFinishing()) return;
-                TargetPicker.show(this, t, targets, "", note, media, screenIo, main, (id, label) -> {
-                    if (TargetPicker.LOCAL.equals(id)) play(mediaId, false, name, subtitle, art);
-                    else startOn(id, label, mediaId, name);
-                });
+                if (list != null && !list.equals(cachedJson)) home.edit().putString("screens", list).apply();
+                shown.add(list == null ? new ArrayList<>() : NowPlayingActivity.cachedScreens(list),
+                        list == null && targets.size() > 1 ? "" : note);
             });
-        });
-    }
-
-    private void startOn(String device, String screenName, String mediaId, String name) {
-        String contentId = mediaId.startsWith("c:") ? mediaId.substring(2) : mediaId.startsWith("p:") ? mediaId.substring(2).split("\\|")[0] : mediaId;
-        boolean list = mediaId.startsWith("c:");
-        Toast.makeText(this, "Starting " + name + " on " + screenName + "…", Toast.LENGTH_SHORT).show();
-        screenIo.execute(() -> {
-            String line;
-            try {
-                JSONObject reply = new JSONObject(media.screenCommand(new JSONObject().put("op", "screen-command").put("device", device)
-                        .put("command", "load").put(list ? "queue" : "play", contentId), 45_000));
-                line = reply.optBoolean("accepted") ? "Playing on " + screenName : screenName + " could not start it";
-            } catch (Exception e) {
-                line = "Can't reach home";
-            }
-            String said = line;
-            main.post(() -> { if (!isFinishing()) Toast.makeText(this, said, Toast.LENGTH_SHORT).show(); });
         });
     }
 

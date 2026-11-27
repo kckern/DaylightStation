@@ -45,6 +45,8 @@ import com.google.common.util.concurrent.ListenableFuture;
 import net.kckern.daylight.shellkit.CoverColor;
 import net.kckern.daylight.shellkit.DaylightTheme;
 import net.kckern.daylight.shellkit.DaylightTheme.Type;
+import net.kckern.daylight.shellkit.NowPlayingNote;
+import net.kckern.daylight.shellkit.PayloadReady;
 import net.kckern.daylight.shellkit.PlaylistArtwork;
 import net.kckern.daylight.shellkit.ThemeColors;
 import net.kckern.daylight.shellkit.UiTelemetry;
@@ -138,6 +140,31 @@ public class NowPlayingActivity extends Activity {
     private Starting failedStart;
     /** How long a failed start's line stays under the real state. */
     private static final long FAILED_LINE_MS = 20_000;
+    /**
+     * Drawn while there is no controller (FirstFrame): the mini player's entry on open, a
+     * screen's remembered answer on a switch, the last state while reconnecting. Null once
+     * a controller answers.
+     */
+    private FirstFrame frame;
+    /** The last state drawn from a controller, kept for a reconnect. */
+    private NowPlayingNote.Entry lastDrawn;
+    /** An item this screen was opened to start on this phone (Starting.EXTRA_PLAY); sent once a controller connects. */
+    private String playId;
+    private boolean playShuffle;
+    /** A screen's last answer from the picker (ScreenMemory's encoding), sent with the TARGET command. */
+    private String pickedSnapshot;
+    /** The status line shows the sleep timer: it is refreshed with the clock. */
+    private boolean statusIsSleep;
+    /** The lyrics of a new track are being fetched: the lyrics stage stays, saying so. */
+    private boolean lyricsLoading;
+    /** The detail id wanted now, read by the detail threads to drop stale work. */
+    private volatile String detailWant = "";
+    /** Screen starts: a 30 s command must not hold the screens list or a cover. */
+    private ExecutorService startIo;
+    /** Now playing is on screen showing a start: a play service's failure toast would contradict it. */
+    private static volatile boolean startShown;
+
+    static boolean showingStart() { return startShown; }
     /** When the player's current item last changed (elapsed ms), to tell a new item from the one before the tap. */
     private long itemChangedAt = -1;
     private String volumeLine = "";
@@ -208,18 +235,44 @@ public class NowPlayingActivity extends Activity {
         io = executor("Daylight-nowplaying");
         padIo = executor("Daylight-nowplaying-pad");
         artIo = executor("Daylight-nowplaying-art");
-        detailIo = executor("Daylight-nowplaying-detail");
+        // The waveform, chapters and lyrics are asked at the same time, never in a row.
+        detailIo = Executors.newFixedThreadPool(3, r -> {
+            Thread t = new Thread(r, "Daylight-nowplaying-detail");
+            t.setDaemon(true);
+            return t;
+        });
+        startIo = executor("Daylight-nowplaying-start");
         base = DaylightTheme.of(this);
         theme = base;
         timeDisplay = TrackDetail.TimeDisplay.of(prefs().getString("time", ""));
         buildViews();
         chooseInitialTarget(getIntent(), saved);
-        if (saved == null) takeStarting(getIntent());
-        else starting = Starting.restore(saved);
+        // A start this screen was opened for runs once: not again on a rotation, a recreation
+        // after the process was stopped, or a reopen from Recents.
+        boolean fromHistory = getIntent() != null
+                && (getIntent().getFlags() & Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0;
+        if (saved == null && !fromHistory) takeStarting(getIntent());
+        else if (saved != null) starting = Starting.restore(saved);
+        // The first frame: what the mini player (or a screen's last answer) already showed.
+        if (saved == null && remote() && getIntent() != null && target.equals(getIntent().getStringExtra(EXTRA_TARGET))) {
+            pickedSnapshot = getIntent().getStringExtra(RemoteControlService.EXTRA_SNAPSHOT);
+        }
+        if (starting == null) frame = openingFrame(target);
         loadScreens();
         // Opened as a screen's remote (the phone home's Connect tab): the pad, at once.
         if (saved == null && getIntent() != null && getIntent().getBooleanExtra(EXTRA_PAD, false) && remote()) showPad(true);
-        Log.i(TAG, "now playing opened, target " + target);
+        render();
+        Log.i(TAG, "now playing opened, target " + target + (frame != null ? ", first frame from " + frame.why : ""));
+    }
+
+    /** What to draw before the controller answers for {@code id}: the mini player's entry, else a screen's last answer. */
+    private FirstFrame openingFrame(String id) {
+        FirstFrame f = FirstFrame.seed(NowPlayingNote.current(), id);
+        if (f != null || LOCAL.equals(id)) return f;
+        ScreenMemory.Record r = ScreenMemory.decode(pickedSnapshot);
+        if (r == null || !ScreenMemory.fresh(r.at, System.currentTimeMillis())) r = ScreenMemory.recall(this, id);
+        return r == null ? null : FirstFrame.screen(r.snapshot(), id,
+                r.elapsedAt(System.currentTimeMillis(), SystemClock.elapsedRealtime()));
     }
 
     /** A named event for the household log store (UiTelemetry: on disk first, sent when online). */
@@ -244,7 +297,7 @@ public class NowPlayingActivity extends Activity {
         super.onNewIntent(intent);
         setIntent(intent);
         String asked = intent == null ? "" : intent.getStringExtra(EXTRA_TARGET);
-        if (asked != null && !asked.isEmpty() && !asked.equals(target)) switchTo(asked, nameOf(asked));
+        if (asked != null && !asked.isEmpty() && !asked.equals(target)) switchTo(asked, namedIn(intent, asked), intent.getStringExtra(RemoteControlService.EXTRA_SNAPSHOT));
         else if (controller == null && pending == null && started) connect();
         takeStarting(intent);
         if (intent != null && intent.getBooleanExtra(EXTRA_PAD, false) && remote()) showPad(true);
@@ -275,6 +328,10 @@ public class NowPlayingActivity extends Activity {
 
     @Override protected void onStop() {
         started = false;
+        startShown = false;
+        // Left before the controller connected (Back at once after a tap): the start still goes out.
+        if (playId != null && !remote()) handOff(playId, playShuffle);
+        playId = null;
         main.removeCallbacks(ticker);
         main.removeCallbacks(reconnect);
         disconnect();
@@ -287,7 +344,7 @@ public class NowPlayingActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
-        for (ExecutorService e : new ExecutorService[] { io, artIo, padIo, detailIo }) if (e != null) e.shutdownNow();
+        for (ExecutorService e : new ExecutorService[] { io, artIo, padIo, detailIo, startIo }) if (e != null) e.shutdownNow();
         super.onDestroy();
     }
 
@@ -321,7 +378,17 @@ public class NowPlayingActivity extends Activity {
         if (asked == null || asked.isEmpty()) asked = intent == null ? null : intent.getStringExtra(EXTRA_TARGET);
         if (asked == null || asked.isEmpty()) asked = prefs().getString(EXTRA_TARGET, LOCAL);
         target = asked;
-        targetName = LOCAL.equals(asked) ? "This phone" : prefs().getString("name:" + asked, asked);
+        targetName = LOCAL.equals(asked) ? "This phone" : namedIn(intent, asked);
+    }
+
+    /** The name the opening screen passed for {@code id} (Starting.EXTRA_TARGET_NAME), else the one known here. */
+    private String namedIn(Intent intent, String id) {
+        String named = intent == null ? null : intent.getStringExtra(Starting.EXTRA_TARGET_NAME);
+        if (named != null && !named.trim().isEmpty() && id.equals(intent.getStringExtra(EXTRA_TARGET))) {
+            if (!LOCAL.equals(id)) prefs().edit().putString("name:" + id, named.trim()).apply();
+            return named.trim();
+        }
+        return nameOf(id);
     }
 
     private String nameOf(String id) {
@@ -330,7 +397,8 @@ public class NowPlayingActivity extends Activity {
         return prefs().getString("name:" + id, id);
     }
 
-    private void switchTo(String id, String name) {
+    /** @param snapshot the screen's answer the picker read (ScreenMemory's encoding), or null */
+    private void switchTo(String id, String name, String snapshot) {
         Log.i(TAG, "now playing target " + id);
         note("player.target", "to", LOCAL.equals(id) ? "local" : id);
         disconnect();
@@ -345,6 +413,13 @@ public class NowPlayingActivity extends Activity {
         remoteReach = "";
         shownArtwork = null;
         clock.reset();
+        pickedSnapshot = snapshot;
+        // From the first frame, what that target is playing (the picker's answer, the mini player's entry).
+        ScreenMemory.Record picked = ScreenMemory.decode(snapshot);
+        frame = picked != null && !LOCAL.equals(id)
+                ? FirstFrame.screen(picked.snapshot(), id, picked.elapsedAt(System.currentTimeMillis(), SystemClock.elapsedRealtime()))
+                : null;
+        if (frame == null) frame = openingFrame(id);
         renderTargets();
         render();
         connect();
@@ -418,7 +493,12 @@ public class NowPlayingActivity extends Activity {
                             render();
                         }
                         @Override public void onDisconnected(MediaController c) {
-                            if (c == controller) { controller = null; lostPlayer("Reconnecting…"); }
+                            if (c == controller) {
+                                controller = null;
+                                // The last state stays on screen, greyed, rather than "Nothing playing".
+                                frame = FirstFrame.lost(lastDrawn);
+                                lostPlayer("Reconnecting…");
+                            }
                         }
                     })
                     .buildAsync();
@@ -430,6 +510,7 @@ public class NowPlayingActivity extends Activity {
                     MediaController c = mine.get();
                     if (!forTarget.equals(target) || isFinishing()) { c.release(); return; }
                     controller = c;
+                    frame = null;
                     connectionLine = "";
                     reconnectMs = 1000;
                     c.addListener(new Player.Listener() {
@@ -444,9 +525,12 @@ public class NowPlayingActivity extends Activity {
                         Bundle args = new Bundle();
                         args.putString(RemoteControlService.EXTRA_DEVICE, target);
                         args.putString(RemoteControlService.EXTRA_NAME, targetName);
+                        if (pickedSnapshot != null) args.putString(RemoteControlService.EXTRA_SNAPSHOT, pickedSnapshot);
+                        pickedSnapshot = null;
                         c.sendCustomCommand(new SessionCommand(RemoteControlService.TARGET, Bundle.EMPTY), args);
                         watch(c, true);
                     }
+                    playPending();
                     render();
                 } catch (Exception failed) {
                     Log.w(TAG, "now playing: no media controller: " + failed.getClass().getSimpleName());
@@ -522,11 +606,88 @@ public class NowPlayingActivity extends Activity {
     private void takeStarting(Intent intent) {
         Starting s = Starting.from(intent, target, SystemClock.elapsedRealtime());
         if (s == null) return;
+        boolean play = intent.getBooleanExtra(Starting.EXTRA_PLAY, false);
+        boolean shuffle = intent.getBooleanExtra(Starting.EXTRA_SHUFFLE, false);
+        frame = null;
+        if (play && remote()) {
+            // Play on a screen: the load is sent from here, and this screen shows it starting there.
+            String[] load = Starting.screenLoad(s.mediaId);
+            if (load != null) {
+                note("player.starting", "how", "screen");
+                startOnScreen(load[0], load[1], shuffle, s.title, s.art);
+                return;
+            }
+        }
+        // One budget for the whole start (PlayBudget): a payload still starting has longer.
+        s.giveUpMs = PlayBudget.giveUpMs(PayloadReady.now(PayloadMedia.PORT).ready());
         starting = s;
-        note("player.starting");
+        note("player.starting", "how", play ? "here" : "opened");
         main.postDelayed(this::render, Starting.SLOW_MS + 50);
-        main.postDelayed(this::render, Starting.GIVE_UP_MS + 50);
+        main.postDelayed(this::render, s.giveUpMs + 50);
+        if (play && !s.mediaId.isEmpty() && !remote()) {
+            playId = s.mediaId;
+            playShuffle = shuffle;
+            playPending();
+        }
         render();
+    }
+
+    /**
+     * Starts what this screen was opened to play, on its own controller, once (H3: no
+     * second screen over this one). Waits for the controller when it is not connected yet.
+     */
+    private void playPending() {
+        MediaController c = controller;
+        if (playId == null || remote() || c == null || !c.isConnected()) return;
+        String id = playId;
+        boolean shuffle = playShuffle;
+        playId = null;
+        Log.i(TAG, "now playing: starting the tapped item here" + (shuffle ? ", shuffled" : ""));
+        note("player.play-here", "shuffle", shuffle);
+        c.setMediaItem(playRequest(id, shuffle));
+        c.prepare();
+        c.play();
+    }
+
+    /**
+     * Sends a start on a controller of its own, for a screen closed before its controller
+     * connected: the tap is never dropped because the person went Back at once.
+     */
+    private void handOff(String id, boolean shuffle) {
+        Log.i(TAG, "now playing closed before connecting: the start goes out anyway");
+        try {
+            Context app = getApplicationContext();
+            ListenableFuture<MediaController> f = new MediaController.Builder(app,
+                    new SessionToken(app, new ComponentName(app, DaylightMediaService.class))).buildAsync();
+            f.addListener(() -> {
+                try {
+                    MediaController c = f.get();
+                    c.setMediaItem(playRequest(id, shuffle));
+                    c.prepare();
+                    c.play();
+                    // The commands are sent; releasing the controller does not stop the session's player.
+                    main.postDelayed(c::release, 2000);
+                } catch (Exception failed) {
+                    Log.w(TAG, "start hand-off failed: " + failed.getClass().getSimpleName());
+                }
+            }, main::post);
+        } catch (RuntimeException failed) {
+            Log.w(TAG, "start hand-off failed: " + failed.getClass().getSimpleName());
+        }
+    }
+
+    /**
+     * A play request for {@code mediaId}. A shuffled list is asked of home shuffled (the
+     * session reads the flag), never by shuffling the queue that is there first.
+     */
+    static MediaItem playRequest(String mediaId, boolean shuffle) {
+        MediaItem.Builder b = new MediaItem.Builder().setMediaId(mediaId);
+        if (shuffle) {
+            Bundle extras = new Bundle();
+            extras.putBoolean(LibraryCallback.EXTRA_SHUFFLE, true);
+            b.setRequestMetadata(new MediaItem.RequestMetadata.Builder().setExtras(extras).build());
+        }
+        return b.build();
     }
 
     /**
@@ -539,6 +700,9 @@ public class NowPlayingActivity extends Activity {
         // The tapped id itself, or the list the current item came from (a c: list, a p: track in its list).
         String want = contentOf(starting.mediaId);
         MediaItem current = c.getCurrentMediaItem();
+        // This screen's own request, as its controller holds it until the session answers: a
+        // media id ("c:…", "p:…") with no title. Not the item yet, nor is its transition.
+        if (current != null && isRequest(current.mediaId)) return false;
         if (!want.isEmpty() && current != null
                 && (want.equals(NodeItems.listId(current)) || want.equals(contentOf(current.mediaId)))) return true;
         if (itemChangedAt >= starting.askedAt) return true;
@@ -549,17 +713,24 @@ public class NowPlayingActivity extends Activity {
         return itemChangedAt < 0 && c.isPlaying() && SystemClock.elapsedRealtime() - starting.askedAt > 1500;
     }
 
+    /** A media id of the tree ("c:plex:1", "p:plex:2|plex:1"), as a play request names it; a played item has a content id. */
+    static boolean isRequest(String mediaId) {
+        return mediaId != null && mediaId.length() > 2 && mediaId.charAt(1) == ':';
+    }
+
     private void retryStarting() {
         Starting s = starting != null ? starting : failedStart;
         if (s == null || controller == null || s.mediaId.isEmpty()) return;
         failedStart = null;
         note("player.start-retry");
         starting = new Starting(s.target, s.mediaId, s.title, s.subtitle, s.art, SystemClock.elapsedRealtime());
+        starting.giveUpMs = PlayBudget.giveUpMs(PayloadReady.now(PayloadMedia.PORT).ready());
+        starting.longForm = s.longForm;
         controller.setMediaItem(new MediaItem.Builder().setMediaId(s.mediaId).build());
         controller.prepare();
         controller.play();
         main.postDelayed(this::render, Starting.SLOW_MS + 50);
-        main.postDelayed(this::render, Starting.GIVE_UP_MS + 50);
+        main.postDelayed(this::render, starting.giveUpMs + 50);
         render();
     }
 
@@ -584,16 +755,20 @@ public class NowPlayingActivity extends Activity {
         }
         if (failedStart != null && !failedStart.target.equals(target)) failedStart = null;
         final Starting begun = starting;
+        startShown = started && begun != null;
         if (begun != null) {
             // The tapped item, from the first frame: its name, who by, its cover, and how starting is going.
-            title.setText(begun.title);
-            title.setTextColor(theme.ink);
+            // Laid out exactly as the playing frame is (every line keeps its place), so nothing moves when it lands.
+            title.setText(begun.title.isEmpty() ? "Starting…" : begun.title);
+            title.setTextColor(begun.title.isEmpty() ? theme.inkMuted : theme.ink);
             show(artistLine, begun.subtitle);
             show(albumLine, null);
             showStart("");
-            String line = begun.line(nowMs, remote() ? targetName : "");
+            statusIsSleep = false;
+            String line = begun.title.isEmpty() && begun.phase(nowMs) == Starting.Phase.STARTING ? ""
+                    : begun.line(nowMs, remote() ? targetName : "");
             status.setText(line);
-            status.setVisibility(View.VISIBLE);
+            status.setVisibility(line.isEmpty() ? View.INVISIBLE : View.VISIBLE);
             status.setContentDescription(line);
             // What still plays until the new item lands can be paused; nothing else acts on the old item.
             boolean playingOld = active(c);
@@ -606,7 +781,9 @@ public class NowPlayingActivity extends Activity {
             if (stage != Stage.ART) setStage(Stage.ART);
             show(qualityLine, null);
             lyricsBadge.setVisibility(View.GONE);
-            if (chapterLine != null) { chapterLine.setText(""); chapterLine.setVisibility(View.INVISIBLE); }
+            // The chapter line is reserved only for a long item, as the playing frame does (music has none).
+            if (chapterLine != null) { chapterLine.setText(""); chapterLine.setVisibility(begun.longForm && !remote() ? View.INVISIBLE : View.GONE); }
+            wave.setVisibility(View.VISIBLE);
             wave.setSamples(null);
             wave.setMarks(null, -1, 0);
             detailFor = "";   // the old item's detail loads again if it turns out to stay
@@ -615,13 +792,17 @@ public class NowPlayingActivity extends Activity {
             tickPosition();
             return;
         }
+        if (c == null && frame != null) { renderFrame(); return; }
         CharSequence name = meta.title != null ? meta.title : meta.displayTitle;
         boolean idleScreen = remote() && !hasItem && "IDLE".equals(remoteReach);
         boolean offScreen = remote() && !hasItem && ("OFF".equals(remoteReach) || "NOT_ON".equals(remoteReach));
+        // This phone with nothing loaded: a place to start something, as a screen's start panel is.
+        boolean idleHere = !remote() && c != null && c.isConnected() && !hasItem;
+        if (hasItem) lastDrawn = NowPlayingNotes.entry(target, targetName, c);
         title.setText(hasItem && !TextUtils.isEmpty(name) ? name
                 : idleScreen ? "Play something on " + targetName
                 : offScreen ? targetName + " is off" : "Nothing playing");
-        showStart(idleScreen ? "idle" : offScreen ? "off" : "");
+        showStart(idleScreen ? "idle" : offScreen ? "off" : idleHere ? "here" : "");
         title.setTextColor(hasItem ? theme.ink : theme.inkMuted);
         // A screen's player names the screen as the artist; that is the top bar's job.
         CharSequence by = remote() ? null : meta.artist;
@@ -634,7 +815,8 @@ public class NowPlayingActivity extends Activity {
         else if (remote()) line = remoteStatus;
         else line = c.getPlayerError() != null ? errorLine() : "";
         if (failedStart != null) line = failedStart.failedLine(remote() ? targetName : "");
-        if (line.isEmpty() && !remote()) line = SleepTimer.describeNow();
+        statusIsSleep = false;
+        if (line.isEmpty() && !remote()) { line = SleepTimer.describeNow(); statusIsSleep = !line.isEmpty(); }
         // A kept track says where it plays from (the spec's offline mark).
         if (line.isEmpty() && !remote() && hasItem) line = fromPhone(c.getCurrentMediaItem()) ? "Playing from this phone" : "";
         status.setText(line);
@@ -675,15 +857,18 @@ public class NowPlayingActivity extends Activity {
         boolean chapterList = chapterList();
         toggle(queueButton, stage == Stage.QUEUE, hasItem, stage == Stage.QUEUE ? (chapterList ? "Hide the chapters" : "Hide the queue")
                 : chapterList ? "Chapters" : "Queue");
-        toggle(lyricsButton, stage == Stage.LYRICS, hasItem && !lyrics.isEmpty(),
+        toggle(lyricsButton, stage == Stage.LYRICS, hasItem && (!lyrics.isEmpty() || (lyricsLoading && stage == Stage.LYRICS)),
                 lyrics.isEmpty() ? "No lyrics" : stage == Stage.LYRICS ? "Hide the lyrics" : "Lyrics");
         // Lyrics to be had read as ink, not the muted grey of a toggle that is off.
         if (stage != Stage.LYRICS && !lyrics.isEmpty()) lyricsButton.setImageTintList(ColorStateList.valueOf(theme.ink));
         lyricsBadge.setText(lyrics.synced ? "Lyrics" : "Lyrics (text)");
         lyricsBadge.setVisibility(hasItem && !lyrics.isEmpty() && stage == Stage.ART ? View.VISIBLE : View.GONE);
         toggle(outputButton, remote(), true, "Play on: " + targetName);
+        // Tinted like the row's other icons when off (it has no on state); the drawable itself is black.
+        moreButton.setImageTintList(ColorStateList.valueOf(theme.inkMuted));
         enable(moreButton, hasItem || (!remote() && SleepTimer.isSet()));
-        if (stage == Stage.LYRICS && lyrics.isEmpty()) setStage(Stage.ART);
+        // The lyrics stay up across a track change while the next track's are fetched; only "none" goes back to the cover.
+        if (stage == Stage.LYRICS && lyrics.isEmpty() && !lyricsLoading) setStage(Stage.ART);
         if (!hasItem && stage != Stage.ART) setStage(Stage.ART);
 
         padToggle.setVisibility(remote() ? View.VISIBLE : View.GONE);
@@ -693,9 +878,47 @@ public class NowPlayingActivity extends Activity {
         if (padShown && SystemClock.elapsedRealtime() >= padLineUntil) padStatus.setText(line);
 
         loadDetail(hasItem ? c.getCurrentMediaItem() : null);
+        art.setAlpha(1f);
         renderArtwork(hasItem ? meta.artworkUri : null, hasItem);
         renderTargets();
         if (stage == Stage.QUEUE) fillQueue();
+        tickPosition();
+    }
+
+    /**
+     * The first frame before a controller answers (FirstFrame): what was already shown for
+     * this target, greyed when it is not live (reconnecting, a screen's remembered answer),
+     * every control off, and a line saying what it waits for. Laid out as the playing frame.
+     */
+    private void renderFrame() {
+        FirstFrame f = frame;
+        NowPlayingNote.Entry e = f.entry;
+        boolean live = f.why == FirstFrame.Why.CONNECTING;
+        title.setText(e.title);
+        title.setTextColor(live ? theme.ink : theme.inkMuted);
+        show(artistLine, remote() ? null : e.artist);
+        show(albumLine, null);
+        showStart("");
+        statusIsSleep = false;
+        String line = f.line(remote() ? targetName : "");
+        status.setText(line);
+        status.setVisibility(View.VISIBLE);
+        status.setContentDescription(line);
+        playPause.setImageResource(e.playing ? R.drawable.daylight_np_pause : R.drawable.daylight_np_play);
+        playPause.setContentDescription(e.playing ? "Pause" : "Play");
+        enable(playPause, false);
+        enable(prev, false);
+        enable(next, false);
+        for (View v : new View[] { shuffleButton, repeatButton, queueButton, lyricsButton, speedButton, leftEdgeBox, rightEdgeBox }) enable(v, false);
+        moreButton.setImageTintList(ColorStateList.valueOf(theme.inkMuted));
+        enable(moreButton, false);
+        lyricsBadge.setVisibility(View.GONE);
+        boolean longItem = e.durationMs >= FirstTap.LONG_MS;
+        if (chapterLine != null && chapters.isEmpty()) chapterLine.setVisibility(longItem && !remote() ? View.INVISIBLE : View.GONE);
+        wave.setVisibility(View.VISIBLE);
+        art.setAlpha(live ? 1f : 0.6f);
+        renderArtwork(e.artworkUrl.isEmpty() ? null : Uri.parse(e.artworkUrl), true);
+        renderTargets();
         tickPosition();
     }
 
@@ -748,6 +971,25 @@ public class NowPlayingActivity extends Activity {
             main.postDelayed(ticker, 200);
             return;
         }
+        if (c == null && frame != null) {
+            // The first frame's place: carried forward while it is the mini player's live entry.
+            long now = SystemClock.elapsedRealtime();
+            float f = frame.fractionAt(now);
+            long at = frame.positionAt(now), d = frame.entry.durationMs;
+            wave.setEnabled(false);
+            wave.setDurationMs(d > 0 ? d : 0);
+            wave.setFraction(Math.max(0f, f), clock(at) + (d > 0 ? " of " + clock(d) : ""));
+            elapsed.setText(clock(at));
+            remaining.setText(d > 0 ? timeDisplay.right(at, d, 1f) : "");
+            if (frame.why == FirstFrame.Why.CONNECTING && frame.entry.playing) main.postDelayed(ticker, 200);
+            return;
+        }
+        // A sleep timer's line counts down with the clock, not only when the player says something.
+        if (statusIsSleep) {
+            String sleep = SleepTimer.describeNow();
+            if (sleep.isEmpty()) render();
+            else if (!sleep.contentEquals(status.getText())) { status.setText(sleep); status.setContentDescription(sleep); }
+        }
         long duration = c == null ? C.TIME_UNSET : c.getDuration();
         boolean known = duration != C.TIME_UNSET && duration > 0;
         boolean any = c != null && c.getMediaItemCount() > 0;
@@ -773,30 +1015,47 @@ public class NowPlayingActivity extends Activity {
 
     // ── the track's waveform, quality and lyrics ─────────────────────────────
 
+    /**
+     * The track's waveform and quality, its chapters and its lyrics: asked at the same time
+     * (one after another, a song waited on a chapters call it never needed), each dropped
+     * before it is sent when the track has changed meanwhile. A song under 20 minutes is not
+     * asked for chapters. The lyrics stage stays up across a track change, saying it is
+     * loading, and goes back to the cover only when the new track has none.
+     */
     private void loadDetail(MediaItem item) {
         String id = item == null ? "" : item.mediaId;
-        if (id == null || id.indexOf(':') <= 0) id = "";
+        if (id == null || id.indexOf(':') <= 0 || isRequest(id)) id = "";
         if (id.equals(detailFor)) return;
         detailFor = id;
+        detailWant = id;
         wave.setSamples(null);
         quality = "";
         show(qualityLine, null);
         lyrics = TrackDetail.Lyrics.NONE;
-        lyricsView.setLyrics(lyrics);
+        lyricsLoading = !id.isEmpty();
+        if (lyricsLoading && stage == Stage.LYRICS) lyricsView.setLoading("Loading lyrics…");
+        else lyricsView.setLyrics(lyrics);
         chapters = Chapters.NONE;
         listedChapter = -1;
         if (id.isEmpty()) return;
         final String forId = id;
-        detailIo.execute(() -> {
+        final long started = SystemClock.elapsedRealtime();
+        MediaController mc0 = controller;
+        long knownMs = NodeItems.durationMs(item, mc0 == null ? C.TIME_UNSET : mc0.getDuration());
+        boolean askChapters = !remote() && !(knownMs > 0 && knownMs < FirstTap.LONG_MS);
+        detail(forId, () -> {
             JSONObject levels = ask(() -> media.trackLevels(forId, WAVE_SAMPLES, 8000));
             main.post(() -> {
                 if (!forId.equals(detailFor)) return;
                 wave.setSamples(TrackDetail.samples(levels));
                 quality = TrackDetail.quality(levels);
                 show(qualityLine, quality);
+                Log.i(TAG, "now playing detail: waveform in " + (SystemClock.elapsedRealtime() - started) + " ms");
             });
-            // A long item's chapters (spec: ops:docs/superpowers/specs/2026-11-26-phone-audiobook-chapters.md).
-            JSONObject marks = remote() ? null : ask(() -> media.trackChapters(forId, 10000));
+        });
+        // A long item's chapters (spec: ops:docs/superpowers/specs/2026-11-26-phone-audiobook-chapters.md).
+        if (askChapters) detail(forId, () -> {
+            JSONObject marks = ask(() -> media.trackChapters(forId, 10000));
             main.post(() -> {
                 if (!forId.equals(detailFor) || marks == null) return;
                 MediaController mc = controller;
@@ -810,17 +1069,28 @@ public class NowPlayingActivity extends Activity {
                 render();
                 tickPosition();
             });
+        });
+        detail(forId, () -> {
             JSONObject words = ask(() -> media.trackLyrics(forId, 10000));
             main.post(() -> {
                 if (!forId.equals(detailFor)) return;
                 lyrics = TrackDetail.lyrics(words);
+                lyricsLoading = false;
                 lyricsView.setLyrics(lyrics);
-                Log.i(TAG, "now playing detail: lyrics " + (lyrics.isEmpty() ? "none" : lyrics.synced ? "synced" : "plain"));
-                note("player.detail", "waveform", wave != null && levels != null && TrackDetail.samples(levels).length > 0,
-                        "quality", !quality.isEmpty(), "lyrics", lyrics.isEmpty() ? "none" : lyrics.synced ? "synced" : "plain");
+                Log.i(TAG, "now playing detail: lyrics " + (lyrics.isEmpty() ? "none" : lyrics.synced ? "synced" : "plain")
+                        + " in " + (SystemClock.elapsedRealtime() - started) + " ms");
+                note("player.detail", "lyrics", lyrics.isEmpty() ? "none" : lyrics.synced ? "synced" : "plain",
+                        "chapters", askChapters, "ms", SystemClock.elapsedRealtime() - started);
                 render();
             });
         });
+    }
+
+    /** One detail question on its own thread, not sent at all when its track is no longer the one shown. */
+    private void detail(String forId, Runnable work) {
+        try {
+            detailIo.execute(() -> { if (forId.equals(detailWant)) work.run(); });
+        } catch (java.util.concurrent.RejectedExecutionException closing) { /* the screen is closing */ }
     }
 
     private interface Call { String run() throws Exception; }
@@ -1123,9 +1393,20 @@ public class NowPlayingActivity extends Activity {
         note("player.start-panel", "mode", mode);
         if (mode.equals("off")) {
             startList.addView(startRow(R.drawable.daylight_np_cast, "Play on this phone instead",
-                    "Pick another player, or turn " + targetName + " on", "start.local", () -> switchTo(LOCAL, "This phone"), null));
+                    "Pick another player, or turn " + targetName + " on", "start.local", () -> switchTo(LOCAL, "This phone", null), null));
             startList.addView(startRow(R.drawable.daylight_np_cast, "Play on another screen", null, "start.targets", this::openTargets, null));
             return;
+        }
+        boolean here = mode.equals("here");
+        net.kckern.daylight.shellkit.DrivingRadioSettings radio = new net.kckern.daylight.shellkit.DrivingRadioSettings(this);
+        if (here) {
+            // This phone, nothing loaded: what played last first, one tap to carry on.
+            String[] last = radio.last();
+            if (last != null && !last[0].isEmpty()) {
+                String what = last[1].isEmpty() ? "what played last" : last[1];
+                startList.addView(startRow(0, "Resume " + what, last[2], "start.resume",
+                        () -> playHereNow(last[0], false, last[1], last[2], last[3]), last[3]));
+            }
         }
         String cached = getSharedPreferences("daylight.home", MODE_PRIVATE).getString("continue", "");
         try {
@@ -1134,19 +1415,30 @@ public class NowPlayingActivity extends Activity {
             for (int i = 0; i < items.length(); i++) {
                 JSONObject item = items.optJSONObject(i);
                 if (item == null) continue;
-                String id = contentOf(item.optString("id")), title = item.optString("title");
+                String mediaId = item.optString("id"), id = contentOf(mediaId), title = item.optString("title");
                 if (id.isEmpty()) continue;
                 startList.addView(startRow(0, title, item.optString("subtitle"), "start.continue",
-                        () -> startOnScreen("play", id, false, title, item.optString("art")), item.optString("art")));
+                        () -> {
+                            if (here) playHereNow(mediaId, false, title, item.optString("subtitle"), item.optString("art"));
+                            else startOnScreen("play", id, false, title, item.optString("art"));
+                        }, item.optString("art")));
             }
         } catch (Exception unreadable) { /* the Play tab fills this cache; without it the list is shorter */ }
-        java.util.List<net.kckern.daylight.shellkit.DrivingRadioSettings.Staple> mine =
-                new net.kckern.daylight.shellkit.DrivingRadioSettings(this).staged();
+        java.util.List<net.kckern.daylight.shellkit.DrivingRadioSettings.Staple> mine = radio.staged();
         if (!mine.isEmpty()) startList.addView(startHeading("Your playlists"));
         for (net.kckern.daylight.shellkit.DrivingRadioSettings.Staple p : mine) {
             String id = contentOf(p.id);
             startList.addView(startRow(0, p.title, null, "start.playlist",
-                    () -> startOnScreen("queue", id, true, p.title, p.art), p.art));
+                    () -> {
+                        if (here) playHereNow("c:" + id, true, p.title, "", p.art);
+                        else startOnScreen("queue", id, true, p.title, p.art);
+                    }, p.art));
+        }
+        if (here) {
+            startList.addView(startHeading("Or"));
+            startList.addView(startRow(R.drawable.daylight_np_cast, "Play on a screen", "Pick one of the household's screens",
+                    "start.targets", this::openTargets, null));
+            return;
         }
         startList.addView(startHeading("Or"));
         startList.addView(startRow(R.drawable.daylight_np_dpad, "Browse on " + targetName,
@@ -1205,21 +1497,41 @@ public class NowPlayingActivity extends Activity {
         return row;
     }
 
+    /** One tap starts it on this phone, from the idle panel: shown as starting at once, played on this controller. */
+    private void playHereNow(String mediaId, boolean shuffle, String title, String subtitle, String art) {
+        if (remote() || mediaId == null || mediaId.isEmpty()) return;
+        note("player.start", "how", "here");
+        Starting s = new Starting(LOCAL, mediaId, title, subtitle, art, SystemClock.elapsedRealtime());
+        s.giveUpMs = PlayBudget.giveUpMs(PayloadReady.now(PayloadMedia.PORT).ready());
+        starting = s;
+        main.postDelayed(this::render, Starting.SLOW_MS + 50);
+        main.postDelayed(this::render, s.giveUpMs + 50);
+        playId = mediaId;
+        playShuffle = shuffle;
+        playPending();
+        render();
+    }
+
     /** One tap starts it on the screen (the web's Play on); the player then follows what the screen does. */
     private void startOnScreen(String how, String contentId, boolean shuffle, String title, String art) {
         final String device = target, name = targetName;
-        starting = new Starting(device, "", title, "", art, SystemClock.elapsedRealtime());
+        final Starting mine = new Starting(device, "", title, "", art, SystemClock.elapsedRealtime());
+        // One budget: the command's wait and the Starting give-up are the same number, so
+        // the answer (or its absence) is in before the screen says it failed.
+        mine.giveUpMs = PlayBudget.SCREEN_MS + 1_000;
+        starting = mine;
+        frame = null;
         main.postDelayed(this::render, Starting.SLOW_MS + 50);
-        main.postDelayed(this::render, Starting.GIVE_UP_MS + 50);
+        main.postDelayed(this::render, mine.giveUpMs + 50);
         render();
         note("player.start", "how", how);
-        io.execute(() -> {
+        startIo.execute(() -> {
             String line;
             try {
                 JSONObject request = new JSONObject().put("op", "screen-command").put("device", device)
                         .put("command", "load").put(how, contentId);
                 if (shuffle) request.put("shuffle", true);
-                JSONObject reply = new JSONObject(media.screenCommand(request, 45_000));
+                JSONObject reply = new JSONObject(media.screenCommand(request, PlayBudget.SCREEN_MS));
                 boolean ok = reply.optBoolean("accepted", false);
                 line = ok ? "" : "no_answer".equals(reply.optString("code"))
                         ? name + " has not answered yet" : name + " could not start it";
@@ -1231,7 +1543,9 @@ public class NowPlayingActivity extends Activity {
             String said = line;
             main.post(() -> {
                 if (!device.equals(target)) return;
-                if (!said.isEmpty()) starting = null;   // refused: say why instead of "Starting…"
+                // A late accept: the failure already shown for this start was wrong; take it back.
+                if (said.isEmpty() && failedStart != null && failedStart.title.equals(mine.title)) failedStart = null;
+                if (!said.isEmpty() && starting == mine) starting = null;   // refused: say why instead of "Starting…"
                 volumeLine = said;
                 render();
                 if (!said.isEmpty()) main.postDelayed(() -> { if (said.equals(volumeLine)) { volumeLine = ""; render(); } }, 6000);
@@ -1253,8 +1567,24 @@ public class NowPlayingActivity extends Activity {
         List<TargetPicker.Target> targets = new ArrayList<>();
         targets.add(new TargetPicker.Target(LOCAL, "This phone", ""));
         for (Screen s : screens) targets.add(new TargetPicker.Target(s.id, s.name, s.type));
-        TargetPicker.show(this, base, targets, target, screensProblem, media, io, main,
-                (id, label) -> { if (!id.equals(target)) switchTo(id, label); });
+        // Not loaded yet: the screens the phone home last saw; each row's own check tells if it is there.
+        if (screens.isEmpty()) targets.addAll(cachedScreens(getSharedPreferences("daylight.home", MODE_PRIVATE).getString("screens", "")));
+        TargetPicker.show(this, base, targets, target, screens.isEmpty() ? "" : screensProblem, media, main,
+                (id, label, snapshot) -> { if (!id.equals(target)) switchTo(id, label, snapshot); });
+    }
+
+    /** The phone home's cached screens list ({id, name, type} rows) as picker targets. */
+    static List<TargetPicker.Target> cachedScreens(String json) {
+        List<TargetPicker.Target> out = new ArrayList<>();
+        try {
+            JSONArray items = json == null || json.isEmpty() ? new JSONArray() : new JSONArray(json);
+            for (int i = 0; i < items.length(); i++) {
+                JSONObject o = items.optJSONObject(i);
+                if (o == null || o.optString("id").isEmpty()) continue;
+                out.add(new TargetPicker.Target(o.optString("id"), o.optString("name", o.optString("id")), o.optString("type")));
+            }
+        } catch (Exception unreadable) { /* none */ }
+        return out;
     }
 
     private void openMore() {
@@ -1937,9 +2267,13 @@ public class NowPlayingActivity extends Activity {
                         view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
                         note("player.swipe-skip", "direction", forward ? "next" : "previous");
                         float out = (forward ? -1 : 1) * view.getWidth();
+                        // The cover that slides in is the next (or previous) item's, never the old one again.
+                        final Uri incoming = incomingArt(forward);
                         view.animate().translationX(out).alpha(0f).setDuration(160).withEndAction(() -> {
+                            if (controller == null) return;
                             if (forward) skipNext(); else controller.seekToPrevious();
                             clock.reset();
+                            if (incoming != null) showIncoming(incoming);
                             view.setTranslationX(-out * 0.35f);
                             view.animate().translationX(0).alpha(1f).setDuration(220).start();
                         }).start();
@@ -1954,6 +2288,30 @@ public class NowPlayingActivity extends Activity {
         v.setContentDescription("Cover. Tap for lyrics; swipe left for next, right for previous");
         UiTelemetry.tag(v, "cover");
         v.setClickable(true);
+    }
+
+    /**
+     * The cover of the item a swipe goes to: Uri.EMPTY when it has none (a neutral box), null
+     * when the swipe stays on this item (a chapter, a restart).
+     */
+    private Uri incomingArt(boolean forward) {
+        MediaController c = controller;
+        if (c == null || !chapters.isEmpty()) return null;
+        int to = forward ? c.getNextMediaItemIndex() : c.getPreviousMediaItemIndex();
+        // Previous past 3 s restarts this item (Media3's rule): the same cover stays.
+        if (!forward && c.getCurrentPosition() > 3000) return null;
+        if (to == C.INDEX_UNSET || to < 0 || to >= c.getMediaItemCount()) return null;
+        Uri u = c.getMediaItemAt(to).mediaMetadata.artworkUri;
+        return u == null ? Uri.EMPTY : u;
+    }
+
+    /** Draws the incoming item's cover from memory (or a neutral box) before the player says it moved. */
+    private void showIncoming(Uri uri) {
+        String url = uri == null ? "" : uri.toString();
+        Bitmap seen = url.isEmpty() ? null : PlaylistArtwork.cachedAny(url, 900);
+        if (seen != null) showArtwork(seen); else placeholder(R.drawable.daylight_np_note);
+        // render() decides again from the player, loading the full size if only a smaller copy was in memory.
+        shownArtwork = null;
     }
 
     /** Every color on the screen, from the theme (the cover's, when it has one). */
@@ -2012,6 +2370,9 @@ public class NowPlayingActivity extends Activity {
         for (ImageButton b : new ImageButton[] { queueButton, lyricsButton, shuffleButton, moreButton, repeatButton, outputButton, padToggle, close }) {
             b.setBackground(t.pressable(DaylightTheme.round(0x00000000, dp(24))));
         }
+        // The row's icons that render() does not tint through toggle(): their vector is black.
+        moreButton.setImageTintList(ColorStateList.valueOf(t.inkMuted));
+        padToggle.setImageTintList(ColorStateList.valueOf(padShown ? t.primary : t.ink));
         t.style(queueHeading, Type.TITLE, t.ink, true);
         t.style(speedButton, Type.BODY, t.ink, true);
         speedButton.setBackground(t.pressable(DaylightTheme.round(0x00000000, dp(24))));
@@ -2033,7 +2394,8 @@ public class NowPlayingActivity extends Activity {
             t.style(padStatus, Type.LABEL, t.primary, false);
         }
         if (stage == Stage.QUEUE) fillQueue();
-        if (controller != null) render();
+        // Every state retints its icons from the new theme, the first frame and Starting too.
+        if (title != null) render();
     }
 
     private TextView centred() {

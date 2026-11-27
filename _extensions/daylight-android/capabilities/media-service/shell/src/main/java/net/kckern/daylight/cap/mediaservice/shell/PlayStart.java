@@ -13,8 +13,8 @@ import org.json.JSONObject;
  * records it), this service keeps the foreground state for as long as the audio plays.
  */
 final class PlayStart {
-    /** Waiting for a payload (up to 8 s on a cold start) and for the player to start. */
-    static final long GIVE_UP_MS = 15_000;
+    /** A warm start's budget (PlayBudget); a start made while the payload was still coming up has more. */
+    static final long GIVE_UP_MS = PlayBudget.WARM_MS;
 
     enum Step {
         /** Keep the foreground state and look again. */
@@ -30,6 +30,10 @@ final class PlayStart {
         final String playlist;
         final long startedAt;
         final boolean shuffle;
+        /** This start's whole budget (PlayBudget.giveUpMs at the tap). */
+        final long budgetMs;
+        /** What the notice and a failure name ("Morning Mix"); empty when not known. */
+        String title = "";
         private boolean cancelled, played;
 
         Attempt(String playlist, long startedAt) {
@@ -37,10 +41,18 @@ final class PlayStart {
         }
 
         Attempt(String playlist, long startedAt, boolean shuffle) {
+            this(playlist, startedAt, shuffle, GIVE_UP_MS);
+        }
+
+        Attempt(String playlist, long startedAt, boolean shuffle, long budgetMs) {
             this.playlist = playlist;
             this.startedAt = startedAt;
             this.shuffle = shuffle;
+            this.budgetMs = budgetMs;
         }
+
+        /** What is left of the budget at {@code nowMs}. */
+        long left(long nowMs) { return PlayBudget.left(startedAt, budgetMs, nowMs); }
 
         void cancel() { cancelled = true; }
 
@@ -48,7 +60,7 @@ final class PlayStart {
 
         boolean played() { return played; }
 
-        boolean canApply(long nowMs) { return !cancelled && nowMs - startedAt < GIVE_UP_MS; }
+        boolean canApply(long nowMs) { return !cancelled && nowMs - startedAt < budgetMs; }
     }
 
     private PlayStart() { }
@@ -72,6 +84,28 @@ final class PlayStart {
         }
     }
 
+    /** The notice while starting: "Starting Morning Mix…", or the plain words when the name is not known. */
+    static String notice(String title) {
+        return title == null || title.trim().isEmpty() ? "Starting playback" : "Starting " + title.trim() + "…";
+    }
+
+    /** The one failure line, naming what did not start. */
+    static String failure(String title) {
+        return title == null || title.trim().isEmpty() ? "Could not start playback. Tap the button again to retry."
+                : "Could not start " + title.trim() + ". Tap the button again to retry.";
+    }
+
+    /** The title an action's answer gives ({ok, mediaId, title?}), or "". */
+    static String title(String answer) {
+        if (answer == null) return "";
+        try {
+            String t = new JSONObject(answer).optString("title", "").trim();
+            return t.length() > 80 ? t.substring(0, 80) : t;
+        } catch (Exception notJson) {
+            return "";
+        }
+    }
+
     /**
      * @param elapsedMs          since the service was started
      * @param failed             the payload refused, no payload came, or the player failed
@@ -80,8 +114,13 @@ final class PlayStart {
      * @param mediaInForeground  the media service holds the foreground state
      */
     static Step next(long elapsedMs, boolean failed, boolean playedOnce, boolean playingNow, boolean mediaInForeground) {
+        return next(elapsedMs, GIVE_UP_MS, failed, playedOnce, playingNow, mediaInForeground);
+    }
+
+    /** As above, against this start's own budget. */
+    static Step next(long elapsedMs, long budgetMs, boolean failed, boolean playedOnce, boolean playingNow, boolean mediaInForeground) {
         if (failed) return Step.FAIL;
-        if (!playedOnce) return elapsedMs >= GIVE_UP_MS ? Step.FAIL : Step.WAIT;
+        if (!playedOnce) return elapsedMs >= budgetMs ? Step.FAIL : Step.WAIT;
         if (mediaInForeground) return Step.RELEASE;
         return playingNow ? Step.WAIT : Step.RELEASE;
     }

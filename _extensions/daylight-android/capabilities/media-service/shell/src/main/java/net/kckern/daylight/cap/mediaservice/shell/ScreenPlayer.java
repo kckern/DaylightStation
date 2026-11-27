@@ -100,7 +100,14 @@ final class ScreenPlayer extends SimpleBasePlayer {
     }
 
     /** Points the player at a screen. The previous screen's answers still in flight are dropped. */
-    void setScreen(String device, String name) {
+    void setScreen(String device, String name) { setScreen(device, name, null, 0); }
+
+    /**
+     * As above, starting from what the screen was last seen doing ({@code seed}, read at
+     * {@code seedAt} on the elapsed clock: the picker's check or the remote's last read),
+     * shown greyed (no commands) until this screen's first read, instead of nothing.
+     */
+    void setScreen(String device, String name, ScreenSnapshot seed, long seedAt) {
         if (device != null && device.equals(this.device)) {
             // The same screen, perhaps with its real name now (the list loaded after the pick).
             if (name != null && !name.isEmpty() && !name.equals(device) && !name.equals(this.name)) {
@@ -115,8 +122,10 @@ final class ScreenPlayer extends SimpleBasePlayer {
         generation++;
         this.device = device;
         this.name = name == null || name.isEmpty() ? String.valueOf(device) : name;
-        snap = ScreenSnapshot.unreachable();
-        snapAt = SystemClock.elapsedRealtime();
+        boolean seeded = seed != null && !seed.failed();
+        snap = seeded ? seed : ScreenSnapshot.unreachable();
+        snapAt = seeded ? seedAt : SystemClock.elapsedRealtime();
+        unconfirmed = seeded;
         reading = false;
         commandLine = "";
         misses = 0;
@@ -125,10 +134,14 @@ final class ScreenPlayer extends SimpleBasePlayer {
         invalidateState();
         // Not the previous screen's line: say what is happening until this one answers.
         shownLine = null;
-        status.changed("Connecting to " + this.name + "…");
-        shownLine = "Connecting to " + this.name + "…";
+        String line = seeded ? "Checking " + this.name + "…" : "Connecting to " + this.name + "…";
+        status.changed(line);
+        shownLine = line;
         refresh();
     }
+
+    /** The shown answer is a remembered one, not yet read from the screen: shown greyed, no commands. */
+    private boolean unconfirmed;
 
     String device() { return device; }
 
@@ -163,6 +176,11 @@ final class ScreenPlayer extends SimpleBasePlayer {
     }
 
     private void apply(ScreenSnapshot answer) {
+        if (unconfirmed) {
+            // The remembered answer was a stand-in: whatever the screen says now replaces it.
+            unconfirmed = false;
+            snap = ScreenSnapshot.unreachable();
+        }
         if (answer.failed()) {
             if (misses == 0) firstMissAt = SystemClock.elapsedRealtime();
             misses++;
@@ -192,7 +210,8 @@ final class ScreenPlayer extends SimpleBasePlayer {
     ScreenSnapshot.Reach reach() { return snap.reach; }
 
     private void publishStatus() {
-        String line = misses > 0 && !missLine.isEmpty() ? missLine
+        String line = unconfirmed ? "Checking " + name + "…"
+                : misses > 0 && !missLine.isEmpty() ? missLine
                 : !commandLine.isEmpty() && SystemClock.elapsedRealtime() - commandLineAt < COMMAND_LINE_MS
                 ? commandLine : snap.statusLine(name);
         if (line.equals(shownLine)) return;
@@ -256,7 +275,7 @@ final class ScreenPlayer extends SimpleBasePlayer {
         Commands.Builder c = new Commands.Builder().addAll(
                 COMMAND_GET_CURRENT_MEDIA_ITEM, COMMAND_GET_TIMELINE, COMMAND_GET_METADATA, COMMAND_GET_DEVICE_VOLUME);
         // While reads are failing, the last answer is shown but nothing is offered to send.
-        if (device == null || !snap.online() || misses > 0) return c.build();
+        if (device == null || !snap.online() || misses > 0 || unconfirmed) return c.build();
         // A volume the screen did not report is not guessed: a key press would set it from 0.
         if (snap.volume >= 0) {
             c.addAll(COMMAND_SET_DEVICE_VOLUME, COMMAND_ADJUST_DEVICE_VOLUME,
@@ -388,17 +407,34 @@ final class ScreenPlayer extends SimpleBasePlayer {
             } catch (Exception unreachable) {
                 reply = null;
             }
-            ScreenSnapshot after = read(target);
             JSONObject answered = reply;
+            long answeredAt = SystemClock.elapsedRealtime();
+            main.post(() -> { if (gen == generation) noteCommand(what, answered); });
+            // The read is the reads' work: the next tap's command goes out meanwhile.
+            settle(CommandSettle.of(request), gen, target, answeredAt, done);
+        });
+        return done;
+    }
+
+    /**
+     * Reads the screen until it shows the command done or CommandSettle's deadline passes;
+     * the button keeps its new state (Media3's placeholder) until then.
+     */
+    private void settle(CommandSettle want, long gen, String target, long answeredAt, SettableFuture<Void> done) {
+        reads.execute(() -> {
+            ScreenSnapshot after = read(target);
             main.post(() -> {
-                if (gen == generation) {
-                    noteCommand(what, answered);
-                    apply(after);
+                if (gen != generation) { done.set(null); return; }
+                if (want.again(after, SystemClock.elapsedRealtime() - answeredAt)) {
+                    main.postDelayed(() -> settle(want, gen, target, answeredAt, done), CommandSettle.READ_EVERY_MS);
+                    return;
                 }
+                // Settled (or out of time). The answer is taken first (invalidateState waits while
+                // the command is pending); ending the future then shows it in place of the placeholder.
+                apply(after);
                 done.set(null);
             });
         });
-        return done;
     }
 
     private void noteCommand(String what, JSONObject reply) {

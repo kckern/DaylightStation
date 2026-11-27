@@ -40,7 +40,7 @@ final class PayloadMedia {
         return resolve(mediaIds, startIndex, explicitPosition, false, waitMs);
     }
 
-    private String resolve(List<String> mediaIds, int startIndex, boolean explicitPosition, boolean shuffle, long waitMs) throws Exception {
+    String resolve(List<String> mediaIds, int startIndex, boolean explicitPosition, boolean shuffle, long waitMs) throws Exception {
         JSONObject request = new JSONObject().put("op", "resolve").put("ids", new JSONArray(mediaIds));
         if (startIndex >= 0) request.put("startIndex", startIndex);
         if (explicitPosition) request.put("explicitPosition", true);

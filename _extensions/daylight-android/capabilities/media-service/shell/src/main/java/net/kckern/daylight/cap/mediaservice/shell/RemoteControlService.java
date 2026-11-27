@@ -55,6 +55,8 @@ public class RemoteControlService extends MediaSessionService {
     static final String EXTRA_DEVICE = "device";
     static final String EXTRA_NAME = "name";
     static final String EXTRA_ON = "on";
+    /** With TARGET: the screen's last known answer (ScreenMemory's encoding), shown until the first read. */
+    static final String EXTRA_SNAPSHOT = "snapshot";
     /** Session extra: the line under the controls. */
     static final String EXTRA_STATUS = "status";
     /** Session extra: the screen's reach (IDLE, OFF, NOT_ON, …), so an idle screen can offer a start. */
@@ -96,7 +98,9 @@ public class RemoteControlService extends MediaSessionService {
         PayloadMedia media = new PayloadMedia();
         player = new ScreenPlayer(Looper.getMainLooper(), io, commandIo, new ScreenPlayer.Link() {
             @Override public JSONObject session(String device) throws Exception {
-                return new JSONObject(media.screenSession(device, WAIT_MS));
+                JSONObject reply = new JSONObject(media.screenSession(device, WAIT_MS));
+                ScreenMemory.remember(RemoteControlService.this, device, reply);
+                return reply;
             }
             @Override public JSONObject command(JSONObject request) throws Exception {
                 return new JSONObject(media.screenCommand(request, WAIT_MS));
@@ -129,7 +133,7 @@ public class RemoteControlService extends MediaSessionService {
 
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         String device = prefs.getString(EXTRA_DEVICE, null);
-        if (device != null) target(device, prefs.getString(EXTRA_NAME, device));
+        if (device != null) target(device, prefs.getString(EXTRA_NAME, device), null);
         Log.i(TAG, "remote service created");
     }
 
@@ -140,8 +144,17 @@ public class RemoteControlService extends MediaSessionService {
         return PendingIntent.getActivity(this, 1, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
     }
 
-    private void target(String device, String name) {
-        player.setScreen(device, name);
+    private void target(String device, String name, String snapshot) {
+        // What the screen was last seen doing (the picker's check, or this remote's last read):
+        // shown greyed until the first read, rather than "Nothing playing".
+        ScreenMemory.Record seed = ScreenMemory.decode(snapshot);
+        if (seed == null || !ScreenMemory.fresh(seed.at, System.currentTimeMillis())) seed = ScreenMemory.recall(this, device);
+        if (seed != null && !device.equals(player.device())) {
+            Log.i(TAG, "remote screen " + device + ": from its answer " + (System.currentTimeMillis() - seed.at) / 1000 + " s old");
+            player.setScreen(device, name, seed.snapshot(), seed.elapsedAt(System.currentTimeMillis(), SystemClock.elapsedRealtime()));
+        } else {
+            player.setScreen(device, name);
+        }
         // Started as well as bound: the remote outlives the Now playing screen, so a paused TV
         // keeps its notification. Allowed here: TARGET comes from this app's open screen.
         // From a cold restart in the background Android may refuse; then it lives while bound.
@@ -215,7 +228,7 @@ public class RemoteControlService extends MediaSessionService {
                 if (!device.matches("[a-z0-9][a-z0-9-]{0,63}") && !device.matches("browser:[A-Za-z0-9_-]{4,64}")) {
                     return Futures.immediateFuture(new SessionResult(SessionResult.RESULT_ERROR_BAD_VALUE));
                 }
-                target(device, args.getString(EXTRA_NAME, device));
+                target(device, args.getString(EXTRA_NAME, device), args.getString(EXTRA_SNAPSHOT, null));
             } else if (WATCH.equals(command.customAction)) {
                 if (args.getBoolean(EXTRA_ON, false)) { watchers.add(controller); markActive(); }
                 else watchers.remove(controller);

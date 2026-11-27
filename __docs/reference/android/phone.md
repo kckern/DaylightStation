@@ -463,8 +463,8 @@ natively and answers "Could not start playback"; it plays in the web view.
 | Piece | Installed (shell half) | Payload | With no payload loaded |
 |---|---|---|---|
 | `DaylightMediaService`, a Media3 `MediaLibraryService` | The ExoPlayer, the session, audio focus, "headphones unplugged", the media notification and the foreground state (type `mediaPlayback`) | What a browse level holds, which stream a media id resolves to, when progress is reported | Starts the shell service, which loads the payload. A browse of the root waits up to 4 s and then answers one tab, "Daylight is starting", with nothing under it; browsers of the root are told to ask again when a payload attaches (within two minutes). A play request fails. Nothing crashes and nothing runs on the main thread |
-| `PlayActivity` (not exported, no window) | Builds a media controller, sets one media id, plays, and stays up until playback started, failed or 8 s passed | Starts it, on a keyed `media` link | Not reached: the link activity already waited for the payload |
-| `PlayActionService` (not exported, foreground service of type `mediaPlayback`) | Started by a widget button or a tile with one action id. Enters the foreground at once with a "Starting playback" notice, asks the payload for the action's media id, plays it through a media controller, and lets go once the media service holds the foreground state | Answers `action` with the media id of a configured or pinned media action, or 404 | Starts the shell service and waits up to 8 s (not yet the shared readiness wait: its own 15 s give-up would cut it); with no payload it says "Could not start playback" |
+| `PlayActivity` (not exported, no window) | Kept for a payload older than shell 134: opens Now playing with the id (Starting, "play it") and finishes at once. Nothing waits in it and nothing sits over Now playing | A current payload opens Now playing directly on a keyed `media` link (shell 134 and later, read from the installed version code; an older shell still gets `PlayActivity`) | Not reached: the link activity already waited for the payload |
+| `PlayActionService` (not exported, foreground service of type `mediaPlayback`) | Started by a widget button or a tile with one action id. Enters the foreground at once with a notice naming what starts ("Starting Morning Mix…": the widget's playlist by its saved name, an action by its label, else "Starting playback"), asks the payload for the action's media id, plays it through a media controller, and lets go once the media service holds the foreground state. One budget for the whole start (`PlayBudget`: 24 s warm, plus the loader's own wait when the payload was not up at the tap); each step waits only what is left of it | Answers `action` with the media id of a configured or pinned media action (and its label as `title`), or 404 | Starts the shell service and waits within the same budget; with no payload it says "Could not start <name>. Tap the button again to retry." The toast is not shown while Now playing is on screen showing a start |
 
 The installed service asks the payload through the `media` `PayloadPort`, in
 process, as JSON: `browse`, `resolve`, `event`, and, from the play service,
@@ -487,8 +487,89 @@ targets are Media3 sessions behind one `MediaController`:
 | `RemoteControlService`, a Media3 `MediaSessionService` (not exported, session id `screen-remote`) | A second session beside `DaylightMediaService`, holding a `ScreenPlayer`. Its notification and lock-screen card drive the screen; it reports remote playback (0–100), so the phone's volume keys set the screen's volume while it is the active session | — |
 | `ScreenPlayer`, a `SimpleBasePlayer` | The screen's snapshot as a Media3 player: its queue by `queueItemId`, its position carried forward while it plays. Every call becomes one command (`ScreenCommands`); its future completes after the session is read again, so the controls settle on what the screen did | `screens`, `screen-session`, `screen-command` (`ScreenRemote`): `GET /api/v1/device/config`, `GET /api/v1/device/<id>/session`, and the transport, queue, shuffle, repeat and volume routes of `__docs/reference/media/media-app-technical.md` §4 |
 
-- **The screen owns its session.** The phone keeps no copy of it: it shows the
-  screen's last answer. A command the screen did not confirm (502) shows "Not
+### The play path
+
+Every handoff carries what the sender knows; loading is drawn as the thing itself; the
+first useful answer wins (budgets on the phone: picture under 100 ms, sound under 1 s
+from the phone, under 2 s from home).
+
+- **Starting through Now playing.** The Play tab's Continue cards, kept cards and
+  playlist tiles, Now playing's own idle panel, a `media/play` link and Play on… open
+  Now playing with the tapped item's Starting extras and `starting.play`; Now playing
+  sets the item on its own controller once it connects, once per intent (a rotation, a
+  recreation after the process was stopped or a reopen from Recents does not play it
+  again). No second screen sits over it, so Back works at once. Browse's Play and
+  Shuffle still start on Browse's controller and open Now playing with the same extras.
+- **One budget** (`PlayBudget`): the resolve (8 s, a 2 s pause, 8 s again) plus 6 s for
+  the first audio, 24 s; a start made while the payload was still coming up adds the
+  loader's own wait (`PayloadStart.WAIT_MS`). Now playing's Starting state, the widget
+  and tile play service and a media link all use it; a refusal or a player error ends
+  a start before it. A start on a screen has one number for the screen command's wait
+  and the Starting give-up (30 s); a late accept takes back a failure already shown.
+- **The first frame** (`FirstFrame`). Opened from the mini player, the Play tab's Now
+  playing row, a notification or a Connect row, Now playing draws the mini player's
+  entry for that target (title, artist, cover from memory, the place and whether it
+  plays, carried forward) before its controller connects, with "Connecting…". The mini
+  strip and the Play row pass the target and its name, so a raw device id is never
+  shown. When the player goes away the last frame stays, greyed, with "Reconnecting…",
+  instead of "Nothing playing".
+- **Laid out once.** The Starting frame lays out exactly as the playing frame: the
+  waveform row is there (flat, off), the album and quality lines keep their place, the
+  chapter line is reserved only for a long item (a book or a talk, said by the tapping
+  screen with `starting.long`), and the cover box is the same size, so nothing moves
+  when the track lands.
+- **Switching to a screen.** The picker reads each screen's session as it opens; that
+  answer goes with the pick into Now playing and the remote (`ScreenPlayer` starts from
+  it, greyed and with no commands, "Checking <screen>…", until its own first read).
+  Each screen's last answer is kept on the phone with its time (`ScreenMemory`, 30
+  minutes), from the picker's checks and the remote's own reads, so a screen opened
+  later starts from it too.
+- **Play on…** opens at once from the cached screens list, every screen row
+  "Checking…" and refreshed in place, all checked at the same time; the list itself is
+  refreshed behind it. A tap on a row still being checked says "Checking… plays here
+  when it answers" and picks it when the answer comes, or greys it if the screen is
+  off (`PickRow`). With no cached list, the picker opens with this phone and "Looking
+  for screens…".
+- **A first tap on a list** (`FirstTap`). A track tapped on an album or playlist page
+  asks for the track alone and for the whole list at the same time. A music track
+  (one item under 20 minutes, no saved place) plays as soon as it is answered, and the
+  list's other tracks are put before and after it when the list arrives: it stays
+  current and does not restart. A cached list (QueueCache) answers first and plays
+  whole. A book's part, a talk or anything with a place waits for the list, so its
+  place comes from home. Logcat: `first tap: the track alone in N ms`, `first tap: the
+  list in N ms -> SPLICE`.
+- **Detail** (waveform and quality, chapters, lyrics) is asked at the same time on
+  three threads, each dropped before it is sent when the track has changed; a song
+  under 20 minutes is not asked for chapters. The lyrics stay up across a track change
+  with "Loading lyrics…" and go back to the cover only when the new track has none.
+- **Ahead of the next track** the phone's service asks for its loudness level and
+  loads its cover into memory, so a new track starts at its own level and its cover
+  draws at once. A track whose level is not known yet keeps the level playing until its
+  answer comes. A swipe to skip slides in the next item's cover (from memory, or a
+  plain box), never the old one.
+- **Screen commands settle on the screen's answer** (`CommandSettle`). The command goes
+  out on the commands thread and the reads that follow on the reads thread, so a second
+  tap is not held behind them. The pressed button keeps its new state until a read
+  shows it (play/pause, shuffle, repeat, volume) or 3 s pass; a skip or a seek settles
+  on the first read.
+- **Sleep timer.** The line counts down with the clock. "At the end of this" pauses at
+  the end of the item through the player itself (`setPauseAtEndOfMediaItems`), before
+  the next one makes a sound.
+- **This phone, nothing loaded** shows a start panel like a screen's: Resume <what
+  played last>, Continue listening, your playlists, and Play on a screen; one tap starts
+  it here.
+- **Shuffle** from a library page is asked of home with the request (`daylight.shuffle`
+  on the request item); the queue that was playing is never shuffled first, and the
+  player's own shuffle goes off in the same step as the new queue.
+- **The car's now-playing card** still shows the previous item while a play resolves:
+  Media3 1.1.1 keeps the session's state until `onSetMediaItems` answers, Android Auto's
+  request carries only the media id, and ExoPlayer cannot hold an item with no stream to
+  stand in for it.
+
+### The screen remote
+
+- **The screen owns its session.** The phone shows the screen's last answer and keeps
+  only that answer (`ScreenMemory`), to start from when the screen is next chosen. A command the screen did not confirm (502) shows "Not
   confirmed by Office Screen" for 8 s; an off screen (503 or 409) "Office Screen is
   off" with its last item; a screen not heard from since the backend started (404)
   "… is not on"; no backend "Can't reach home". The newest screen note ("Paused by
@@ -505,7 +586,8 @@ targets are Media3 sessions behind one `MediaController`:
   ("Can't reach home", "Daylight is starting", "Home could not answer for …"). After
   three failures and 20 s it gives way to the empty state; it recovers on its own at the
   next good answer. A 503 that is not a screen being off is a backend failure.
-- **Commands** go one at a time, in tap order, on their own thread. Of several play/pause
+- **Commands** go one at a time, in tap order, on their own thread (the reads after them
+  on the reads thread; see **The play path**). Of several play/pause
   or volume presses still waiting only the newest is sent; any command still waiting
   after 5 s is dropped ("Too slow to send; try again"). A command sent and not answered
   in time says "… did not answer in time; it may still happen" and is never re-sent.
@@ -1010,8 +1092,8 @@ the bookmarks and actions are asked at the same time, and a load that could not 
 asked again on its own when the payload attaches, with no Try again to press); the
 capture screens recreated after Android stopped the app (voice, text, photo: "Starting
 Daylight…" while it starts, then up to 5 s for the account binding); Capture status;
-and Share to Daylight. The one-tap play service and the invisible `PlayActivity` keep
-their own budgets (8 s, 15 s): they belong to the play path, which is being reworked.
+and Share to Daylight. The play path has one budget of its own on top of it,
+`PlayBudget` (see **The play path** under `media-service`).
 
 ### When home does not answer: four lines
 
@@ -1075,8 +1157,11 @@ One screen, `BrowseActivity` (not exported), in three modes:
   64 dp height, the last answer drawn at once from the phone and updated in place row by row, fixed
   placeholders the first time; a long level ends in **More**, which appends the next
   50 in place. A collection has a header: cover, name, Play (a book: Resume), Shuffle,
-  Play on… (Now playing's picker, `TargetPicker`: this phone first, each screen's state, off ones greyed; a screen gets the screen's load, as the web's Play on) and Keep (the
-  one Keep flow). A track's ⋮: Play here, Play next, Add to queue, Play on…, Keep.
+  Play on… (Now playing's picker, `TargetPicker`, opened at once from the screens the
+  phone home last saw, each checked in parallel; a screen opens Now playing on that
+  screen with the item starting, and the load is sent from there; see **The play path**)
+  and Keep (the one Keep flow). A track's ⋮: Play here, Play next, Add to queue, Play
+  on…, Keep (with the row's own subtitle and cover).
   Playing goes through the media session (the same media ids the car uses) and opens
   Now playing. A second tap on the same Play or Shuffle within a second, or while the
   player is still connecting, is dropped (shell-kit `TapGuard`), and taps while the

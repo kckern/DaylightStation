@@ -385,7 +385,9 @@ public class PhoneHomeActivity extends Activity {
         nowNext.setVisibility(now.canNext && now.transport != null ? View.VISIBLE : View.GONE);
         nowStrip.setContentDescription((now.playing ? "" : "Paused: ") + now.title + (where.isEmpty() ? "" : ", " + where) + ". Open Now playing");
         final String target = now.target;
-        nowStrip.setOnClickListener(v -> startActivity(new Intent(open).putExtra("target", target)
+        final String targetName = now.targetName;
+        // The target and its name: Now playing draws this entry (NowPlayingNote) from its first frame.
+        nowStrip.setOnClickListener(v -> startActivity(new Intent(open).putExtra("target", target).putExtra("targetName", targetName)
                 .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP)));
         if (!now.artworkUrl.equals(nowArtUrl)) loadNowArt(now.artworkUrl);
         tickNowStrip();
@@ -615,7 +617,6 @@ public class PhoneHomeActivity extends Activity {
         if (!launcherPicker) addGrouped(items, action -> () -> confirmShortcut(action.optString("id"), action.optString("label")));
     }
 
-    private static final String PLAY = "net.kckern.daylight.cap.mediaservice.shell.PlayActivity";
 
     private static final String BROWSE = "net.kckern.daylight.cap.mediaservice.shell.BrowseActivity";
 
@@ -661,8 +662,13 @@ public class PhoneHomeActivity extends Activity {
             }
             row("Browse library", "Audiobooks, music, playlists, talks", "play", "›", () -> openBrowse("library"));
             section("Player");
-            row("Now playing", "Control this phone or a screen", "play", "›", () -> startActivity(new Intent(nowPlaying)
-                    .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP)));
+            row("Now playing", "Control this phone or a screen", "play", "›", () -> {
+                // What plays now, where: Now playing opens on it (and draws it at once) rather than the last target.
+                Intent open = new Intent(nowPlaying).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                NowPlayingNote.Entry e = NowPlayingNote.current();
+                if (e != null) open.putExtra("target", e.target).putExtra("targetName", e.targetName);
+                startActivity(open);
+            });
         }
         row("Drive playlists", "The playlists on the car's Drive tab", "play", "›", this::showMediaChoices);
         row("Driving Radio", "Set the default and day rules", "play", "›", this::showDrivingRadio);
@@ -824,7 +830,7 @@ public class PhoneHomeActivity extends Activity {
         card.setContentDescription(title + ". " + line);
         String id = "c:" + cid;
         // A part-kept collection plays too: online it streams the rest; offline, what is here.
-        if (k.optInt("total") > 0) card.setOnClickListener(v -> playHere(id, title, "", k.optString("art")));
+        if (k.optInt("total") > 0) card.setOnClickListener(v -> playHere(id, title, "", k.optString("art"), false));
         else card.setOnClickListener(v -> toast(line));
     }
 
@@ -917,22 +923,23 @@ public class PhoneHomeActivity extends Activity {
 
     /**
      * Opens Now playing on this phone and starts {@code mediaId} there (p: resumes a track, c:
-     * plays a list). Now playing shows the tapped item from its first frame (media-service's
-     * Starting extras, set by name: that class is another capability's).
+     * plays a list). Now playing shows the tapped item from its first frame and starts it on
+     * its own controller (media-service's Starting extras, set by name: that class is another
+     * capability's). Nothing sits over it: Back works at once.
+     *
+     * @param longItem a book or a talk: Now playing keeps its chapter line's place from the first frame
      */
-    private void playHere(String mediaId, String title, String subtitle, String art) {
+    private void playHere(String mediaId, String title, String subtitle, String art, boolean longItem) {
         // A quick double tap on a card starts it once, with one Now playing.
         if (!playGuard.admit(mediaId, android.os.SystemClock.elapsedRealtime())) return;
-        playGuard.done();   // PlayActivity takes it from here; only the window holds a repeat
+        playGuard.done();   // Now playing takes it from here; only the window holds a repeat
         Intent now = new Intent().setClassName(this, NOW_PLAYING).putExtra("target", "local")
-                .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        if (title != null && !title.isEmpty()) {
-            now.putExtra("starting.id", mediaId).putExtra("starting.title", title)
-                    .putExtra("starting.subtitle", subtitle == null ? "" : subtitle).putExtra("starting.art", art == null ? "" : art);
-        }
-        Intent play = new Intent().setClassName(this, PLAY).putExtra("id", mediaId);
-        try { startActivities(new Intent[] { now, play }); }
-        catch (RuntimeException absent) { toast("Could not start playback"); }
+                .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                .putExtra("starting.id", mediaId).putExtra("starting.title", title == null ? "" : title)
+                .putExtra("starting.subtitle", subtitle == null ? "" : subtitle).putExtra("starting.art", art == null ? "" : art)
+                .putExtra("starting.play", true).putExtra("starting.long", longItem);
+        try { startActivity(now); }
+        catch (RuntimeException absent) { toast("Not available in this build"); }
     }
 
     /**
@@ -1021,7 +1028,7 @@ public class PhoneHomeActivity extends Activity {
         if (!reachable) card.setAlpha(0.45f);
         card.setOnClickListener(v -> {
             if (!here && !online()) { toast("Needs a connection: this is not kept on the phone"); return; }
-            playHere(id, title, sub, item.optString("art"));
+            playHere(id, title, sub, item.optString("art"), true);
         });
         // Press and hold: Keep the book on this phone (or see it there when it is kept).
         String cidOf = item.optString("contentId");
@@ -1068,7 +1075,7 @@ public class PhoneHomeActivity extends Activity {
             tile.setContentDescription("Play " + p.title);
             net.kckern.daylight.shellkit.UiTelemetry.tag(tile, "play.playlist");
             String id = p.id;
-            tile.setOnClickListener(v -> playHere("c:" + id, p.title, "", p.art));
+            tile.setOnClickListener(v -> playHere("c:" + id, p.title, "", p.art, false));
             tile.setOnLongClickListener(v -> keepMenu(tile, "c:" + id, id, "playlist", p.title, p.art));
             LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(0, -2, 1);
             if (pair.getChildCount() < 2) tp.setMarginEnd(dp(6));
@@ -1158,7 +1165,7 @@ public class PhoneHomeActivity extends Activity {
                 // A speaker or headset has no screen to move around: no remote for it.
                 if (id.isEmpty() || "speaker".equals(sc.optString("type"))) continue;
                 row(name, "Remote control for " + name, "remote", "›", () -> startActivity(new Intent(remote)
-                        .putExtra("target", id).putExtra("pad", true)
+                        .putExtra("target", id).putExtra("targetName", name).putExtra("pad", true)
                         .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP)));
             }
         } finally {

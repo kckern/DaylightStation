@@ -1092,7 +1092,12 @@ public final class MediaServiceCapability implements Capability {
         ActionList actions = core.services().find(ActionList.class);
         String contentId = actions == null ? null : actions.mediaContentId(id);
         if (!ContentId.valid(contentId)) return failure(404, "unknown_action");
-        return new Outcome(200, Replies.ok().put("mediaId", MediaId.leaf(contentId, null)));
+        JSONObject ok = Replies.ok().put("mediaId", MediaId.leaf(contentId, null));
+        // The action's own label, so the play service's notice says what is starting.
+        JSONObject described = actions.describe(id);
+        String label = described == null ? "" : described.optString("label", "").trim();
+        if (!label.isEmpty()) ok.put("title", label.length() > 80 ? label.substring(0, 80) : label);
+        return new Outcome(200, ok);
     }
 
     /**
@@ -1261,6 +1266,23 @@ public final class MediaServiceCapability implements Capability {
         return out;
     }
 
+    /**
+     * Whether the installed shell's Now playing starts an item itself (Starting.EXTRA_PLAY,
+     * shell 134 and later). The payload is updated apart from the shell, so an older shell is
+     * still handed the play screen. Read from the installed version code.
+     */
+    static final long NOW_PLAYING_PLAYS_FROM = 134;
+
+    private static boolean shellPlaysFromNowPlaying(Context c) {
+        try {
+            android.content.pm.PackageInfo info = c.getPackageManager().getPackageInfo(c.getPackageName(), 0);
+            long code = android.os.Build.VERSION.SDK_INT >= 28 ? info.getLongVersionCode() : info.versionCode;
+            return code >= NOW_PLAYING_PLAYS_FROM;
+        } catch (Exception unknown) {
+            return false;
+        }
+    }
+
     private Launcher launcher() {
         if (launcher == null) {
             final Object context = core.shell().context();
@@ -1269,10 +1291,17 @@ public final class MediaServiceCapability implements Capability {
             launcher = new Launcher() {
                 @Override public void play(String mediaId) {
                     Context c = (Context) context;
-                    // By name: the play screen is installed code in this capability's shell half.
-                    // It is not exported, so only this app can start it. Started while the link
-                    // activity is on screen, which is what lets a service context start one.
-                    c.startActivity(new Intent().setClassName(c, PLAY_ACTIVITY).putExtra("id", mediaId)
+                    // By name: Now playing is installed code in this capability's shell half. It
+                    // shows the item starting from its first frame and starts it on its own
+                    // controller (its Starting extras, by name), so no second screen sits over it.
+                    // Not exported, so only this app can start it. Started while the link activity
+                    // is on screen, which is what lets a service context start one. A shell older
+                    // than these extras ignores them: then the play screen starts it, as before.
+                    Intent now = new Intent().setClassName(c, NOW_PLAYING_ACTIVITY).putExtra("target", "local")
+                            .putExtra("starting.id", mediaId).putExtra("starting.play", true)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                    if (shellPlaysFromNowPlaying(c)) c.startActivity(now);
+                    else c.startActivity(new Intent().setClassName(c, PLAY_ACTIVITY).putExtra("id", mediaId)
                             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
                 }
 

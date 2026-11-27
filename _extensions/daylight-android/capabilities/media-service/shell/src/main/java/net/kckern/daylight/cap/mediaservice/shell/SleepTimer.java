@@ -41,6 +41,22 @@ final class SleepTimer {
 
     void setFadeSink(java.util.function.Consumer<Float> sink) { fadeSink = sink; }
 
+    /**
+     * "At the end of this" through the player itself (ExoPlayer.setPauseAtEndOfMediaItems):
+     * it pauses at the end of the item, before the next one makes any sound. Without it the
+     * timer paused the next item once it had begun, and its first moment was heard.
+     */
+    private java.util.function.Consumer<Boolean> pauseAtEnd;
+    private boolean pausingAtEnd;
+
+    void setPauseAtEndSink(java.util.function.Consumer<Boolean> sink) { pauseAtEnd = sink; }
+
+    private void pauseAtEnd(boolean on) {
+        if (pauseAtEnd == null || pausingAtEnd == on) return;
+        pausingAtEnd = on;
+        pauseAtEnd.accept(on);
+    }
+
     private void fadeTo(float v) {
         if (fadeSink != null) fadeSink.accept(v);
         else if (session != null) session.getPlayer().setVolume(v);
@@ -54,8 +70,16 @@ final class SleepTimer {
     private final Runnable watch = this::watchStep;
 
     private final Player.Listener ends = new Player.Listener() {
+        @Override public void onPlayWhenReadyChanged(boolean playWhenReady, int reason) {
+            if (armed && until == UNTIL_END_OF_ITEM && !playWhenReady
+                    && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM) {
+                Log.i(TAG, "sleep timer: paused at the end of the item");
+                cancel();
+            }
+        }
         @Override public void onMediaItemTransition(MediaItem item, int reason) {
-            if (armed && until == UNTIL_END_OF_ITEM && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
+            // Only without the player's own pause at the end (no sink): pause the next item at its start.
+            if (pauseAtEnd == null && armed && until == UNTIL_END_OF_ITEM && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
                 // The next item has just begun: pause it at its start.
                 Player p = session.getPlayer();
                 p.pause();
@@ -85,6 +109,7 @@ final class SleepTimer {
         restoreVolume();
         if (minutes == 0) { cancel(); return; }
         armed = true;
+        pauseAtEnd(minutes == END_OF_ITEM);
         main.removeCallbacks(watch);
         if (minutes == END_OF_CHAPTER && chapterEndMs > 0) {
             until = UNTIL_END_OF_CHAPTER;
@@ -148,6 +173,7 @@ final class SleepTimer {
     }
 
     void cancel() {
+        pauseAtEnd(false);
         main.removeCallbacks(fire);
         main.removeCallbacks(watch);
         restoreVolume();
@@ -157,6 +183,7 @@ final class SleepTimer {
     }
 
     void release() {
+        pauseAtEnd(false);
         main.removeCallbacks(fire);
         main.removeCallbacks(watch);
         restoreVolume();
