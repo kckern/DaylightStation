@@ -573,6 +573,13 @@ final class KeepStore {
                 if (k.optBoolean("auto")) prefs.edit().putBoolean("autoDeclined." + k.optString("contentId"), true).apply();
                 if (removeNow(k.optString("contentId"), reason)) n++;
             }
+            // Remove all ends every kept artist and author too: nothing new is kept by follow later.
+            JSONObject r = keptReply();
+            JSONArray groups = r == null ? null : r.optJSONArray("groups");
+            for (int i = 0; groups != null && i < groups.length(); i++) {
+                try { media.groupRemove(groups.getJSONObject(i).optString("id"), WAIT_MS); }
+                catch (Exception later) { /* its units are gone; the record holds nothing */ }
+            }
             refreshSoon();
             say(done, n == 0 ? "Nothing to remove" : "Removed " + n + (n == 1 ? " item" : " items") + " from this phone");
         });
