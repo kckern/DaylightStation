@@ -211,6 +211,52 @@ final class KeepRules {
 
     static String sizeWords(long bytes) { return net.kckern.daylight.shellkit.KeptIndex.size(bytes); }
 
+    /** The inline line while a keep's size is read: "Checking size of Paradise Lost…". */
+    static String checkingWords(String title) {
+        return title == null || title.trim().isEmpty() ? "Checking size…" : "Checking size of " + title.trim() + "…";
+    }
+
+    // ── sizes home did not give ──────────────────────────────────────────────
+
+    /**
+     * The size of what a keep still has to fetch, as words: "1.2 GB", "at least 1.2 GB" when
+     * some parts gave no size, "size unknown" when none did. Never "0 B" for parts whose size
+     * could not be read (audit H13).
+     */
+    static String needWords(long knownBytes, int unknownParts) {
+        if (unknownParts <= 0) return sizeWords(knownBytes);
+        if (knownBytes <= 0) return "size unknown";
+        return "at least " + sizeWords(knownBytes);
+    }
+
+    /** "1.2 GB · 13.8 GB left · on Wi-Fi", with the unknown parts said ("size unknown · on Wi-Fi"). */
+    static String roomWords(long knownBytes, int unknownParts, long leftAfterBytes, boolean wifiOnly) {
+        if (knownBytes < 0) return roomWords(-1, leftAfterBytes, wifiOnly);
+        if (unknownParts <= 0) return roomWords(knownBytes, leftAfterBytes, wifiOnly);
+        String net = wifiOnly ? " · on Wi-Fi" : "";
+        if (knownBytes <= 0) return "size unknown" + net;
+        return needWords(knownBytes, unknownParts) + " · " + sizeWords(Math.max(0, leftAfterBytes)) + " left" + net;
+    }
+
+    // ── what a download waits for ────────────────────────────────────────────
+
+    /**
+     * What the downloads notification says when Media3 holds them back, by the requirement
+     * not met (its {@code notMetRequirements} flags), never "Waiting for Wi-Fi" for a full
+     * phone (audit: one line for any unmet need). Storage first: it is the one the person
+     * has to act on.
+     */
+    static String waitingWords(int notMet) {
+        if ((notMet & androidx.media3.exoplayer.scheduler.Requirements.DEVICE_STORAGE_NOT_LOW) != 0) {
+            return "Waiting: phone storage is low";
+        }
+        if ((notMet & androidx.media3.exoplayer.scheduler.Requirements.NETWORK_UNMETERED) != 0) return "Waiting for Wi-Fi";
+        if ((notMet & androidx.media3.exoplayer.scheduler.Requirements.NETWORK) != 0) return "Waiting for a network";
+        if ((notMet & androidx.media3.exoplayer.scheduler.Requirements.DEVICE_CHARGING) != 0) return "Waiting for the charger";
+        if ((notMet & androidx.media3.exoplayer.scheduler.Requirements.DEVICE_IDLE) != 0) return "Waiting until the phone is idle";
+        return "Waiting";
+    }
+
     /** One confirmation above a quarter of the limit or of the free space. */
     static boolean askFirst(long needBytes, long limitBytes, long freeBytes) {
         return needBytes > 0 && (needBytes > limitBytes / 4 || needBytes > freeBytes / 4);

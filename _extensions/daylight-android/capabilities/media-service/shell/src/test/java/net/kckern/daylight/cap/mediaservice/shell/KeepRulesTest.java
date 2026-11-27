@@ -120,4 +120,23 @@ public class KeepRulesTest {
         assertEquals(java.util.Arrays.asList("p:plex:7|album", "p:plex:8"), KeepRules.pendingWithout(pending, "plex:42"));
         assertEquals(pending, KeepRules.pendingWithout(pending, "plex:99"));
     }
+
+    @Test public void aSizeHomeDidNotGiveIsSaidNeverCountedAsNothing() {
+        assertEquals("size unknown", KeepRules.needWords(0, 3));
+        assertEquals("at least 1.2 GB", KeepRules.needWords(1_200_000_000L, 2));
+        assertEquals(KeepRules.sizeWords(1_200_000_000L), KeepRules.needWords(1_200_000_000L, 0));
+        assertEquals("size unknown · on Wi-Fi", KeepRules.roomWords(0, 4, 10_000_000_000L, true));
+        assertTrue(KeepRules.roomWords(500_000_000L, 1, 10_000_000_000L, false).startsWith("at least "));
+        assertEquals(KeepRules.roomWords(500_000_000L, 10_000_000_000L, true), KeepRules.roomWords(500_000_000L, 0, 10_000_000_000L, true));
+    }
+
+    @Test public void theNotificationNamesTheNeedThatIsNotMet() {
+        assertEquals("Waiting: phone storage is low",
+                KeepRules.waitingWords(androidx.media3.exoplayer.scheduler.Requirements.DEVICE_STORAGE_NOT_LOW
+                        | androidx.media3.exoplayer.scheduler.Requirements.NETWORK_UNMETERED));
+        assertEquals("Waiting for Wi-Fi", KeepRules.waitingWords(androidx.media3.exoplayer.scheduler.Requirements.NETWORK_UNMETERED));
+        assertEquals("Waiting for a network", KeepRules.waitingWords(androidx.media3.exoplayer.scheduler.Requirements.NETWORK));
+        assertEquals("Waiting for the charger", KeepRules.waitingWords(androidx.media3.exoplayer.scheduler.Requirements.DEVICE_CHARGING));
+        assertEquals("Waiting", KeepRules.waitingWords(0));
+    }
 }

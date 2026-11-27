@@ -1467,7 +1467,7 @@ come from shell-kit's `KeptIndex` (`files/kept-index.json`), written by `KeepSto
 
 | State | Words | Next |
 |---|---|---|
-| Checking | "Checking size…" | fits: Queued; does not: Needs room |
+| Checking | "Checking size…" (a row named by its title, never "Kept item") | fits: Queued; does not: Needs room |
 | Needs room | "Needs 1.2 GB more room" (+ Manage space) | room freed: Queued; or Remove |
 | Queued | "Queued" | Downloading |
 | Waiting for Wi-Fi | "Waiting for Wi-Fi" (+ Use mobile data once) | Wi-Fi: Downloading, app closed too |
@@ -1498,6 +1498,24 @@ removed.
   space, one confirmation; over the limit, "Needs 1.2 GB more room" with Manage space; with
   home out of reach, the keep waits ("Offline: it will be kept when home answers", or "Home
   isn't answering: it will be kept when it does") and is made when home answers.
+- **The keep belongs to KeepStore, not the screen** (audit H12–H14). A tap starts a
+  `KeepStore.Attempt` named by the item's title; the screen draws it inline at the bottom
+  (`KeepBar`): "Checking size of Paradise Lost… · Cancel", then the outcome for six seconds
+  ("Keeping Paradise Lost on this phone · 412 MB"). Leaving the screen removes the line,
+  never the keep; only Cancel (offered while the size is checked) stops it. A choice that
+  needs the person is asked on the screen while it is open; with the screen gone, a large
+  keep is asked in a notification with Keep (`KeepService` `ACTION_KEEP`), and "Needs 1.2 GB
+  more room", "This can't be kept: …" and waiting-for-home go to a notification
+  (`KeepStore.notifyOutcome`), never only a toast. The Checking and Waiting for home rows
+  carry the title (`title.<mediaId>`). The home's item sheets keep in place through
+  `KeepEntry.keep` (called by name: widgets does not link media-service) instead of opening
+  On this phone. The preview and the keep run on their own executor (`asks`), so a sync or
+  retry on `io` never holds "Checking size of …".
+- **Sizes are read once and never guessed.** The payload remembers what a preview resolved
+  for ten minutes (`PreviewMemo`), so the keep that follows does not resolve the list again;
+  the shell remembers each part's size for ten minutes (`sizeMemo`). A part whose size home
+  does not give counts as unknown, never 0 B: "size unknown", or "at least 1.2 GB · 13.8 GB
+  left" when some parts gave one (`KeepRules.needWords`/`roomWords`).
   A waiting keep is held on the phone by the media id it was asked with (`c:<list>`, or
   `p:<track>` for Now playing's album keep) and shown, and removed, by its content id
   (`KeepRules.pendingContentId`); Remove drops it even when home does not answer.
@@ -1709,10 +1727,16 @@ removed.
   downloads paused until it is back. The owner's phone has no card slot.
 - **Not in the backup.** The app has `allowBackup="false"` and its extraction rules exclude
   every domain: a new or restored phone starts with nothing kept.
-- **Notifications.** The grouped download notification and the Undo notification need the
-  notification permission (`POST_NOTIFICATIONS`, asked by the app's own prompt); without it
-  downloads still run, unseen.
-- **Telemetry.** `Downloads` events, no titles: `keep.tap`, `keep.replaced`, `keep.background_restricted`, `keep.asked`, `keep.received`,
+- **Notifications.** The grouped download notification, the Undo notification and a keep's
+  outcome need the notification permission (`POST_NOTIFICATIONS`). The first keep asks for
+  it, once, with the reason ("With notifications on, the phone shows how far it is and tells
+  you when it is ready or why it waits"); without it downloads still run and the rows say
+  their state. While Media3 holds downloads back the notification names the need not met
+  (`KeepRules.waitingWords`): "Waiting: phone storage is low", "Waiting for Wi-Fi", "Waiting
+  for a network", never "Waiting for Wi-Fi" for a full phone.
+- **Refresh.** The Play tab's On this phone redraws every 3 s while anything is moving,
+  being checked, queued or removed (`KeptIndex.changing`), every 30 s otherwise.
+- **Telemetry.** `Downloads` events, no titles: `keep.tap`, `keep.attempt.begin`, `keep.attempt.cancelled`, `keep.notifications_asked`, `keep.replaced`, `keep.background_restricted`, `keep.asked`, `keep.received`,
   `keep.ready{tracks, bytes, seconds}`, `keep.failed{reason}`, `keep.removed{reason, bytes}`,
   `keep.damaged`, `keep.resynced{before, after, refused}`, `keep.stalled`, `keep.restored`,
   `keep.verify{ok, damaged}`, `keep.mobile_once`, `keep.screen`; sent offline-first with the

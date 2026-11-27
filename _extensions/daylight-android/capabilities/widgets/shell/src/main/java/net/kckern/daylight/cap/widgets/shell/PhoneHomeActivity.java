@@ -615,12 +615,12 @@ public class PhoneHomeActivity extends Activity {
                 net.kckern.daylight.shellkit.KeptIndex.effectiveLimitBytes(cap, free, used), used);
         net.kckern.daylight.shellkit.KeptIndex.largestFirst(index);
         boolean busy = false;
-        for (JSONObject k : index) if (net.kckern.daylight.shellkit.KeptIndex.DOWNLOADING.equals(k.optString("state"))) busy = true;
+        for (JSONObject k : index) if (net.kckern.daylight.shellkit.KeptIndex.changing(k.optString("state"))) busy = true;
         // The first three blocks (a kept artist or author is one block, its first units under
         // it; spec §3.11); the rest on On this phone.
         java.util.List<JSONObject> first = net.kckern.daylight.shellkit.KeptGroups.firstBlocks(
                 net.kckern.daylight.shellkit.KeptGroups.rows(index), 3, 3);
-        // Moving: refreshed every 3 s; waiting: every 30 s (a network or room may come).
+        // Moving, checking, queued or removing: refreshed every 3 s; waiting: every 30 s (a network or room may come).
         if (busy) timer.postDelayed(keptTick, 3000);
         else if (!index.isEmpty()) timer.postDelayed(keptTick, 30_000);
         String shown = first + "|" + room + "|" + over + "|" + index.isEmpty();
@@ -828,6 +828,21 @@ public class PhoneHomeActivity extends Activity {
         try { startActivity(i); } catch (RuntimeException absent) { toast("Downloads are not in this build"); }
     }
 
+    /**
+     * Keep, here: media-service's keep flow by name (widgets does not link it), with its inline
+     * "Checking size of <title>… · Cancel"; On this phone opens only when the build lacks it.
+     */
+    private void keepHere(String mediaId, String title) {
+        try {
+            Class.forName("net.kckern.daylight.cap.mediaservice.shell.KeepEntry")
+                    .getMethod("keep", android.app.Activity.class, String.class, String.class)
+                    .invoke(null, this, mediaId, title == null ? "" : title);
+        } catch (ReflectiveOperationException | RuntimeException older) {
+            Intent i = new Intent().setClassName(this, DOWNLOADS).putExtra("keep", mediaId).putExtra("keepTitle", title);
+            try { startActivity(i); } catch (RuntimeException absent) { toast("Downloads are not in this build"); }
+        }
+    }
+
     /** Long-press on something playable: Keep it on this phone, or see it there when it is kept. */
     private boolean keepMenu(View anchor, String mediaId, String contentId) {
         return keepMenu(anchor, mediaId, contentId, null, null, null);
@@ -847,10 +862,8 @@ public class PhoneHomeActivity extends Activity {
             } catch (RuntimeException absent) { toast("Not available in this build"); }
         });
         sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_play, "Play on this phone", () -> playHere(mediaId, title, "", art, false));
-        if (kept == null) sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_download, "Keep on this phone", () -> {
-            net.kckern.daylight.shellkit.UiTelemetry.event("Downloads", "keep.tap", new JSONObject());
-            openDownloads(mediaId);
-        });
+        if (kept == null) sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_download, "Keep on this phone",
+                () -> keepHere(mediaId, title));
         else {
             sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_on_phone, "On this phone", net.kckern.daylight.shellkit.KeptIndex.describe(kept), () -> {
                 net.kckern.daylight.shellkit.UiTelemetry.event("Downloads", "keep.screen", new JSONObject());
@@ -1036,10 +1049,8 @@ public class PhoneHomeActivity extends Activity {
                     if (ContinueRow.grouped(item)) openPage(cid, "book", title, item.optString("art"));
                     else openBookOf(cid, title, item.optString("art"));
                 });
-        if (kept == null) sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_download, "Keep on this phone", () -> {
-            net.kckern.daylight.shellkit.UiTelemetry.event("Downloads", "keep.tap", new JSONObject());
-            openDownloads(id);
-        });
+        if (kept == null) sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_download, "Keep on this phone",
+                () -> keepHere(id, title));
         else sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_on_phone, "On this phone", net.kckern.daylight.shellkit.KeptIndex.describe(kept), () -> {
             net.kckern.daylight.shellkit.UiTelemetry.event("Downloads", "keep.screen", new JSONObject());
             openDownloads(null);

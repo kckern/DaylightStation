@@ -157,4 +157,12 @@ public class KeptIndexTest {
         org.json.JSONObject manual = new org.json.JSONObject().put("state", KeptIndex.READY).put("bytes", 230_000_000L);
         assertEquals("On this phone · 230 MB", KeptIndex.describe(manual));
     }
+
+    @Test public void aStateAboutToChangeIsRefreshedSoon() {
+        org.junit.Assert.assertTrue(KeptIndex.changing(KeptIndex.CHECKING));
+        org.junit.Assert.assertTrue(KeptIndex.changing(KeptIndex.QUEUED));
+        org.junit.Assert.assertTrue(KeptIndex.changing(KeptIndex.DOWNLOADING));
+        org.junit.Assert.assertFalse(KeptIndex.changing(KeptIndex.READY));
+        org.junit.Assert.assertFalse(KeptIndex.changing(KeptIndex.WAITING_WIFI));
+    }
 }

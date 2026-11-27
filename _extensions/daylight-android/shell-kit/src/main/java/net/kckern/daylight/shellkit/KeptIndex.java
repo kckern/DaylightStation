@@ -188,6 +188,16 @@ public final class KeptIndex {
     /** Whether a row offers Retry. */
     public static boolean retryable(JSONObject k) { return "Retry".equals(action(k)); }
 
+    /**
+     * Whether the state is about to change on its own (bytes moving, a size being checked, a
+     * queue about to start, a removal): a screen showing it refreshes every few seconds, not
+     * every 30 (audit: On this phone was slow for every state but Downloading).
+     */
+    public static boolean changing(String state) {
+        return DOWNLOADING.equals(state) || CHECKING.equals(state) || QUEUED.equals(state)
+                || UPDATING.equals(state) || REMOVING.equals(state);
+    }
+
     /** Whether the item plays from the phone with no network (every track whole). */
     public static boolean ready(JSONObject k) { return READY.equals(k.optString("state")); }
 

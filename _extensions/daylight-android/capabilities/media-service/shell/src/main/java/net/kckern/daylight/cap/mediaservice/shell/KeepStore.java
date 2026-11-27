@@ -85,6 +85,9 @@ final class KeepStore {
     static final String ACTION_UNDO = "net.kckern.daylight.keep.UNDO";
     static final String ACTION_CANCEL = "net.kckern.daylight.keep.CANCEL";
     static final String ACTION_RESUME_ALL = "net.kckern.daylight.keep.RESUME";
+    /** A notification's Keep: a keep confirmed with no screen open. */
+    static final String ACTION_KEEP = "net.kckern.daylight.keep.KEEP";
+    static final int OUTCOME_NOTIFICATION = 7_260;
     /** Stop reason for an item the person paused (Media3: any non-zero reason stops it). */
     private static final int STOP_PAUSED = 1;
     private static KeepStore instance;
@@ -113,6 +116,129 @@ final class KeepStore {
         t.setDaemon(true);
         return t;
     });
+    /**
+     * The person's own Keep (its preview and its keep) on a thread of its own: a sync or a
+     * retry running 30 s on {@code io} never holds "Checking size of …" (audit H14).
+     */
+    private final ExecutorService asks = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "Daylight-keep-ask");
+        t.setDaemon(true);
+        return t;
+    });
+
+    // ── a keep in progress, from its tap to its outcome (audit H12) ──────────
+
+    /**
+     * One Keep the person asked for. Held here, not by the screen it was asked on, so leaving
+     * that screen never cancels it; only Cancel does. Screens listen and draw its line inline.
+     */
+    static final class Attempt {
+        final String mediaId, title;
+        volatile String line;
+        volatile boolean checking = true, cancelled, done;
+
+        Attempt(String mediaId, String title) {
+            this.mediaId = mediaId;
+            this.title = title == null ? "" : title;
+            this.line = KeepRules.checkingWords(this.title);
+        }
+    }
+
+    private final Map<String, Attempt> attempts = new java.util.concurrent.ConcurrentHashMap<>();
+    private final List<Consumer<Attempt>> attemptListeners = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    /** Starts (or returns the running) keep of {@code mediaId}; its title names it on every row and line. */
+    Attempt begin(String mediaId, String title) {
+        Attempt running = attempts.get(mediaId);
+        if (running != null && !running.done && !running.cancelled) return running;
+        Attempt a = new Attempt(mediaId, title);
+        attempts.put(mediaId, a);
+        if (!a.title.isEmpty()) prefs.edit().putString("title." + mediaId, a.title).apply();
+        event("keep.attempt.begin", null);
+        changed(a);
+        return a;
+    }
+
+    Attempt attempt(String mediaId) { return attempts.get(mediaId); }
+
+    /** Cancel while its size is checked: nothing is kept, the answer is dropped when it comes. */
+    void cancel(String mediaId) {
+        Attempt a = attempts.get(mediaId);
+        if (a == null || a.done) return;
+        a.cancelled = true;
+        a.done = true;
+        a.line = "Keep cancelled";
+        prefs.edit().remove("checking." + mediaId).apply();
+        event("keep.attempt.cancelled", null);
+        refreshSoon();
+        changed(a);
+    }
+
+    /** The answer is in: the size checked, now kept or waiting (Cancel no longer applies). */
+    void checked(String mediaId) {
+        Attempt a = attempts.get(mediaId);
+        if (a == null || a.done) return;
+        a.checking = false;
+        changed(a);
+    }
+
+    /** The keep's outcome: on the inline line, and in a notification when it did not start downloading. */
+    void ended(String mediaId, String line, boolean started) {
+        Attempt a = attempts.get(mediaId);
+        String title = a != null ? a.title : prefs.getString("title." + mediaId, "");
+        if (a != null) {
+            if (a.cancelled) return;
+            a.checking = false;
+            a.done = true;
+            a.line = line;
+            changed(a);
+        }
+        if (!started) notifyOutcome(mediaId, title, line, null);
+    }
+
+    void addAttemptListener(Consumer<Attempt> l) { attemptListeners.add(l); }
+
+    void removeAttemptListener(Consumer<Attempt> l) { attemptListeners.remove(l); }
+
+    private void changed(Attempt a) {
+        main.post(() -> { for (Consumer<Attempt> l : attemptListeners) l.accept(a); });
+    }
+
+    /**
+     * A keep's outcome as a notification (the Downloads channel), so it outlives the screen:
+     * "Needs 1.2 GB more room", "Offline: it will be kept when home answers", "This can't be
+     * kept: …". {@code keepAction}: a confirmation asked with no screen to ask on, with Keep.
+     */
+    void notifyOutcome(String mediaId, String title, String line, String keepAction) {
+        try {
+            NotificationManager nm = (NotificationManager) app.getSystemService(Context.NOTIFICATION_SERVICE);
+            nm.createNotificationChannel(new NotificationChannel(CHANNEL, "Downloads", NotificationManager.IMPORTANCE_LOW));
+            int flags = android.app.PendingIntent.FLAG_IMMUTABLE | android.app.PendingIntent.FLAG_UPDATE_CURRENT;
+            int id = OUTCOME_NOTIFICATION + Math.floorMod(mediaId.hashCode(), 50);
+            android.app.PendingIntent open = android.app.PendingIntent.getActivity(app, id,
+                    new android.content.Intent(app, DownloadsActivity.class).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK), flags);
+            Notification.Builder b = new Notification.Builder(app, CHANNEL)
+                    .setSmallIcon(android.R.drawable.stat_sys_download_done)
+                    .setContentTitle(title == null || title.isEmpty() ? "Keep on this phone" : title)
+                    .setContentText(line)
+                    .setStyle(new Notification.BigTextStyle().bigText(line))
+                    .setAutoCancel(true)
+                    .setContentIntent(open);
+            if (keepAction != null) {
+                android.app.PendingIntent keep = android.app.PendingIntent.getService(app, id,
+                        new android.content.Intent(app, KeepService.class).setAction(ACTION_KEEP)
+                                .putExtra("mediaId", mediaId).putExtra("title", title), flags);
+                b.addAction(new Notification.Action.Builder(null, keepAction, keep).build());
+            }
+            nm.notify(id, b.build());
+        } catch (RuntimeException notShown) { /* notifications off: the row still says it */ }
+    }
+
+    /** Whether the keep was posted to a notification the person can see (notifications allowed). */
+    boolean notificationsAllowed() {
+        try { return ((NotificationManager) app.getSystemService(Context.NOTIFICATION_SERVICE)).areNotificationsEnabled(); }
+        catch (RuntimeException unknown) { return true; }
+    }
     /** Held while downloads are added or a removal deletes them, so a sync never puts back what a Remove took away. */
     private final Object downloadsLock = new Object();
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -321,7 +447,7 @@ final class KeepStore {
     void preview(String mediaId, Consumer<JSONObject> done) {
         prefs.edit().putLong("checking." + mediaId, System.currentTimeMillis()).apply();
         refreshSoon();
-        io.execute(() -> {
+        asks.execute(() -> {
             JSONObject out;
             try {
                 applyRules();
@@ -331,7 +457,9 @@ final class KeepStore {
                 } else {
                     JSONArray tracks = r.optJSONArray("tracks");
                     int n = tracks == null ? 0 : tracks.length();
-                    long need = networkAllowsNow() ? missingBytes(tracks) : -1;
+                    long[] sized = networkAllowsNow() ? missingSizes(tracks) : new long[] { -1, 0 };
+                    long need = sized[0];
+                    int unknown = (int) sized[1];
                     long limit = limitBytes(), kept = keptBytes(), free = freeBytes();
                     boolean wifiOnly = !onCellular;
                     if ("group".equals(r.optString("kind"))) {
@@ -344,7 +472,8 @@ final class KeepStore {
                     out = new JSONObject().put("ok", true).put("contentId", r.optString("contentId")).put("title", r.optString("title"))
                             .put("kind", r.optString("kind")).put("count", n).put("need", need)
                             .put("keep", KeepRules.keepWords(r.optString("kind"), n))
-                            .put("room", KeepRules.roomWords(need, limit - kept - Math.max(0, need), wifiOnly))
+                            .put("room", KeepRules.roomWords(need, unknown, limit - kept - Math.max(0, need), wifiOnly))
+                            .put("unknownParts", unknown)
                             .put("fits", need < 0 || kept + need <= limit)
                             .put("needMore", Math.max(0, kept + need - limit))
                             .put("ask", need > 0 && KeepRules.askFirst(need, limit, free));
@@ -356,7 +485,11 @@ final class KeepStore {
             prefs.edit().remove("checking." + mediaId).apply();
             refreshSoon();
             JSONObject answer = out;
-            main.post(() -> done.accept(answer));
+            main.post(() -> {
+                Attempt at = attempts.get(mediaId);
+                if (at != null && at.cancelled) return;   // Cancel while checking: the answer is dropped
+                done.accept(answer);
+            });
         });
     }
 
@@ -395,8 +528,10 @@ final class KeepStore {
      */
     void keep(String mediaId, Consumer<String> done) {
         event("keep.asked", null);
-        io.execute(() -> {
+        checked(mediaId);
+        asks.execute(() -> {
             String line;
+            boolean started = false;
             try {
                 applyRules();
                 JSONObject reply;
@@ -418,12 +553,15 @@ final class KeepStore {
                             .remove("autoReady." + kc).apply();
                     autoLog.clear(kc);
                     line = decide(reply);
+                    started = prefs.getBoolean("admitted." + kc, false) && !prefs.contains("needroom." + kc)
+                            && !prefs.getBoolean("undecided." + kc, false);
                 }
             } catch (Exception failed) {
                 Log.w(TAG, "keep failed: " + failed.getClass().getSimpleName());
                 line = "Could not keep this on the phone";
             }
             refreshSoon();
+            ended(mediaId, line, started);
             say(done, line);
         });
     }
@@ -441,7 +579,8 @@ final class KeepStore {
             prefs.edit().putBoolean("undecided." + cid, true).apply();
             return "Keeping " + Json.first(k.optString("title"), "it") + ": waiting for Wi-Fi";
         }
-        long need = missingBytes(tracks);
+        long[] sized = missingSizes(tracks);
+        long need = sized[0];
         long kept = keptBytes(), limit = limitBytes();
         prefs.edit().remove("undecided." + cid).putLong("size." + cid, need + downloadedBytes(tracks)).apply();
         if (kept + need > limit) {
@@ -451,7 +590,8 @@ final class KeepStore {
         }
         prefs.edit().remove("needroom." + cid).putBoolean("admitted." + cid, true).apply();
         start(k);
-        return "Keeping " + Json.first(k.optString("title"), "this") + " on this phone · " + KeptIndex.size(Math.max(1, need))
+        return "Keeping " + Json.first(k.optString("title"), "this") + " on this phone · "
+                + (sized[1] > 0 ? KeepRules.needWords(need, (int) sized[1]) : KeptIndex.size(Math.max(1, need)))
                 + (onCellular ? "" : " · on Wi-Fi") + (k.optBoolean("cut") ? " · only the first 5000 tracks" : "");
     }
 
@@ -1852,7 +1992,8 @@ final class KeepStore {
             for (int i = 0; i < away.length(); i++) {
                 String mid = away.optString(i);
                 String cid = KeepRules.pendingContentId(mid);
-                JSONObject e = new JSONObject().put("contentId", cid).put("title", "").put("trackIds", new JSONArray())
+                JSONObject e = new JSONObject().put("contentId", cid).put("title", prefs.getString("title." + mid, ""))
+                        .put("trackIds", new JSONArray())
                         .put("done", 0).put("total", 0).put("failed", 0).put("bytes", 0).put("state", KeptIndex.WAITING_HOME);
                 index.put(e);
                 report.put(reportItem(e, free, limit));
@@ -1861,7 +2002,9 @@ final class KeepStore {
             for (String key : new ArrayList<>(prefs.getAll().keySet())) {
                 if (!key.startsWith("checking.")) continue;
                 if (now - KeepRules.notAfterNow(prefs.getLong(key, 0), now) > 120_000) { prefs.edit().remove(key).apply(); continue; }
-                JSONObject e = new JSONObject().put("contentId", key.substring(9)).put("title", "").put("trackIds", new JSONArray())
+                String checkingId = key.substring(9);
+                JSONObject e = new JSONObject().put("contentId", checkingId)
+                        .put("title", prefs.getString("title." + checkingId, "")).put("trackIds", new JSONArray())
                         .put("done", 0).put("total", 0).put("failed", 0).put("bytes", 0).put("state", KeptIndex.CHECKING);
                 index.put(e);
                 report.put(reportItem(e, free, limit));
@@ -2059,21 +2202,48 @@ final class KeepStore {
         return t;
     });
 
-    private long missingBytes(JSONArray tracks) {
+    private long missingBytes(JSONArray tracks) { return missingSizes(tracks)[0]; }
+
+    /**
+     * Sizes read for a preview, by track id, for ten minutes: the keep that follows reuses
+     * them rather than asking home for every part again (audit H13).
+     */
+    private final Map<String, long[]> sizeMemo = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final long SIZE_MEMO_MS = 600_000;
+
+    /**
+     * {known bytes still to fetch, parts whose size could not be read}. A part with no size is
+     * counted as unknown, never as 0 B, so "fits" and the words do not claim what is not known.
+     */
+    private long[] missingSizes(JSONArray tracks) {
         List<java.util.concurrent.Future<Long>> sizes = new ArrayList<>();
+        List<String> ids = new ArrayList<>();
+        long need = 0;
+        int unknown = 0;
+        long now = android.os.SystemClock.elapsedRealtime();
         for (int i = 0; tracks != null && i < tracks.length(); i++) {
             JSONObject t = tracks.optJSONObject(i);
             if (t == null) continue;
-            Download d = download(keyFor(t.optString("id")));
+            String id = t.optString("id");
+            Download d = download(keyFor(id));
             if (d != null && d.state == Download.STATE_COMPLETED) continue;
+            long[] memo = sizeMemo.get(id);
+            if (memo != null && now - memo[1] < SIZE_MEMO_MS && memo[0] > 0) { need += memo[0]; continue; }
             String url = t.optString("url");
+            ids.add(id);
             sizes.add(sizer.submit(() -> size(url)));
         }
-        long need = 0;
-        for (java.util.concurrent.Future<Long> f : sizes) {
-            try { need += f.get(12, java.util.concurrent.TimeUnit.SECONDS); } catch (Exception unknown) { /* counts 0 */ }
+        for (int i = 0; i < sizes.size(); i++) {
+            long n;
+            try { n = sizes.get(i).get(12, java.util.concurrent.TimeUnit.SECONDS); } catch (Exception noAnswer) { n = -1; }
+            if (n > 0) {
+                need += n;
+                sizeMemo.put(ids.get(i), new long[] { n, now });
+            } else {
+                unknown++;
+            }
         }
-        return need;
+        return new long[] { need, unknown };
     }
 
     private long downloadedBytes(JSONArray tracks) {
@@ -2100,9 +2270,9 @@ final class KeepStore {
             c.setReadTimeout(5000);
             long n = c.getContentLengthLong();
             c.disconnect();
-            return Math.max(0, n);
+            return n > 0 ? n : -1;
         } catch (Exception unknown) {
-            return 0;
+            return -1;
         }
     }
 

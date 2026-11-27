@@ -1739,7 +1739,8 @@ public class NowPlayingActivity extends Activity {
         String list = NodeItems.listId(item);
         String id = list.contains(":") ? "c:" + list : "p:" + item.mediaId;
         note("download.keep.tap", "fromList", !list.isEmpty());
-        KeepFlow.start(this, id);
+        CharSequence named = item.mediaMetadata.albumTitle != null ? item.mediaMetadata.albumTitle : item.mediaMetadata.title;
+        KeepFlow.start(this, id, named == null ? "" : named.toString());
     }
 
 

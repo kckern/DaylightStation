@@ -78,7 +78,7 @@ public final class DownloadsActivity extends Activity {
         setContentView(page);
         UiTelemetry.event("Downloads", "keep.screen", new JSONObject());
         String keep = getIntent() == null ? null : getIntent().getStringExtra(EXTRA_KEEP);
-        if (keep != null && !keep.isEmpty() && saved == null) KeepFlow.start(this, keep);
+        if (keep != null && !keep.isEmpty() && saved == null) KeepFlow.start(this, keep, getIntent().getStringExtra("keepTitle"));
         if (saved == null) choose(getIntent());
     }
 
@@ -93,7 +93,7 @@ public final class DownloadsActivity extends Activity {
         super.onNewIntent(intent);
         setIntent(intent);
         String keep = intent == null ? null : intent.getStringExtra(EXTRA_KEEP);
-        if (keep != null && !keep.isEmpty()) KeepFlow.start(this, keep);
+        if (keep != null && !keep.isEmpty()) KeepFlow.start(this, keep, intent.getStringExtra("keepTitle"));
         choose(intent);
     }
 
@@ -293,7 +293,7 @@ public final class DownloadsActivity extends Activity {
             row.addView(words, new LinearLayout.LayoutParams(0, -2, 1));
             boolean skipped = AutoKeepLog.SKIPPED.equals(e.optString("kind"));
             row.addView(link(skipped ? "Keep" : "Keep again", skipped ? "keep.auto.keep" : "keep.auto.keep_again",
-                    () -> KeepFlow.start(this, "c:" + cid)));
+                    () -> KeepFlow.start(this, "c:" + cid, e.optString("title"))));
             row.setContentDescription(title + ". " + line);
             autoBox.addView(row);
         }

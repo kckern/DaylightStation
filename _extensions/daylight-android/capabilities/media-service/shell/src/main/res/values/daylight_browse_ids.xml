@@ -2,4 +2,5 @@
 <!-- View tags the library pages read: a row's media id (Back to the list scrolls to it). -->
 <resources>
     <item name="daylight_browse_row_id" type="id" />
+    <item name="daylight_keep_bar_attempt" type="id" />
 </resources>

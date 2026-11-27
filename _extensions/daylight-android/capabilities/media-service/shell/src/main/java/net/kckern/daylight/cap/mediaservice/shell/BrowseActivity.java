@@ -949,7 +949,7 @@ public final class BrowseActivity extends Activity {
                         k == null ? "Keep on this phone" : net.kckern.daylight.shellkit.KeptIndex.describe(k));
                 // Kept is a selected state: the accent; downloading or queued stays muted.
                 if (ready) b.setImageTintList(ColorStateList.valueOf(t.primary));
-                b.setOnClickListener(v -> { if (k == null) KeepFlow.start(this, self()); else DownloadsActivity.open(this); });
+                b.setOnClickListener(v -> { if (k == null) KeepFlow.start(this, self(), title); else DownloadsActivity.open(this); });
                 UiTelemetry.tag(b, "browse.keep");
                 return b;
             }

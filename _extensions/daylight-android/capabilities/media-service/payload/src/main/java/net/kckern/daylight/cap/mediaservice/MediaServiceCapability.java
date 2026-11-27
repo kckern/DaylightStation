@@ -671,6 +671,37 @@ public final class MediaServiceCapability implements Capability {
                 .put("count", made.optInt("count", clean.length())));
     }
 
+    /** What a preview resolved, for the keep that follows it (audit H13). */
+    static final class Resolved {
+        final String cid, title, art, kind;
+        final JSONArray tracks;
+        final boolean cut;
+
+        Resolved(String cid, String title, String art, JSONArray tracks, boolean cut, String kind) {
+            this.cid = cid; this.title = title; this.art = art; this.tracks = tracks; this.cut = cut; this.kind = kind;
+        }
+    }
+
+    /** The last previews by requested id, each good for ten minutes and taken once. */
+    static final class PreviewMemo {
+        static final long FRESH_MS = 600_000;
+        private final java.util.LinkedHashMap<String, Object[]> byId = new java.util.LinkedHashMap<>();
+
+        synchronized void put(String id, Resolved r, long now) {
+            byId.remove(id);
+            byId.put(id, new Object[] { r, now });
+            while (byId.size() > 8) byId.remove(byId.keySet().iterator().next());
+        }
+
+        synchronized Resolved take(String id, long now) {
+            Object[] e = byId.remove(id);
+            if (e == null || now - (Long) e[1] > FRESH_MS || now < (Long) e[1]) return null;
+            return (Resolved) e[0];
+        }
+    }
+
+    private final PreviewMemo previewMemo = new PreviewMemo();
+
     private Outcome keep(JSONObject request) throws Exception {
         String mode = Json.first(Json.str(request, "mode"), "keep");
         String raw = Json.str(request, "id");
@@ -717,46 +748,59 @@ public final class MediaServiceCapability implements Capability {
         List<String> scope = auto ? strings(request.optJSONArray("only"))
                 : "refresh".equals(mode) && KeptCollections.auto(existing) ? KeptCollections.only(existing) : null;
         // The whole list, not a player's 500-track window: a kept playlist is all of it.
-        List<Track> all = QueueMapper.fromQueue(api.queue(cid, false), backend, "daylight-" + core.deviceId());
-        // Home's queue puts a book's heard parts last (its watched/unwatched order, for
-        // shows). Kept, a book is in its own order: its first part first, its next part next
-        // (a place offline moves on to the part after, never to one home has not heard).
-        boolean ordered = false;
-        for (Track t : all) ordered |= t.longForm;
-        JSONObject listing = null;
-        try { listing = api.list(cid, ordered ? Math.min(all.size(), LIST_ORDER_MAX) : 1, 0); }
-        catch (Exception unnamed) { /* the first track's album and cover; home's order */ }
-        if (ordered) all = inListOrder(all, listing);
-        if (scope != null && !scope.isEmpty()) all = scoped(all, scope);
-        if (all.isEmpty()) return failure(404, "not_found");
-        boolean cut = all.size() > MAX_KEPT_TRACKS;
-        if (cut) all = new ArrayList<>(all.subList(0, MAX_KEPT_TRACKS));
-        JSONArray tracks = new JSONArray();
-        boolean longParts = false;
-        java.util.Set<String> albums = new java.util.HashSet<>();
-        for (Track t : all) {
-            JSONObject tj = t.toJson();
-            // A long part keeps its chapters with it, so they show offline (spec §5).
-            if (t.durationMs >= BOOK_PART_MS && all.size() <= 4) {
-                try {
-                    JSONObject ch = api.chapters(t.id);
-                    if (ch != null) { tj.put("chapters", ch); chaptersSeen.put(t.id, ch); }
-                } catch (Exception noChapters) { /* kept without; a later refresh may add them */ }
+        // A keep right after its preview takes the list the preview resolved (audit H13: resolved
+        // twice). Only a plain manual keep of the same id within ten minutes; auto, refresh and
+        // group units resolve afresh.
+        Resolved memo = "keep".equals(mode) && !auto && scope == null && Json.str(request, "group").isEmpty()
+                ? previewMemo.take(raw, clock.getAsLong()) : null;
+        boolean cut;
+        JSONArray tracks;
+        String title, art, kind;
+        if (memo != null && memo.cid.equals(cid)) {
+            cut = memo.cut; tracks = memo.tracks; title = memo.title; art = memo.art; kind = memo.kind;
+        } else {
+            List<Track> all = QueueMapper.fromQueue(api.queue(cid, false), backend, "daylight-" + core.deviceId());
+            // Home's queue puts a book's heard parts last (its watched/unwatched order, for
+            // shows). Kept, a book is in its own order: its first part first, its next part next
+            // (a place offline moves on to the part after, never to one home has not heard).
+            boolean ordered = false;
+            for (Track t : all) ordered |= t.longForm;
+            JSONObject listing = null;
+            try { listing = api.list(cid, ordered ? Math.min(all.size(), LIST_ORDER_MAX) : 1, 0); }
+            catch (Exception unnamed) { /* the first track's album and cover; home's order */ }
+            if (ordered) all = inListOrder(all, listing);
+            if (scope != null && !scope.isEmpty()) all = scoped(all, scope);
+            if (all.isEmpty()) return failure(404, "not_found");
+            cut = all.size() > MAX_KEPT_TRACKS;
+            if (cut) all = new ArrayList<>(all.subList(0, MAX_KEPT_TRACKS));
+            tracks = new JSONArray();
+            boolean longParts = false;
+            java.util.Set<String> albums = new java.util.HashSet<>();
+            for (Track t : all) {
+                JSONObject tj = t.toJson();
+                // A long part keeps its chapters with it, so they show offline (spec §5).
+                if (t.durationMs >= BOOK_PART_MS && all.size() <= 4) {
+                    try {
+                        JSONObject ch = api.chapters(t.id);
+                        if (ch != null) { tj.put("chapters", ch); chaptersSeen.put(t.id, ch); }
+                    } catch (Exception noChapters) { /* kept without; a later refresh may add them */ }
+                }
+                tracks.put(tj);
+                if (t.durationMs >= BOOK_PART_MS) longParts = true;
+                albums.add(t.album);
             }
-            tracks.put(tj);
-            if (t.durationMs >= BOOK_PART_MS) longParts = true;
-            albums.add(t.album);
+            title = all.get(0).album; art = all.get(0).artUrl;
+            String listType = "";
+            if (listing != null) {
+                JSONObject l = listing;
+                title = Json.first(Json.str(l, "title"), Json.str(l, "label"), title);
+                String image = BrowseTree.art(backend, Json.str(l, "image"));
+                if (image != null) art = image;
+                listType = Json.first(Json.str(l, "type"), Json.str(l, "itemType"));
+            }
+            kind = kindOf(longParts, albums.size(), listType);
+            if ("preview".equals(mode)) previewMemo.put(raw, new Resolved(cid, title, art, tracks, cut, kind), clock.getAsLong());
         }
-        String title = all.get(0).album, art = all.get(0).artUrl;
-        String listType = "";
-        if (listing != null) {
-            JSONObject l = listing;
-            title = Json.first(Json.str(l, "title"), Json.str(l, "label"), title);
-            String image = BrowseTree.art(backend, Json.str(l, "image"));
-            if (image != null) art = image;
-            listType = Json.first(Json.str(l, "type"), Json.str(l, "itemType"));
-        }
-        String kind = kindOf(longParts, albums.size(), listType);
         long now = clock.getAsLong();
         String groupId = auto ? "" : Json.str(request, "group");
         if ("keep".equals(mode) && GroupKeeps.validId(groupId)) {

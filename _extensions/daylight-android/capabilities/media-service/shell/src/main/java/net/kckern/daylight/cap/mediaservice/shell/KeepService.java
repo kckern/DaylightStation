@@ -40,6 +40,16 @@ public final class KeepService extends DownloadService {
             KeepStore.get(this).cancelUnfinished(null);
         } else if (KeepStore.ACTION_RESUME_ALL.equals(action)) {
             KeepStore.get(this).resumeAll();
+        } else if (KeepStore.ACTION_KEEP.equals(action)) {
+            // A keep confirmed from its notification (asked while no screen was open).
+            String mediaId = intent.getStringExtra("mediaId");
+            if (mediaId != null) {
+                KeepStore store = KeepStore.get(this);
+                ((android.app.NotificationManager) getSystemService(NOTIFICATION_SERVICE))
+                        .cancel(KeepStore.OUTCOME_NOTIFICATION + Math.floorMod(mediaId.hashCode(), 50));
+                store.begin(mediaId, intent.getStringExtra("title"));
+                store.keep(mediaId, null);
+            }
         }
         return super.onStartCommand(intent, flags, startId);
     }
@@ -65,7 +75,7 @@ public final class KeepService extends DownloadService {
         return new Notification.Builder(this, CHANNEL)
                 .setSmallIcon(android.R.drawable.stat_sys_download)
                 .setContentTitle(title)
-                .setContentText(notMetRequirements != 0 ? "Waiting for Wi-Fi" : "Tap to see what is kept")
+                .setContentText(notMetRequirements != 0 ? KeepRules.waitingWords(notMetRequirements) : "Tap to see what is kept")
                 .setProgress(Math.max(1, p[2]), p[1], p[2] == 0)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
