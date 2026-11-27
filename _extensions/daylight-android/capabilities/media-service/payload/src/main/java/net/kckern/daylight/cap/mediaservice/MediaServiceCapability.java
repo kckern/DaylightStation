@@ -168,7 +168,9 @@ public final class MediaServiceCapability implements Capability {
                     signalKeeper();
                 }
                 @Override public void unkeep(String contentId) {
-                    kept().remove(contentId, clock.getAsLong());
+                    // The web's Remove all on a kept artist or author (spec §3.11): the group goes.
+                    if (kept().group(contentId) != null) kept().removeGroup(contentId, clock.getAsLong());
+                    else kept().remove(contentId, clock.getAsLong());
                     signalKeeper();
                 }
             }, answered -> { if (answered) health.answered(); else health.failed(clock.getAsLong()); });

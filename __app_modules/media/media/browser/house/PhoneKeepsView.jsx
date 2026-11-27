@@ -2,7 +2,8 @@
 // What is on a phone (ops:docs/superpowers/specs/2026-11-26-phone-downloads-lifecycle.md §3.2, §3.7, §3.8):
 // per install, the items it keeps (largest first) with size and state, the room ("1.2 GB
 // kept · 4 GB limit · 15 GB free on phone"), "Kept automatically" on what the phone kept while
-// listening (§3.10, in the item's status line), Remove per item, the keeps still waiting
+// listening (§3.10, in the item's status line), kept artists and authors as a group with
+// their units under it and Remove all (§3.11), Remove per item, the keeps still waiting
 // for it (with the time asked and Cancel), its refusals, and installs gone for 30 days.
 // Reads through PhoneKeepsProvider, so it refreshes only while shown.
 import React, { useEffect } from 'react';
@@ -77,23 +78,43 @@ export function PhoneKeepsView({ deviceId }) {
             ? <Text size="sm" c="dimmed">Not seen for 30 days (last {install.lastPollAt ? new Date(install.lastPollAt).toLocaleDateString() : 'unknown'}). A new install takes over what waited for it.</Text>
             : <Text size="sm" data-testid="phone-keeps-space">{install.space}</Text>}
           {!install.gone && install.items.length === 0 && <Text size="sm" c="dimmed">Nothing kept.</Text>}
-          {!install.gone && install.items.map((it) => (
-            <Group key={it.contentId} justify="space-between" wrap="nowrap" data-testid="phone-keeps-item" data-state={it.state} data-auto={it.auto || undefined}>
-              <Stack gap={0}>
-                <Text size="sm" fw={500}>{it.title ?? it.contentId}</Text>
-                <Text size="xs" c={KEEP_PROBLEM_STATES.has(it.state) ? 'red' : 'dimmed'}>
-                  {[it.status.line, it.state !== 'ready' && it.bytes ? formatBytes(it.bytes) : null, it.finished ? 'Finished' : null].filter(Boolean).join(' · ')}
-                </Text>
+          {!install.gone && install.groups.map((g) => (
+            <Stack key={g.id} gap={4} data-testid="phone-keeps-group" data-group={g.id}>
+              <Group justify="space-between" wrap="nowrap">
+                <Stack gap={0}>
+                  <Text size="sm" fw={600}>{g.title}</Text>
+                  <Text size="xs" c="dimmed" data-testid="phone-keeps-group-line">{g.line}</Text>
+                </Stack>
+                <Button size="compact-sm" variant="subtle" color="red" data-testid="phone-keeps-group-remove"
+                  onClick={() => run(`unkeepOn:${deviceId}@${install.installId}`, { id: g.id, title: g.title })}>Remove all</Button>
+              </Group>
+              <Stack gap={4} pl="md">
+                {g.units.map((it) => <KeptRow key={it.contentId} it={it} deviceId={deviceId} install={install} run={run} />)}
               </Stack>
-              {it.state !== 'removing' && (
-                <Button size="compact-sm" variant="subtle" color="red" data-testid="phone-keeps-remove"
-                  onClick={() => run(`unkeepOn:${deviceId}@${install.installId}`, { id: it.contentId, title: it.title })}>Remove</Button>
-              )}
-            </Group>
+            </Stack>
           ))}
+          {!install.gone && install.loose.map((it) => <KeptRow key={it.contentId} it={it} deviceId={deviceId} install={install} run={run} />)}
         </Stack>
       ))}
     </Stack>
+  );
+}
+
+/** One kept item (a unit of a group, or one on its own) with its state and Remove. */
+function KeptRow({ it, deviceId, install, run }) {
+  return (
+    <Group justify="space-between" wrap="nowrap" data-testid="phone-keeps-item" data-state={it.state} data-auto={it.auto || undefined}>
+      <Stack gap={0}>
+        <Text size="sm" fw={500}>{it.title ?? it.contentId}</Text>
+        <Text size="xs" c={KEEP_PROBLEM_STATES.has(it.state) ? 'red' : 'dimmed'}>
+          {[it.status.line, it.state !== 'ready' && it.bytes ? formatBytes(it.bytes) : null, it.finished ? 'Finished' : null].filter(Boolean).join(' · ')}
+        </Text>
+      </Stack>
+      {it.state !== 'removing' && (
+        <Button size="compact-sm" variant="subtle" color="red" data-testid="phone-keeps-remove"
+          onClick={() => run(`unkeepOn:${deviceId}@${install.installId}`, { id: it.contentId, title: it.title })}>Remove</Button>
+      )}
+    </Group>
   );
 }
 
