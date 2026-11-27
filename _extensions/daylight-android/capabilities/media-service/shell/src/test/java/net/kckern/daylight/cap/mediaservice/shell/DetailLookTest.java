@@ -69,4 +69,28 @@ public class DetailLookTest {
         assertEquals("", DetailLook.rest(s, s.length()));
         assertEquals("", DetailLook.rest(null, 3));
     }
+
+    @Test public void everyHeaderSlotHasItsHeightBeforeTheAnswer() {
+        DetailLook.Slots s = DetailLook.slots("book", /*hasCachedAbout*/ false);
+        assertTrue(s.bylineLines >= 1);
+        assertTrue(s.progressLines >= 1);   // books
+        assertEquals(1, s.countLines);
+        assertTrue(s.rowsReserved >= 8);    // placeholder rows until the first page
+        assertEquals("a placeholder is the real compact row's height", DetailLook.COMPACT_ROW_DP, s.rowDp);
+        assertEquals(1, s.keepLines);
+    }
+
+    @Test public void anAlbumHasNoProgressLineAndACachedPageNoPlaceholders() {
+        DetailLook.Slots s = DetailLook.slots("album", true);
+        assertEquals(1, s.bylineLines);
+        assertEquals(0, s.progressLines);
+        assertEquals(0, s.rowsReserved);
+    }
+
+    @Test public void aPersonsPageKeepsItsCountRowAndCoverRows() {
+        DetailLook.Slots s = DetailLook.slots("author", false);
+        assertEquals(0, s.bylineLines);
+        assertEquals(1, s.countLines);
+        assertEquals(DetailLook.COVER_ROW_DP, s.rowDp);
+    }
 }

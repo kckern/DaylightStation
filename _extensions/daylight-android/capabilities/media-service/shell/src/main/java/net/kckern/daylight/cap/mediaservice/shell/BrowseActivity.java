@@ -341,30 +341,43 @@ public final class BrowseActivity extends Activity {
         headerBox = new LinearLayout(this);
         headerBox.setOrientation(LinearLayout.VERTICAL);
         column.addView(headerBox);
-        if (detail() && MediaKind.listsRows(kind) && !MediaKind.aboutPerson(kind)) {
-            // The summary line over the list, flush right, and a hairline under it (as Plexamp).
-            countLine = t.text(this, "\u00A0", Type.LABEL, t.inkMuted, false);
-            countLine.setGravity(Gravity.END);
-            countLine.setPadding(0, dp(4), 0, dp(6));
-            column.addView(countLine, new LinearLayout.LayoutParams(-1, -2));
-            countRule = new View(this);
-            countRule.setBackgroundColor(t.outline);
-            column.addView(countRule, new LinearLayout.LayoutParams(-1, Math.max(1, dp(1) / 2)));
-        }
-        fillHeader();
         status = t.text(this, "", Type.LABEL, t.inkMuted, false);
         if (detail()) {
-            // A detail page's status takes no room while it has nothing to say: the list starts under the header.
-            status.setVisibility(View.GONE);
+            // One row over the list, reserved from the first frame (DetailLook.slots): the loading
+            // or failure words on the left, one line, and the count flush right with a hairline
+            // under it (as Plexamp). The words never take a line of their own, so the list does
+            // not move when they go (2026-11-27: Inferno's rows jumped up as "Loading…" left).
+            LinearLayout statusRow = new LinearLayout(this);
+            statusRow.setGravity(Gravity.CENTER_VERTICAL);
+            statusRow.setPadding(0, dp(4), 0, dp(6));
+            status.setMaxLines(1);
+            status.setEllipsize(TextUtils.TruncateAt.END);
+            status.setVisibility(View.INVISIBLE);
             status.addTextChangedListener(new TextWatcher() {
                 @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) { }
                 @Override public void onTextChanged(CharSequence s, int a, int b, int c) { }
-                @Override public void afterTextChanged(Editable e) { status.setVisibility(e.length() == 0 ? View.GONE : View.VISIBLE); }
+                @Override public void afterTextChanged(Editable e) { status.setVisibility(e.length() == 0 ? View.INVISIBLE : View.VISIBLE); }
             });
+            statusRow.addView(status, new LinearLayout.LayoutParams(0, -2, 1));
+            countLine = t.text(this, "\u00A0", Type.LABEL, t.inkMuted, false);
+            countLine.setGravity(Gravity.END);
+            countLine.setMaxLines(1);
+            countLine.setPadding(dp(8), 0, 0, 0);
+            statusRow.addView(countLine, new LinearLayout.LayoutParams(-2, -2));
+            column.addView(statusRow, new LinearLayout.LayoutParams(-1, -2));
+            if (MediaKind.listsRows(kind) && !MediaKind.aboutPerson(kind)) {
+                countRule = new View(this);
+                countRule.setBackgroundColor(t.outline);
+                column.addView(countRule, new LinearLayout.LayoutParams(-1, Math.max(1, dp(1) / 2)));
+            } else {
+                countLine = null;
+            }
+            fillHeader();
         } else {
+            fillHeader();
             status.setMinHeight(dp(20));
+            column.addView(status);
         }
-        column.addView(status);
         // The A–Z strip of a long level: its height is reserved only once a level is long.
         azStrip = new LinearLayout(this);
         android.widget.HorizontalScrollView azScroll = new android.widget.HorizontalScrollView(this);
@@ -571,12 +584,17 @@ public final class BrowseActivity extends Activity {
     private void showCached() {
         String cached = prefs().getString(cacheKey(), "");
         if (cached.isEmpty()) {
-            // Fixed-height placeholders, so the answer replaces them without the page moving.
-            for (int i = 0; i < 6; i++) {
+            // Fixed-height placeholders, each the real row's height (a part page's compact row
+            // or a cover row: DetailLook.slots), so the answer replaces them without the page moving.
+            boolean compact = detail() && isPartPage(kind);
+            int rowDp = compact ? DetailLook.COMPACT_ROW_DP : ROW_DP;
+            int count = detail() ? DetailLook.slots(kind, false).rowsReserved : 6;
+            for (int i = 0; i < count; i++) {
                 View ph = new View(this);
                 ph.setBackground(t.round(t.surface, Radius.SMALL));
-                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(ROW_DP - 8));
-                lp.topMargin = dp(8);
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(rowDp - 8));
+                lp.topMargin = dp(4);
+                lp.bottomMargin = dp(4);
                 results.addView(ph, lp);
             }
             // Words with the placeholders (audit: up to 12 s of wordless boxes), and a second
@@ -971,19 +989,26 @@ public final class BrowseActivity extends Activity {
         if (rest != null) headerBox.addView(rest);
         if (person) headerBox.addView(personActions(set, cont, loading));
         if (neighbours.pages()) headerBox.addView(neighbourLine());
+        else if (neighboursPending) {
+            // Now playing's album line asked for the artist's albums: their line's place is kept.
+            View held = new View(this);
+            headerBox.addView(held, new LinearLayout.LayoutParams(-1, dp(36 + 8)));
+        }
         if (progressLine != null && !rows.isEmpty()) loadProgress();
     }
 
     /** Right of a collection's cover: its by-line, a book's progress, the primary, then the icons and ⋮. */
     private void collectionSide(LinearLayout side, MediaKind.ActionSet set, JSONObject cont) {
         String by = byLine();
-        // An album's or a book's by-line keeps its line while home's about is on its way: the list never moves for it.
-        boolean waits = ("album".equals(MediaKind.normal(kind)) || "book".equals(kind)) && about == null && !aboutAnswered;
-        if (!by.isEmpty() || waits) {
+        // An album's or a book's by-line always keeps its one line, at the height it has as a
+        // link (DetailLook.slots): home's about landing, or not, never moves the list.
+        DetailLook.Slots slots = DetailLook.slots(kind, true);
+        if (!by.isEmpty() || slots.bylineLines > 0) {
             TextView facts = t.text(this, by.isEmpty() ? "\u00A0" : by, Type.BODY, t.inkMuted, false);
             facts.setTag("facts");
-            facts.setMaxLines(2);
+            facts.setMaxLines(slots.bylineLines > 0 ? slots.bylineLines : 2);
             facts.setEllipsize(TextUtils.TruncateAt.END);
+            if (slots.bylineLines > 0) { facts.setMinHeight(dp(32)); facts.setGravity(Gravity.CENTER_VERTICAL); }
             linkArtist(facts);
             side.addView(facts);
         }
@@ -994,7 +1019,13 @@ public final class BrowseActivity extends Activity {
             side.addView(progressLine);
         }
         String autoLine = KeepLabels.collectionLine(this, contentIdOf(parent));
-        if (!autoLine.isEmpty()) side.addView(t.text(this, autoLine, Type.LABEL, t.inkMuted, false));
+        // The keep line keeps its place even when empty: a keep landing redraws it in place.
+        if (!autoLine.isEmpty() || slots.keepLines > 0) {
+            TextView keepLine = t.text(this, autoLine.isEmpty() ? "\u00A0" : autoLine, Type.LABEL, t.inkMuted, false);
+            keepLine.setMaxLines(1);
+            keepLine.setEllipsize(TextUtils.TruncateAt.END);
+            side.addView(keepLine);
+        }
         if (set.primary != null) {
             LinearLayout holder = new LinearLayout(this);
             holder.setGravity(Gravity.CENTER_HORIZONTAL);
@@ -1475,8 +1506,13 @@ public final class BrowseActivity extends Activity {
     // ── neighbours ──────────────────────────────────────────────────────────
 
     /** Now playing's album line: the artist's albums are the paging set. */
+    /** The artist's albums are being asked (loadNeighboursFrom): the neighbours line's place is held. */
+    private boolean neighboursPending;
+
     private void loadNeighboursFrom(String pagesIn) {
         final String at = parent;
+        neighboursPending = true;
+        fillHeader();
         prefetchIo.execute(() -> {
             JSONArray items = null;
             try { items = new JSONObject(media.browse(pagesIn, 0, 50, WAIT_MS)).optJSONArray("items"); } catch (Exception none) { }

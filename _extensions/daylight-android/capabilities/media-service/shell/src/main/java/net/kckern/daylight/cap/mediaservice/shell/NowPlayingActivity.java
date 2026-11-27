@@ -1224,9 +1224,9 @@ public class NowPlayingActivity extends Activity {
         setNameLine(l.title);
         show(albumLine, l.album);
         show(artistLine, l.by);
-        // A book whose part and book share a name has no book line: no blank gap for it (the
-        // lines are fixed for the item, so nothing moves later).
-        if (book && l.album.isEmpty()) albumLine.setVisibility(View.GONE);
+        // A book whose part and book share a name shows no book line, but keeps its place: the
+        // Starting frame reserved it, and collapsing it when the item landed moved the cover
+        // and every line under it (2026-11-27, Inferno).
     }
 
     /** The title, set only when it changed (a reset restarts the marquee). */

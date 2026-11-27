@@ -1458,6 +1458,21 @@ the artist's page ("Open artist Rush" for TalkBack). A book's author line does t
 for the author's page ("Open author …"); the line keeps its place while `about` is on its
 way. An album or book page shows no review.
 
+**Nothing below moves when an answer lands** (`DetailLook.slots`). Every detail page lays
+out its final frame before any answer: an album's or book's by-line is one line at its
+link height (blank until `about` answers, and kept if it never does), a book's progress
+line, the keep line ("Kept automatically · 142 MB", blank when not kept), the neighbours
+line while Now playing's album link is still asking for the artist's albums, and one row
+over the list that carries the loading or failure words on the left, one line and
+ellipsized, and the count on the right ("1 part · 4 h 11 min"). The words never take a
+line of their own over the rows (2026-11-27: opening Inferno, "Loading Inferno -
+Benedict Flynn translation…" went away and the rows jumped up). With no remembered answer
+the list shows 8 placeholders, each the real row's height (48 dp for a part or track
+row, 64 dp for a cover row), replaced in place. In Now playing a book's line keeps its
+place when the part and the book share a name, as the Starting frame reserved it.
+Checked on the emulator: a book, an author and an album page at 0.2 s, 1 s and 3 s
+after the tap put the first row at the same y.
+
 **Row second lines never repeat the page** (`RowLine`): under an author the book's year
 and, once started, what is left ("1998 · 2 h 10 min left": see **Time left**), or its length with no year;
 under a music artist year and track count ("2007 · 13 tracks"); on an album the track's
