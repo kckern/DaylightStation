@@ -768,8 +768,11 @@ public final class BrowseActivity extends Activity {
     private void trackMenu(View anchor, String id, String name, String sub, String cover) {
         PopupMenu menu = new PopupMenu(this, anchor);
         menu.getMenu().add(0, 1, 0, "Play here");
-        menu.getMenu().add(0, 2, 0, "Play next");
-        menu.getMenu().add(0, 3, 0, "Add to queue");
+        // A book is not added to a queue (queue spec §2): it plays to its end on its own.
+        if (!kind.startsWith("book")) {
+            menu.getMenu().add(0, 2, 0, "Play next");
+            menu.getMenu().add(0, 3, 0, "Add to queue");
+        }
         menu.getMenu().add(0, 4, 0, "Play on…");
         menu.getMenu().add(0, 5, 0, "Keep on this phone");
         menu.setOnMenuItemClickListener(item -> {
@@ -828,8 +831,10 @@ public final class BrowseActivity extends Activity {
                 .putExtra(NowPlayingActivity.EXTRA_TARGET, NowPlayingActivity.LOCAL)
                 .putExtra(Starting.EXTRA_LONG, kind.startsWith("book"))
                 .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP), mediaId, name, by, cover));
+        String source = QueueVerbs.label(mediaId, name, title, MODE_SEARCH.equals(mode) && field != null ? field.getText().toString() : "");
+        QueueVerbs.notePlay(source);
         withController(c -> {
-            c.setMediaItem(NowPlayingActivity.playRequest(mediaId, shuffle));
+            c.setMediaItem(QueueTag.request(NowPlayingActivity.playRequest(mediaId, shuffle), source));
             c.prepare();
             c.play();
         });
@@ -837,6 +842,8 @@ public final class BrowseActivity extends Activity {
 
     private void enqueue(String mediaId, boolean next, String name) {
         action(next ? "play_next" : "add_to_queue");
+        // The queue's own verbs: Play next to the end of the next block, Add to queue before the source (QueueVerbs).
+        if (QueueVerbs.enqueue(this, mediaId, next, name)) return;
         withController(c -> {
             MediaItem item = new MediaItem.Builder().setMediaId(mediaId).build();
             if (c.getMediaItemCount() == 0) { c.setMediaItem(item); c.prepare(); }

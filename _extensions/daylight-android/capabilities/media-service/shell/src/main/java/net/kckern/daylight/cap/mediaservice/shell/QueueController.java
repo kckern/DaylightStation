@@ -225,6 +225,36 @@ final class QueueController implements QueueModel.Sink<MediaItem> {
         return ok;
     }
 
+    /** A queued or source row's Play next: it moves to the end of the next block. */
+    boolean playNextFrom(int index) {
+        if (index <= model.nowIndex() || index >= model.size()) return false;
+        QueueModel.Entry<MediaItem> e = model.at(index);
+        int to = model.start(Region.QUEUED) + model.nextBlock();
+        if (index < to) to--;
+        if (!model.move(index, to, Region.QUEUED)) return false;
+        e.next = true;
+        event("queue.move", "from", index, "to", to);
+        changed();
+        return true;
+    }
+
+    boolean isPlaying() { return player.isPlaying() || player.getPlayWhenReady(); }
+    void pause() { player.pause(); }
+    boolean ended() { return player.getPlaybackState() == Player.STATE_ENDED; }
+    long position() { return player.getCurrentPosition(); }
+
+    /** The end card's "Play again": the source from its start, your queued kept. */
+    void playAgainFromStart() {
+        List<MediaItem> all = new ArrayList<>(model.sourceAll());
+        if (all.isEmpty()) return;
+        MediaItem first = all.get(0);
+        if (first.localConfiguration != null && first.localConfiguration.tag == null)
+            all.set(0, first.buildUpon().setTag(new QueueTag(model.label(), model.sourceId(), false)).build());
+        newSource(all, 0, C.TIME_UNSET);
+        player.prepare();
+        player.play();
+    }
+
     void setShuffle(boolean on) {
         if (model.setShuffle(on)) { event("queue.shuffle", "on", on); modes.run(); changed(); }
     }

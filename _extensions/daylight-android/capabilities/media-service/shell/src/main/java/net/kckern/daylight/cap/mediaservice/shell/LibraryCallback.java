@@ -321,7 +321,8 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
     /** Hands the queue over; when the order was chosen, the player's shuffle goes off in the same step. */
     private void answer(MediaSession session, SettableFuture<MediaSession.MediaItemsWithStartPosition> future,
                         MediaSession.MediaItemsWithStartPosition items, boolean ownOrder) {
-        if (!ownOrder) { future.set(items); return; }
+        // With the queue, a new source sets its own shuffle (QueueTag); the old one is left as it was for Undo.
+        if (!ownOrder || QueueController.live() != null) { future.set(items); return; }
         main.post(() -> {
             try { session.getPlayer().setShuffleModeEnabled(false); } catch (RuntimeException released) { /* gone */ }
             future.set(items);
