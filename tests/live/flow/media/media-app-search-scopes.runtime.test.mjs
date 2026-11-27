@@ -136,8 +136,10 @@ async function visibleResultKinds(page, isPhone) {
   }), isPhone);
 }
 
+// Kinds are named by library since 2026-11-27 (a movie reads "Film"), and an
+// episode row may lead with its number ("E3 · 12 min").
 function hasVideoKindSubtitle(subtitle) {
-  return subtitle.split(/\s+[·•]\s+/u).some((token) => /^(movie|tv show|series|season|episode|video)$/i.test(token.trim()));
+  return subtitle.split(/\s+[·•]\s+/u).some((token) => /^(film|movie|tv show|series|season|episode|video|clip|E\d+)$/i.test(token.trim()));
 }
 
 async function closeSearch(page, input, isPhone) {
@@ -243,8 +245,8 @@ for (const [surface, viewport, isPhone] of surfaces) {
     expect(videoResultIds.length, 'the configured Video query should render its actual results').toBeGreaterThan(0);
     const videoKinds = await visibleResultKinds(page, isPhone);
     expect(videoKinds.length, 'each result exposes its dedicated kind subtitle').toBe(videoResultIds.length);
-    expect(videoKinds.every(hasVideoKindSubtitle),
-      'the dedicated result-kind subtitles returned by Video scope should identify video kinds').toBe(true);
+    expect(videoKinds.filter((kind) => !hasVideoKindSubtitle(kind)),
+      'the dedicated result-kind subtitles returned by Video scope should identify video kinds').toEqual([]);
 
     await closeSearch(page, input, isPhone);
     if (isPhone) {
