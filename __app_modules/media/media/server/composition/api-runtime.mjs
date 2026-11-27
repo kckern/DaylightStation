@@ -140,7 +140,28 @@ export async function createMediaApiRuntime({ configService, mediaProgressMemory
       lrclibEnabled: () => (configService.getHouseholdAppConfig(undefined, 'media') || {})?.lyrics?.lrclib !== false,
       logger: trackLogger,
     });
-    v1Routers.track = createTrackRouter({ trackExtras, logger: trackLogger });
+    // Audiobook chapters: the file's own (Plex), else the same book in Audiobookshelf,
+    // matched by folder + one file + length; cached under <data>/system/cache/chapters.
+    let trackChapters = null;
+    {
+      const { TrackChaptersService } = await import("../application/TrackChaptersService.mjs");
+      let books = null;
+      const absHost = configService.resolveServiceUrl?.('audiobookshelf');
+      const absAuth = configService.getHouseholdAuth?.('audiobookshelf');
+      if (absHost && absAuth?.token) {
+        const { default: axios } = await import('axios');
+        const { AudiobookshelfClient } = await import("../../../../../__capabilities/content-catalog/server/adapters/providers/readable/audiobookshelf/AudiobookshelfClient.mjs");
+        const { AudiobookshelfBooks } = await import("../adapters/chapters/AudiobookshelfBooks.mjs");
+        books = new AudiobookshelfBooks({ client: new AudiobookshelfClient({ host: absHost, token: absAuth.token }, { httpClient: axios.create({ timeout: 8000 }) }) });
+      }
+      trackChapters = new TrackChaptersService({
+        registry: contentRegistry,
+        books,
+        cache: new FileLyricsCache({ dir: path.join(configService.getDataDir(), 'system', 'cache', 'chapters') }),
+        logger: trackLogger,
+      });
+    }
+    v1Routers.track = createTrackRouter({ trackExtras, trackChapters, logger: trackLogger });
   }
 
   return { householdMediaMemory, mediaHouse };

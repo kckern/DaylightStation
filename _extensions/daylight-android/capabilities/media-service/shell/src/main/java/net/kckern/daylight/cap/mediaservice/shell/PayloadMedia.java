@@ -156,6 +156,11 @@ final class PayloadMedia {
         return port.call(new JSONObject().put("op", "track-lyrics").put("id", contentId).toString(), waitMs);
     }
 
+    /** One track's chapters: {ok, chapters:{chapters:[{startMs,endMs,title}], durationMs, provider}} or {ok, none:true}. */
+    String trackChapters(String contentId, long waitMs) throws Exception {
+        return port.call(new JSONObject().put("op", "track-chapters").put("id", contentId).toString(), waitMs);
+    }
+
     /** Waits for a payload to attach. True as soon as one has. */
     boolean awaitReady(long waitMs) {
         return port.awaitReady(waitMs);

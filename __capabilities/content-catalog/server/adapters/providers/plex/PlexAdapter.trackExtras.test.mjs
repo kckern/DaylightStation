@@ -88,3 +88,29 @@ describe('PlexAdapter.getTrackLyrics', () => {
     expect((await plex.getTrackLyrics('352346')).lyrics).toBeNull();
   });
 });
+
+describe('PlexAdapter.getTrackChapters', () => {
+  const BOOK = { ...TRACK, ratingKey: '731397', title: 'Consolations', parentTitle: 'Consolations', grandparentTitle: 'David Whyte',
+    Media: [{ Part: [{ id: 9, duration: 13039125, file: '/data/media/audio/audiobooks/David Whyte/2014 Consolations/c.mp3' }] }] };
+
+  it('answers the file, length and titles, and no chapters when Plex has none', async () => {
+    const { plex, httpClient } = setup({ '/library/metadata/731397': meta(BOOK) });
+    const out = await plex.getTrackChapters('731397');
+    expect(out).toEqual({ track: { title: 'Consolations', album: 'Consolations', artist: 'David Whyte', durationMs: 13039125,
+      file: '/data/media/audio/audiobooks/David Whyte/2014 Consolations/c.mp3' }, chapters: null });
+    expect(httpClient.get.mock.calls[0][0]).toContain('includeChapters=1');
+  });
+
+  it('reads Plex chapter markers in ms', async () => {
+    const { plex } = setup({ '/library/metadata/731397': meta({ ...BOOK, Chapter: [
+      { tag: 'One', startTimeOffset: 0, endTimeOffset: 5000 }, { tag: 'Two', startTimeOffset: 5000, endTimeOffset: 9000 }] }) });
+    expect((await plex.getTrackChapters('731397')).chapters).toEqual([
+      { startMs: 0, endMs: 5000, title: 'One' }, { startMs: 5000, endMs: 9000, title: 'Two' }]);
+  });
+
+  it('null for an unknown or malformed key', async () => {
+    const { plex } = setup({});
+    expect(await plex.getTrackChapters('1')).toBeNull();
+    expect(await plex.getTrackChapters('../x')).toBeNull();
+  });
+});

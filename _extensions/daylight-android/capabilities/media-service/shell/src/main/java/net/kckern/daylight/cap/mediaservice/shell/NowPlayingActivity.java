@@ -158,6 +158,11 @@ public class NowPlayingActivity extends Activity {
     private ImageView backdrop;
     private View backdropFade;
     private TextView targetLabel, title, artistLine, albumLine, qualityLine, status, elapsed, remaining, queueHeading;
+    /** "Chapter 4 of 12 · 9 min left in chapter" for a chaptered book; reserved (blank) for other long items. */
+    private TextView chapterLine;
+    /** The current item's chapters (none for music, or a book without any). */
+    private Chapters chapters = Chapters.NONE;
+    private int listedChapter = -1;
     private ImageView targetIcon, targetCaret, art, lyricsCover;
     /** On the cover when the track has lyrics: says so, and opens them. */
     private TextView lyricsBadge;
@@ -491,6 +496,7 @@ public class NowPlayingActivity extends Activity {
 
     private void skipNext() {
         if (controller == null) return;
+        if (chapterSkip(true)) return;
         if (nextByCommand()) controller.sendCustomCommand(new SessionCommand(CarControls.NEXT_ACTION, Bundle.EMPTY), Bundle.EMPTY);
         else controller.seekToNext();
     }
@@ -530,7 +536,10 @@ public class NowPlayingActivity extends Activity {
         playPause.setContentDescription(playing ? "Pause" : "Play");
         enable(playPause, hasItem && can(Player.COMMAND_PLAY_PAUSE));
         enable(prev, hasItem && can(Player.COMMAND_SEEK_TO_PREVIOUS));
-        enable(next, canSkipNext());
+        // A chaptered book: Next goes to the next chapter (the last chapter falls back to the queue's rule).
+        MediaController cc = controller;
+        boolean chapterNext = !chapters.isEmpty() && !remote() && cc != null && chapters.nextStart(cc.getCurrentPosition()) >= 0;
+        enable(next, canSkipNext() || chapterNext);
 
         boolean jumps = longForm();
         leftEdgeBox.setVisibility(jumps ? View.VISIBLE : View.INVISIBLE);
@@ -552,7 +561,9 @@ public class NowPlayingActivity extends Activity {
         repeatButton.setImageResource(mode == Player.REPEAT_MODE_ONE ? R.drawable.daylight_np_repeat_one : R.drawable.daylight_np_repeat);
         toggle(repeatButton, mode != Player.REPEAT_MODE_OFF, hasItem && can(Player.COMMAND_SET_REPEAT_MODE),
                 mode == Player.REPEAT_MODE_ONE ? "Repeat one" : mode == Player.REPEAT_MODE_ALL ? "Repeat all" : "Repeat, off");
-        toggle(queueButton, stage == Stage.QUEUE, hasItem, stage == Stage.QUEUE ? "Hide the queue" : "Queue");
+        boolean chapterList = chapterList();
+        toggle(queueButton, stage == Stage.QUEUE, hasItem, stage == Stage.QUEUE ? (chapterList ? "Hide the chapters" : "Hide the queue")
+                : chapterList ? "Chapters" : "Queue");
         toggle(lyricsButton, stage == Stage.LYRICS, hasItem && !lyrics.isEmpty(),
                 lyrics.isEmpty() ? "No lyrics" : stage == Stage.LYRICS ? "Hide the lyrics" : "Lyrics");
         // Lyrics to be had read as ink, not the muted grey of a toggle that is off.
@@ -634,6 +645,7 @@ public class NowPlayingActivity extends Activity {
             remaining.setText(known ? timeDisplay.right(position, duration, c.getPlaybackParameters().speed) : "");
         }
         if (stage == Stage.LYRICS) lyricsView.setPosition(position);
+        renderChapters(position, known ? duration : 0, c == null ? 1f : c.getPlaybackParameters().speed);
         if (c != null && c.isPlaying()) main.postDelayed(ticker, stage == Stage.LYRICS ? 100 : 200);
         else if (c != null) main.postDelayed(ticker, 1000);
     }
@@ -650,6 +662,8 @@ public class NowPlayingActivity extends Activity {
         show(qualityLine, null);
         lyrics = TrackDetail.Lyrics.NONE;
         lyricsView.setLyrics(lyrics);
+        chapters = Chapters.NONE;
+        listedChapter = -1;
         if (id.isEmpty()) return;
         final String forId = id;
         detailIo.execute(() -> {
@@ -659,6 +673,21 @@ public class NowPlayingActivity extends Activity {
                 wave.setSamples(TrackDetail.samples(levels));
                 quality = TrackDetail.quality(levels);
                 show(qualityLine, quality);
+            });
+            // A long item's chapters (spec: ops:docs/superpowers/specs/2026-11-26-phone-audiobook-chapters.md).
+            JSONObject marks = remote() ? null : ask(() -> media.trackChapters(forId, 10000));
+            main.post(() -> {
+                if (!forId.equals(detailFor) || marks == null) return;
+                MediaController mc = controller;
+                long fileMs = mc == null || mc.getDuration() == C.TIME_UNSET ? 0 : mc.getDuration();
+                chapters = Chapters.parse(marks, fileMs);
+                if (chapters.isEmpty()) return;
+                JSONObject body = marks.optJSONObject("chapters");
+                note("player.chapters", "count", chapters.count(), "provider", body == null ? "" : body.optString("provider"));
+                Log.i(TAG, "now playing detail: " + chapters.count() + " chapters");
+                if (stage == Stage.QUEUE) fillQueue();
+                render();
+                tickPosition();
             });
             JSONObject words = ask(() -> media.trackLyrics(forId, 10000));
             main.post(() -> {
@@ -778,6 +807,7 @@ public class NowPlayingActivity extends Activity {
 
     private void fillQueue() {
         queueList.removeAllViews();
+        if (chapterList()) { fillChapters(); return; }
         MediaController c = controller;
         Timeline timeline = c == null ? Timeline.EMPTY : c.getCurrentTimeline();
         int count = timeline.getWindowCount();
@@ -835,11 +865,89 @@ public class NowPlayingActivity extends Activity {
     }
 
     private void scrollQueueToCurrent() {
-        int current = controller == null ? 0 : controller.getCurrentMediaItemIndex();
+        int current = chapterList() && controller != null ? chapters.indexAt(controller.getCurrentPosition())
+                : controller == null ? 0 : controller.getCurrentMediaItemIndex();
         queueScroll.post(() -> {
             View row = queueList.getChildAt(Math.max(0, current - 1));
             if (row != null) queueScroll.scrollTo(0, row.getTop());
         });
+    }
+
+    // ── chapters ─────────────────────────────────────────────────────────────
+
+    /** A single-file book with chapters: the queue's place shows its chapters instead. */
+    private boolean chapterList() {
+        MediaController c = controller;
+        return !chapters.isEmpty() && c != null && c.getMediaItemCount() == 1 && !remote();
+    }
+
+    /** Next / Previous by chapter for a chaptered book; false when there is no chapter to go to. */
+    private boolean chapterSkip(boolean forward) {
+        MediaController c = controller;
+        if (chapters.isEmpty() || c == null || remote()) return false;
+        long pos = c.getCurrentPosition();
+        long target = forward ? chapters.nextStart(pos) : chapters.previousTarget(pos);
+        if (target < 0) return false;
+        c.seekTo(target);
+        Log.i(TAG, "chapter " + (forward ? "next" : "previous") + ": " + (chapters.indexAt(pos) + 1) + " -> " + (chapters.indexAt(target) + 1));
+        note(forward ? "chapter.next" : "chapter.prev", "to", chapters.indexAt(target) + 1);
+        return true;
+    }
+
+    /** The chapter line and the seek bar's ticks; the line is reserved for any long item so nothing jumps. */
+    private void renderChapters(long position, long durationMs, float speed) {
+        if (chapterLine == null) return;
+        if (chapters.isEmpty() || remote()) {
+            chapterLine.setText("");
+            chapterLine.setVisibility(longForm() && !remote() ? View.INVISIBLE : View.GONE);
+            wave.setMarks(null, -1, 0);
+            return;
+        }
+        String line = chapters.line(position, speed);
+        if (!line.contentEquals(chapterLine.getText())) {
+            chapterLine.setText(line);
+            chapterLine.setContentDescription(line + ". Opens the chapters");
+        }
+        chapterLine.setVisibility(View.VISIBLE);
+        int at = chapters.indexAt(position);
+        wave.setMarks(chapters.marks(durationMs), at - 1, theme.inkMuted);
+        if (stage == Stage.QUEUE && chapterList() && at != listedChapter) fillQueue();
+    }
+
+    /** The chapter list: number, name, length; the current one marked; a tap goes to its start. */
+    private void fillChapters() {
+        MediaController c = controller;
+        int current = c == null ? 0 : chapters.indexAt(c.getCurrentPosition());
+        listedChapter = current;
+        clearButton.setVisibility(View.GONE);
+        queueHeading.setText("Chapters · " + chapters.count());
+        for (int i = 0; i < chapters.count(); i++) {
+            final int index = i;
+            boolean now = i == current;
+            LinearLayout row = new LinearLayout(this);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setMinimumHeight(dp(48));
+            row.setBackground(theme.pressable(null));
+            TextView num = theme.text(this, String.valueOf(i + 1), Type.LABEL, now ? theme.primary : theme.inkMuted, now);
+            num.setGravity(Gravity.END);
+            row.addView(num, new LinearLayout.LayoutParams(dp(32), -2));
+            String name = chapters.nameOf(i);
+            TextView label = theme.text(this, name.isEmpty() ? "Chapter " + (i + 1) : name, Type.BODY, now ? theme.primary : theme.ink, now);
+            label.setMaxLines(1);
+            label.setEllipsize(TextUtils.TruncateAt.END);
+            label.setPaddingRelative(dp(12), 0, dp(8), 0);
+            row.addView(label, new LinearLayout.LayoutParams(0, -2, 1));
+            row.addView(theme.text(this, chapters.lengthOf(i), Type.LABEL, theme.inkMuted, false));
+            row.setContentDescription((now ? "Playing: " : "Go to ") + (name.isEmpty() ? "chapter " + (i + 1) : name));
+            UiTelemetry.tag(row, "chapters.row");
+            row.setOnClickListener(v -> {
+                if (controller == null) return;
+                controller.seekTo(chapters.starts[index]);
+                note("chapters.row", "to", index + 1);
+                clock.reset();
+            });
+            queueList.addView(row, new LinearLayout.LayoutParams(-1, -2));
+        }
     }
 
     // ── an idle or off screen: what to start there, or a way out ─────────────
@@ -1191,15 +1299,26 @@ public class NowPlayingActivity extends Activity {
     }
 
     private void chooseSleep() {
-        String[] labels = { "Off", "15 minutes", "30 minutes", "45 minutes", "1 hour", "At the end of this" };
+        boolean chaptered = !chapters.isEmpty() && controller != null;
+        String[] labels = chaptered
+                ? new String[] { "Off", "15 minutes", "30 minutes", "45 minutes", "1 hour", "End of chapter", "At the end of this" }
+                : new String[] { "Off", "15 minutes", "30 minutes", "45 minutes", "1 hour", "At the end of this" };
         new AlertDialog.Builder(this, DaylightTheme.alert())
                 .setTitle("Sleep timer")
                 .setItems(labels, (d, which) -> {
                     if (controller == null) return;
                     Bundle args = new Bundle();
-                    args.putInt(SleepTimer.ARG_MINUTES, SLEEP_MINUTES[which]);
+                    int minutes;
+                    if (chaptered && which == 5) {
+                        minutes = SleepTimer.END_OF_CHAPTER;
+                        args.putLong(SleepTimer.ARG_AT_MS, chapters.endAt(controller.getCurrentPosition()));
+                        note("sleep.end-of-chapter", "chapter", chapters.indexAt(controller.getCurrentPosition()) + 1);
+                    } else {
+                        minutes = SLEEP_MINUTES[chaptered && which == 6 ? 5 : which];
+                    }
+                    args.putInt(SleepTimer.ARG_MINUTES, minutes);
                     controller.sendCustomCommand(new SessionCommand(SleepTimer.ACTION, Bundle.EMPTY), args);
-                    note("player.sleep", "minutes", SLEEP_MINUTES[which]);
+                    note("player.sleep", "minutes", minutes);
                     main.postDelayed(this::render, 200);
                 })
                 .show();
@@ -1594,6 +1713,12 @@ public class NowPlayingActivity extends Activity {
         player.addView(title);
         albumLine = centred();
         player.addView(albumLine);
+        chapterLine = centred();
+        chapterLine.setPadding(0, dp(4), 0, 0);
+        chapterLine.setVisibility(View.GONE);
+        chapterLine.setOnClickListener(v -> { if (!chapters.isEmpty()) { note("chapters.open", "from", "line"); setStage(Stage.QUEUE); } });
+        UiTelemetry.tag(chapterLine, "chapters.open");
+        player.addView(chapterLine);
         qualityLine = centred();
         qualityLine.setPadding(0, dp(8), 0, 0);
         player.addView(qualityLine);
@@ -1608,7 +1733,7 @@ public class NowPlayingActivity extends Activity {
         transport.setGravity(Gravity.CENTER);
         leftEdgeBox = edgeBox(true);
         rightEdgeBox = edgeBox(false);
-        prev = icon(R.drawable.daylight_np_previous, "Previous", 0, () -> { controller.seekToPrevious(); clock.reset(); });
+        prev = icon(R.drawable.daylight_np_previous, "Previous", 0, () -> { if (!chapterSkip(false)) controller.seekToPrevious(); clock.reset(); });
         playPause = icon(R.drawable.daylight_np_play, "Play", 0, () -> {
             if (active(controller)) controller.pause();
             else { if (controller.getPlaybackState() == Player.STATE_IDLE) controller.prepare(); controller.play(); }
@@ -1778,6 +1903,7 @@ public class NowPlayingActivity extends Activity {
         t.style(artistLine, Type.BODY, t.inkMuted, false);
         t.style(title, Type.HEADLINE, t.ink, true);
         t.style(albumLine, Type.BODY, t.inkMuted, false);
+        if (chapterLine != null) t.style(chapterLine, Type.LABEL, t.ink, false);
         t.style(qualityLine, Type.CAPTION, t.inkMuted, false);
         qualityLine.setLetterSpacing(0.04f);
         t.style(status, Type.LABEL, t.attention, false);

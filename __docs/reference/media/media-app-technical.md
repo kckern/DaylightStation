@@ -1083,7 +1083,7 @@ Log events (frontend, `mediaLog`): `home.shown`, `household.load-failed`,
 `play.spot-chosen`, `outcome.start-over`, `outcome.start-over-failed`, `move-here.initiated`,
 `move-here.succeeded`, `move-here.failed`, `played-earlier.shown`.
 
-### 2.11 Track extras (waveform, quality, lyrics)
+### 2.11 Track extras (waveform, quality, lyrics, chapters)
 
 What a player shows beside the transport for one track. Router
 `__app_modules/media/media/server/api/track.mjs`, service
@@ -1132,6 +1132,32 @@ Only Plex tracks have extras today (`PlexAdapter.getTrackLevels` /
 - Cache: every answer, found or not, is kept at
   `<data>/system/cache/lyrics/<source>/<id>.json` (found for 30 days, a miss for
   7). Deleting the directory only costs lookups.
+
+#### `GET /api/v1/track/chapters/:source/*`
+
+```json
+200 { "chapters": [{ "startMs": 0, "endMs": 202246, "title": "Chapter 1" }, …], "durationMs": 13039125, "provider": "audiobookshelf" }
+```
+
+Audiobook chapters for one track (one file). `TrackChaptersService`.
+
+- **Order:** the file's own chapter markers in Plex (`includeChapters=1`), then
+  the **same book in Audiobookshelf**. It is the same book only when all three
+  hold: the last two folders of the Plex file path (author / book) equal the last
+  two of the Audiobookshelf item path (case-insensitive); the Audiobookshelf book
+  is one audio file; and its length is within 2 s of the Plex track's. Candidates
+  come from an Audiobookshelf search by the Plex title in each book library.
+- A list is kept only with 2 or more chapters, starting at 0, in order, and
+  ending within 2 s of the track's length. Anything else is no chapters
+  (`media.trackChapters.none` with `reason`: `no-folder-match`, `multi-file`,
+  `duration-mismatch`, `bad-chapters`, `too-few`).
+- `204`: no chapters (none, no safe match, Audiobookshelf not configured, or the
+  lookup failed this time: `media.trackChapters.lookup-failed`, not cached).
+  `404`: unknown item.
+- Cache: `<data>/system/cache/chapters/<source>/<id>.json`, found for 30 days, a
+  miss for 1. Audiobookshelf calls time out after 8 s each.
+- Multi-file books (a Plex album of parts) answer none: their parts are the queue.
+- Spec: ops:docs/superpowers/specs/2026-11-26-phone-audiobook-chapters.md.
 
 ---
 

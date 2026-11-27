@@ -45,6 +45,11 @@ final class FakeMediaApi implements MediaApi {
         if ("none".equals(responses.get(call))) { calls.add(call); return null; }
         return answer("lyrics", call);
     }
+    @Override public JSONObject chapters(String contentId) throws Exception {
+        String call = "chapters " + contentId;
+        if ("none".equals(responses.get(call))) { calls.add(call); return null; }
+        return answer("chapters", call);
+    }
     @Override public JSONObject search(String text, int take) throws Exception { return answer("search", "search " + text + " " + take); }
     /** What play/log answers (e.g. {response:{stale:true, seconds:900}}). */
     JSONObject logAnswer = new JSONObject();

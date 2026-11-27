@@ -296,6 +296,47 @@ public final class MediaServiceCapability implements Capability {
         }
     }
 
+    /** Chapters answered this session, so a replay or a reopen of Now playing asks home once. */
+    private final java.util.Map<String, JSONObject> chaptersSeen = java.util.Collections.synchronizedMap(
+            new java.util.LinkedHashMap<String, JSONObject>(16, 0.75f, true) {
+                @Override protected boolean removeEldestEntry(java.util.Map.Entry<String, JSONObject> e) { return size() > 64; }
+            });
+
+    /**
+     * One track's chapters for Now playing: {ok, chapters:{chapters, durationMs, provider}} or
+     * {ok, none:true}. Home first; without home, the chapters kept with the track on this phone,
+     * then the ones seen this session; never an error (spec: no chapters is just no chapter UI).
+     */
+    private Outcome trackChapters(JSONObject request) throws Exception {
+        String id = Json.str(request, "id");
+        if (!ContentId.valid(id)) return failure(400, "bad_request");
+        JSONObject found = null;
+        try {
+            found = api.chapters(id);
+            if (found != null) chaptersSeen.put(id, found);
+            else return new Outcome(200, Replies.ok().put("none", true));
+        } catch (MediaApi.Refused refused) {
+            if (refused.status == 404) return new Outcome(200, Replies.ok().put("none", true));
+            if (refused.status < 500) throw refused;
+        } catch (java.io.IOException offline) {
+            // fall through to what this phone holds
+        }
+        if (found == null) found = keptChapters(id);
+        if (found == null) found = chaptersSeen.get(id);
+        return new Outcome(200, found == null ? Replies.ok().put("none", true) : Replies.ok().put("chapters", found));
+    }
+
+    /** The chapters stored with a kept track, or null. */
+    private JSONObject keptChapters(String trackId) {
+        JSONObject holder = kept().holding(trackId);
+        JSONArray tracks = holder == null ? null : holder.optJSONArray("tracks");
+        for (int i = 0; tracks != null && i < tracks.length(); i++) {
+            JSONObject t = tracks.optJSONObject(i);
+            if (t != null && trackId.equals(t.optString("id")) && t.optJSONObject("chapters") != null) return t.optJSONObject("chapters");
+        }
+        return null;
+    }
+
     // ── the one entry for the port and the routes ─────────────────────────────
 
     Outcome call(JSONObject request) {
@@ -353,6 +394,7 @@ public final class MediaServiceCapability implements Capability {
             }
             if ("track-levels".equals(op)) return trackDetail(request, true);
             if ("track-lyrics".equals(op)) return trackDetail(request, false);
+            if ("track-chapters".equals(op)) return trackChapters(request);
             if ("screens".equals(op)) return new Outcome(200, ScreenRemote.without(screens.screens(), core.deviceId(), InboxIdentity.inboxDeviceId(core.deviceId(), runningOnEmulator())));
             if ("screen-session".equals(op)) return new Outcome(200, screens.session(Json.str(request, "device")));
             if ("screen-command".equals(op)) return new Outcome(200, screens.command(request));
@@ -506,7 +548,15 @@ public final class MediaServiceCapability implements Capability {
         boolean longParts = false;
         java.util.Set<String> albums = new java.util.HashSet<>();
         for (Track t : all) {
-            tracks.put(t.toJson());
+            JSONObject tj = t.toJson();
+            // A long part keeps its chapters with it, so they show offline (spec §5).
+            if (t.durationMs >= BOOK_PART_MS && all.size() <= 4) {
+                try {
+                    JSONObject ch = api.chapters(t.id);
+                    if (ch != null) { tj.put("chapters", ch); chaptersSeen.put(t.id, ch); }
+                } catch (Exception noChapters) { /* kept without; a later refresh may add them */ }
+            }
+            tracks.put(tj);
             if (t.durationMs >= BOOK_PART_MS) longParts = true;
             albums.add(t.album);
         }

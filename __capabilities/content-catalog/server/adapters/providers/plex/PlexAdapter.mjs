@@ -745,6 +745,40 @@ export class PlexAdapter {
   }
 
   /**
+   * What chapters for a track need: its file, length and titles (to find the same
+   * book elsewhere), and the chapter markers Plex read from the file, if any.
+   * @param {string} ratingKey
+   * @returns {Promise<{track: {title: string, album: string, artist: string, durationMs: number|null, file: string|null},
+   *   chapters: Array<{startMs: number, endMs: number, title: string}>|null}|null>} null for an unknown key
+   */
+  async getTrackChapters(ratingKey) {
+    if (!/^\d+$/.test(String(ratingKey))) return null;
+    let data;
+    try {
+      data = await this.client.request(`/library/metadata/${encodeURIComponent(ratingKey)}?includeChapters=1`, { deadline: 5000 });
+    } catch (err) {
+      if (err.status === 404) return null;
+      throw err;
+    }
+    const item = data?.MediaContainer?.Metadata?.[0];
+    if (!item) return null;
+    const part = item.Media?.[0]?.Part?.[0];
+    const chapters = Array.isArray(item.Chapter) && item.Chapter.length
+      ? item.Chapter.map((c) => ({ startMs: Number(c.startTimeOffset), endMs: Number(c.endTimeOffset), title: c.tag ?? '' }))
+      : null;
+    return {
+      track: {
+        title: item.title ?? '',
+        album: item.parentTitle ?? '',
+        artist: item.grandparentTitle ?? item.originalTitle ?? '',
+        durationMs: Number(part?.duration ?? item.duration) || null,
+        file: part?.file ?? null,
+      },
+      chapters,
+    };
+  }
+
+  /**
    * A track's lyrics as Plex holds them (a `streamType 4` stream: LyricFind
    * LRC or a local .txt/.lrc beside the file) plus what a lyrics lookup elsewhere
    * needs to identify the song.

@@ -24,6 +24,10 @@ final class SleepTimer {
     static final String EXTRA_UNTIL = "daylight.sleepUntil";
     static final int END_OF_ITEM = -1;
     static final long UNTIL_END_OF_ITEM = -1;
+    /** Pause when the position reaches ARG_AT_MS in the current item (the end of a chapter). */
+    static final int END_OF_CHAPTER = -2;
+    static final long UNTIL_END_OF_CHAPTER = -2;
+    static final String ARG_AT_MS = "atMs";
     private static final String TAG = "Daylight-Media";
 
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -43,6 +47,10 @@ final class SleepTimer {
     private MediaSession session;
     private long until;
     private boolean armed;
+    /** End of chapter: the position to stop at, in the item it was set for. */
+    private long atMs = -1;
+    private String atItem = "";
+    private final Runnable watch = this::watchStep;
 
     private final Player.Listener ends = new Player.Listener() {
         @Override public void onMediaItemTransition(MediaItem item, int reason) {
@@ -61,7 +69,10 @@ final class SleepTimer {
     };
 
     /** Applies a SLEEP command to this session's player. */
-    void set(MediaSession s, int minutes) {
+    void set(MediaSession s, int minutes) { set(s, minutes, -1); }
+
+    /** As above; END_OF_CHAPTER with {@code chapterEndMs} pauses there (it ends that chapter, whatever seeks follow). */
+    void set(MediaSession s, int minutes, long chapterEndMs) {
         if (session != s) {
             if (session != null) session.getPlayer().removeListener(ends);
             session = s;
@@ -71,7 +82,14 @@ final class SleepTimer {
         restoreVolume();
         if (minutes == 0) { cancel(); return; }
         armed = true;
-        if (minutes == END_OF_ITEM) {
+        main.removeCallbacks(watch);
+        if (minutes == END_OF_CHAPTER && chapterEndMs > 0) {
+            until = UNTIL_END_OF_CHAPTER;
+            atMs = chapterEndMs;
+            MediaItem now = s.getPlayer().getCurrentMediaItem();
+            atItem = now == null ? "" : now.mediaId;
+            main.post(watch);
+        } else if (minutes == END_OF_ITEM) {
             until = UNTIL_END_OF_ITEM;
         } else {
             long ms = Math.max(1, minutes) * 60_000L;
@@ -79,8 +97,29 @@ final class SleepTimer {
             main.postDelayed(fire, ms);
             main.postDelayed(fade, Math.max(0, ms - LongForm.FADE_MS));
         }
-        Log.i(TAG, "sleep timer: " + (minutes == END_OF_ITEM ? "end of item" : minutes + " min"));
+        Log.i(TAG, "sleep timer: " + (minutes == END_OF_ITEM ? "end of item"
+                : until == UNTIL_END_OF_CHAPTER ? "end of chapter at " + atMs + " ms, now at " + s.getPlayer().getCurrentPosition()
+                : minutes + " min"));
         publish();
+    }
+
+    /** End of chapter: checks the position twice a second; fades over the last minute (at the play speed). */
+    private void watchStep() {
+        if (!armed || session == null || until != UNTIL_END_OF_CHAPTER) return;
+        Player p = session.getPlayer();
+        MediaItem now = p.getCurrentMediaItem();
+        if (now == null || !atItem.equals(now.mediaId)) { Log.i(TAG, "sleep timer: the item changed; end of chapter cancelled"); cancel(); return; }
+        float speed = Math.max(0.1f, p.getPlaybackParameters().speed);
+        long left = (long) ((atMs - p.getCurrentPosition()) / speed);
+        if (left <= 0) {
+            p.pause();
+            restoreVolume();
+            Log.i(TAG, "sleep timer: paused at the end of the chapter");
+            cancel();
+            return;
+        }
+        if (left <= LongForm.FADE_MS && p.isPlaying()) { fading = true; fadeTo(LongForm.fadeVolume(left)); }
+        main.postDelayed(watch, Math.min(500, left));
     }
 
     private void fadeStep() {
@@ -107,6 +146,7 @@ final class SleepTimer {
 
     void cancel() {
         main.removeCallbacks(fire);
+        main.removeCallbacks(watch);
         restoreVolume();
         boolean was = armed;
         armed = false;
@@ -115,6 +155,7 @@ final class SleepTimer {
 
     void release() {
         main.removeCallbacks(fire);
+        main.removeCallbacks(watch);
         restoreVolume();
         shownArmed = false;
         if (session != null) session.getPlayer().removeListener(ends);
@@ -149,6 +190,7 @@ final class SleepTimer {
     /** "Sleep in 23 min" or "Sleep at the end of this", for a timer set to {@code until}. Pure. */
     static String describe(long until, long nowElapsed) {
         if (until == UNTIL_END_OF_ITEM) return "Sleep at the end of this";
+        if (until == UNTIL_END_OF_CHAPTER) return "Sleep at the end of the chapter";
         long left = Math.max(0, until - nowElapsed);
         return "Sleep in " + (left + 59_999) / 60_000 + " min";
     }
