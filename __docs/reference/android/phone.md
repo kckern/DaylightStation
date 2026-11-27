@@ -27,7 +27,10 @@ under "What the phone does not have".
 
 ## Phone home
 
-The Daylight app icon opens setup. Choose Health, Home, Lifelog, Media or
+The app icon opens setup. The app's name where Android shows it (the launcher,
+Settings, the share sheet, the notification group, Android Auto) is the device
+file's `label:` (default **Home**); the app's own screens never name a brand (see
+**Polish, shell 180**). Choose Health, Home, Lifelog, Media or
 Call to add its own shortcut to Android Home. Journal and Meal capture shortcuts
 open the recorder, text form or camera directly from Android Home. **Meal
 barcode** opens the Health quick scanner: scan after scan, each one logged with a toast
@@ -282,7 +285,7 @@ answers 200 with the effect, 400 `bad_link`, 403 `forbidden` or 500 `failed`.
   stand in for a key in the intent: any app could send the same id.
 - A notice that was posted before a restart carries the key of that run. The
   input queue posts its notice again after a start when there is still something
-  to say; a tap on an older one is refused with "That link has expired. Open Daylight and try again.".
+  to say; a tap on an older one is refused with "That link has expired. Try it again from the app.".
 
 Nothing logs a link: the link activity logs that an intent was ignored or that
 the payload failed, by class name; a refusal logs one of a few fixed sentences;
@@ -310,13 +313,13 @@ Android can create the link activity in a process with no payload loaded. The
 activity is visible, so it is allowed to start the shell service. It keeps the link
 and waits on the port (`links`, or `launcher-capture` for a capture shortcut) for as
 long as the shell's loader gives a payload to start (shell-kit `PayloadReady`, see
-"Waiting for Daylight to start" below), and runs the link the moment the payload
+"Waiting for the app to start" below), and runs the link the moment the payload
 attaches. A tap still waiting after 300 ms shows a small card along the bottom,
-"Starting Daylight… · Lights off" (what was tapped, from `LinkLabel`), with
+"Starting up… · Lights off" (what was tapped, from `LinkLabel`), with
 **Cancel**; Back cancels too, and a cancelled link is never sent. Warm, nothing is
-shown before the answer. Only when the loader gave up does it say "Daylight could not
-start. Close it and open it again.", and only when the whole start deadline passed
-with no payload, "Daylight is still starting. Try again in a moment." A request that
+shown before the answer. Only when the loader gave up does it say "Could not
+start. Close the app and open it again.", and only when the whole start deadline passed
+with no payload, "Still starting up. Try again in a moment." A request that
 was handed to the payload is never sent twice; a link activity recreated by a
 rotation does not run the link a second time.
 
@@ -420,7 +423,7 @@ nothing.
 |---|---|---|
 | Launcher shortcuts (long-press) | None: the payload publishes them and the launcher holds them | They stay in the launcher and launch the link activity |
 | Pinned shortcuts | None | The same |
-| Quick-settings tiles | Four slots, "Daylight 1" to "Daylight 4" | A slot draws its last label from the surface cache; an unassigned slot is shown unavailable |
+| Quick-settings tiles | Four slots, "Action 1" to "Action 4" until assigned | A slot draws its last label from the surface cache; an unassigned slot is shown unavailable |
 | Home-screen widgets (four buttons; one-action buttons) | See `widgets` | Draw from the cache |
 
 A tile on a locked phone asks for the unlock before it launches its action. The
@@ -462,7 +465,7 @@ natively and answers "Could not start playback"; it plays in the web view.
 
 | Piece | Installed (shell half) | Payload | With no payload loaded |
 |---|---|---|---|
-| `DaylightMediaService`, a Media3 `MediaLibraryService` | The ExoPlayer, the session, audio focus, "headphones unplugged", the media notification and the foreground state (type `mediaPlayback`) | What a browse level holds, which stream a media id resolves to, when progress is reported | Starts the shell service, which loads the payload. A browse of the root waits up to 4 s and then answers one tab, "Daylight is starting", with nothing under it; browsers of the root are told to ask again when a payload attaches (within two minutes). A play request fails. Nothing crashes and nothing runs on the main thread |
+| `DaylightMediaService`, a Media3 `MediaLibraryService` | The ExoPlayer, the session, audio focus, "headphones unplugged", the media notification and the foreground state (type `mediaPlayback`) | What a browse level holds, which stream a media id resolves to, when progress is reported | Starts the shell service, which loads the payload. A browse of the root waits up to 4 s and then answers one tab, "Starting up…", with nothing under it; browsers of the root are told to ask again when a payload attaches (within two minutes). A play request fails. Nothing crashes and nothing runs on the main thread |
 | `PlayActivity` (not exported, no window) | Kept for a payload older than shell 134: opens Now playing with the id (Starting, "play it") and finishes at once. Nothing waits in it and nothing sits over Now playing | A current payload opens Now playing directly on a keyed `media` link (shell 134 and later, read from the installed version code; an older shell still gets `PlayActivity`) | Not reached: the link activity already waited for the payload |
 | `PlayActionService` (not exported, foreground service of type `mediaPlayback`) | Started by a widget button or a tile with one action id. Enters the foreground at once with a notice naming what starts ("Starting Morning Mix…": the widget's playlist by its saved name, an action by its label, else "Starting playback"), asks the payload for the action's media id, plays it through a media controller, and lets go once the media service holds the foreground state. One budget for the whole start (`PlayBudget`: 24 s warm, plus the loader's own wait when the payload was not up at the tap); each step waits only what is left of it | Answers `action` with the media id of a configured or pinned media action (and its label as `title`), or 404 | Starts the shell service and waits within the same budget; with no payload it says "Could not start <name>. Tap the button again to retry." The toast is not shown while Now playing is on screen showing a start |
 
@@ -583,7 +586,7 @@ from the phone, under 2 s from home).
   the app away stops the remote unless the screen is playing.
 - **When reads fail** (VPN down, backend error, the payload still starting), the last
   answer stays on show, greyed and with nothing offered to send, and the line says why
-  ("Can't reach home", "Daylight is starting", "Home could not answer for …"). After
+  ("Can't reach home", "Starting up…", "Home could not answer for …"). After
   three failures and 20 s it gives way to the empty state; it recovers on its own at the
   next good answer. A 503 that is not a screen being off is a backend failure.
 - **Commands** go one at a time, in tap order, on their own thread (the reads after them
@@ -693,10 +696,15 @@ from the phone, under 2 s from home).
   `crossfade.skipped{reason}`, `crossfade.ended_early{reason}`. Known limit: an audio
   duck during a fade lowers only the incoming song. Spec:
   ops:docs/superpowers/specs/2026-11-26-phone-crossfade.md.
-- **The phone home's Play tab** is not a library to browse. **Continue listening**: long
-  audio started and not finished, newest first (payload op `continue` over
-  `GET /api/v1/media/household/recent`: audio, 20 minutes or more, 30 s in, under 97%),
-  each with its cover, time left and a progress bar; a tap resumes it here. **Your
+- **The phone home's Play tab** is not a library to browse. **Continue listening**: home's
+  one answer (payload op `continue` over `GET /api/v1/media/household/continue`, lookup
+  spec §13): one row per book or series heard for at least the household's
+  `continue.minListenedMin` (default 5), never one per part; the row is the book (Remove
+  and Mark finished act on it) and resumes its current part. Its line is the author, the
+  part and what is left in the book ("William Shakespeare · Part 2 of 5 · 1 h 30 min
+  left"), with the part's progress bar; a tap resumes it here. A home older than the route
+  is read the old way (`/recent`: audio, 20 minutes or more, 30 s in, under 97%). The tab
+  asks again on every return, so a book marked finished or hidden leaves at once. **Your
   playlists**: the playlists already chosen for Drive, a widget or Driving Radio, as cover
   tiles; a tap plays one here. A long Plex track now resumes where it was left
   (`PlexAdapter`: video, or a track of 20 minutes or more, is `resumable`).
@@ -1075,7 +1083,7 @@ button to this app's search at all for a sideloaded app.
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `media.roots` | `Recent=recent;Browse=catalog` | The tabs: `Label=target;...`, at most four, a label at most 24 characters, a target `recent`, `continue`, `catalog` or a container's content id. The phone's are `Drive=drive:;Continue=continue;Recent=recent`: no folder browsing in the car. **Continue** lists long items in progress first (a tap resumes; "4 h 53 min left · …") and then the lists this phone played lately (a playlist, an album, a household list, a station; a tap plays it again), kept on the phone in the payload state's `recent-lists.json`, at most 8, newest first |
+| `media.roots` | `Recent=recent;Browse=catalog` | The tabs: `Label=target;...`, at most four, a label at most 24 characters, a target `recent`, `continue`, `catalog` or a container's content id. The phone's are `Drive=drive:;Continue=continue;Recent=recent`: no folder browsing in the car. **Continue** lists home's Continue rows first, one per book (a tap resumes its part; "Part 2 of 5 · 4 h 53 min left · …") and then the lists this phone played lately (a playlist, an album, a household list, a station; a tap plays it again), kept on the phone in the payload state's `recent-lists.json`, at most 8, newest first |
 | `media.recentLimit` | 30 | Entries of the recent tab (1 to 100) |
 | `media.pageSize` | 50 | Entries of one level (10 to 200). A longer container ends with a browsable entry, "More (51 to 100 of 120)" |
 | `media.controllerPins` | empty | The apps that may connect beside this app and the system: `package=sha256, ...` (see "Who may connect") |
@@ -1086,7 +1094,7 @@ out of reach the last answer is served, however old; a level never loaded fails
 only when it is an https URL on the backend; anything else is left out, in the
 payload and again in the installed service.
 
-### Waiting for Daylight to start
+### Waiting for the app to start
 
 The phone's service starts on demand, so a tap may come while the payload is still
 loading. The shell's loader (`PayloadLoader`) gives one payload's `start()` 20 s
@@ -1097,17 +1105,16 @@ payload waits through shell-kit `PayloadReady`:
 - **Ready**: the port is attached (PayloadPort's own signal, so it answers the moment
   the payload attaches).
 - **Still starting**: the wait (`PayloadStart.WAIT_MS`, the deadline plus 5 s) ran out
-  with no failure: "Starting Daylight…".
-- **Failed**: the loader gave up (its reason goes to the log): "Daylight could not
-  start. Close it and open it again."
+  with no failure: "Starting up…".
+- **Failed**: the loader gave up (its reason goes to the log): "Could not start.
+  Close the app and open it again."
 
 Used by the link activity (above); the phone home (the tabs, Play and Connect draw at
-once from the phone; only Services and Capture say "Loading…" or "Starting Daylight…";
+once from the phone; only Services and Capture say "Loading…" or "Starting up…";
 the bookmarks and actions are asked at the same time, and a load that could not run is
 asked again on its own when the payload attaches, with no Try again to press); the
-capture screens recreated after Android stopped the app (voice, text, photo: "Starting
-Daylight…" while it starts, then up to 5 s for the account binding); Capture status;
-and Share to Daylight. The play path has one budget of its own on top of it,
+capture screens recreated after Android stopped the app (voice, text, photo: "Starting up…" while it starts, then up to 5 s for the account binding); Capture status;
+and Share. The play path has one budget of its own on top of it,
 `PlayBudget` (see **The play path** under `media-service`).
 
 ### When home does not answer: four lines
@@ -1321,7 +1328,9 @@ slides away when nothing is loaded and never says "Nothing playing".
 | `parents` `{id}` | `{parents:{album?, artist?}}` with their kinds | `GET /api/v1/info/<id>` |
 | `progress` `{ids}` | `{progress:{id:{playhead, duration, finished}}}` | `GET /api/v1/media/household/recent` |
 | `mark-finished` `{ids, finished}` | `{marked}` | `POST /api/v1/media/household/watched` |
-| `continue` `{limit}` | Continue listening, without the phone's unsent hides | `GET /api/v1/media/household/recent` |
+| `continue` `{limit}` | Continue listening (one row per book: `contentId` the book, `id` the play node of `playContentId`, `partIndex`/`partCount`, `remainingSec`, `legacy`) and `reviewCount`, without the phone's unsent hides | `GET /api/v1/media/household/continue` (an older home: `GET /api/v1/media/household/recent`) |
+| `continue-review` | The older entries (no listened time) to keep or clear | `GET /api/v1/media/household/continue/review` |
+| `continue-decide` `{contentId, decision: keep\|clear}` or `{all: true, decision: clear}` | One decision, or Clear all | `POST /api/v1/media/household/continue/review` |
 | `continue-hide` `{contentId, hidden}` | `{hidden, sent}` | `POST`/`DELETE /api/v1/media/household/continue/hide` |
 | `book-finished` `{contentId, finished}` | `{marked, book, parts}` | `GET /api/v1/info`, `GET /api/v1/list`, `POST …/watched`, the hide |
 
@@ -1660,7 +1669,7 @@ install (`PlayInbox`): `GET /api/v1/device/<id>/commands?wait=20&installId=&mode
     starts) boots the shell and checks once: `wait=0&background=1`. It collects waiting
     keeps and removes (acked as usual; the download job then runs on its own) and sends the
     kept list. A background check does not make the phone present or live at home, so the
-    web never offers Play on to a closed app: its row reads "Open Daylight to play here"
+    web never offers Play on to a closed app: its row reads "Open the app on the phone to play here"
     and is disabled, and a waiting keep reads "Waiting for Phone · asked 12:04 · usually
     within 15 min". Logcat: `inbox job: checked` (or off, unauthorized, unreachable).
 - **Which install.** Each install makes an install id once (random, in the payload state's
@@ -1904,7 +1913,7 @@ answer is a second car toast. Drawing the list, a refresh and the car connecting
 nothing: only a row's own click does.
 
 **Cold start.** The service starts the shell service, as the media service does.
-With no payload yet the list is one row, "Daylight is starting"; when a payload
+With no payload yet the list is one row, "Starting up…"; when a payload
 attaches the screen asks again and redraws.
 
 | Method | Route | Answer |
@@ -2017,10 +2026,10 @@ the classes.
 - **Who can start it.** Only a tap on the entry in the car list (or the phone's own
   recorder on the phone). Drawing, refreshing or reconnecting the car screen starts
   nothing (`CarMemo`, tested); no page, link or other app reaches it. Refused, with
-  a car toast saying why: a car below Car API level 5 ("This car cannot record for
-  Daylight"), the phone without the microphone permission ("Allow the microphone on
+  a car toast saying why: a car below Car API level 5 ("This car cannot record
+  voice memos"), the phone without the microphone permission ("Allow the microphone on
   the phone first", granted on the phone, through the phone recorder's prompt),
-  `identity.user` empty ("Daylight is not set up for quick inputs"), or a recording
+  `identity.user` empty ("Quick inputs aren't set up on this phone"), or a recording
   already under way.
 - **The screen.** A `MessageTemplate` titled with the entry's label: "Starting", then
   a clock ("Recording 1:05") redrawn each second, and one Stop action. Tap targets
@@ -2206,11 +2215,11 @@ provider's scene following the real fetch.
 - **Share destinations** are the text destinations whose id is `share` or starts
   with `share-`, in slot order. The first one is the big button. The screen asks the
   payload for them (port op `share-targets`, ids and labels only) once the payload
-  has started. A cold start shows "Starting Daylight…" and waits as long as the loader
+  has started. A cold start shows "Starting up…" and waits as long as the loader
   gives the payload (`PayloadReady`), then up to 8 s for the account and the answer
   (`READY_WAIT_MS`).
 - **No destination** ("Sharing has no destination on this phone") or **not set up**
-  ("Daylight is not set up on this phone yet"): nothing is queued.
+  ("Sharing isn't set up on this phone yet"): nothing is queued.
 - **Text over the intake's 16 KB** keeps its start, where the link is.
 - Not over the lock screen, kept out of recents, no recents screenshot.
 - The backend refuses for good a share with no URL, or a URL nothing handles
@@ -2609,3 +2618,58 @@ components.
 ## Shortcut icons
 
 Launcher shortcuts and tiles draw one glyph per action on a tile coloured by kind (`ActionTint`): journal blue (notebook, mic), meals orange (fork, camera, barcode), health rose, media purple, anything else the app green. The icon name is the third field of each `actions.N` line in `devices/phone.yml`. The default tiles are journal voice, meal voice, meal photo and meal barcode. The launcher draws its own small app badge on every pinned shortcut; an app cannot remove it.
+
+## Polish, shell 180 (2026-11-26)
+
+From screenshot review of build 150 and the design sweep
+(ops:docs/_wip/audits/2026-11-26-phone-design-sweep.md).
+
+- **Book page.** A book's or series' parts show their number in a quiet 48 dp square
+  ("1", "2" …) instead of the book's cover on every row; a part with its own picture keeps
+  it (`BrowseTree.ownArt`: a part whose thumb is its album's has none). Lengths use one
+  format: "9 min", "1 h 12 min", "2 h" (`RowLine.spokenLength`), never "8:47". The action
+  row's Chapters button is the chapters glyph ("Chapters of <book>"), not the queue's: a
+  book offers no queue verbs. An open detail page re-reads its keep every 2 s and redraws
+  its header when it changes, so Keep on a book kept automatically stops saying "Kept
+  automatically" at once. A page opened by a link with no name (`daylight://media/book/<id>`)
+  takes its title, by-line and cover from home's info (`About.title`, `byline`), never
+  "Library"; the Mark finished prompt never shows an empty name.
+- **Now playing on a book, talk or course** (`TitleLines`): the title is the current
+  chapter's name (or the part's), then the book's title, then the author, the author's line
+  moved under the book's; a line equal to another is dropped ("Paradise - Benedict Flynn
+  translation" shows once). The quality line is music's only. The status line is muted ink,
+  with the on-this-phone glyph before "Playing from this phone"; a failure keeps the
+  attention colour.
+- **Home.** Browse library, the Player rows (Now playing, Drive playlists, Driving Radio,
+  Widget on Home) and the Connect rows (each screen's remote, Freematics) are flat 64 dp
+  rows: a muted glyph, the name, what it does, a chevron. **Continue listening** is one row
+  per book (above). **Review N older items**: entries home has no listened time for are
+  not guessed; a one-time row at the top of Continue opens a sheet of them, each with Keep
+  and Clear, and Clear all. Once the sheet has been opened the row does not come back;
+  undecided entries stay listed as they are.
+- **Capture screens** (D10): one full-width filled primary at the bottom (Send, Done), an
+  8 dp rectangle (`CaptureUi.primary`); a capture's Try again, Replace and View are text
+  buttons at the end of its row (`CaptureUi.textButton`); the capture list is flat rows;
+  links are muted ink. **Share** chooses its destination with choice chips (the default
+  chosen) and sends with one "Send to <destination>".
+- **Switches** (D11): the widgets sheet's on/off rows are flat rows with a standard
+  `Switch` tinted from the theme (`Toggle.create`); its buttons are rectangles, not pills.
+- **On this phone** (D12, `DownloadsActivity`): a kept item is a flat row whose end icon
+  shows its state (`KeepRowState`): kept (accent), downloading, paused, waiting, or an error
+  whose icon retries when tapped. Try again, Resume download, Pause download, Use mobile
+  data once and Remove from this phone are in the row's ⋮ item sheet (a tap on the row
+  opens it too), Remove last. Remove finished and Remove all are in the top bar's ⋮.
+- **No brand** (D16). The app's own words say what happens: "Starting up…", "Quick inputs
+  aren't set up on this phone", "That link has expired. Try it again from the app",
+  "Sharing isn't set up on this phone yet". Tiles and widget fallbacks are "Action 1–4",
+  "Playlist" and "Open"; the widgets are "Actions" and "Playlist"; the notification channel
+  is "General". The device file's `label:` (default "Home", at most 30 characters; buildSrc
+  `DeviceSpec.label`) is the manifest's `${appLabel}`: the application, the share target and
+  the kiosk activity. At run time the notification channel group, the shell's notice and the
+  car's title read the installed app's label. Code identifiers, `X-Daylight-*` headers, log
+  tags and theme names keep the name.
+- **Listened time.** Each progress report carries the speed played (`rate`, when not 1) and
+  this payload run's `sessionId`, so home measures listened time between consecutive
+  reports of one session at the real speed (lookup spec §13; the backend side is in
+  `__docs/reference/media/media-app-technical.md`).
+

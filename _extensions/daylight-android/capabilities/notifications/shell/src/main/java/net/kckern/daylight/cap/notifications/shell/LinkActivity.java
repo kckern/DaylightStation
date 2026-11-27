@@ -30,7 +30,7 @@ import net.kckern.daylight.shellkit.ShellStart;
  * Cold start: Android may create this activity in a process with no payload. It is
  * visible, so it may start the shell service. It keeps the link and waits for the port
  * to attach for as long as the loader gives a payload to start (PayloadReady), showing a
- * small "Starting Daylight… · <what was tapped>" card with Cancel, and runs the link the
+ * small "Starting up… · <what was tapped>" card with Cancel, and runs the link the
  * moment the payload is there. Warm, nothing is shown before the answer. Only when the
  * loader gave up, or the whole start deadline passed, does it say so.
  */

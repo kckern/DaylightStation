@@ -3,7 +3,7 @@ package net.kckern.daylight.cap.notifications.shell;
 import java.util.Locale;
 
 /**
- * A few plain words for what a link does, for the "Starting Daylight… · <what>" card the
+ * A few plain words for what a link does, for the "Starting up… · <what>" card the
  * link activity shows while a cold start runs, so the owner sees their tap was kept and
  * does not tap again. Pure. Only the link's shape is read; the payload still decides
  * whether the link is allowed.
