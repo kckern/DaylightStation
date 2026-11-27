@@ -719,21 +719,30 @@ public final class BrowseActivity extends Activity {
         });
     }
 
-    /** Play on a screen: the live screens, then the screen's load (as the web's Play on). */
+    /**
+     * Play on: the same picker as Now playing's (this phone first, each screen's state, off
+     * ones greyed). This phone plays here; a screen gets the screen's load, as the web's Play on.
+     */
     private void playOn(String mediaId, String name) {
         action("play_on");
         io.execute(() -> {
-            JSONArray screens;
-            try { screens = new JSONObject(media.screens(6000)).optJSONArray("items"); } catch (Exception e) { screens = null; }
-            JSONArray s = screens;
+            List<TargetPicker.Target> targets = new ArrayList<>();
+            targets.add(new TargetPicker.Target(TargetPicker.LOCAL, "This phone", ""));
+            String problem = "";
+            try {
+                JSONArray s = new JSONObject(media.screens(6000)).optJSONArray("items");
+                for (int i = 0; s != null && i < s.length(); i++) {
+                    JSONObject o = s.optJSONObject(i);
+                    targets.add(new TargetPicker.Target(o.optString("id"), o.optString("name", o.optString("id")), o.optString("type")));
+                }
+            } catch (Exception e) { problem = "Can't reach home: only this phone"; }
+            String note = problem;
             main.post(() -> {
                 if (isFinishing()) return;
-                if (s == null || s.length() == 0) { Toast.makeText(this, "No screens to play on", Toast.LENGTH_SHORT).show(); return; }
-                String[] labels = new String[s.length()];
-                for (int i = 0; i < s.length(); i++) labels[i] = s.optJSONObject(i).optString("name");
-                new AlertDialog.Builder(this, DaylightTheme.alert()).setTitle("Play on")
-                        .setItems(labels, (d, which) -> startOn(s.optJSONObject(which).optString("id"), labels[which], mediaId, name))
-                        .setNegativeButton("Cancel", null).show();
+                TargetPicker.show(this, t, targets, "", note, media, io, main, (id, label) -> {
+                    if (TargetPicker.LOCAL.equals(id)) play(mediaId, false);
+                    else startOn(id, label, mediaId, name);
+                });
             });
         });
     }

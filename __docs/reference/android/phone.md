@@ -986,7 +986,7 @@ One screen, `BrowseActivity` (not exported), in three modes:
   64 dp height, the last answer drawn at once from the phone and replaced in place, fixed
   placeholders the first time; a long level ends in **More**, which appends the next
   50 in place. A collection has a header: cover, name, Play (a book: Resume), Shuffle,
-  Play on… (the live screens; the screen's load, as the web's Play on) and Keep (the
+  Play on… (Now playing's picker, `TargetPicker`: this phone first, each screen's state, off ones greyed; a screen gets the screen's load, as the web's Play on) and Keep (the
   one Keep flow). A track's ⋮: Play here, Play next, Add to queue, Play on…, Keep.
   Playing goes through the media session (the same media ids the car uses) and opens
   Now playing.

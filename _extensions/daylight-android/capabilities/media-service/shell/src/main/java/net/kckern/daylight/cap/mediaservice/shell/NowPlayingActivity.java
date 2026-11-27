@@ -97,15 +97,7 @@ public class NowPlayingActivity extends Activity {
     }
 
     /** The registry's device type as an icon: a picker row says what kind of thing it plays on. */
-    static int iconFor(String type, String name) {
-        if (type == null) type = "";
-        if (type.equals("speaker")) {
-            return name != null && name.toLowerCase(Locale.ROOT).contains("headset")
-                    ? R.drawable.daylight_np_headphones : R.drawable.daylight_np_speaker;
-        }
-        if (type.contains("tablet")) return R.drawable.daylight_np_tablet;
-        return R.drawable.daylight_np_tv;
-    }
+    static int iconFor(String type, String name) { return TargetPicker.iconFor(type, name); }
 
     private int targetIcon(String id) {
         if (LOCAL.equals(id)) return R.drawable.daylight_np_phone;
@@ -1120,88 +1112,11 @@ public class NowPlayingActivity extends Activity {
     /** Pick a player: this phone and every screen, the current one checked (Jellyfin's "Play On"). */
     private void openTargets() {
         if (screens.isEmpty() || !screensProblem.isEmpty()) loadScreens();
-        List<String> ids = new ArrayList<>();
-        List<String> names = new ArrayList<>();
-        ids.add(LOCAL); names.add("This phone");
-        for (Screen s : screens) { ids.add(s.id); names.add(s.name); }
-        LinearLayout col = new LinearLayout(this);
-        col.setOrientation(LinearLayout.VERTICAL);
-        col.setPadding(dp(8), dp(8), dp(8), dp(8));
-        AlertDialog dialog = new AlertDialog.Builder(this, DaylightTheme.alert()).setTitle("Play on").setView(col).create();
-        for (int i = 0; i < ids.size(); i++) {
-            String id = ids.get(i), label = names.get(i);
-            boolean on = id.equals(target);
-            LinearLayout row = new LinearLayout(this);
-            row.setGravity(Gravity.CENTER_VERTICAL);
-            row.setMinimumHeight(dp(52));
-            row.setPaddingRelative(dp(12), 0, dp(12), 0);
-            row.setBackground(base.pressable(null));
-            ImageView kind = new ImageView(this);
-            kind.setImageResource(targetIcon(id));
-            kind.setImageTintList(ColorStateList.valueOf(on ? base.primary : base.ink));
-            row.addView(kind, new LinearLayout.LayoutParams(dp(24), dp(24)));
-            LinearLayout words = new LinearLayout(this);
-            words.setOrientation(LinearLayout.VERTICAL);
-            words.setPaddingRelative(dp(16), 0, 0, 0);
-            TextView t = base.text(this, label, Type.BODY, on ? base.primary : base.ink, on);
-            words.addView(t);
-            // What each player is doing, checked as the list opens; the line is reserved so rows
-            // do not jump when the answers arrive.
-            TextView state = base.text(this, LOCAL.equals(id) ? "Ready" : "Checking…", Type.LABEL, base.inkMuted, false);
-            state.setMaxLines(1);
-            state.setEllipsize(TextUtils.TruncateAt.END);
-            words.addView(state);
-            row.addView(words, new LinearLayout.LayoutParams(0, -2, 1));
-            if (on) {
-                ImageView check = new ImageView(this);
-                check.setImageResource(R.drawable.daylight_np_check);
-                check.setImageTintList(ColorStateList.valueOf(base.primary));
-                row.addView(check, new LinearLayout.LayoutParams(dp(24), dp(24)));
-            }
-            row.setContentDescription(on ? label + ", playing here" : "Play on " + label);
-            UiTelemetry.tag(row, "play-on." + (LOCAL.equals(id) ? "local" : id));
-            row.setOnClickListener(v -> { dialog.dismiss(); if (!id.equals(target)) switchTo(id, label); });
-            col.addView(row);
-            if (!LOCAL.equals(id) && io != null) io.execute(() -> {
-                ScreenSnapshot snap;
-                try { snap = ScreenSnapshot.parse(new JSONObject(media.screenSession(id, 4000))); }
-                catch (Exception unreachable) { snap = ScreenSnapshot.unreachable(); }
-                ScreenSnapshot answer = snap;
-                main.post(() -> markTarget(row, kind, t, state, answer, on));
-            });
-        }
-        if (!screensProblem.isEmpty()) {
-            TextView note = base.text(this, screensProblem, Type.LABEL, base.inkMuted, false);
-            note.setPaddingRelative(dp(12), dp(8), dp(12), 0);
-            col.addView(note);
-        }
-        dialog.show();
-    }
-
-    /**
-     * A player that is off cannot be picked: it is greyed, says Off, and a tap does nothing
-     * (the one in use stays pickable so it can be seen). Idle and playing say so.
-     */
-    private void markTarget(View row, ImageView kind, TextView name, TextView state, ScreenSnapshot snap, boolean current) {
-        ScreenSnapshot.Entry now = snap.currentEntry();
-        boolean off = snap.reach == ScreenSnapshot.Reach.OFF || snap.reach == ScreenSnapshot.Reach.NOT_ON;
-        String line;
-        switch (snap.reach) {
-            case OFF: case NOT_ON: line = "Off"; break;
-            case IDLE: line = "Nothing playing"; break;
-            case PLAYING_OR_PAUSED:
-                line = (now == null ? "" : now.title) + ("playing".equals(snap.state) ? "" : " · paused");
-                if (line.trim().isEmpty() || line.startsWith(" ·")) line = "playing".equals(snap.state) ? "Playing" : "Paused";
-                break;
-            default: line = "Can't check";
-        }
-        state.setText(line);
-        if (off && !current) {
-            row.setAlpha(0.45f);
-            row.setEnabled(false);
-            row.setClickable(false);
-            row.setContentDescription(name.getText() + ", off");
-        }
+        List<TargetPicker.Target> targets = new ArrayList<>();
+        targets.add(new TargetPicker.Target(LOCAL, "This phone", ""));
+        for (Screen s : screens) targets.add(new TargetPicker.Target(s.id, s.name, s.type));
+        TargetPicker.show(this, base, targets, target, screensProblem, media, io, main,
+                (id, label) -> { if (!id.equals(target)) switchTo(id, label); });
     }
 
     private void openMore() {
