@@ -38,6 +38,8 @@ public final class CaptureStatusActivity extends Activity {
     private boolean active;
     private boolean loading;
     private boolean acting;
+    /** The capture a Try again is running for: its row says "Sending…" until the answer. */
+    private String actingOn;
 
     static void open(Context context, String owner, String id) {
         Intent intent = new Intent(context, CaptureStatusActivity.class)
@@ -99,10 +101,13 @@ public final class CaptureStatusActivity extends Activity {
         refresh();
     }
 
+    /**
+     * The rows stay as they were while the screen is away (audit: it blanked on every return);
+     * the first answer after it comes back redraws only what changed.
+     */
     @Override protected void onStop() {
         active = false;
         main.removeCallbacks(refresh);
-        clear("Loading captures…");
         super.onStop();
     }
 
@@ -140,7 +145,14 @@ public final class CaptureStatusActivity extends Activity {
         if (acting || !CaptureScope.currentIs(selected)) return;
         boolean query = "status".equals(operation);
         if (query) loading = true;
-        else acting = true;
+        else {
+            acting = true;
+            if ("retry".equals(operation)) {
+                actingOn = id;
+                rendered = "";
+                render(lastRows);
+            }
+        }
         net.kckern.daylight.shellkit.ShellStart.ensure(this);
         worker.execute(() -> {
             JSONObject response = null;
@@ -153,14 +165,20 @@ public final class CaptureStatusActivity extends Activity {
             JSONObject answer = response;
             main.post(() -> {
                 if (query) loading = false;
-                else acting = false;
+                else {
+                    acting = false;
+                    if (actingOn != null) { actingOn = null; rendered = ""; }
+                }
                 if (!active || isFinishing()) return;
                 if (!CaptureScope.currentIs(selected)) {
                     clear("Capture account changed.");
                 } else if (answer == null || !answer.optBoolean("ok")) {
                     if ("status".equals(operation)) {
                         net.kckern.daylight.shellkit.PayloadReady.Answer now = net.kckern.daylight.shellkit.PayloadReady.now(MemoFiles.PORT);
-                        clear(now.ready() ? "Capture status did not answer. Checking again…" : now.words());
+                        String why = now.ready() ? "Capture status did not answer. Checking again…" : now.words();
+                        // Rows already shown stay, with the reason above them.
+                        if (lastRows != null && lastRows.length() > 0) summary.setText(why);
+                        else clear(why);
                     }
                     else Toast.makeText(this, "This action is unavailable. Check capture status and try again.", Toast.LENGTH_SHORT).show();
                 } else if ("status".equals(operation)) {
@@ -179,12 +197,16 @@ public final class CaptureStatusActivity extends Activity {
         });
     }
 
+    private JSONArray lastRows;
+
     private void render(JSONArray rows) {
+        lastRows = rows;
         if (rows == null || rows.length() == 0) {
             clear("No captures for this account.");
             return;
         }
         String next = rows.toString();
+        summary.setText("");
         if (next.equals(rendered)) return;
         rendered = next;
         summary.setText("");
@@ -217,8 +239,9 @@ public final class CaptureStatusActivity extends Activity {
                     Type.LABEL, t.inkMuted, false);
             card.addView(when);
         }
-        String message = row.optString("message");
-        String action = row.optString("action");
+        boolean sending = id.equals(actingOn);
+        String message = sending ? "Sending…" : row.optString("message");
+        String action = sending ? "" : row.optString("action");
         boolean attention = "Replace capture".equals(action) || "Retry".equals(action);
         // A problem reads in the attention colour; any other state is muted (the accent is not a text colour).
         TextView state = CaptureUi.text(this, message, Type.BODY, attention ? t.attention : t.inkMuted, false);

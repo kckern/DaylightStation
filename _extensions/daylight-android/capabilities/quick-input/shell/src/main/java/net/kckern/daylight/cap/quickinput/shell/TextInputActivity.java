@@ -42,6 +42,8 @@ public class TextInputActivity extends Activity {
     private TextDraftWriter writer;
     private Bundle deferredState;
     private boolean completed;
+    /** The saved line is up (CaptureUi.saved): it closes the screen itself. */
+    private boolean holdingOutcome;
     private boolean loading;
     private boolean busy;
     private boolean finishingDraft;
@@ -300,7 +302,10 @@ public class TextInputActivity extends Activity {
             selectedStore.writeText(selected.id, new String(body, StandardCharsets.UTF_8));
             if (!selectedStore.sendForCurrentOwner(selected.id)) throw new IOException("Draft cannot be sent");
             CaptureFiles.tellPayload(this);
-        }, () -> CaptureUi.sent(this), "Could not queue the draft. Check it and try again.");
+        }, () -> {
+            holdingOutcome = true;
+            CaptureUi.saved(this, selected.id, selectedOwner, this::finish);
+        }, "Could not queue the draft. Check it and try again.");
     }
 
     private void confirmDiscard() {
@@ -355,7 +360,7 @@ public class TextInputActivity extends Activity {
             }
             completed = true;
             if (onComplete != null) onComplete.run();
-            finish();
+            if (!holdingOutcome) finish();
         }));
     }
 

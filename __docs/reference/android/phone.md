@@ -2343,6 +2343,24 @@ requires a new Send. **Health status** opens the barcode operation history.
 Capture status shows items for the current household binding. The older queue
 continues to support legacy uploads with its existing aggregate controls.
 
+- **"Sent" only when home has it** (audit H15). After Send, the voice and text screens do
+  not close on a toast: a panel over their buttons says "Saved · sending to Journal…"
+  (`CaptureUi.saved`), reads the payload's state for that capture (port op `status`, the
+  row whose id is the draft's) every half second for up to 6 s, and settles on "Sent to
+  Journal" (Delivered or Accepted), "Saved · sends when home answers" (no network, or still
+  waiting when the 6 s end), "Saved · sends when the daily allowance renews", or "Saved ·
+  not accepted: see Capture status"; then it closes 1.6 s later (`CaptureOutcome`). Photo
+  opens Capture status on the item. Telemetry: `capture.saved`, `capture.sent_seen`,
+  `capture.saved_waiting`.
+- **Reachable from the Capture tab** (H16): its first row is **Capture status** with the
+  counts, "1 needs attention · 2 waiting to send · 3 sent" (`CaptureCounts`), read from
+  the payload for the bound account; a tap opens it.
+- **No blank return.** The rows stay while the screen is away and the next answer redraws
+  only what changed; a failed answer keeps the rows with the reason above them. A Try
+  again shows "Sending…" on its row until the payload answers. A capture waiting its turn
+  says "Waiting to send" and offers no Retry (it is sent on its own); Retry stays on
+  "Waiting to retry", "Waiting to confirm delivery" and a refusal.
+
 ### The upload queue
 
 One queue for every kind, kept on disk

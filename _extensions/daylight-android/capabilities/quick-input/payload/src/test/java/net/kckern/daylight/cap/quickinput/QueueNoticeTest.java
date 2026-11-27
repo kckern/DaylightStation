@@ -100,6 +100,6 @@ public class QueueNoticeTest {
     @org.junit.Test public void unusableMealOffersAnExplicitReplacement() {
         assertEquals("Couldn’t identify food", QueueNotice.captureMessage("UNUSABLE"));
         assertEquals("Replace capture", QueueNotice.captureAction("UNUSABLE"));
-        assertEquals("Queued", QueueNotice.captureMessage("QUEUED"));
+        assertEquals("Waiting to send", QueueNotice.captureMessage("QUEUED"));
     }
 }

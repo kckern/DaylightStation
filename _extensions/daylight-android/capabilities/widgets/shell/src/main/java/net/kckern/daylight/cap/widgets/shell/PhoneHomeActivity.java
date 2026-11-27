@@ -510,7 +510,53 @@ public class PhoneHomeActivity extends Activity {
         addGrouped(items, page -> () -> pinPage(page));
     }
 
+    private static final String CAPTURE_STATUS = "net.kckern.daylight.cap.quickinput.shell.CaptureStatusActivity";
+
+    /**
+     * Capture status, reachable from the Capture tab (audit H16: the confirmation pointed to
+     * a screen nothing opened), with its counts: "1 needs attention · 2 waiting to send · 3
+     * sent". The counts are the payload's capture rows for the bound account (quick-input's
+     * CaptureScope, by name: widgets does not link quick-input).
+     */
+    private void addCaptureStatus() {
+        if (getPackageManager().resolveActivity(new Intent().setClassName(this, CAPTURE_STATUS), 0) == null) return;
+        TextView counts = flatRow("Capture status", "Checking your captures…", "open", "›", () -> {
+            Intent open = new Intent().setClassName(this, CAPTURE_STATUS);
+            String owner = captureOwner();
+            if (owner != null) open.putExtra("capture-owner", owner);
+            try { startActivity(open); } catch (RuntimeException absent) { toast("Capture status is not in this build"); }
+        });
+        if (counts == null) return;
+        worker.execute(() -> {
+            String line;
+            String owner = captureOwner();
+            if (owner == null) {
+                line = "Quick inputs aren't set up on this phone yet";
+            } else {
+                try {
+                    JSONObject reply = new JSONObject(net.kckern.daylight.api.PayloadPort.named("inputs")
+                            .call(new JSONObject().put("op", "status").put("owner", owner).toString(), 4_000));
+                    line = reply.optBoolean("ok") ? CaptureCounts.line(reply.optJSONArray("inputs")) : "Open to see your captures";
+                } catch (Exception notNow) {
+                    line = net.kckern.daylight.shellkit.PayloadReady.now("inputs").ready()
+                            ? "Open to see your captures" : net.kckern.daylight.shellkit.PayloadReady.STARTING;
+                }
+            }
+            String shown = line;
+            runOnUiThread(() -> counts.setText(shown));
+        });
+    }
+
+    /** The bound capture account (quick-input's CaptureScope.current()), or null. */
+    private static String captureOwner() {
+        try {
+            Object k = Class.forName("net.kckern.daylight.cap.quickinput.shell.CaptureScope").getMethod("current").invoke(null);
+            return k instanceof String ? (String) k : null;
+        } catch (ReflectiveOperationException | RuntimeException absent) { return null; }
+    }
+
     private void addCapture() {
+        if (!launcherPicker) addCaptureStatus();
         List<JSONObject> items = new ArrayList<>();
         for (int i = 0; i < configuredActions.length(); i++) {
             JSONObject action = configuredActions.optJSONObject(i);
@@ -1932,7 +1978,8 @@ public class PhoneHomeActivity extends Activity {
      * title, what it does as a muted second line, and a chevron. For lists of places to go
      * (Browse library, the Player rows, the screens to remote-control, devices).
      */
-    private void flatRow(String name, String line, String glyph, String indicator, Runnable click) {
+    /** A flat 64 dp row; returns its second line (null when it has none), for a caller that updates it. */
+    private TextView flatRow(String name, String line, String glyph, String indicator, Runnable click) {
         buttonRow = null;
         LinearLayout row = new LinearLayout(this);
         row.setGravity(Gravity.CENTER_VERTICAL);
@@ -1973,6 +2020,7 @@ public class PhoneHomeActivity extends Activity {
         row.addView(cue);
         column.addView(row, new LinearLayout.LayoutParams(-1, -2));
         if (placementPanel != null) setupRows.add(row);
+        return words.getChildCount() > 1 ? (TextView) words.getChildAt(1) : null;
     }
 
     private Button actionButton(String text, String item, Runnable click) {

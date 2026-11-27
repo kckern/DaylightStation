@@ -84,6 +84,8 @@ public class RecordActivity extends Activity {
     private boolean seenRecording;
     private boolean sending;
     private boolean completed;
+    /** The saved line is up (CaptureUi.saved): it closes the screen itself. */
+    private boolean holdingOutcome;
     private final Runnable watch = this::refresh;
     private final BroadcastReceiver screenOff = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
@@ -392,8 +394,11 @@ public class RecordActivity extends Activity {
         if (draft != null && sending) {
             try {
                 if (store.get(draft.id) == null) {
-                    CaptureUi.sent(this);
-                    finish();
+                    if (!holdingOutcome) {
+                        holdingOutcome = true;
+                        completed = true;
+                        CaptureUi.saved(this, draft.id, owner, this::finish);
+                    }
                     return;
                 }
             } catch (IOException e) {
@@ -458,9 +463,11 @@ public class RecordActivity extends Activity {
             }
             if (store.sendForCurrentOwner(draft.id)) {
                 CaptureFiles.tellPayload(this);
-                CaptureUi.sent(this);
                 completed = true;
-                finish();
+                holdingOutcome = true;
+                CaptureUi.saved(this, draft.id, owner, this::finish);
+                sending = false;
+                return;
             }
         } catch (IOException | RuntimeException failure) {
             say("Could not queue memo. Check the draft and try again.");

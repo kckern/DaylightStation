@@ -103,7 +103,8 @@ final class QueueNotice {
             case "ACCEPTED": return "Accepted";
             case "DELIVERED": return "Delivered";
             case "LOST": return "Capture file is missing";
-            default: return "Queued";
+            // Waiting its turn: it is sent on its own, so it offers no Retry (audit).
+            default: return "Waiting to send";
         }
     }
 
@@ -114,8 +115,7 @@ final class QueueNotice {
             case "LOST": return "Replace capture";
             case "RETRY":
             case "UNCERTAIN":
-            case "DENIED":
-            case "QUEUED": return "Retry";
+            case "DENIED": return "Retry";
             default: return "";
         }
     }

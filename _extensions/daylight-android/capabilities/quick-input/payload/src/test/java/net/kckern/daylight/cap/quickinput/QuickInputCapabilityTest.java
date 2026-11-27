@@ -606,7 +606,7 @@ public class QuickInputCapabilityTest {
         String id = "1700000000000-ab12cd34";
         Files.write(new File(scoped, id + ".ogg").toPath(), new byte[] { 42 });
         quiet.pumpOnce();
-        assertEquals("Queued", TestCore.get(noNotices, "/input/status").getJSONArray("inputs")
+        assertEquals("Waiting to send", TestCore.get(noNotices, "/input/status").getJSONArray("inputs")
                 .getJSONObject(0).getString("message"));
         Map<String, String> query = Collections.singletonMap("id", id);
         assertTrue(TestCore.call(noNotices, "POST", "/input/status/retry", query, "{}").getBoolean("ok"));
@@ -662,7 +662,7 @@ public class QuickInputCapabilityTest {
             payload.pumpOnce();
             payload.stop();
         }
-        assertEquals(java.util.Arrays.asList("Queued", "Accepted"), posted);
+        assertEquals(java.util.Arrays.asList("Waiting to send", "Accepted"), posted);
         assertEquals(Collections.singletonList(id), uploads);
     }
 
