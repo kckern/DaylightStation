@@ -274,6 +274,9 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
                     future.set(new MediaSession.MediaItemsWithStartPosition(NodeItems.tracks(r.tracks), r.startIndex, position));
                 } catch (Throwable e) {
                     future.setException(failure(e));
+                    // Media3 drops a refused set without a player error: tell Now playing, which is
+                    // showing the tapped item as starting, so it says so now and not after 30 s.
+                    SessionExtras.putLong(session, Starting.EXTRA_REFUSED_AT, android.os.SystemClock.elapsedRealtime());
                 }
             });
         } catch (RuntimeException stopping) {

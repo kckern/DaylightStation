@@ -134,6 +134,10 @@ public class NowPlayingActivity extends Activity {
     private String startShownFor = "";
     /** What was just tapped, shown until the player has it (Starting); null when nothing is starting. */
     private Starting starting;
+    /** A start that failed: its line stays under the real state, tappable to retry, until it is old. */
+    private Starting failedStart;
+    /** How long a failed start's line stays under the real state. */
+    private static final long FAILED_LINE_MS = 20_000;
     /** When the player's current item last changed (elapsed ms), to tell a new item from the one before the tap. */
     private long itemChangedAt = -1;
     private String volumeLine = "";
@@ -211,6 +215,7 @@ public class NowPlayingActivity extends Activity {
         buildViews();
         chooseInitialTarget(getIntent(), saved);
         if (saved == null) takeStarting(getIntent());
+        else starting = Starting.restore(saved);
         loadScreens();
         // Opened as a screen's remote (the phone home's Connect tab): the pad, at once.
         if (saved == null && getIntent() != null && getIntent().getBooleanExtra(EXTRA_PAD, false) && remote()) showPad(true);
@@ -249,6 +254,7 @@ public class NowPlayingActivity extends Activity {
     @Override protected void onSaveInstanceState(Bundle out) {
         super.onSaveInstanceState(out);
         out.putString(EXTRA_TARGET, target);
+        if (starting != null) starting.save(out);
         out.putString("stage", stage.name());
     }
 
@@ -399,6 +405,8 @@ public class NowPlayingActivity extends Activity {
                     .setListener(new MediaController.Listener() {
                         @Override public void onExtrasChanged(MediaController c, Bundle extras) {
                             if (c != controller) return;
+                            long refusedAt = extras.getLong(Starting.EXTRA_REFUSED_AT, -1);
+                            if (starting != null && refusedAt >= starting.askedAt) starting.fail();
                             remoteStatus = extras.getString(RemoteControlService.EXTRA_STATUS, "");
                             remoteReach = extras.getString(RemoteControlService.EXTRA_REACH, "");
                             render();
@@ -522,6 +530,11 @@ public class NowPlayingActivity extends Activity {
      * behind the starting item until then.
      */
     private boolean startedNow(MediaController c, MediaMetadata meta) {
+        // The tapped id itself, or the list the current item came from (a c: list, a p: track in its list).
+        String want = contentOf(starting.mediaId);
+        MediaItem current = c.getCurrentMediaItem();
+        if (!want.isEmpty() && current != null
+                && (want.equals(NodeItems.listId(current)) || want.equals(contentOf(current.mediaId)))) return true;
         if (itemChangedAt >= starting.askedAt) return true;
         for (CharSequence m : new CharSequence[] { meta.title, meta.albumTitle, meta.artist, meta.displayTitle }) {
             if (m != null && m.toString().trim().equalsIgnoreCase(starting.title)) return true;
@@ -531,8 +544,9 @@ public class NowPlayingActivity extends Activity {
     }
 
     private void retryStarting() {
-        Starting s = starting;
-        if (s == null || controller == null) return;
+        Starting s = starting != null ? starting : failedStart;
+        if (s == null || controller == null || s.mediaId.isEmpty()) return;
+        failedStart = null;
         note("player.start-retry");
         starting = new Starting(s.target, s.mediaId, s.title, s.subtitle, s.art, SystemClock.elapsedRealtime());
         controller.setMediaItem(new MediaItem.Builder().setMediaId(s.mediaId).build());
@@ -554,6 +568,15 @@ public class NowPlayingActivity extends Activity {
             starting = null;
         }
         if (starting != null && c != null && c.getPlayerError() != null) starting.fail();
+        if (starting != null && starting.phase(nowMs) == Starting.Phase.FAILED) {
+            // Back to what is really there (the old item, a screen's start panel), with the failure said under it.
+            note("player.start-failed", "ms", nowMs - starting.askedAt);
+            failedStart = starting;
+            starting = null;
+            final Starting gone = failedStart;
+            main.postDelayed(() -> { if (failedStart == gone) { failedStart = null; render(); } }, FAILED_LINE_MS);
+        }
+        if (failedStart != null && !failedStart.target.equals(target)) failedStart = null;
         final Starting begun = starting;
         if (begun != null) {
             // The tapped item, from the first frame: its name, who by, its cover, and how starting is going.
@@ -566,12 +589,21 @@ public class NowPlayingActivity extends Activity {
             status.setText(line);
             status.setVisibility(View.VISIBLE);
             status.setContentDescription(line);
-            boolean retry = !remote() && begun.retryable(nowMs);
-            playPause.setImageResource(R.drawable.daylight_np_play);
-            playPause.setContentDescription(retry ? "Try again" : "Starting");
-            enable(playPause, retry);
+            // What still plays until the new item lands can be paused; nothing else acts on the old item.
+            boolean playingOld = active(c);
+            playPause.setImageResource(playingOld ? R.drawable.daylight_np_pause : R.drawable.daylight_np_play);
+            playPause.setContentDescription(playingOld ? "Pause" : "Starting");
+            enable(playPause, playingOld);
             enable(prev, false);
             enable(next, false);
+            for (View v : new View[] { shuffleButton, repeatButton, queueButton, lyricsButton, speedButton, leftEdgeBox, rightEdgeBox }) enable(v, false);
+            if (stage != Stage.ART) setStage(Stage.ART);
+            show(qualityLine, null);
+            lyricsBadge.setVisibility(View.GONE);
+            if (chapterLine != null) { chapterLine.setText(""); chapterLine.setVisibility(View.INVISIBLE); }
+            wave.setSamples(null);
+            wave.setMarks(null, -1, 0);
+            detailFor = "";   // the old item's detail loads again if it turns out to stay
             renderArtwork(begun.art.isEmpty() ? null : Uri.parse(begun.art), true);
             renderTargets();
             tickPosition();
@@ -595,6 +627,7 @@ public class NowPlayingActivity extends Activity {
         else if (c == null) line = pending != null ? "Connecting…" : connectionLine;
         else if (remote()) line = remoteStatus;
         else line = c.getPlayerError() != null ? "Could not play this" : "";
+        if (failedStart != null) line = failedStart.failedLine(remote() ? targetName : "");
         if (line.isEmpty() && !remote()) line = SleepTimer.describeNow();
         // A kept track says where it plays from (the spec's offline mark).
         if (line.isEmpty() && !remote() && hasItem) line = fromPhone(c.getCurrentMediaItem()) ? "Playing from this phone" : "";
@@ -699,6 +732,16 @@ public class NowPlayingActivity extends Activity {
     private void tickPosition() {
         main.removeCallbacks(ticker);
         MediaController c = controller;
+        if (starting != null && c != null && c.getMediaItemCount() > 0 && startedNow(c, c.getMediaMetadata())) { render(); return; }
+        if (starting != null) {
+            // Nothing of the old item's time shows under the new title.
+            wave.setEnabled(false);
+            wave.setFraction(0f, "");
+            elapsed.setText("");
+            remaining.setText("");
+            main.postDelayed(ticker, 200);
+            return;
+        }
         long duration = c == null ? C.TIME_UNSET : c.getDuration();
         boolean known = duration != C.TIME_UNSET && duration > 0;
         boolean any = c != null && c.getMediaItemCount() > 0;
@@ -1755,6 +1798,8 @@ public class NowPlayingActivity extends Activity {
         qualityLine.setPadding(0, dp(8), 0, 0);
         player.addView(qualityLine);
         status = centred();
+        // A failed start's line is its retry (this phone only).
+        status.setOnClickListener(v -> { if (failedStart != null && !remote()) retryStarting(); });
         status.setPadding(0, dp(8), 0, 0);
         status.setMaxLines(1);
         status.setAutoSizeTextTypeUniformWithConfiguration(10, 14, 1, android.util.TypedValue.COMPLEX_UNIT_SP);
@@ -1767,7 +1812,7 @@ public class NowPlayingActivity extends Activity {
         rightEdgeBox = edgeBox(false);
         prev = icon(R.drawable.daylight_np_previous, "Previous", 0, () -> { if (!chapterSkip(false)) controller.seekToPrevious(); clock.reset(); });
         playPause = icon(R.drawable.daylight_np_play, "Play", 0, () -> {
-            if (starting != null && !remote()) { if (starting.retryable(SystemClock.elapsedRealtime())) retryStarting(); return; }
+            if (starting != null) { if (active(controller)) controller.pause(); return; }
             if (active(controller)) controller.pause();
             else { if (controller.getPlaybackState() == Player.STATE_IDLE) controller.prepare(); controller.play(); }
         });

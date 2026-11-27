@@ -17,6 +17,9 @@ final class Starting {
     static final String EXTRA_TITLE = "starting.title";
     static final String EXTRA_SUBTITLE = "starting.subtitle";
     static final String EXTRA_ART = "starting.art";
+    /** Session extra (elapsedRealtime ms): the player refused the last play request (LibraryCallback). */
+    static final String EXTRA_REFUSED_AT = "start.refusedAt";
+    private static final String SAVED = "starting.saved.";
 
     /** After this, the line says it is taking longer. */
     static final long SLOW_MS = 8_000;
@@ -54,7 +57,26 @@ final class Starting {
                 .putExtra(EXTRA_SUBTITLE, nz(subtitle)).putExtra(EXTRA_ART, nz(art));
     }
 
-    /** The player reported an error before it had the item. */
+    /** Kept over a rotation or a recreated screen: askedAt is elapsedRealtime, which survives both. */
+    void save(android.os.Bundle out) {
+        out.putString(SAVED + "target", target);
+        out.putString(SAVED + "id", mediaId);
+        out.putString(SAVED + "title", title);
+        out.putString(SAVED + "subtitle", subtitle);
+        out.putString(SAVED + "art", art);
+        out.putLong(SAVED + "at", askedAt);
+        out.putBoolean(SAVED + "failed", failed);
+    }
+
+    static Starting restore(android.os.Bundle saved) {
+        if (saved == null || saved.getString(SAVED + "title") == null) return null;
+        Starting s = new Starting(saved.getString(SAVED + "target"), saved.getString(SAVED + "id"), saved.getString(SAVED + "title"),
+                saved.getString(SAVED + "subtitle"), saved.getString(SAVED + "art"), saved.getLong(SAVED + "at"));
+        if (saved.getBoolean(SAVED + "failed")) s.fail();
+        return s;
+    }
+
+    /** The player reported an error, or refused the request, before it had the item. */
     void fail() { failed = true; }
 
     Phase phase(long now) {
@@ -62,14 +84,16 @@ final class Starting {
         return now - askedAt >= SLOW_MS ? Phase.SLOW : Phase.STARTING;
     }
 
-    /** The status line for the phase; {@code where} is "" on this phone, or a screen's name. */
+    /** The status line while starting; {@code where} is "" on this phone, or a screen's name. */
     String line(long now, String where) {
-        switch (phase(now)) {
-            case FAILED: return where.isEmpty() ? "Couldn't start this · tap Play to try again"
-                    : where + " didn't start it";
-            case SLOW: return where.isEmpty() ? "Still starting… home is slow" : "Still starting on " + where + "…";
-            default: return where.isEmpty() ? "Starting…" : "Starting on " + where + "…";
-        }
+        if (phase(now) == Phase.SLOW) return where.isEmpty() ? "Still starting… home is slow" : "Still starting on " + where + "…";
+        return where.isEmpty() ? "Starting…" : "Starting on " + where + "…";
+    }
+
+    /** The line shown under the real state once starting failed (tappable to retry on this phone). */
+    String failedLine(String where) {
+        if (!where.isEmpty()) return where + " didn't start " + title;
+        return mediaId.isEmpty() ? "Couldn't start " + title : "Couldn't start " + title + " · tap to try again";
     }
 
     /** True when a retry is possible (this phone, failed, and the id is known). */

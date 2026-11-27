@@ -181,10 +181,8 @@ final class SleepTimer {
         shownArmed = armed;
         shownUntil = until;
         if (session == null) return;
-        // The phone's session sets no other extras (Media3 1.1.1 has no getter to merge with).
-        Bundle extras = new Bundle();
-        if (armed) extras.putLong(EXTRA_UNTIL, until); else extras.remove(EXTRA_UNTIL);
-        session.setSessionExtras(extras);
+        // Merged with the session's other extras (a refused play): SessionExtras.
+        if (armed) SessionExtras.putLong(session, EXTRA_UNTIL, until); else SessionExtras.remove(session, EXTRA_UNTIL);
     }
 
     /** "Sleep in 23 min" or "Sleep at the end of this", for a timer set to {@code until}. Pure. */
