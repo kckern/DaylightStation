@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { aimAt } from './lib/aim.mjs';
-import { playResult, playResultHere } from './lib/search.mjs';
+import { playResult, playResultHere, answerSpotChooser } from './lib/search.mjs';
 
 // Batch B — the handle and the one controls surface, against REAL mounted
 // screen pages served by `tests/_lib/media-redesign-server.mjs` (BASE_URL):
@@ -255,7 +255,15 @@ test('PLAY.10a/AC2 — with Add only on, Play from this device is added and says
   await aimAt(page, A, { fork: true });
   const search = page.getByRole('textbox', { name: 'Search media…' });
   await search.fill('Keepy Uppy');
-  await playResult(page, page.getByTestId(`combobox-option-${EP_KEEPY}`));
+  // Not playResult: its evidence that a play started is the handle, and an
+  // add never moves the handle (it keeps the screen's own session). Waiting
+  // out its 10 s chooser window outlived the confirmed row's 8 s linger, so
+  // the "Added …" row came and went before it was looked for. The row itself
+  // is this Play's evidence.
+  await page.getByTestId(`combobox-option-${EP_KEEPY}`).click();
+  await page.getByTestId('detail-play-now').click();
+  await answerSpotChooser(page, { until: () => page.evaluate(() => (
+    document.querySelector('[data-testid="dispatch-tray"]')?.textContent ?? '').includes('Added Keepy Uppy')) });
   const tray = page.getByTestId('dispatch-tray');
   await expect(tray).toContainText(`Added Keepy Uppy to ${A_NAME} (Add only is on)`, { timeout: 60000 });
   await expect(tray).toContainText(/2nd in line/);
