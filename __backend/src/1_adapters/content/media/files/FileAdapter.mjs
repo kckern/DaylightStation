@@ -24,7 +24,17 @@ const MEDIA_PREFIXES = ['', 'audio', 'video', 'img'];
 // footage — they must not surface in general/family search results. They stay
 // reachable via direct browse/getList and via an explicit source-scoped
 // search override (`files.includeExcluded=true`).
-const DEFAULT_SEARCH_EXCLUDED_PATHS = ['video/fitness/'];
+// `fitness/` holds the workout sessions' snapshots (~280k images of the
+// household) and the fitness games' sprites: private, and nothing anyone
+// searches for — walking it was most of every search's cost.
+const DEFAULT_SEARCH_EXCLUDED_PATHS = ['video/fitness/', 'fitness/'];
+
+// Search reads a name index of the media tree instead of walking it per
+// search. One walk is shared by every search (typing "bluey" used to start a
+// fresh 450k-entry walk per keystroke, none of them ever cancelled), and the
+// index is reused for this long; an older one is still served while a new one
+// is built behind it. Names added on disk show up within this window.
+const SEARCH_INDEX_TTL_MS = 10 * 60 * 1000;
 
 const MIME_TYPES = {
   '.mp3': 'audio/mpeg',
@@ -875,7 +885,30 @@ export class FileAdapter extends IContentSource {
     const results = [];
     const seenIds = new Set();
 
-    // Search through media prefix directories
+    if (!includeExcluded) {
+      // The everyday path: match names in the shared index (no disk walk).
+      const entries = await this._searchIndex();
+      let scanned = 0;
+      for (const entry of entries) {
+        if (results.length >= take) break;
+        // Breathe between batches: the match loop is synchronous otherwise.
+        if (++scanned % 5000 === 0) await new Promise((resolve) => setImmediate(resolve));
+        if (entry.isDirectory) {
+          if (!entry.nameLower.includes(searchLower)) continue;
+        } else {
+          if (mediaType && entry.mediaType !== mediaType) continue;
+          if (!entry.baseLower.includes(searchLower) && !entry.nameLower.includes(searchLower)) continue;
+        }
+        const item = await this.getItem(entry.rel);
+        if (!item) continue;
+        if (item.id && seenIds.has(item.id)) continue;
+        if (item.id) seenIds.add(item.id);
+        results.push(item);
+      }
+      return { items: results, total: results.length };
+    }
+
+    // Asked for the excluded footage too (rare, explicit): walk the tree.
     for (const prefix of MEDIA_PREFIXES) {
       if (results.length >= take) break;
 
@@ -897,6 +930,83 @@ export class FileAdapter extends IContentSource {
     }
 
     return { items: results, total: results.length };
+  }
+
+  /**
+   * The search name index (see SEARCH_INDEX_TTL_MS): every directory and media
+   * file under the search roots, default exclusions left out, in walk order.
+   * One build at a time, shared by every caller; a stale index is served
+   * while its replacement builds.
+   * @returns {Promise<Array<{rel: string, nameLower: string, baseLower: string, isDirectory: boolean, mediaType: string|null}>>}
+   * @private
+   */
+  _searchIndex() {
+    const state = this._searchIndexState ?? {};
+    const fresh = state.entries && Date.now() - state.builtAt < SEARCH_INDEX_TTL_MS;
+    if (fresh) return Promise.resolve(state.entries);
+    if (!state.building) {
+      const building = this._buildSearchIndex().then((entries) => {
+        this._searchIndexState = { entries, builtAt: Date.now(), building: null };
+        return entries;
+      }, (error) => {
+        this._searchIndexState = { ...this._searchIndexState, building: null };
+        throw error;
+      });
+      this._searchIndexState = { ...state, building };
+      return state.entries ? Promise.resolve(state.entries) : building;
+    }
+    return state.entries ? Promise.resolve(state.entries) : state.building;
+  }
+
+  /** @private */
+  async _buildSearchIndex() {
+    const entries = [];
+    const budget = { ops: 0 };
+    for (const prefix of MEDIA_PREFIXES) {
+      const searchPath = prefix ? path.join(this.mediaBasePath, prefix) : this.mediaBasePath;
+      if (!dirExists(searchPath)) continue;
+      await this._indexDirectory(searchPath, 0, prefix, this.searchExcludePaths, entries, budget);
+    }
+    return entries;
+  }
+
+  /**
+   * One level of the index walk: the same rules as _searchDirectory (depth 5,
+   * `.`/`_` skipped, prefix dirs skipped at the root, symlinks followed, media
+   * files only), recording names instead of matching them.
+   * @private
+   */
+  async _indexDirectory(dirPath, depth, prefix, excludePaths, entries, budget) {
+    if (depth > 5) return;
+    let dirents;
+    try {
+      dirents = await readDirectoryAsync(dirPath, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const dirent of dirents) {
+      const entry = dirent.name;
+      if (++budget.ops % 500 === 0) await new Promise((resolve) => setImmediate(resolve));
+      if (entry.startsWith('.') || entry.startsWith('_')) continue;
+      if (prefix === '' && depth === 0 && MEDIA_PREFIXES.includes(entry)) continue;
+      const entryPath = path.join(dirPath, entry);
+      let isDirectory = dirent.isDirectory();
+      if (dirent.isSymbolicLink()) {
+        try { isDirectory = (await getFileStatsAsync(entryPath)).isDirectory(); } catch { continue; }
+      } else if (!isDirectory && !dirent.isFile()) continue;
+      const rel = path.relative(this.mediaBasePath, entryPath);
+      if (this._isSearchExcluded(rel, isDirectory, excludePaths)) continue;
+      const nameLower = entry.toLowerCase();
+      if (isDirectory) {
+        entries.push({ rel, nameLower, baseLower: nameLower, isDirectory: true, mediaType: null });
+        await this._indexDirectory(entryPath, depth + 1, prefix, excludePaths, entries, budget);
+      } else {
+        const ext = path.extname(entry).toLowerCase();
+        const mediaType = this.getMediaType(ext);
+        if (mediaType === 'unknown') continue;
+        entries.push({ rel, nameLower, baseLower: path.basename(entry, ext).toLowerCase(), isDirectory: false, mediaType });
+      }
+    }
   }
 
   /**

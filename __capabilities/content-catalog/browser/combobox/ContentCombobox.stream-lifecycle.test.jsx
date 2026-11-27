@@ -94,7 +94,9 @@ describe('ContentCombobox streaming-search lifecycle', () => {
 
     expect(screen.getByText('Arrival')).toBeInTheDocument();
     expect(screen.queryByText('No results')).not.toBeInTheDocument();
-    pointerRetry(screen.getByTestId('stream-status-retry-abs'));
+    // An everything search: no row per source, one quiet line under the results.
+    expect(screen.queryByTestId('stream-status-retry-abs')).toBeNull();
+    pointerRetry(screen.getByTestId('search-failure-note-retry'));
 
     expect(input).toHaveValue('arrival');
     expect(screen.getByRole('listbox')).toBeVisible();
@@ -209,9 +211,9 @@ describe('ContentCombobox streaming-search lifecycle', () => {
       MockEventSource.instances[2].simulateMessage({ event: 'complete' });
     });
 
-    expect(await screen.findByTestId('stream-status-retry-plex')).toBeInTheDocument();
+    expect(await screen.findByTestId('search-failure-note-retry')).toBeInTheDocument();
     expect(screen.getByTestId('combobox-fallback-notice'))
-      .toHaveTextContent('Not in this scope — From everything: results may be incomplete. Retry the source above.');
+      .toHaveTextContent('Not in this scope — From everything: results may be incomplete.');
     expect(screen.queryByText(/nothing found anywhere else either/i)).toBeNull();
     expect(screen.queryByText(/No results/)).toBeNull();
     expect(screen.queryByTestId('freeform-commit-option')).toBeNull();

@@ -170,8 +170,10 @@ describe('FleetPlayPicker', () => {
     });
     renderPicker();
 
-    expect(screen.getByText('Plex did not answer')).toBeVisible();
-    fireEvent.click(screen.getByTestId('stream-status-retry-plex'));
+    // An everything search: one quiet line, no row naming the source.
+    expect(screen.queryByText('Plex did not answer')).toBeNull();
+    expect(screen.getByTestId('search-failure-note')).toHaveTextContent("Some libraries didn't answer");
+    fireEvent.click(screen.getByTestId('search-failure-note-retry'));
     expect(retry).toHaveBeenCalledWith('plex');
     expect(screen.queryByTestId('search-empty')).toBeNull();
   });

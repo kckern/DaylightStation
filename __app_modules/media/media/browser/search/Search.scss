@@ -428,3 +428,9 @@
 }
 
 .media-dest-list--compact { min-width: min(17rem, calc(100vw - 32px)); }
+
+// Everything-search failures: one quiet line after the results
+// (.search-failure-note lives in ContentCombobox.scss with the status line).
+.search-mode-failure-note {
+  list-style: none;
+}

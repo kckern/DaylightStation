@@ -417,4 +417,27 @@ describe('FileAdapter search walk', () => {
     const { items } = await adapter.search({ text: 'sonic', take: 2 });
     expect(items.length).toBe(2);
   });
+  // 2026-11-27: every search walked the whole media tree (450k entries), one
+  // fresh walk per keystroke, and the walks starved the other search sources
+  // (photo libraries timed out at 3 s only while a files walk ran).
+  test('searches share one walk of the tree', async () => {
+    const build = vi.spyOn(adapter, '_buildSearchIndex');
+    const [a, b] = await Promise.all([
+      adapter.search({ text: 'sonic', take: 50 }),
+      adapter.search({ text: 'green', take: 50 }),
+    ]);
+    await adapter.search({ text: 'sonic', take: 50 });
+    expect(build).toHaveBeenCalledTimes(1);
+    expect(a.items.map(i => i.id)).toContain('files:audio/sonic');
+    expect(b.items.map(i => i.id)).toContain('files:audio/sonic/green-hill.mp3');
+  });
+
+  test('the workout snapshots under fitness/ are not searched by default', async () => {
+    fs.mkdirSync(path.join(root, 'fitness', 'sessions', 's1'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'fitness', 'sessions', 's1', 'sonic-snap.jpg'), '');
+    const plain = await new FileAdapter({ mediaBasePath: root }).search({ text: 'sonic', take: 50 });
+    expect(plain.items.some(i => i.id.includes('fitness/sessions'))).toBe(false);
+    const asked = await new FileAdapter({ mediaBasePath: root }).search({ text: 'sonic', take: 50, includeExcluded: true });
+    expect(asked.items.map(i => i.id)).toContain('files:fitness/sessions/s1/sonic-snap.jpg');
+  });
 });

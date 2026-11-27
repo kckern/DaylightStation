@@ -223,6 +223,11 @@ Reads files from the local filesystem. Behavior varies by `content_format` confi
 - **Capabilities**: `playable`, `listable`, `searchable`, `displayable`
 - **Multi-instance**: Yes — one instance per directory
 - **Config**: `data_path` (YAML metadata), `media_path` (audio/video files), content_format, allowed extensions
+- **Search (`files` source)**: matches directory and media-file names under the media root (depth 5; `.`/`_` entries skipped).
+  It reads a name index built by ONE shared walk and reused for 10 minutes (an older index is served while the next builds), so
+  searches never walk the tree per keystroke — per-search walks of ~450k entries starved the other sources (photo libraries
+  timed out at 3 s only while a walk ran). Excluded by default: `video/fitness/` and `fitness/` (workout footage and session
+  snapshots); `files.includeExcluded=true` searches them with a direct walk. Override the list with `mediaSearchExcludePaths`.
 
 #### Data/Media Path Split
 

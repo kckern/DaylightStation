@@ -189,11 +189,12 @@ its menu), never hidden. Targets are 40 px on a pointer device, 44 px on touch.
   library. Items it adds are marked "added automatically"; it stops by itself
   after about two unattended hours, and says "Nothing similar left" when it
   runs out. These modes belong to the session: a new start resets them.
-- **Add only** (a screen's Remote): one step on or off. On this device it is
+- **Add only**, shown everywhere as **"Queue what others send"** (a screen's
+  Remote; one label source, `controller/addOnlyCopy.js`): one step on or off. On this device it is
   shown unavailable, with the reason (it belongs to a screen other devices
   play to). While on, Play from
   any other device is added to that screen's queue instead of replacing it,
-  and the sender reads "Added <item> to <screen> (Add only is on) · Nth in
+  and the sender reads "Added <item> to the queue on <screen> · Nth in
   line". Automations still play. Anyone can turn it off.
 - **Notes and Put it back.** When a device pauses, stops, replaces or moves a
   screen's playback, that screen shows "Paused by <device>" (repeats grouped,
@@ -395,7 +396,8 @@ this device can see. A browser's live name (its heartbeat) wins over an older
 copy of the screen list, and a difference re-reads the list.
 
 **First use** (RQ-RELY-12): on a device that has never been named, a small
-popover opens once, anchored to the header's destination control: "What should
+popover opens once, anchored to the destination chip (in the search box; on a
+phone, at the right end of the search launcher): "What should
 we call this device?", the name field prefilled with a default for the kind of
 device ("iPhone", "Android tablet", "Mac"), **Save** or **Not now**, and one
 sentence explaining where taps go ("Things you play go to the device shown
@@ -425,8 +427,10 @@ and progress:
   origin is unknown. The same line shows in the header of that screen's
   controls (its Remote), under the screen's name and what it is doing, while
   something plays.
-- **Add only** (RQ-PLAY-10): "Add only is on: Play from other devices adds to
-  the queue." with **Turn off** — anyone can switch it off from the row.
+- **Add only** (RQ-PLAY-10), in the same words as Now Playing: "Queue what
+  others send is on: plays from other devices join the queue." with **Turn
+  off** — anyone can switch it off from the row (toast "Stopped queueing what
+  others send on <screen>"). Test ids keep `house-add-only-*`.
 - **Notes** (RQ-STEER-21): a screen that can't show notes itself (a speaker)
   lists its notes on its row — "Paused by Dad's phone ×2 · 7:02" — with **Put
   it back** while that is still possible.
@@ -559,10 +563,13 @@ phone's narrow search row the ask reads `▶ Choose`.
 The choice is **sticky** — it does not expire — and *This device* is a choice of
 its own, remembered apart from nothing being aimed (`here`); choosing This
 device in the phone's Destination sheet sets the same sticky choice, Start
-fresh clears it, and it never hides the "Usual" screen in Play on…. The header
-"Playing on" control is now phone-only and reads the chip's own label
-(`useDestinationLabel`), so the two never disagree; the first-use hint points
-at the chip.
+fresh clears it, and it never hides the "Usual" screen in Play on…. There is
+no header "Playing on" control on any width (removed from the phone
+2026-11-27): the phone's search launcher carries the same chip and ▾ at its
+right end, like the box it opens; the first-use hint points at the chip. No
+control aims at several screens or switches move / keep playing any more
+(several screens: Play on… › Choose several screens); a stored aim that names
+several is still read everywhere ("A + B", "4 screens").
 Cycling logs `search.destination-cycled {from, to, via}`.
 
 **Cycle for a quick choice, or pick from a list** (owner ruling 2026-11-27).
@@ -806,7 +813,7 @@ on More opens it and moves focus to the first new row. One shared component
 | Surface | Shown first | Under More |
 |---|---|---|
 | Play on… / Add on… picker, Fling, Move to…, Send elsewhere | 3 screens (Move to… also This device) | the rest; asleep screens and browser tabs fall here first |
-| Aim checkboxes (header destination) | 4 screens and every aimed one | the rest |
+| Destination list (the chip's ▾) | 3 screens and the current one, then This device | the rest |
 | Remote's Switch screen | every screen with something on, plus 3 | the rest |
 | Search results (search box, full-screen search, Devices-page play search) | 8 (habit-ranked), then **Show all N** | the rest of the results |
 | Queue panel | the current item and the next 5 | earlier and later items; opened, the whole queue in play order |
@@ -1002,8 +1009,14 @@ suggestions.", "Couldn't load search results.") and a normal-size secondary
 HTTP code, a server message or "failed to load"; the detail goes to the log
 (`load.failed`, `household.load-failed`). One component and one copy table:
 `shared/LoadErrorLine.jsx` and `shared/loadErrorCopy.js`. A source that merely
-did not answer inside a search keeps its own status line ("Plex did not answer",
-Retry).
+did not answer inside a search is said by scope (`failurePlacement`,
+`combobox/StreamStatusLine.jsx`): a scoped search names its own library at the
+top ("Plex did not answer", Retry); a source the scope does not ask for is
+never mentioned; an everything search gathers its failures into ONE quiet line
+under the results — "Some libraries didn't answer · Retry" (`SourceFailureNote`,
+`search-failure-note`; Retry asks each failed source again) — never a row per
+source. Same in the dock list, the phone search sheet and the Devices-page Play
+search.
 
 **Alignment details.** Tile titles reserve two lines so every meta line in a row
 sits on one baseline; the gear rides the header's right edge whether or not the
@@ -1012,8 +1025,8 @@ source by its human name ("Movies & TV", not `plex`) and shows a single Home
 crumb (an extra Back crumb appears only when Back would land somewhere other
 than Home); artwork-less rows show a quiet centred initial.
 
-**One destination, one title.** The header's destination control is the only
-place the aim is shown; Browse lists and Now Playing do not repeat "Playing on
+**One destination, one title.** The destination chip (search box; phone search
+launcher and sheet) is the only place the aim is shown; Browse lists and Now Playing do not repeat "Playing on
 <name>" (a phone keeps one aim line inside Now Playing, after the queue, where
 the header is out of thumb reach). **Now Playing is one hero** (ruling
 2026-11-27, `shell/NowPlayingView.jsx`, `shell/nowPlayingModel.js`): the video
@@ -1033,9 +1046,10 @@ per screen); a screen's Remote keeps its own. Browse rows without artwork lead w
 source (`browse/sourceIcons.jsx`), never a letter tile, and two source roots that
 read the same are one row.
 
-**Header, scope and house indicator.** On a phone the destination control
-("Playing on <name> ⌄", `cast/CastTargetChip.jsx`) leads the header; on a wide
-screen it is the chip inside the search box. Scope
+**Header, scope and house indicator.** The destination is the chip inside the
+search box; on a phone, the search launcher is drawn like that box with the
+same chip and ▾ at its right end (`shell/Dock.jsx`), under the house indicator
+and the gear. Scope
 is one segmented control, the same 44 px height as the search field. The house
 indicator hides at 0, otherwise "N playing" with a small dot at the same height.
 
@@ -1226,7 +1240,7 @@ and a **canvas** that shows exactly one view at a time:
 
 ```
 ┌────────────────────────────────────────────────────────────┐
-│ DOCK  Playing on Mac ⌄  All Video Music Books  [search…]    │
+│ DOCK  All Video Music Books  [search…  ▶ Mac ▾]             │
 │                                   • 2 playing, 1 paused   ⚙ │
 ├──────┬─────────────────────────────────────────────────────┤
 │ NAV  │  CANVAS                                             │
@@ -1255,14 +1269,12 @@ and a **canvas** that shows exactly one view at a time:
 - the **house indicator** — "N playing" (and "M paused"), an at-a-glance
   summary of the house that opens **Devices**; it is hidden when nothing is
   playing or paused, and its words, not the small dot, carry the state,
-- the **destination control** — on a phone, "Playing on <name> ⌄" in the header
-  (on a wide screen the same choice is the chip in the search box, see Looking
-  and watching): where a plain Play goes
-  (this browser's own name, "this device" when it has none, the named screen,
-  or "Kitchen + Living Room"). It absorbs the old cast icon: tapping it opens
-  the cast preferences (preferred devices, move or keep playing here too).
-  Escape closes these preferences and focuses the destination control. Clicking
-  outside closes them while focus follows the click. The same destination line
+- the **destination chip** — "▶ <name>" with its ▾, in the search box (on a
+  phone, at the right end of the search launcher; see Looking and watching):
+  where a plain Play goes (this browser's own name, "this device" when it has
+  none, the named screen, or "Kitchen + Living Room" for a stored aim at
+  several). A tap cycles; the ▾ opens the destination list; Escape closes the
+  list and keeps the choice. The same destination line
   ("Playing on …") opens the one destination picker
   in Search Mode, on Browse and Detail, and on **Now Playing**. A machine name
   ("Browser 4778f429") is never shown: an unnamed browser reads "this device"

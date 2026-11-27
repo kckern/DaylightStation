@@ -33,7 +33,7 @@ import { getChildLogger } from "../../../../frontend/src/lib/logging/singleton.j
 import { shouldRunScrollToHighlighted, shouldPositionLevel } from "./comboboxScroll.js";
 import { useContentCombobox } from "./useContentCombobox.js";
 import { Modes, isContainer } from "./comboboxMachine.js";
-import { StreamStatusLine } from "./StreamStatusLine.jsx";
+import { StreamStatusLine, SourceFailureNote } from "./StreamStatusLine.jsx";
 import { ResultRowActions } from "./ResultRow.jsx";
 import { SearchSkeletonRows } from "./SearchSkeletonRows.jsx";
 import "./ContentCombobox.scss";
@@ -1078,6 +1078,7 @@ export function ContentCombobox({
               ? { active: true, from: scopeLabel || 'this scope', resultCount: items.length, testId: 'combobox-fallback-notice' }
               : null}
             onRetry={handleStreamRetry}
+            scopeParams={searchParams}
           />
         )}
 
@@ -1252,6 +1253,15 @@ export function ContentCombobox({
               )}
             </ScrollArea.Autosize>
           </PickerScrollAnchor>
+          {/* Everything-search failures: one quiet line under the results,
+              never a row per source above them (failurePlacement). */}
+          {!isBrowse && !isSearching && searchState?.failedSources?.length > 0 && (
+            <SourceFailureNote
+              failedSources={searchState.failedSources}
+              scopeParams={searchParams}
+              onRetry={handleStreamRetry}
+            />
+          )}
           {loadingDirection && (
             <Box className="content-combobox-page-loader" data-direction={loadingDirection}>
               <Loader size="xs" role="status" aria-label="Loading more items" />

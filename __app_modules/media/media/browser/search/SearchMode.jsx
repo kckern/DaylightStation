@@ -32,7 +32,7 @@ import { ActionIcon, Button, UnstyledButton } from '@mantine/core';
 import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import { ActionMenu } from '@/lib/ui/ActionMenu.jsx';
 import { useContentCombobox } from "../../../../../__capabilities/content-catalog/browser/picker-controller.mjs";
-import { StreamStatusLine, SearchSkeletonRows } from "../../../../../__capabilities/content-catalog/browser/search-status.mjs";
+import { StreamStatusLine, SourceFailureNote, SearchSkeletonRows } from "../../../../../__capabilities/content-catalog/browser/search-status.mjs";
 import { ResultRow } from "../../../../../__capabilities/content-catalog/browser/result-row.mjs";
 import { useSearchContext } from "./useSearchContext.js";
 import { ScopeChips } from "./ScopeChips.jsx";
@@ -481,6 +481,7 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus, keepScop
           ? { active: true, from: scopeThatCameUpEmpty, resultCount: results.length, testId: 'search-mode-widening-notice' }
           : null}
         onRetry={handleStreamRetry}
+        scopeParams={currentScope?.params ?? ''}
       />
 
       <div className="media-sr-only" role="status" aria-live="polite" aria-atomic="true" data-testid="search-mode-empty-announcement">
@@ -626,6 +627,17 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus, keepScop
           </li>
           )}
         />
+        {/* Everything-search failures: one quiet line after the results,
+            never a row per source above them (failurePlacement). */}
+        {!isSearching && sourceErrors.length > 0 && (
+          <li className="search-mode-failure-note">
+            <SourceFailureNote
+              failedSources={sourceErrors.map(({ source }) => source)}
+              scopeParams={currentScope?.params ?? ''}
+              onRetry={handleStreamRetry}
+            />
+          </li>
+        )}
       </ul>
       <ItemDestinationPicker
         action={oneShotAction}
