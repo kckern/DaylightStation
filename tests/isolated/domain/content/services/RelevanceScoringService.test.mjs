@@ -157,6 +157,19 @@ describe('RelevanceScoringService', () => {
     });
   });
 
+  describe('and / &', () => {
+    it('finds "Snakes & Arrows" from "Snakes and Arrows", and the other way round', () => {
+      expect(RelevanceScoringService.matches(item('Snakes & Arrows', ContentCategory.MEDIA), 'Snakes and Arrows')).toBe(true);
+      expect(RelevanceScoringService.matches(item('Snakes and Arrows', ContentCategory.MEDIA), 'Snakes & Arrows')).toBe(true);
+      expect(RelevanceScoringService.matches(item('Rock&Roll', ContentCategory.MEDIA), 'rock and roll')).toBe(true);
+    });
+
+    it('scores the two spellings the same', () => {
+      expect(RelevanceScoringService.score(item('Snakes & Arrows', ContentCategory.MEDIA), 'snakes and arrows'))
+        .toBe(RelevanceScoringService.score(item('Snakes and Arrows', ContentCategory.MEDIA), 'snakes and arrows'));
+    });
+  });
+
   describe('non-matches', () => {
     it('scores an unrelated item 0 so callers can filter it out', () => {
       expect(RelevanceScoringService.score(item('2026-08-12 20.56.23.jpg', ContentCategory.MEDIA), 'job'))

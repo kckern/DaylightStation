@@ -1270,7 +1270,11 @@ One screen, `BrowseActivity` (not exported), in three modes:
   speaker in Talks and courses; Artists is music artists. The last ten searches show under
   an empty box (kept on the phone; Clear recent searches). No home: the kept collections
   whose title holds every word, under "Offline · searching what's on this phone" or
-  "Home isn't answering · searching what's on this phone".
+  "Home isn't answering · searching what's on this phone". "&" and "and" are the same word
+  everywhere a search compares titles: home's relevance filter (`RelevanceScoringService`
+  `normalizeText`, which used to drop "&" and score "Snakes & Arrows" 0 for "snakes and
+  arrows" although Plex returned it), Plex playlist titles (`PlexAdapter` `andFold`) and the
+  phone's offline search (`Lookup.fold`).
 - **Library** (Play tab → Browse library): every audio Plex library, then the household's
   list sources (Plex's audio playlists as **Playlists**, programs, watchlists, custom
   lists). Offline: what is kept, "Offline · showing what's on this phone" (or "Home

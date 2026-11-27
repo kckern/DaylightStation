@@ -59,6 +59,10 @@ const MAX_CHILD_COUNT_BONUS = 5;
  * the straight and the typographic apostrophe ("Job’s Challenge", "Pharaoh's
  * Dream"), and splitting on them would leave a stray "s" token that no query
  * ever supplies.
+ *
+ * An ampersand is the word "and" ("Snakes & Arrows" matches a query "snakes and
+ * arrows", and "rock & roll" matches "rock and roll"): titles use both, and the
+ * phone's search typed one way dropped the title spelled the other.
  * @param {string} text
  * @returns {string}
  */
@@ -66,6 +70,7 @@ function normalizeText(text) {
   if (!text || typeof text !== 'string') return '';
   return text
     .toLowerCase()
+    .replace(/&/g, ' and ')
     .replace(/['‘’ʼ]/g, '')
     .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .trim()

@@ -169,6 +169,11 @@ function recentlyAddedCollection(item) {
  */
 const PART_MISS_TTL_MS = 30_000;
 
+/** Lowercase with "&" read as "and" ("Rock & Roll" and "rock and roll" match). */
+function andFold(text) {
+  return String(text || '').toLowerCase().replace(/&/g, ' and ').replace(/\s+/g, ' ').trim();
+}
+
 export class PlexAdapter {
   #httpClient;
   // part id -> rating key for every part URL this adapter hands out. Plex has
@@ -2870,7 +2875,7 @@ export class PlexAdapter {
       const playlists = data.MediaContainer?.Metadata || [];
 
       return playlists
-        .filter(p => p.title?.toLowerCase().includes(searchLower))
+        .filter(p => andFold(p.title).includes(andFold(searchLower)))
         .map(p => new ListableItem({
           id: `plex:${p.ratingKey}`,
           source: 'plex',

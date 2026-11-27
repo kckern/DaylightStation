@@ -174,4 +174,11 @@ public class LookupTest {
         assertEquals(1, groups.getJSONObject(2).getJSONArray("items").length());
         assertEquals("plex:43", groups.getJSONObject(2).getJSONArray("items").getJSONObject(0).getString("contentId"));
     }
+
+    @Test public void offlineSearchReadsAnAmpersandAsAnd() throws Exception {
+        JSONObject out = Lookup.offline(Arrays.asList(new JSONObject().put("contentId", "plex:7").put("title", "Snakes & Arrows")),
+                "Snakes and Arrows");
+        assertEquals(1, out.getJSONArray("groups").length());
+        assertEquals("snakes and arrows", Lookup.fold("Snakes  &  Arrows"));
+    }
 }

@@ -248,16 +248,21 @@ final class Lookup {
         return out;
     }
 
+    /** Lowercase, with "&" read as "and", so "Snakes and Arrows" finds "Snakes & Arrows" (as home's search does). */
+    static String fold(String text) {
+        return text.toLowerCase(Locale.ROOT).replace("&", " and ").trim().replaceAll("\\s+", " ");
+    }
+
     /**
      * Search with no home: the collections kept on this phone whose title holds every word
      * of the query, as one group ("On this phone"), {groups, offline:true}.
      */
     static JSONObject offline(List<JSONObject> kept, String text) throws JSONException {
-        String[] words = text == null ? new String[0] : text.toLowerCase(Locale.ROOT).trim().split("\\s+");
+        String[] words = text == null ? new String[0] : fold(text).split("\\s+");
         JSONArray hits = new JSONArray();
         for (JSONObject k : kept) {
             String title = k.optString("title", "");
-            String hay = title.toLowerCase(Locale.ROOT);
+            String hay = fold(title);
             boolean all = true;
             for (String w : words) if (!w.isEmpty() && !hay.contains(w)) { all = false; break; }
             String cid = k.optString("contentId");
