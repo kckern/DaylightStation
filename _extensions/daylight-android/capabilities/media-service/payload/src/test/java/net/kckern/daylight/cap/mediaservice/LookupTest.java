@@ -54,7 +54,7 @@ public class LookupTest {
         JSONArray root = Lookup.libraryRoot(plex, sources);
         assertEquals(3, root.length());
         assertEquals("Audiobooks", root.getJSONObject(0).getString("title"));
-        assertEquals("books", root.getJSONObject(0).getString("kind"));
+        assertEquals("library-books", root.getJSONObject(0).getString("kind"));
         assertEquals("c:plex:library/sections/9/all", root.getJSONObject(0).getString("id"));
         assertEquals("library", root.getJSONObject(1).getString("kind"));
         assertEquals("Playlists", root.getJSONObject(2).getString("title"));

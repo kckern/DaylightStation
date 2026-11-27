@@ -220,7 +220,7 @@ public final class BrowseActivity extends Activity {
     private void showResults(String q, JSONObject answer) {
         results.removeAllViews();
         if (answer == null || !answer.optBoolean("ok", false)) {
-            status.setText("Search isn't answering.");
+            status.setText("Search isn't answering right now.");
             results.addView(link("Retry", "search.retry", () -> runSearch(q)));
             return;
         }
@@ -265,7 +265,9 @@ public final class BrowseActivity extends Activity {
     // ── library and levels ──────────────────────────────────────────────────
 
     private boolean isCollection() {
-        return kind.matches("book|books|album|albums|playlist|playlists|artist|artists|kept|tracks");
+        // One collection gets Play, Shuffle, Play on… and Keep; a whole library or a list of
+        // lists never does (Keep on a library of 11,000 books is not a thing to offer).
+        return kind.matches("book|books|album|albums|playlist|playlists|artist|artists|author|kept|tracks");
     }
 
     private String cacheKey() { return MODE_LIBRARY.equals(mode) ? "lib" : "lvl|" + parent; }
@@ -303,8 +305,15 @@ public final class BrowseActivity extends Activity {
 
     private void answered(JSONObject answer) {
         if (answer == null || !answer.optBoolean("ok", false)) {
-            status.setText(rows.isEmpty() ? "Can't reach home." : "Can't reach home · showing the last answer");
-            if (rows.isEmpty()) { results.removeAllViews(); results.addView(link("Retry", "browse.retry", () -> load(0))); }
+            // Offline is a filter, not an error: the last answer stays on show, and with none
+            // the page says this needs a connection and leads to what is on this phone.
+            if (!rows.isEmpty()) { status.setText("Offline · showing the last answer"); return; }
+            results.removeAllViews();
+            status.setText("This needs a connection: it isn't kept on this phone.");
+            LinearLayout ways = new LinearLayout(this);
+            ways.addView(button("On this phone", "browse.offline_kept", () -> DownloadsActivity.open(this)));
+            ways.addView(button("Retry", "browse.retry", () -> load(0)));
+            results.addView(ways);
             return;
         }
         JSONArray items = answer.optJSONArray("items");
@@ -317,7 +326,8 @@ public final class BrowseActivity extends Activity {
         if (!append) { results.removeAllViews(); rows.clear(); }
         status.setText(offline ? "Showing what's on this phone" : "");
         if (items.length() == 0 && !append) {
-            status.setText(MODE_LIBRARY.equals(mode) ? "Nothing here yet." : "This is empty.");
+            status.setText(offline ? "Offline · nothing is kept on this phone yet."
+                    : MODE_LIBRARY.equals(mode) ? "Nothing here yet." : "This is empty.");
             return;
         }
         for (int i = 0; i < items.length(); i++) {
@@ -412,7 +422,7 @@ public final class BrowseActivity extends Activity {
         row.setOnClickListener(v -> {
             if (id.startsWith("m:")) { results.removeView(row); loadMore(id); }
             else if (browsable) {
-                String k = rowKind.isEmpty() ? kindFor(id) : rowKind;
+                String k = rowKind.isEmpty() ? childKind(kind, id) : rowKind;
                 UiTelemetry.tag(row, "browse.open");
                 open(this, "level", id, k, name, sub, cover);
             } else if (playable) play(id, false);
@@ -424,9 +434,17 @@ public final class BrowseActivity extends Activity {
         return row;
     }
 
-    private static String kindFor(String id) {
+    /** What a row opened from a level is: a library's authors or artists, their books or albums, a list source's playlists. */
+    static String childKind(String parentKind, String id) {
         if (id.startsWith("s:") || id.startsWith("a:")) return "lists";
-        return "collection";
+        switch (parentKind) {
+            case "library-books": return "author";
+            case "library": return "artist";
+            case "author": return "book";
+            case "artist": case "artists": return "album";
+            case "lists": return "playlist";
+            default: return "collection";
+        }
     }
 
     /** A long level's next page, appended in place of its More row. */

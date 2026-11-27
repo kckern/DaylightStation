@@ -42,7 +42,7 @@ final class Lookup {
             String id = Json.str(l, "id"), title = Json.str(l, "title");
             if (!"artist".equals(type) || !ContentId.valid(id) || title.isEmpty()) continue;
             out.put(new JSONObject().put("id", MediaId.container(id)).put("title", title)
-                    .put("kind", bookLibrary(title) ? "books" : "library"));
+                    .put("kind", bookLibrary(title) ? "library-books" : "library"));
         }
         JSONArray sources = audioSources == null ? null : audioSources.optJSONArray("items");
         for (int i = 0; sources != null && i < sources.length(); i++) {
