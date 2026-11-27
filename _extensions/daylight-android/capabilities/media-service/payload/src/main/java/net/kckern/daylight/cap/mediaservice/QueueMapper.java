@@ -49,7 +49,7 @@ final class QueueMapper {
                 Json.first(Json.str(item, "artist"), Json.str(meta, "artist"), Json.str(item, "grandparentTitle")),
                 Json.first(Json.str(item, "album"), Json.str(meta, "album"), Json.str(item, "parentTitle")),
                 BrowseTree.art(backend, Json.str(item, "thumbnail")), Json.str(item, "listId"),
-                Json.seconds(item, "duration"), fileVersion(item));
+                Json.seconds(item, "duration"), fileVersion(item)).longForm(item.optBoolean("resumable", false));
     }
 
     /** The file version the backend names ("<partId>:<updatedAt>"), short and printable, or "". */

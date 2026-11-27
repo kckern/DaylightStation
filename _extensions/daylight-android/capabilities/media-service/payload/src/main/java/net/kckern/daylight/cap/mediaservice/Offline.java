@@ -25,10 +25,14 @@ final class Offline {
         if (collection == null) return null;
         List<Track> tracks = tracks(collection.optJSONArray("tracks"));
         if (tracks.isEmpty()) return null;
-        int start = 0;
+        int start = -1;
         if (id.kind == MediaId.Kind.LEAF) {
             for (int i = 0; i < tracks.size(); i++) if (tracks.get(i).id.equals(id.contentId)) start = i;
-        } else {
+        }
+        // A leaf that is none of the tracks names the collection itself (a link's
+        // "media/play?id=<book>" arrives as p:<book>): it plays as the collection does.
+        boolean whole = start < 0;
+        if (whole) {
             // A whole collection resumes where it was last heard (a book's chapter 7, not
             // chapter 1: a report from chapter 1 would move the place back).
             start = lastHeard(positions, tracks);
@@ -38,7 +42,7 @@ final class Offline {
         long startMs = at * 1000;
         if (durationMs > 0 && startMs >= durationMs - 1000) {
             // That part was finished: the next one, from its start.
-            if (id.kind != MediaId.Kind.LEAF && start + 1 < tracks.size()) start++;
+            if (whole && start + 1 < tracks.size()) start++;
             startMs = 0;
         }
         return new Resolver.Resolved(tracks, start, Math.max(0, startMs), true);
@@ -64,7 +68,8 @@ final class Offline {
             if (t == null || !ContentId.valid(t.optString("id")) || t.optString("url").isEmpty()) continue;
             out.add(new Track(t.optString("id"), t.optString("url"), t.optString("title", "Untitled"),
                     t.optString("artist", ""), t.optString("album", ""), t.has("artUrl") ? t.optString("artUrl") : null,
-                    t.optString("listId", ""), t.optLong("durationMs", 0), t.optString("fileVersion", "")));
+                    t.optString("listId", ""), t.optLong("durationMs", 0), t.optString("fileVersion", ""))
+                    .longForm(t.optBoolean("longForm", false)));
         }
         return out;
     }

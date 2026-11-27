@@ -162,7 +162,7 @@ final class CrossfadeEngine implements Player.Listener {
         long duration = NodeItems.durationMs(item, playerDurationMs);
         if (duration == C.TIME_UNSET) duration = 0;
         CharSequence album = item.mediaMetadata.albumTitle, artist = item.mediaMetadata.artist;
-        return new Crossfade.Side(CarControls.longForm(NodeItems.listId(item), duration), duration,
+        return new Crossfade.Side(Crossfade.longForm(NodeItems.longFormKind(item), NodeItems.listId(item), duration), duration,
                 album == null ? "" : album.toString(), artist == null ? "" : artist.toString());
     }
 

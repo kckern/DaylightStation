@@ -61,7 +61,12 @@ final class Resolver {
             offsets[i] = tracks.size();
             MediaId id = ids.get(i);
             if (id.kind == MediaId.Kind.CONTAINER) {
-                tracks.addAll(QueueMapper.fromQueue(api.queue(id.contentId, shuffle), backend, session));
+                JSONObject queue = api.queue(id.contentId, shuffle);
+                List<Track> whole = QueueMapper.fromQueue(queue, backend, session);
+                // A book home has a place in: its queue starts with the part in progress, with
+                // that place (a song is never resumable, so music starts at the top).
+                if (single && !shuffle && !whole.isEmpty()) startPositionMs = QueueMapper.resumeMs(itemOf(queue, whole.get(0).id));
+                tracks.addAll(whole);
                 continue;
             }
             // A leaf asked for by itself, with a known container: queue the container and
@@ -88,7 +93,18 @@ final class Resolver {
             // the answer is then not the one asked for, and the whole container is queued.
             String answered = QueueMapper.id(play);
             if (!answered.isEmpty() && !answered.equals(id.contentId)) {
-                tracks.addAll(QueueMapper.fromQueue(api.queue(id.contentId, shuffle), backend, session));
+                List<Track> whole = QueueMapper.fromQueue(api.queue(id.contentId, shuffle), backend, session);
+                if (single && !shuffle) {
+                    // The answer is where the container is at (a book's part in progress, at
+                    // its place): play starts there, not at the queue's first item.
+                    for (int at = 0; at < whole.size(); at++) {
+                        if (!whole.get(at).id.equals(answered)) continue;
+                        startIndex = tracks.size() + at;
+                        startPositionMs = QueueMapper.resumeMs(play);
+                        break;
+                    }
+                }
+                tracks.addAll(whole);
                 continue;
             }
             Track t = QueueMapper.fromItem(play, backend, session);

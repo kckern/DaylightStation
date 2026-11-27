@@ -15,6 +15,11 @@ final class Track {
     final long durationMs;
     /** The file behind it at home ("<partId>:<updatedAt>"), when the backend says; "" otherwise. */
     final String fileVersion;
+    /**
+     * A book's part, a talk or a lecture (home calls it resumable): it keeps a place, and it
+     * never crossfades, however short it is. Music is not.
+     */
+    boolean longForm;
 
     Track(String id, String url, String title, String artist, String album, String artUrl, String listId, long durationMs) {
         this(id, url, title, artist, album, artUrl, listId, durationMs, "");
@@ -33,6 +38,11 @@ final class Track {
         this.fileVersion = fileVersion == null ? "" : fileVersion;
     }
 
+    Track longForm(boolean longForm) {
+        this.longForm = longForm;
+        return this;
+    }
+
     JSONObject toJson() throws JSONException {
         JSONObject o = new JSONObject().put("id", id).put("url", url).put("title", title).put("durationMs", durationMs);
         if (!artist.isEmpty()) o.put("artist", artist);
@@ -40,6 +50,7 @@ final class Track {
         if (artUrl != null) o.put("artUrl", artUrl);
         if (!listId.isEmpty()) o.put("listId", listId);
         if (!fileVersion.isEmpty()) o.put("fileVersion", fileVersion);
+        if (longForm) o.put("longForm", true);
         return o;
     }
 }

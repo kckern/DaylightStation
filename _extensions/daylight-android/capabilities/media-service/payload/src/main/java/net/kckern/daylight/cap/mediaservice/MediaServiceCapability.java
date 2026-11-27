@@ -632,6 +632,15 @@ public final class MediaServiceCapability implements Capability {
                 : "refresh".equals(mode) && KeptCollections.auto(existing) ? KeptCollections.only(existing) : null;
         // The whole list, not a player's 500-track window: a kept playlist is all of it.
         List<Track> all = QueueMapper.fromQueue(api.queue(cid, false), backend, "daylight-" + core.deviceId());
+        // Home's queue puts a book's heard parts last (its watched/unwatched order, for
+        // shows). Kept, a book is in its own order: its first part first, its next part next
+        // (a place offline moves on to the part after, never to one home has not heard).
+        boolean ordered = false;
+        for (Track t : all) ordered |= t.longForm;
+        JSONObject listing = null;
+        try { listing = api.list(cid, ordered ? Math.min(all.size(), LIST_ORDER_MAX) : 1, 0); }
+        catch (Exception unnamed) { /* the first track's album and cover; home's order */ }
+        if (ordered) all = inListOrder(all, listing);
         if (scope != null && !scope.isEmpty()) all = scoped(all, scope);
         if (all.isEmpty()) return failure(404, "not_found");
         boolean cut = all.size() > MAX_KEPT_TRACKS;
@@ -654,13 +663,13 @@ public final class MediaServiceCapability implements Capability {
         }
         String title = all.get(0).album, art = all.get(0).artUrl;
         String listType = "";
-        try {
-            JSONObject l = api.list(cid, 1, 0);
+        if (listing != null) {
+            JSONObject l = listing;
             title = Json.first(Json.str(l, "title"), Json.str(l, "label"), title);
             String image = BrowseTree.art(backend, Json.str(l, "image"));
             if (image != null) art = image;
             listType = Json.first(Json.str(l, "type"), Json.str(l, "itemType"));
-        } catch (Exception unnamed) { /* the first track's album and cover */ }
+        }
         String kind = kindOf(longParts, albums.size(), listType);
         long now = clock.getAsLong();
         if ("keep".equals(mode)) {
@@ -691,6 +700,29 @@ public final class MediaServiceCapability implements Capability {
         JSONObject answer = keepAnswer(cid, title, art, tracks, cut, kind);
         if (auto) answer.put("auto", true);
         return new Outcome(200, answer);
+    }
+
+    /** The most entries of a collection's own listing read to put its parts in order. */
+    static final int LIST_ORDER_MAX = 500;
+
+    /**
+     * {@code all} in the order of the collection's own listing (a book's parts as the book has
+     * them); tracks the listing does not name keep their place after those it does. Unchanged
+     * without a listing.
+     */
+    static List<Track> inListOrder(List<Track> all, JSONObject listing) {
+        JSONArray items = listing == null ? null : listing.optJSONArray("items");
+        if (items == null || items.length() == 0) return all;
+        java.util.Map<String, Integer> at = new java.util.HashMap<>();
+        for (int i = 0; i < items.length(); i++) {
+            JSONObject it = items.optJSONObject(i);
+            String id = it == null ? "" : Json.first(Json.str(it, "id"), Json.str(it, "contentId"));
+            if (!id.isEmpty()) at.putIfAbsent(id, i);
+        }
+        List<Track> out = new ArrayList<>(all);
+        // Stable: the unnamed stay in home's order, after the named.
+        out.sort((a, b) -> Integer.compare(at.getOrDefault(a.id, Integer.MAX_VALUE), at.getOrDefault(b.id, Integer.MAX_VALUE)));
+        return out;
     }
 
     /**

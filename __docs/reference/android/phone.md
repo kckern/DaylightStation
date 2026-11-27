@@ -669,7 +669,8 @@ from the phone, under 2 s from home).
 - **Crossfade between songs** (⋮ → Crossfade, this phone only; `CrossfadeEngine`, rules in
   `Crossfade`). Off, 2, 4, 6, 8 or 12 s; the person's choice is kept on the phone
   (`daylight.player` prefs) and wins over the household default `media.crossfadeSec` (4).
-  Music only: never for long-form (books, talks: `CarControls.longForm`) on either side,
+  Music only: never for long-form on either side (books, talks, courses: a track home calls
+  resumable, `NodeItems.longFormKind`, or `CarControls.longForm`; `Crossfade.longForm`),
   never inside an album played in order (shuffle off and the next track from the same
   album title and artist: a plain gapless transition), never across a track shorter than
   twice the fade, never at the end of the queue or on repeat-one, never while a sleep
@@ -1328,7 +1329,14 @@ removed.
   kept track. Media calls give up connecting after 3 s and reading after 10 s; a call that
   failed marks home down for a minute, during which a kept item plays from the phone at once
   (a Wi-Fi that reaches nothing behaves like airplane mode). Offline, a kept collection
-  resumes at the part heard most recently, a track of one plays on from itself, and the car
+  resumes at the part heard most recently (a part heard to its end moves on to the book's
+  next part), a track of one plays on from itself, and a play by the collection's own id as
+  a leaf (`p:<book>`, what a `media/play?id=<book>` link sends) plays as the collection. A
+  kept book's parts are stored in the book's own order (its `GET /api/v1/list/<id>`
+  listing), not in home's queue order, which puts heard parts last. Online, a `p:<book>`
+  starts at the part and place home's play route answers, and a `c:<book>` at the first
+  queue item's saved place. Each track's `longForm` (home's `resumable`) travels to the
+  shell, so a book whose chapters are short never crossfades. The car
   has an **On phone** tab (`media.roots` target `kept`) answered from the phone; offline,
   every other car level shows "Offline: showing what is on this phone".
 - **Where you were.** Every progress report carries `observedAt` (when it was heard) and

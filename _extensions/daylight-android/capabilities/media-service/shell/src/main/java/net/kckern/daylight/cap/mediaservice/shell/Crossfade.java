@@ -62,6 +62,14 @@ final class Crossfade {
         }
     }
 
+    /**
+     * Whether a side is long-form for crossfade: a book's part, a talk or a lecture by its kind
+     * (home calls it resumable), however short; or by its household list or its length.
+     */
+    static boolean longForm(boolean kindLongForm, String listId, long durationMs) {
+        return kindLongForm || CarControls.longForm(listId, durationMs);
+    }
+
     /** The seconds in force: the person's choice when made, else the device default, clamped. */
     static int seconds(Integer chosen, Integer deviceDefault) {
         int s = chosen != null ? chosen : deviceDefault != null ? deviceDefault : DEFAULT_SEC;

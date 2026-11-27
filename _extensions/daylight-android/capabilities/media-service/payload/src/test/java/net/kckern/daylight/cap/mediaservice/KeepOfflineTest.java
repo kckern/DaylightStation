@@ -54,6 +54,11 @@ public class KeepOfflineTest {
         positions.keep(new JSONObject().put("assetId", "plex:13").put("seconds", 70).put("observedAt", 20));
         assertEquals(2, Offline.resolve("c:plex:10", kept, positions).startIndex);
         assertNull("nothing kept answers a stranger", Offline.resolve("p:plex:99", kept, positions));
+        // A leaf that names the collection itself (a link's media/play?id=<book>) plays as the
+        // collection: where it was last heard, not its first track from the top.
+        Resolver.Resolved byOwnId = Offline.resolve("p:plex:10", kept, positions);
+        assertEquals(2, byOwnId.startIndex);
+        assertEquals(70_000, byOwnId.startPositionMs);
     }
 
     @Test public void progressWaitsNewestFirstPerItem() throws Exception {
