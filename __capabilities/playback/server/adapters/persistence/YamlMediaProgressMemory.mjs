@@ -32,6 +32,9 @@ function dehydrateMediaProgress(state) {
   if (state.bookmark) record.bookmark = state.bookmark;
   if (state.spots !== undefined) record.spots = { ...(state.spots || {}) };
   if (state.lastDevice) record.lastDevice = state.lastDevice;
+  if (Number.isFinite(state.listenedSec)) record.listenedSec = state.listenedSec;
+  if (state.listenRun) record.listenRun = { ...state.listenRun };
+  if (state.listenLegacy === true) record.listenLegacy = true;
   return record;
 }
 
@@ -143,6 +146,9 @@ export class YamlMediaProgressMemory extends IMediaProgressMemory {
       bookmark: data.bookmark ?? null,
       spots: data.spots === undefined ? undefined : (data.spots || {}),
       lastDevice: data.lastDevice ?? null,
+      listenedSec: Number.isFinite(data.listenedSec) ? data.listenedSec : undefined,
+      listenRun: data.listenRun ?? undefined,
+      listenLegacy: data.listenLegacy === true,
       now: Date.now(),
     });
   }
@@ -193,6 +199,10 @@ export class YamlMediaProgressMemory extends IMediaProgressMemory {
     const previous = data[contentId];
     if (rest.spots === undefined && previous?.spots !== undefined) rest.spots = previous.spots;
     if (state.lastDevice === undefined && previous?.lastDevice) rest.lastDevice = previous.lastDevice;
+    // Listened time is owned by play/log; any other writer (a mark, a skip) keeps it.
+    if (rest.listenedSec === undefined && Number.isFinite(previous?.listenedSec)) rest.listenedSec = previous.listenedSec;
+    if (rest.listenRun === undefined && previous?.listenRun) rest.listenRun = previous.listenRun;
+    if (rest.listenLegacy === undefined && previous?.listenLegacy === true) rest.listenLegacy = true;
 
     data[contentId] = rest;
     this._writeFile(storagePath, data);

@@ -2,6 +2,7 @@ import { stampEpoch } from "../../domain/stampEpoch.mjs";
 import { normalizeSpotDeviceId, recordSpot, seedLegacySpot, retireLegacySpot } from "../../domain/services/mediaSpots.mjs";
 import { isWatchComplete, DEFAULT_RULE } from "#shared/contracts/media/watchCompletion.mjs";
 import { observeHeartbeat } from "../../domain/services/skipInference.mjs";
+import { accumulateListened } from "../../domain/services/listenedTime.mjs";
 
 const TERMINAL_STATUSES = new Set(['completed', 'stopped', 'ended']);
 // Screens tracked for skip inference; unknown ids can arrive, so the map is capped.
@@ -130,6 +131,11 @@ export class RecordPlaybackProgress {
     // or call itself the newest play (ops:docs/superpowers/plans/
     // 2026-11-26-phone-downloads-hardening.md §E).
     observedAt = null,
+    // The player's session (a phone or web session id) and playback speed: they key
+    // and scale the listened-time run (lookup spec §13). Both optional; absent = the
+    // device is the session and the speed is 1.
+    sessionId = null,
+    rate = null,
   }) {
     let progressNamespace = type;
     let itemMetadata = null;
@@ -216,6 +222,21 @@ export class RecordPlaybackProgress {
         percent: statePercent, remainingSec,
       });
     }
+    // Listened time: real playback measured between consecutive reports of one
+    // session. A record that already had progress with no measure is legacy: its
+    // Continue entry is reviewed by a person, not guessed.
+    const listenKey = (typeof sessionId === 'string' && sessionId) || spotDevice || deviceId || 'unknown';
+    const listened = accumulateListened(existingState, {
+      key: listenKey, position: normalizedSeconds, atMs: atEpoch, rate,
+    });
+    const listenLegacy = existingState?.listenLegacy === true
+      || (existingState != null && !Number.isFinite(existingState.listenedSec)
+        && ((Number(existingState.playhead) || 0) > 0 || (Number(existingState.watchTime) || 0) > 0));
+    const listenFields = {
+      listenedSec: listened.listenedSec,
+      listenRun: listened.listenRun,
+      ...(listenLegacy ? { listenLegacy: true } : {}),
+    };
     const completedAt = existingState?.completedAt
       || (watchComplete && !stale ? (observed ?? this.nowTimestamp()) : null);
     const lastPlayed = observed ?? this.nowTimestamp();
@@ -237,6 +258,7 @@ export class RecordPlaybackProgress {
         percent: existingState.percent,
         contentId: compoundId,
         watchTime: newWatchTime > 0 ? Number(newWatchTime.toFixed(3)) : (existingState.watchTime ?? 0),
+        ...listenFields,
       })
       : this.createMediaProgress({
         contentId: compoundId,
@@ -249,6 +271,7 @@ export class RecordPlaybackProgress {
         watchTime: newWatchTime > 0 ? Number(newWatchTime.toFixed(3)) : 0,
         completedAt,
         ...spotFields,
+        ...listenFields,
       });
     if (stale) {
       this.logger.info?.('play.log.stale_report', {
@@ -342,6 +365,8 @@ export class RecordPlaybackProgress {
       playhead: normalizedSeconds,
       storagePath: progressNamespace,
       spotDevice,
+      listenedSec: listened.listenedSec,
+      listenedAdded: listened.addedSec,
       ...(live ? { live: true } : {}),
     });
 
@@ -423,6 +448,7 @@ export class RecordPlaybackProgress {
         playCount: newState.playCount,
         lastPlayed: newState.lastPlayed,
         watchTime: newState.watchTime,
+        listenedSec: newState.listenedSec ?? null,
         ...(stale ? { stale: true } : {}),
         ...(spotDevice ? { deviceId: spotDevice } : {}),
         userProgress: userProgressPublic,
