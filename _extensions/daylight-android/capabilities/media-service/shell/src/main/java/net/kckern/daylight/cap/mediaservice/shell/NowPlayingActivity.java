@@ -274,7 +274,8 @@ public class NowPlayingActivity extends Activity {
 
     /** What to draw before the controller answers for {@code id}: the mini player's entry, else a screen's last answer. */
     private FirstFrame openingFrame(String id) {
-        FirstFrame f = FirstFrame.seed(NowPlayingNote.current(), id);
+        // This target's own entry, not whichever is newer (a screen's note never seeds this phone).
+        FirstFrame f = FirstFrame.seed(NowPlayingNote.forTarget(id), id);
         if (f != null || LOCAL.equals(id)) return f;
         ScreenMemory.Record r = ScreenMemory.decode(pickedSnapshot);
         if (r == null || !ScreenMemory.fresh(r.at, System.currentTimeMillis())) r = ScreenMemory.recall(this, id);

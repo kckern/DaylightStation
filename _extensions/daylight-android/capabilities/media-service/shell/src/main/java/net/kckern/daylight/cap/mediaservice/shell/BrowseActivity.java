@@ -509,9 +509,25 @@ public final class BrowseActivity extends Activity {
                 lp.topMargin = dp(8);
                 results.addView(ph, lp);
             }
+            // Words with the placeholders (audit: up to 12 s of wordless boxes), and a second
+            // line once home is slow, so a wait never reads as a page with nothing on it.
+            status.setText(loadingWords(MODE_LIBRARY.equals(mode), title));
+            final int asked = generation;
+            main.postDelayed(() -> {
+                if (!isFinishing() && keyed.isEmpty() && rows.isEmpty() && asked == generation) status.setText(SLOW_WORDS);
+            }, SLOW_AFTER_MS);
             return;
         }
         try { draw(new JSONArray(cached), null, false); } catch (Exception ignored) { }
+    }
+
+    static final long SLOW_AFTER_MS = 4_000;
+    static final String SLOW_WORDS = "Home is slow to answer · still asking…";
+
+    /** "Loading the library…", "Loading Paradise Lost…". */
+    static String loadingWords(boolean library, String title) {
+        if (library) return "Loading the library…";
+        return title == null || title.trim().isEmpty() ? "Loading…" : "Loading " + title.trim() + "…";
     }
 
     private void load(int page) {
@@ -649,10 +665,34 @@ public final class BrowseActivity extends Activity {
         return ids;
     }
 
+    /**
+     * Every part of this book, not only the loaded rows (audit: a book of more than 50 parts
+     * counted its first page): the loaded ids, then home's further pages while each is full.
+     * Off the main thread.
+     */
+    private List<String> allPartIds(List<String> loaded) {
+        List<String> ids = new ArrayList<>(loaded);
+        int pageSize = 50;
+        for (int page = Math.max(1, loaded.size() / pageSize); ids.size() >= page * pageSize && page < 40; page++) {
+            JSONArray items;
+            try { items = new JSONObject(media.browse(browseId(kind, parent), page, pageSize, WAIT_MS)).optJSONArray("items"); }
+            catch (Exception noMore) { break; }
+            int before = ids.size();
+            for (int i = 0; items != null && i < items.length(); i++) {
+                String id = items.optJSONObject(i) == null ? "" : items.optJSONObject(i).optString("id");
+                String cid = contentIdOf(id);
+                if (id.startsWith("p:") && !cid.isEmpty() && !ids.contains(cid)) ids.add(cid);
+            }
+            if (ids.size() == before) break;
+        }
+        return ids;
+    }
+
     private void loadProgress() {
-        final List<String> ids = trackIds();
-        if (ids.isEmpty()) return;
+        final List<String> loaded = trackIds();
+        if (loaded.isEmpty()) return;
         io.execute(() -> {
+            final List<String> ids = allPartIds(loaded);
             JSONObject p = null, reply = null;
             String reason = "";
             try { reply = new JSONObject(media.progress(ids, WAIT_MS)); p = reply.optJSONObject("progress"); }
@@ -727,13 +767,19 @@ public final class BrowseActivity extends Activity {
 
     /** Marks {@code ids} finished (or not): the whole book, its parts up to one, or one lecture. */
     private void markFinished(List<String> ids, boolean finished, String what, boolean ask) {
+        markFinished(ids, finished, what, ask, false);
+    }
+
+    /** @param wholeBook every part of the book, read from home when more than the loaded rows */
+    private void markFinished(List<String> ids, boolean finished, String what, boolean ask, boolean wholeBook) {
         if (ids.isEmpty()) { Toast.makeText(this, "Open the book's parts first", Toast.LENGTH_SHORT).show(); return; }
         Runnable run = () -> {
             action(finished ? "mark_finished" : "mark_unfinished");
             io.execute(() -> {
                 String line;
                 try {
-                    int n = new JSONObject(media.markFinished(ids, finished, WAIT_MS)).optInt("marked");
+                    List<String> use = wholeBook ? allPartIds(ids) : ids;
+                    int n = new JSONObject(media.markFinished(use, finished, WAIT_MS)).optInt("marked");
                     line = n > 0 ? (finished ? "Marked finished" : "Marked not finished") : "Could not mark it";
                 } catch (Exception e) { line = "Can't reach home"; }
                 String said = line;
@@ -986,7 +1032,7 @@ public final class BrowseActivity extends Activity {
         for (MediaKind.Action a : actions) {
             switch (a) {
                 case PLAY_FROM_START: sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_replay, "Play from the start", this::playFromStart); break;
-                case MARK_FINISHED: sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_check, "Mark finished", () -> markFinished(trackIds(), true, title, true)); break;
+                case MARK_FINISHED: sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_check, "Mark finished", () -> markFinished(trackIds(), true, title, true, true)); break;
                 case ADD_TO_PLAYLISTS: {
                     boolean staged = new net.kckern.daylight.shellkit.DrivingRadioSettings(this).isStaged(contentIdOf(parent));
                     sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_queue_add, staged ? "In Your playlists" : "Add to Your playlists", this::addToYourPlaylists);

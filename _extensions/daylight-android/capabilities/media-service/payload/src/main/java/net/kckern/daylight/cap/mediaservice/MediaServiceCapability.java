@@ -105,6 +105,8 @@ public final class MediaServiceCapability implements Capability {
     private Launcher launcher;
     private volatile ExecutorService worker;
     private final ProgressReporter reporter = new ProgressReporter();
+    /** This phone's own last places, laid over home's Continue answer (audit H7). */
+    private final HeardHere heardHere = new HeardHere();
     private final BrowseCache cache = new BrowseCache(64, FRESH_MS);
     private final PayloadPort port = PayloadPort.named(PORT);
     private final PayloadPort.Handler onCall = request -> {
@@ -484,7 +486,7 @@ public final class MediaServiceCapability implements Capability {
                 flushHides();
                 Going going = continueGoing(limit + 4);
                 // A hide home has not heard yet keeps its card away here (offline, or just tapped).
-                JSONArray items = hides().filter(going.rows);
+                JSONArray items = heardHere.patch(hides().filter(going.rows), clock.getAsLong());
                 JSONArray cut = new JSONArray();
                 for (int i = 0; i < items.length() && i < limit; i++) cut.put(items.get(i));
                 health.answered();
@@ -1805,6 +1807,7 @@ public final class MediaServiceCapability implements Capability {
             report.observedAt = heard;
             report.rate = Double.isNaN(rate) || rate <= 0 ? 1.0 : rate;
             report.sessionId = SESSION;
+            heardHere.heard(report.contentId, report.seconds, report.naturalEnd, heard);
             send(report);
         }
         return new Outcome(200, Replies.ok().put("reports", reports.size()));

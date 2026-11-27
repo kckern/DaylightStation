@@ -123,6 +123,17 @@ public final class NowPlayingNote {
         return a.at >= b.at ? a : b;
     }
 
+    /**
+     * The entry for one target, whichever is newer (audit H5): a notification tap for this
+     * phone opens on this phone's entry even when a screen's is newer. Null when none.
+     */
+    public static Entry forTarget(String target) {
+        if (target == null) return null;
+        if ("local".equals(target)) return local;
+        Entry r = remote;
+        return r != null && target.equals(r.target) ? r : null;
+    }
+
     public static void listen(Listener l) { listeners.addIfAbsent(l); }
 
     public static void unlisten(Listener l) { listeners.remove(l); }

@@ -24,6 +24,14 @@ public class NowPlayingNoteTest {
         assertEquals("an unchanged report is not news", 4, heard[0]);
     }
 
+    @Test public void eachTargetHasItsOwnEntryWhicheverIsNewer() {
+        NowPlayingNote.update("local", "This phone", "A talk", false, 1);
+        NowPlayingNote.update("office-tv", "Office", "A song", true, 2);
+        assertEquals("A talk", NowPlayingNote.forTarget("local").title);
+        assertEquals("A song", NowPlayingNote.forTarget("office-tv").title);
+        org.junit.Assert.assertNull(NowPlayingNote.forTarget("garage-tv"));
+    }
+
     @Test public void anEmptyTitleClearsItsTarget() {
         NowPlayingNote.update("office-tv", "Office", "A song", true, 1);
         NowPlayingNote.update("office-tv", "Office", "", false, 2);

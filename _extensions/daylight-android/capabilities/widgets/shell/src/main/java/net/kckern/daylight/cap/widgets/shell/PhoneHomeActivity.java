@@ -187,20 +187,42 @@ public class PhoneHomeActivity extends Activity {
     private void refresh() {
         if (!pagesLoaded) pagesError = null;
         if (!actionsLoaded) actionsError = null;
+        seedFromLast();
+        SharedPreferences last = getSharedPreferences("daylight.home", MODE_PRIVATE);
         call("phone-bookmarks", request("list").toString(), result -> {
             pages = result.optJSONArray("items");
             if (pages == null) pages = new JSONArray();
-            pagesLoaded = true;
+            pagesLoaded = pagesFresh = true;
             pagesError = null;
+            last.edit().putString("pages", pages.toString()).apply();
             answered(0);
         }, message -> { pagesError = message; answered(0); retryWhenAttached("phone-bookmarks"); });
         call("phone-pin-action", "", actions -> {
             configuredActions = actions.optJSONArray("items");
             if (configuredActions == null) configuredActions = new JSONArray();
-            actionsLoaded = true;
+            actionsLoaded = actionsFresh = true;
             actionsError = null;
+            last.edit().putString("actions", configuredActions.toString()).apply();
             answered(1);
         }, message -> { actionsError = message; answered(1); retryWhenAttached("phone-pin-action"); });
+    }
+
+    /** This payload run's own answers have come (the shown ones may be the last run's). */
+    private boolean pagesFresh, actionsFresh;
+
+    /**
+     * A cold start draws Services and Capture from the last answers at once (audit H17: they
+     * said "Loading…" until the payload was up); this run's answers replace them.
+     */
+    private void seedFromLast() {
+        SharedPreferences last = getSharedPreferences("daylight.home", MODE_PRIVATE);
+        try {
+            if (!pagesLoaded && last.contains("pages")) { pages = new JSONArray(last.getString("pages", "[]")); pagesLoaded = true; }
+            if (!actionsLoaded && last.contains("actions")) {
+                configuredActions = new JSONArray(last.getString("actions", "[]"));
+                actionsLoaded = true;
+            }
+        } catch (Exception unreadable) { /* asked afresh */ }
     }
 
     /** An answer for tab {@code which} came: that tab is redrawn when it is the one showing. */
@@ -217,7 +239,7 @@ public class PhoneHomeActivity extends Activity {
             boolean attached = PayloadPort.named(port).awaitReady(10 * 60_000L);
             runOnUiThread(() -> {
                 retryArmed = false;
-                if (attached && !isDestroyed() && !isFinishing() && (!pagesLoaded || !actionsLoaded)) refresh();
+                if (attached && !isDestroyed() && !isFinishing() && (!pagesFresh || !actionsFresh)) refresh();
             });
         }, "Daylight-home-retry").start();
     }

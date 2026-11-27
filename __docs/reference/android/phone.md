@@ -529,7 +529,9 @@ from the phone, under 2 s from home).
   plays, carried forward) before its controller connects, with "Connecting…". The mini
   strip and the Play row pass the target and its name, so a raw device id is never
   shown. When the player goes away the last frame stays, greyed, with "Reconnecting…",
-  instead of "Nothing playing".
+  instead of "Nothing playing". The seed is that target's own entry
+  (`NowPlayingNote.forTarget`), never whichever entry is newer: a notification tap for this
+  phone draws this phone's item even while a screen's entry is newer.
 - **Laid out once.** The Starting frame lays out exactly as the playing frame: the
   waveform row is there (flat, off), the album and quality lines keep their place, the
   chapter line is reserved only for a long item (a book or a talk, said by the tapping
@@ -1256,6 +1258,20 @@ phone". An offline answer is never written into Browse's cache of home's answers
   and progress on a third. Keep's index, Remove, Pause and Resume run on a local thread
   that never waits on the network; previews, keeps, retries, the sync and saving covers
   run on the network one. A Remove made while a sync runs is not undone by it.
+- **A page that is loading says so.** A Browse level with nothing cached draws its six
+  placeholder rows with "Loading Paradise Lost…" ("Loading the library…"), and after 4 s
+  "Home is slow to answer · still asking…", never a page of wordless boxes.
+- **A book is counted whole.** The book page's progress line and its Mark finished read
+  every part, home's further pages too while each page is full (`allPartIds`), not only
+  the first 50 rows loaded.
+- **Continue listening after Back.** Home's Continue answer can lag the report the phone
+  just sent; the payload lays this phone's own last place for each part (its progress
+  reports of the last 30 minutes, `HeardHere`) over home's rows, so Back from Now playing
+  shows the time just heard, and a book whose last part this phone heard to its end is left
+  out at once.
+- **Services and Capture from the last answer.** A cold start draws the home's Services
+  and Capture tabs from the last answers kept on the phone (`daylight.home` `pages`,
+  `actions`) instead of "Loading…"; this run's answers replace them when the payload is up.
 
 ### Lookup and browse
 

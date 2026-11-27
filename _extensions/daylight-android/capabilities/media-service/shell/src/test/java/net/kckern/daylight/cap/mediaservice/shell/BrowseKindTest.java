@@ -61,4 +61,10 @@ public class BrowseKindTest {
         assertEquals("a:0|plex:321212", BrowseActivity.browseId("playlist", "a:0|plex:321212"));
         assertEquals("c:plex:731396", BrowseActivity.browseId("album", "c:plex:731396"));
     }
+
+    @org.junit.Test public void aLoadingPageSaysWhatItLoads() {
+        org.junit.Assert.assertEquals("Loading the library…", BrowseActivity.loadingWords(true, "x"));
+        org.junit.Assert.assertEquals("Loading Paradise Lost…", BrowseActivity.loadingWords(false, "Paradise Lost"));
+        org.junit.Assert.assertEquals("Loading…", BrowseActivity.loadingWords(false, ""));
+    }
 }
