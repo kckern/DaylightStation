@@ -785,7 +785,7 @@ public class MediaServiceCapabilityTest {
         org.json.JSONArray lists = new org.json.JSONArray()
                 .put(new JSONObject().put("contentId", "plex:900").put("title", "80s radio"))
                 .put(new JSONObject().put("contentId", "plex:900").put("title", "80s radio (again)"));
-        java.util.List<MediaNode> nodes = BrowseTree.continueNodes(api.recent(50), null, lists);
+        java.util.List<MediaNode> nodes = BrowseTree.continueNodes(BrowseTree.continueItems(api.recent(50), null, 8), lists);
         assertEquals(2, nodes.size());
         assertEquals("p:plex:727120", nodes.get(0).toJson().getString("id"));
         assertTrue(nodes.get(0).toJson().getString("subtitle").startsWith("4 h 53 min left"));
@@ -805,5 +805,54 @@ public class MediaServiceCapabilityTest {
         assertEquals(RecentLists.MAX, lists.list().length());
         lists.record("../etc", "bad", null, 99);
         assertEquals("plex:29", lists.list().getJSONObject(0).getString("contentId"));
+    }
+
+    private static String continueAnswer(int review, String... rows) {
+        StringBuilder b = new StringBuilder("{\"items\":[");
+        for (int i = 0; i < rows.length; i++) b.append(i == 0 ? "" : ",").append(rows[i]);
+        return b.append("],\"reviewCount\":").append(review).append(",\"minListenedMin\":5}").toString();
+    }
+
+    /** §13: home's one answer, one row per book: the book to act on, the part to resume, the part's place in the book. */
+    @Test public void continueReadsHomesOneAnswerOneRowPerBook() throws Exception {
+        api.responses.put("continue 10", continueAnswer(2,
+                "{\"contentId\":\"plex:500\",\"playContentId\":\"plex:502\",\"title\":\"Henry VI Part 3\",\"byline\":\"William Shakespeare\","
+                        + "\"partTitle\":\"War and a Weakening King\",\"partIndex\":2,\"partCount\":5,\"playhead\":600,\"duration\":1500,"
+                        + "\"remainingSec\":5400,\"listenedSec\":900,\"legacy\":false}",
+                "{\"contentId\":\"plex:600\",\"playContentId\":\"plex:600\",\"title\":\"Snakes\",\"byline\":null,"
+                        + "\"playhead\":300,\"duration\":3000,\"remainingSec\":2700,\"legacy\":true}"));
+        JSONObject reply = cap.call(new JSONObject().put("op", "continue").put("limit", 6)).body;
+        org.json.JSONArray items = reply.getJSONArray("items");
+        assertEquals(2, reply.getInt("reviewCount"));
+        assertEquals(2, items.length());
+        JSONObject book = items.getJSONObject(0);
+        assertEquals("plex:500", book.getString("contentId"));
+        assertEquals("p:plex:502", book.getString("id"));
+        assertEquals("Henry VI Part 3", book.getString("title"));
+        assertEquals("William Shakespeare", book.getString("subtitle"));
+        assertEquals("Part 2 of 5 · 1 h 30 min left", BrowseTree.continueLine(book));
+        assertTrue(items.getJSONObject(1).getBoolean("legacy"));
+        assertEquals("45 min left", BrowseTree.continueLine(items.getJSONObject(1)));
+    }
+
+    /** A home older than the route: the old way, from its recent list. */
+    @Test public void continueFallsBackToRecentOnAnOlderHome() throws Exception {
+        api.responses.put("recent 50", recentWith("plex:1"));
+        org.json.JSONArray items = cap.call(new JSONObject().put("op", "continue").put("limit", 6)).body.getJSONArray("items");
+        assertEquals(1, items.length());
+        assertEquals("plex:1", items.getJSONObject(0).getString("contentId"));
+    }
+
+    /** The one-time review of older entries: listed, then kept or cleared one by one or all at once. */
+    @Test public void olderEntriesAreReviewedKeptOrCleared() throws Exception {
+        api.responses.put("continueReview", continueAnswer(1,
+                "{\"contentId\":\"plex:600\",\"playContentId\":\"plex:600\",\"title\":\"Snakes\",\"playhead\":300,\"duration\":3000,\"legacy\":true}"));
+        org.json.JSONArray items = cap.call(new JSONObject().put("op", "continue-review")).body.getJSONArray("items");
+        assertEquals("Snakes", items.getJSONObject(0).getString("title"));
+        assertEquals(200, cap.call(new JSONObject().put("op", "continue-decide").put("contentId", "plex:600").put("decision", "keep")).status);
+        assertEquals(200, cap.call(new JSONObject().put("op", "continue-decide").put("all", true).put("decision", "clear")).status);
+        assertEquals(java.util.Arrays.asList("plex:600=keep", "*=clear"), api.decisions);
+        assertEquals(400, cap.call(new JSONObject().put("op", "continue-decide").put("all", true).put("decision", "keep")).status);
+        assertEquals(400, cap.call(new JSONObject().put("op", "continue-decide").put("contentId", "../x").put("decision", "clear")).status);
     }
 }

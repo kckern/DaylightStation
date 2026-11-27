@@ -49,7 +49,7 @@ public final class Main implements Payload {
                 if (stopped) throw new IllegalStateException("stopped during start");
                 shell.note("CONTROL", "control.bind is " + DeviceConfig.CONTROL_BIND + ": no control server");
                 // A phone's owner reads this line in the shade: not a device id and a build tag.
-                shell.updateNotification("Daylight is running");
+                shell.updateNotification("Running");
                 return;
             }
             // lan: every interface. loopback: this device only (a phone joins other networks).

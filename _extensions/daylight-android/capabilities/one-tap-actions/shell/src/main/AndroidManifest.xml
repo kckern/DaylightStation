@@ -6,22 +6,22 @@
              system can. A slot takes no input from its caller: it reads the app's own
              surface cache and launches the link it finds there. -->
         <service android:name="net.kckern.daylight.cap.onetap.shell.ActionTileService$Tile1"
-            android:exported="true" android:label="Daylight 1" android:icon="@drawable/ic_action_bolt"
+            android:exported="true" android:label="Action 1" android:icon="@drawable/ic_action_bolt"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE" /></intent-filter>
         </service>
         <service android:name="net.kckern.daylight.cap.onetap.shell.ActionTileService$Tile2"
-            android:exported="true" android:label="Daylight 2" android:icon="@drawable/ic_action_bolt"
+            android:exported="true" android:label="Action 2" android:icon="@drawable/ic_action_bolt"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE" /></intent-filter>
         </service>
         <service android:name="net.kckern.daylight.cap.onetap.shell.ActionTileService$Tile3"
-            android:exported="true" android:label="Daylight 3" android:icon="@drawable/ic_action_bolt"
+            android:exported="true" android:label="Action 3" android:icon="@drawable/ic_action_bolt"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE" /></intent-filter>
         </service>
         <service android:name="net.kckern.daylight.cap.onetap.shell.ActionTileService$Tile4"
-            android:exported="true" android:label="Daylight 4" android:icon="@drawable/ic_action_bolt"
+            android:exported="true" android:label="Action 4" android:icon="@drawable/ic_action_bolt"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE" /></intent-filter>
         </service>

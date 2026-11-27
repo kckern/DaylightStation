@@ -35,8 +35,16 @@ final class AndroidNotices implements NotificationsCapability.NoticeSink {
     @Override public void ensureChannels() {
         NotificationManager m = manager();
         if (m == null) return;
-        m.createNotificationChannel(new NotificationChannel("daylight_" + LocalNotices.UPLOADS, "Uploads", NotificationManager.IMPORTANCE_LOW));
-        m.createNotificationChannel(new NotificationChannel("daylight_" + LocalNotices.GENERAL, "Daylight", NotificationManager.IMPORTANCE_DEFAULT));
+        // One group named as Android names the app (the device file's label), never the brand (D16).
+        String group = "daylight";   // the same group the shell's channel joins
+        CharSequence label = context.getApplicationInfo().loadLabel(context.getPackageManager());
+        m.createNotificationChannelGroup(new android.app.NotificationChannelGroup(group, label));
+        NotificationChannel uploads = new NotificationChannel("daylight_" + LocalNotices.UPLOADS, "Uploads", NotificationManager.IMPORTANCE_LOW);
+        uploads.setGroup(group);
+        m.createNotificationChannel(uploads);
+        NotificationChannel general = new NotificationChannel("daylight_" + LocalNotices.GENERAL, "General", NotificationManager.IMPORTANCE_DEFAULT);
+        general.setGroup(group);
+        m.createNotificationChannel(general);
     }
 
     @Override public void post(Notice notice) {

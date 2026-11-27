@@ -22,18 +22,18 @@ public class WidgetButtonsTest {
         List<WidgetButtons.Button> b = WidgetButtons.of(new String[] { "", "", "", "" }, new String[] { "", "", "", "" });
         assertEquals(1, b.size());
         assertEquals(1, b.get(0).slot);
-        assertEquals("Daylight", b.get(0).label);
+        assertEquals("Open", b.get(0).label);
         assertEquals("no link: the provider opens the app's own launcher activity", "", b.get(0).link);
     }
 
     @Test public void aSlotWithALinkButNoLabelStillGetsAName() {
-        assertEquals("Daylight", WidgetButtons.of(new String[] { "", "", "", "" },
+        assertEquals("Action 1", WidgetButtons.of(new String[] { "", "", "", "" },
                 new String[] { "daylight://action/x", "", "", "" }).get(0).label);
     }
 
     @Test public void aLabelWithNoLinkIsNotAButton() {
         List<WidgetButtons.Button> b = WidgetButtons.of(new String[] { "Stale", "", "", "" }, new String[] { "", "", "", "" });
-        assertEquals("Daylight", b.get(0).label);
+        assertEquals("Open", b.get(0).label);
         assertEquals("", b.get(0).link);
     }
 }

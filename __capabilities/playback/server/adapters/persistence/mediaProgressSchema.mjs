@@ -22,7 +22,11 @@ export const CANONICAL_FIELDS = Object.freeze([
   'skippedAt',
   'bookmark',
   'spots',
-  'lastDevice'
+  'lastDevice',
+  // Listened time (playback/domain/listenedTime.mjs, lookup spec §13)
+  'listenedSec',
+  'listenRun',
+  'listenLegacy'
 ]);
 
 /**

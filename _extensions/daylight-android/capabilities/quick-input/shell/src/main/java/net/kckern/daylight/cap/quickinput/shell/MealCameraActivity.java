@@ -248,7 +248,7 @@ public final class MealCameraActivity extends Activity implements TextureView.Su
      */
     private void showCameraOff() {
         boolean canAsk = shouldShowRequestPermissionRationale(Manifest.permission.CAMERA);
-        showNotice("Daylight needs the camera to take meal photos.",
+        showNotice("Meal photos need the camera.",
                 canAsk ? "Allow camera" : "Open settings",
                 () -> {
                     if (canAsk) requestPermissions(new String[]{Manifest.permission.CAMERA}, REQUEST_CAMERA);

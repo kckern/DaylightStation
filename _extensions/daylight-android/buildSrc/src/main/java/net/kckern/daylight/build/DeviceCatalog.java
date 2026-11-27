@@ -243,6 +243,16 @@ public final class DeviceCatalog {
 
         Map<String, Object> theme = ThemeSource.parse(doc.get("theme"), where);
 
+        // The app's name where Android shows it (launcher, Settings, notifications, the car).
+        String label = DeviceSpec.DEFAULT_LABEL;
+        if (doc.containsKey("label")) {
+            Object raw = doc.get("label");
+            if (!(raw instanceof String) || ((String) raw).trim().isEmpty() || ((String) raw).trim().length() > 30) {
+                throw new CatalogException(where + ": label must be a non-empty string of at most 30 characters");
+            }
+            label = ((String) raw).trim();
+        }
+
         Map<String, Object> defaults = new LinkedHashMap<>();
         Object rawDefaults = doc.get("defaults");
         if (rawDefaults != null) {
@@ -258,7 +268,7 @@ public final class DeviceCatalog {
         return new DeviceSpec(id, pkg, minSdk, targetSdk, abis, port, lifeline, versionCode, versionName,
                 Collections.unmodifiableList(capabilities), Collections.unmodifiableMap(defaults),
                 Collections.unmodifiableList(extraPermissions), Collections.unmodifiableList(serviceTypes),
-                bind, appLinksHost, theme);
+                bind, appLinksHost, theme, label);
     }
 
     /** SafeConstructor builds only maps, lists and scalars; a tag naming a Java class is refused. */

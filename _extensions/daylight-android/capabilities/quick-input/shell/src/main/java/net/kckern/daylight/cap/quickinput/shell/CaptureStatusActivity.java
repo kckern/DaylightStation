@@ -74,7 +74,8 @@ public final class CaptureStatusActivity extends Activity {
         layout.addView(summary);
         content = column();
         layout.addView(content);
-        TextView done = CaptureUi.pill(this, "Done", true);
+        layout.addView(new android.view.View(this), new LinearLayout.LayoutParams(0, 0, 1));
+        TextView done = CaptureUi.primary(this, "Done");
         done.setOnClickListener(v -> finish());
         LinearLayout.LayoutParams doneParams = new LinearLayout.LayoutParams(-1, -2);
         doneParams.topMargin = CaptureUi.dp(this, 20);
@@ -200,12 +201,14 @@ public final class CaptureStatusActivity extends Activity {
         }
     }
 
-    /** One capture: where it went, when, what became of it, and the one thing to do about it. */
+    /**
+     * One capture as a flat row (rule 3): where it went, when, what became of it, and the one
+     * thing to do about it as words at the row's end (Try again, Replace, View), never a pill.
+     */
     private LinearLayout card(JSONObject row, String id) {
         LinearLayout card = column();
-        int pad = CaptureUi.dp(this, 16);
-        card.setPadding(pad, pad, pad, pad);
-        card.setBackground(t.round(t.surface, Radius.MEDIUM));
+        int pad = CaptureUi.dp(this, 4);
+        card.setPadding(pad, CaptureUi.dp(this, 8), pad, CaptureUi.dp(this, 8));
         card.addView(CaptureUi.text(this, row.optString("destination"), Type.TITLE, t.ink, true));
         long capturedAt = row.optLong("recordedAtMs");
         if (capturedAt > 0) {
@@ -217,22 +220,27 @@ public final class CaptureStatusActivity extends Activity {
         String message = row.optString("message");
         String action = row.optString("action");
         boolean attention = "Replace capture".equals(action) || "Retry".equals(action);
-        TextView state = CaptureUi.text(this, message, Type.BODY, attention ? t.attention : t.primary, true);
-        state.setPadding(0, CaptureUi.dp(this, 6), 0, 0);
-        card.addView(state);
+        // A problem reads in the attention colour; any other state is muted (the accent is not a text colour).
+        TextView state = CaptureUi.text(this, message, Type.BODY, attention ? t.attention : t.inkMuted, false);
+        state.setPadding(0, CaptureUi.dp(this, 4), 0, 0);
         // The payload's action names are what it understands; the words on the button are plain.
         String label = "Replace capture".equals(action) ? "Replace" : "Retry".equals(action) ? "Try again"
                 : "View in Health".equals(action) ? "View" : null;
         if (label != null) {
-            TextView button = CaptureUi.pill(this, label, attention);
+            LinearLayout line = new LinearLayout(this);
+            line.setGravity(android.view.Gravity.CENTER_VERTICAL);
+            line.addView(state, new LinearLayout.LayoutParams(0, -2, 1));
+            TextView button = CaptureUi.textButton(this, label);
+            button.setContentDescription(label + ", " + row.optString("destination"));
             button.setOnClickListener(v -> request("Replace capture".equals(action) ? "replace"
                     : "Retry".equals(action) ? "retry" : "view", id));
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
-            params.topMargin = CaptureUi.dp(this, 10);
-            card.addView(button, params);
+            line.addView(button);
+            card.addView(line);
+        } else {
+            card.addView(state);
         }
         LinearLayout.LayoutParams outer = new LinearLayout.LayoutParams(-1, -2);
-        outer.topMargin = CaptureUi.dp(this, 12);
+        outer.topMargin = CaptureUi.dp(this, 8);
         card.setLayoutParams(outer);
         return card;
     }

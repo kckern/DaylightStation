@@ -234,6 +234,12 @@ export function tileMeta(rowId, item, entry, nameFor, { editionCount = 1 } = {})
   if (rowId === 'carry-on') {
     if (item.reason === 'next-episode' || entry?.reason === 'next-episode') return 'Next episode';
     const source = entry ?? item;
+    // A book or series (Continue listening's row, lookup spec §13): its current
+    // part and the time left in the whole book.
+    if (source?.playContentId && Number.isFinite(source.remainingSec)) {
+      const part = source.partIndex && source.partCount ? `Part ${source.partIndex} of ${source.partCount}` : null;
+      return [part, formatLeft(0, source.remainingSec)].filter(Boolean).join(' · ') || 'In progress';
+    }
     const spots = differingSpots(entry);
     // FIND.10a/AC4: screens holding different spots show each one (a short line per spot).
     if (spots.length > 1) return spots.slice(0, 2).map(spot => spotLine(spot, nameFor));

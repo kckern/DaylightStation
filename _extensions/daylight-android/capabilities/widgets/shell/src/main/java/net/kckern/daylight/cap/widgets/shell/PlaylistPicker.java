@@ -294,7 +294,7 @@ final class PlaylistPicker {
                 try {
                     loaded = PlaylistCatalog.load();
                 } catch (Exception e) {
-                    failure = e instanceof PayloadPort.NotReadyException ? "Daylight is still starting."
+                    failure = e instanceof PayloadPort.NotReadyException ? "Still starting up."
                             : "Could not load all playlists.";
                 }
                 List<PlaylistEntry> result = loaded;

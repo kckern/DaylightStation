@@ -882,7 +882,7 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
         }
         if (denied && activity != null) {
             new AlertDialog.Builder(activity).setTitle("Allow camera or microphone")
-                    .setMessage("Open Permissions in Daylight’s app settings, switch on the camera or microphone, then come back. The barcode scanner starts again by itself.")
+                    .setMessage("Open Permissions in this app’s settings, switch on the camera or microphone, then come back. The barcode scanner starts again by itself.")
                     .setNegativeButton("Close", null)
                     .setPositiveButton("App settings", (dialog, which) -> activity.startActivity(new Intent(
                             android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,

@@ -64,4 +64,10 @@ public class ChaptersTest {
         org.junit.Assert.assertNull(Chapters.notificationLine("Some album", "Artist"));
         org.junit.Assert.assertNull(Chapters.notificationLine(null, "Artist"));
     }
+
+    @Test public void aQuotedTitleIsReadWithoutItsQuotes() {
+        assertEquals("Chapter 1", Chapters.unquoted("\"Chapter 1\""));
+        assertEquals("The Return", Chapters.unquoted("\u201CThe Return\u201D"));
+        assertEquals("Say \"no\"", Chapters.unquoted("Say \"no\""));
+    }
 }

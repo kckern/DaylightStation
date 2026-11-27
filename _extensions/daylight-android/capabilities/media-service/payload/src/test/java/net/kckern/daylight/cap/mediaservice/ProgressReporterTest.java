@@ -128,4 +128,15 @@ public class ProgressReporterTest {
         assertEquals("the type is the content's source, which picks the backend's adapter", "files",
                 reporter.onEvent("files:clips/a.mp3", "A", "", 30_000, FIVE_MIN, "playing", 500_000).get(0).toBody().getString("type"));
     }
+
+    /** §13: home counts listened time at the speed played, between reports of one session. */
+    @Test public void aReportCarriesItsSpeedAndSession() throws Exception {
+        Report r = reporter.onEvent("plex:1", "Canto 7", "", 30_000, FIVE_MIN, "playing", 30_000).get(0);
+        assertFalse("normal speed and no session add nothing", r.toBody().has("rate") || r.toBody().has("sessionId"));
+        r.rate = 1.5;
+        r.sessionId = "phone-ab12cd34";
+        JSONObject body = r.toBody();
+        assertEquals(1.5, body.getDouble("rate"), 0.001);
+        assertEquals("phone-ab12cd34", body.getString("sessionId"));
+    }
 }

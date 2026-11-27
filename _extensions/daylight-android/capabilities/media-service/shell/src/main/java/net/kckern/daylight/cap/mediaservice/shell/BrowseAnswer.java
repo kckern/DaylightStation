@@ -73,7 +73,7 @@ final class BrowseAnswer {
 
     /** What the root holds while no payload is loaded: one tab that says so. */
     static List<Entry> starting() {
-        return Collections.singletonList(new Entry(STARTING_ID, "Daylight is starting", "", null, true, false));
+        return Collections.singletonList(new Entry(STARTING_ID, "Starting up…", "", null, true, false));
     }
 
     static String https(String url) {

@@ -73,6 +73,14 @@ final class FakeMediaApi implements MediaApi {
         if (hideStatus != 200) throw new Refused("continue hide", hideStatus);
         hides.add((hidden ? "+" : "-") + contentId);
     }
+    @Override public JSONObject continueListening(int limit) throws Exception { return answer("continue", "continue " + limit); }
+    @Override public JSONObject continueReview() throws Exception { return answer("continue review", "continueReview"); }
+    final List<String> decisions = Collections.synchronizedList(new ArrayList<String>());
+    @Override public JSONObject decideContinueReview(String contentId, boolean all, String decision) throws Exception {
+        if (down) throw new IOException("no route to host");
+        decisions.add((all ? "*" : contentId) + "=" + decision);
+        return new JSONObject().put("decided", new org.json.JSONArray().put(all ? "plex:600" : contentId)).put("decision", decision);
+    }
     final List<String> marked = Collections.synchronizedList(new ArrayList<String>());
     @Override public void markWatched(String contentId, boolean watched) throws Exception {
         if (down) throw new IOException("no route to host");

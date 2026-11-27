@@ -141,7 +141,7 @@ public class CarActionsCapabilityTest {
         cap.start();
         JSONObject journal = new JSONObject(call(new JSONObject().put("op", "list"))).getJSONArray("entries").getJSONObject(0);
         assertEquals(CarActionsCapability.NOT_SET_UP, journal.getString("why"));
-        assertEquals("Daylight is not set up for quick inputs", CarActionsCapability.NOT_SET_UP);
+        assertEquals("Quick inputs aren't set up on this phone", CarActionsCapability.NOT_SET_UP);
     }
 
     @Test public void theHostPinsAreHandedToTheInstalledServiceAtStartAndWhenTheyChange() throws Exception {

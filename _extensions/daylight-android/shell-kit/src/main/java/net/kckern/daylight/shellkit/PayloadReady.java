@@ -17,8 +17,8 @@ import net.kckern.daylight.api.PayloadStart;
  * Never call on the main thread.
  */
 public final class PayloadReady {
-    public static final String STARTING = "Starting Daylight…";
-    public static final String FAILED_WORDS = "Daylight could not start. Close it and open it again.";
+    public static final String STARTING = "Starting up…";
+    public static final String FAILED_WORDS = "Could not start. Close the app and open it again.";
 
     public enum State { READY, STARTING, FAILED }
 

@@ -26,7 +26,7 @@ final class CarMemo {
     static final int CHANNELS = 1;
     private static final int BYTES_PER_SECOND = SAMPLE_RATE * 2 * CHANNELS;
 
-    static final String CAR_TOO_OLD = "This car cannot record for Daylight";
+    static final String CAR_TOO_OLD = "This car cannot record voice memos";
     static final String NO_MIC = "Allow the microphone on the phone first";
     static final String BUSY = "A memo is already being recorded";
 

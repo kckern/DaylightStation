@@ -151,12 +151,13 @@ final class Sheet {
         return this;
     }
 
-    /** A labelled switch on a white card. */
+    /** A labelled on/off row: a flat row (rule 3) with a standard switch at its end (D11). */
     Sheet toggle(String label, String hint, boolean on, Consumer<Boolean> changed) {
-        LinearLayout card = new LinearLayout(activity);
-        card.setGravity(Gravity.CENTER_VERTICAL);
-        card.setPadding(dp(16), dp(12), dp(12), dp(12));
-        card.setBackground(t.round(t.surface, Radius.MEDIUM));
+        LinearLayout row = new LinearLayout(activity);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setMinimumHeight(dp(56));
+        row.setPadding(0, dp(8), 0, dp(8));
+        row.setBackground(t.pressable(null));
         LinearLayout text = new LinearLayout(activity);
         text.setOrientation(LinearLayout.VERTICAL);
         text.addView(PlaylistPicker.text(activity, label, Type.BODY, t.ink, true));
@@ -164,14 +165,14 @@ final class Sheet {
             TextView h = PlaylistPicker.text(activity, hint, Type.CAPTION, t.inkMuted, false);
             text.addView(h);
         }
-        card.addView(text, new LinearLayout.LayoutParams(0, -2, 1));
-        Toggle toggle = new Toggle(activity, on);
-        toggle.onChange(changed);
-        card.addView(toggle);
-        card.setOnClickListener(v -> toggle.toggle());
+        row.addView(text, new LinearLayout.LayoutParams(0, -2, 1));
+        android.widget.Switch toggle = Toggle.create(activity, on, label);
+        toggle.setOnCheckedChangeListener((b, checked) -> changed.accept(checked));
+        row.addView(toggle);
+        row.setOnClickListener(v -> toggle.toggle());
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
-        params.topMargin = dp(8);
-        body.addView(card, params);
+        params.topMargin = dp(4);
+        body.addView(row, params);
         return this;
     }
 
@@ -183,12 +184,13 @@ final class Sheet {
             fill = t.primary;
         } else if (style == Style.TONAL) {
             fill = t.surfaceVariant;
-            button.setTextColor(t.primary);
+            button.setTextColor(t.ink);
         } else {
             fill = Color.TRANSPARENT;
             button.setTextColor(t.danger);
         }
-        button.setBackground(t.pressable(t.round(fill, Radius.LARGE)));
+        // A rectangle, not a pill: pills are for choice chips only (rule 2).
+        button.setBackground(t.pressable(t.round(fill, Radius.SMALL)));
         button.setOnClickListener(v -> {
             dialog.dismiss();
             action.run();

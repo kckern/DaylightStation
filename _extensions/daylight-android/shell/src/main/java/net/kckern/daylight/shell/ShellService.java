@@ -202,17 +202,26 @@ public class ShellService extends Service implements ShellServer.Host {
         manager.deleteNotificationChannel(OLD_CHANNEL_ID);
     }
 
+    /** The app's name as Android shows it: the manifest label, from the device file's label:. */
+    private String appLabel() {
+        CharSequence label = getApplicationInfo().loadLabel(getPackageManager());
+        return label == null || label.length() == 0 ? "Home" : label.toString();
+    }
+
     private void createNotificationChannel() {
         NotificationManager manager = getSystemService(NotificationManager.class);
-        NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "Daylight is running", NotificationManager.IMPORTANCE_MIN);
-        channel.setDescription("Keeps Daylight available in the background");
+        NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "Running in the background", NotificationManager.IMPORTANCE_MIN);
+        channel.setDescription("Keeps the app ready in the background");
+        // The app's notification group, named as the device file names the app (D16).
+        manager.createNotificationChannelGroup(new android.app.NotificationChannelGroup("daylight", appLabel()));
+        channel.setGroup("daylight");
         manager.createNotificationChannel(channel);
         manager.deleteNotificationChannel(OLD_CHANNEL_ID);
     }
 
     private void postNotification() {
         Notification n = new Notification.Builder(this, CHANNEL_ID)
-                .setContentTitle("Daylight")
+                .setContentTitle(appLabel())
                 .setContentText(notificationText)
                 .setSmallIcon(android.R.drawable.ic_menu_info_details)
                 .setOngoing(true)

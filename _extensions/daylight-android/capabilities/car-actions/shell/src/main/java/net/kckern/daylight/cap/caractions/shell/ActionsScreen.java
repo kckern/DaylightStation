@@ -65,14 +65,20 @@ final class ActionsScreen extends Screen {
         });
     }
 
+    /** The car's title: the app's name as the device file sets it, never the brand (D16). */
+    private String appName() {
+        CharSequence label = getCarContext().getApplicationInfo().loadLabel(getCarContext().getPackageManager());
+        return label == null || label.length() == 0 ? "Home" : label.toString();
+    }
+
     @NonNull
     @Override
     public Template onGetTemplate() {
         if (!service.servesHost()) {
-            return new MessageTemplate.Builder("Daylight is not available on this car connection")
-                    .setTitle("Daylight").setHeaderAction(Action.APP_ICON).build();
+            return new MessageTemplate.Builder("Not available on this car connection")
+                    .setTitle(appName()).setHeaderAction(Action.APP_ICON).build();
         }
-        ListTemplate.Builder template = new ListTemplate.Builder().setTitle("Daylight").setHeaderAction(Action.APP_ICON);
+        ListTemplate.Builder template = new ListTemplate.Builder().setTitle(appName()).setHeaderAction(Action.APP_ICON);
         List<CarAnswers.Entry> current = rows;
         if (current == null) {
             load();

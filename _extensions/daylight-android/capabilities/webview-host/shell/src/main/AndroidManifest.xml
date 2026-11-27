@@ -32,7 +32,7 @@
         <activity
             android:name="net.kckern.daylight.cap.webviewhost.shell.KioskActivity"
             android:exported="true"
-            android:label="Daylight"
+            android:label="${appLabel}"
             android:banner="@drawable/daylight_kiosk_banner"
             android:launchMode="singleTask"
             android:hardwareAccelerated="true"

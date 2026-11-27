@@ -94,3 +94,54 @@ describe('PlaybackReadService.peekStartPosition', () => {
     expect(await svc({ item: {} }).peekStartPosition({ compoundId: 'nope:1' })).toEqual({ startSec: null, lastPlayedAt: null });
   });
 });
+
+/**
+ * A BOOK IGNORES SHUFFLE ON THE PLAY ROUTE (2026-11-26): home's Play with shuffle
+ * on picked a random part of a book. The queue already plays an ordered work in
+ * order; the play route now does the same.
+ */
+describe('PlaybackReadService — shuffle on a book', () => {
+  const parts = [1, 2, 3, 4, 5].map((n) => ({
+    id: `plex:80${n}`, title: `Part ${n}`, mediaUrl: `/s/${n}`, duration: 3000,
+    percent: n === 1 ? 100 : n === 2 ? 40 : 0,
+    metadata: { librarySectionID: 9, librarySectionTitle: 'Audiobooks' },
+  }));
+  function serviceFor({ ordered }) {
+    const picks = [];
+    const contentQueryService = {
+      resolve: async (_s, _l, _c, overrides) => {
+        picks.push(overrides?.pick ?? 'next');
+        // random pick → the last part; the plain pick → the part in progress
+        return { items: overrides?.pick === 'random' ? [parts[4]] : [parts[1]] };
+      },
+    };
+    const service = new PlaybackReadService({
+      contentIdResolver: { resolve: () => ({ source: 'plex', localId: '800' }) },
+      contentCatalog: {
+        getItem: async () => ({ id: 'plex:800', title: 'A book', itemType: 'container' }),
+        resolvePlayables: async () => parts,
+        progressNamespace: async () => 'plex',
+        describeItem: () => ({}),
+      },
+      contentQueryService,
+      playResponseService: { getWatchState: async () => null, toPlayResponse: (item) => ({ id: item.id }) },
+      isOrderedWork: () => ordered,
+      logger: { info() {}, warn() {} },
+    });
+    return { service, picks };
+  }
+
+  it('plays the part in progress, not a random one, when the container is a book', async () => {
+    const { service, picks } = serviceFor({ ordered: true });
+    const result = await service.resolve({ compoundId: 'plex:800', shuffle: true });
+    expect(result.body.id).toBe('plex:802');
+    expect(picks).not.toContain('random');
+  });
+
+  it('still shuffles music', async () => {
+    const { service, picks } = serviceFor({ ordered: false });
+    const result = await service.resolve({ compoundId: 'plex:800', shuffle: true });
+    expect(result.body.id).toBe('plex:805');
+    expect(picks).toContain('random');
+  });
+});

@@ -21,8 +21,8 @@ final class CarAnswers {
     static final String VOICE = "voice";
     /** A row that does nothing when tapped ("Daylight is starting"). */
     static final String NONE = "none";
-    static final String STARTING = "Daylight is starting";
-    static final String NO_ANSWER = "Daylight did not answer";
+    static final String STARTING = "Starting up…";
+    static final String NO_ANSWER = "No answer from the phone. Try again.";
 
     static final class Entry {
         final String id;

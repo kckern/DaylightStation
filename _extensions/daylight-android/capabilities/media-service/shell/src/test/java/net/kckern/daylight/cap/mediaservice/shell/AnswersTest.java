@@ -52,7 +52,7 @@ public class AnswersTest {
         List<BrowseAnswer.Entry> root = BrowseAnswer.starting();
         assertEquals(1, root.size());
         assertEquals(BrowseAnswer.STARTING_ID, root.get(0).id);
-        assertEquals("Daylight is starting", root.get(0).title);
+        assertEquals("Starting up…", root.get(0).title);
         assertTrue("a car shows the root's children as tabs, which are browsable", root.get(0).browsable);
         assertFalse(root.get(0).playable);
     }

@@ -208,4 +208,14 @@ public class BrowseTreeTest {
         assertEquals("cut on whole characters", 200, cut.codePointCount(0, cut.length()));
         assertEquals(400, cut.length());
     }
+
+    /** A book's parts point at the book's thumb: not their own art, so a row numbers them. */
+    @Test public void aPartWithItsBooksThumbHasNoArtOfItsOwn() throws Exception {
+        org.json.JSONObject part = new org.json.JSONObject().put("id", "plex:728065").put("albumId", 728064)
+                .put("thumbnail", "/api/v1/proxy/plex/library/metadata/728064/thumb/1791241500");
+        assertFalse(BrowseTree.ownArt(part));
+        part.put("thumbnail", "/api/v1/proxy/plex/library/metadata/728065/thumb/1791241501");
+        assertTrue(BrowseTree.ownArt(part));
+        assertFalse(BrowseTree.ownArt(new org.json.JSONObject().put("albumId", 1)));
+    }
 }

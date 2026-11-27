@@ -59,4 +59,22 @@ interface MediaApi {
      * order ({id, title}). The backend's answer ({ok, id: "menu:<name>", title, count}).
      */
     default JSONObject savePlaylist(String title, org.json.JSONArray items) throws Exception { throw new Refused("playlists", 501); }
+    /**
+     * GET /api/v1/media/household/continue?limit=N: Continue listening, one truth for the
+     * phone, the car and the web (lookup spec §13): one row per book or series, heard for at
+     * least the household's minimum. {items:[{contentId, playContentId, title, byline,
+     * thumbnail, partTitle, partIndex, partCount, playhead, duration, remainingSec,
+     * listenedSec, lastPlayed, legacy}], reviewCount, minListenedMin}. A home older than the
+     * route answers 404 (Refused).
+     */
+    default JSONObject continueListening(int limit) throws Exception { throw new Refused("continue", 404); }
+    /** GET /api/v1/media/household/continue/review: the older entries (no listened time) still to decide. */
+    default JSONObject continueReview() throws Exception { throw new Refused("continue review", 404); }
+    /**
+     * POST /api/v1/media/household/continue/review {contentId, decision} or {all:true,
+     * decision:"clear"}: keep or clear an older entry. Answers {decided:[ids], decision}.
+     */
+    default JSONObject decideContinueReview(String contentId, boolean all, String decision) throws Exception {
+        throw new Refused("continue review", 404);
+    }
 }

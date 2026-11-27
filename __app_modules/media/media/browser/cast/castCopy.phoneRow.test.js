@@ -8,7 +8,7 @@ const phone = { id: 'phone', type: 'phone', content_control: { provider: 'phone-
 describe('Play on: the phone row', () => {
   it('a phone not listening (never heard, offline, stale) says how to make it listen and is disabled', () => {
     for (const entry of [null, { offline: true }, { isStale: true, snapshot: { state: 'idle' } }]) {
-      expect(pickerRowState({ entry, device: phone })).toMatchObject({ text: 'Open Daylight to play here', disabled: true, tone: 'off' });
+      expect(pickerRowState({ entry, device: phone })).toMatchObject({ text: 'Open the app on the phone to play here', disabled: true, tone: 'off' });
     }
   });
 

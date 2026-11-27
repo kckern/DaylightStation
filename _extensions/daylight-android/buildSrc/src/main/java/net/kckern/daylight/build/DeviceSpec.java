@@ -29,6 +29,13 @@ public final class DeviceSpec {
     public final String appLinksHost;
     /** The checked theme: block (ThemeSource.parse); empty for the shell-kit defaults. */
     public final Map<String, Object> theme;
+    /**
+     * The name Android shows for the app (the launcher, Settings, the notification group, the
+     * car): the device file's `label:`, default {@link #DEFAULT_LABEL}. The app's own screens
+     * never name a brand (D16); only these places name the app, and the device file decides.
+     */
+    public final String label;
+    public static final String DEFAULT_LABEL = "Home";
 
     DeviceSpec(String id, String packageName, int minSdk, int targetSdk, List<String> abis,
                int controlPort, int lifelinePort, int shellVersionCode, String shellVersionName,
@@ -53,6 +60,16 @@ public final class DeviceSpec {
                List<String> capabilities, Map<String, Object> defaults,
                List<String> extraPermissions, List<String> foregroundServiceTypes,
                String controlBind, String appLinksHost, Map<String, Object> theme) {
+        this(id, packageName, minSdk, targetSdk, abis, controlPort, lifelinePort, shellVersionCode, shellVersionName,
+                capabilities, defaults, extraPermissions, foregroundServiceTypes, controlBind, appLinksHost, theme, DEFAULT_LABEL);
+    }
+
+    DeviceSpec(String id, String packageName, int minSdk, int targetSdk, List<String> abis,
+               int controlPort, int lifelinePort, int shellVersionCode, String shellVersionName,
+               List<String> capabilities, Map<String, Object> defaults,
+               List<String> extraPermissions, List<String> foregroundServiceTypes,
+               String controlBind, String appLinksHost, Map<String, Object> theme, String label) {
+        this.label = label;
         this.theme = theme;
         this.controlBind = controlBind;
         this.appLinksHost = appLinksHost;

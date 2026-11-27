@@ -101,8 +101,10 @@ final class PlaybackEvents implements Player.Listener {
         final String id = current.mediaId;
         final String title = current.mediaMetadata.title == null ? "" : current.mediaMetadata.title.toString();
         final String listId = current.mediaMetadata.extras == null ? "" : current.mediaMetadata.extras.getString(NodeItems.EXTRA_LIST_ID, "");
+        // The speed it plays at: home counts listened time at it (lookup spec §13).
+        final float rate = player.getPlaybackParameters().speed;
         try {
-            io.execute(() -> media.event(id, title, listId, position, duration == C.TIME_UNSET ? 0 : duration, state));
+            io.execute(() -> media.event(id, title, listId, position, duration == C.TIME_UNSET ? 0 : duration, state, rate));
         } catch (RuntimeException stopping) {
             // The service is going away; progress is advisory.
         }

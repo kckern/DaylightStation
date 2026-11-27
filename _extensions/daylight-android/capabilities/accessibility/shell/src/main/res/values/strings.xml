@@ -1,4 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="daylight_accessibility_desc">Lets the Daylight kiosk read hardware keys and operate system dialogs on this device.</string>
+    <string name="daylight_accessibility_desc">Lets the kiosk read hardware keys and operate system dialogs on this device.</string>
 </resources>

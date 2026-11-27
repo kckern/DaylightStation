@@ -14,7 +14,15 @@
  *
  * Household media memory (__docs/reference/media/media-app-technical.md §2.4):
  * - GET    /household/recent       — Played on any screen, newest first
- * - GET    /household/carry-on     — Unfinished + next episodes; nowOn
+ * - GET    /household/carry-on     — Unfinished + next episodes; nowOn (long audio is
+ *                                     Continue listening's rows, the answer below)
+ * - GET    /household/continue     — Continue listening (lookup spec §13): long audio heard
+ *                                     for ≥ continue.minListenedMin, one row per book
+ *                                     or series; {items, reviewCount, minListenedMin}
+ * - GET    /household/continue/review — Entries from before listened time was measured,
+ *                                     not yet decided
+ * - POST   /household/continue/review — Decide {contentId, decision: keep|clear} or
+ *                                     {all: true, decision}; answers {decided, decision}
  * - GET    /household/favourites   — Household favourites
  * - POST   /household/favourites   — Add {id, kind?, title?, thumbnail?, type?}
  * - DELETE /household/favourites   — Remove {id} (body or ?id=)
@@ -258,6 +266,30 @@ export function createMediaRouter(config) {
   router.get('/household/carry-on', asyncHandler(async (req, res) => {
     if (!requireHouseholdMemory(res)) return;
     res.json(await householdMediaMemory.carryOn({ householdId: resolveHid(req), limit: req.query.limit }));
+  }));
+
+  router.get('/household/continue', asyncHandler(async (req, res) => {
+    if (!requireHouseholdMemory(res)) return;
+    res.json(await householdMediaMemory.continueListening({ householdId: resolveHid(req), limit: req.query.limit }));
+  }));
+
+  router.get('/household/continue/review', asyncHandler(async (req, res) => {
+    if (!requireHouseholdMemory(res)) return;
+    res.json(await householdMediaMemory.continueReview({ householdId: resolveHid(req) }));
+  }));
+
+  router.post('/household/continue/review', asyncHandler(async (req, res) => {
+    if (!requireHouseholdMemory(res)) return;
+    const { decision, all } = req.body || {};
+    if (decision !== 'keep' && decision !== 'clear') return res.status(400).json({ error: 'decision must be keep or clear' });
+    const contentId = idFrom(req, 'contentId');
+    if (all !== true && !contentId) return res.status(400).json({ error: 'contentId (or all: true) is required' });
+    if (all === true && decision !== 'clear') return res.status(400).json({ error: 'all applies to clear only' });
+    const result = await householdMediaMemory.decideContinueReview({
+      householdId: resolveHid(req), contentId, all: all === true, decision,
+    });
+    logger.info?.('media.continue.review', { decision, all: all === true, count: result.decided.length, householdId: resolveHid(req) ?? null });
+    res.json(result);
   }));
 
   router.get('/household/plays', asyncHandler(async (req, res) => {

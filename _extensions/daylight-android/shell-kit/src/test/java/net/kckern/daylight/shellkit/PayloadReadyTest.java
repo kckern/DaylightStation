@@ -58,7 +58,7 @@ public class PayloadReadyTest {
         PayloadReady.Answer a = PayloadReady.await(f, 25_000);
         assertEquals(PayloadReady.State.STARTING, a.state);
         assertEquals(25_000, f.now);
-        assertEquals("Starting Daylight…", a.words());
+        assertEquals("Starting up…", a.words());
     }
 
     @Test public void theWaitIsAtLeastTheLoadersStartDeadline() {

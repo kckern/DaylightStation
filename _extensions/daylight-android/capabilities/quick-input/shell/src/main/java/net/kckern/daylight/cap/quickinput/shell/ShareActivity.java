@@ -127,7 +127,7 @@ public class ShareActivity extends Activity {
         layout.setPadding(pad, pad, pad, pad / 2);
         DaylightTheme t = DaylightTheme.of(this);
         layout.setBackgroundColor(t.background);
-        TextView heading = CaptureUi.text(this, "Share to Daylight", Type.HEADLINE, t.ink, true);
+        TextView heading = CaptureUi.text(this, "Share", Type.HEADLINE, t.ink, true);
         if (android.os.Build.VERSION.SDK_INT >= 28) heading.setAccessibilityHeading(true); // API 28; the phone floor is 26
         layout.addView(heading);
         status = CaptureUi.text(this, "Getting ready…", Type.BODY, t.inkMuted, false);
@@ -149,7 +149,7 @@ public class ShareActivity extends Activity {
             main.post(() -> {
                 if (isFinishing() || isDestroyed()) return;
                 status.setText(up.state == net.kckern.daylight.shellkit.PayloadReady.State.FAILED ? up.words()
-                        : "Daylight is still starting. Share again in a moment.");
+                        : "Still starting up. Share again in a moment.");
                 addClose();
             });
             return;
@@ -179,7 +179,7 @@ public class ShareActivity extends Activity {
     private void show(String owner, List<Target> targets) {
         if (isFinishing() || isDestroyed()) return;
         if (owner == null) {
-            status.setText("Daylight is not set up on this phone yet.");
+            status.setText("Sharing isn't set up on this phone yet.");
             addClose();
             return;
         }
@@ -189,21 +189,36 @@ public class ShareActivity extends Activity {
             return;
         }
         status.setText(preview(text));
-        // The default is the point of the screen: one big button. The others are below it.
-        Target first = targets.get(0);
-        TextView play = CaptureUi.pill(this, "Send to " + first.label, true);
-        play.setOnClickListener(v -> send(owner, first));
+        // Where it goes is a choice (chips, the default chosen); Send is the one primary (D10, D11).
+        final Target[] chosen = { targets.get(0) };
+        TextView sendButton = CaptureUi.primary(this, "Send to " + chosen[0].label);
+        if (targets.size() > 1) {
+            android.widget.HorizontalScrollView strip = new android.widget.HorizontalScrollView(this);
+            strip.setHorizontalScrollBarEnabled(false);
+            LinearLayout chips = new LinearLayout(this);
+            List<TextView> all = new ArrayList<>();
+            for (Target target : targets) {
+                TextView chip = CaptureUi.chip(this, target.label, target == chosen[0]);
+                chip.setContentDescription("Send to " + target.label);
+                chip.setOnClickListener(v -> {
+                    chosen[0] = target;
+                    for (TextView c : all) CaptureUi.styleChip(this, c, c == chip);
+                    sendButton.setText("Send to " + target.label);
+                });
+                all.add(chip);
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                lp.setMarginEnd(CaptureUi.dp(this, 8));
+                chips.addView(chip, lp);
+            }
+            strip.addView(chips);
+            LinearLayout.LayoutParams stripParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            stripParams.topMargin = CaptureUi.dp(this, 16);
+            layout.addView(strip, stripParams);
+        }
+        sendButton.setOnClickListener(v -> send(owner, chosen[0]));
         LinearLayout.LayoutParams big = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         big.topMargin = CaptureUi.dp(this, 16);
-        layout.addView(play, big);
-        for (int i = 1; i < targets.size(); i++) {
-            Target other = targets.get(i);
-            TextView option = CaptureUi.pill(this, other.label, false);
-            option.setOnClickListener(v -> send(owner, other));
-            LinearLayout.LayoutParams row = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            row.topMargin = CaptureUi.dp(this, 8);
-            layout.addView(option, row);
-        }
+        layout.addView(sendButton, big);
         addClose();
     }
 

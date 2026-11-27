@@ -49,7 +49,7 @@ public class ButtonFaceTest {
         ButtonFace odd = ButtonFace.of("journal", "", "../drawable/x", "daylight://action/journal");
         assertTrue(odd.set);
         assertEquals("ic_action_open", odd.iconName);
-        assertEquals("Daylight", odd.label);
+        assertEquals("Playlist", odd.label);
         assertEquals("ic_action_open", ButtonFace.of("journal", "J", "", "daylight://action/journal").iconName);
     }
 

@@ -291,4 +291,16 @@ public class DeviceCatalogTest {
         org.junit.Assume.assumeTrue(new File(da, "capabilities/audio-guard/capability.yml").isFile());
         assertEquals(java.util.Collections.singletonList("synth"), DeviceCatalog.load(da).capability("audio-guard").startsAfter);
     }
+
+    /** The app's name comes from the device file (D16); without one it is "Home", never the brand. */
+    @Test public void theLabelComesFromTheDeviceFile() throws Exception {
+        File root = root();
+        write(new File(root, "devices/portal.yml"), PORTAL);
+        assertEquals("Home", DeviceCatalog.load(root).device("portal").label);
+        write(new File(root, "devices/portal.yml"), PORTAL + "label: Kitchen\n");
+        assertEquals("Kitchen", DeviceCatalog.load(root).device("portal").label);
+        write(new File(root, "devices/portal.yml"), PORTAL + "label: \"\"\n");
+        File bad = root;
+        assertTrue(message(() -> DeviceCatalog.load(bad)).contains("label"));
+    }
 }

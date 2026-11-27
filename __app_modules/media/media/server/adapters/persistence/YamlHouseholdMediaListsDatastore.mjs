@@ -4,6 +4,10 @@
  * Stored beside the household media queue (YamlMediaQueueDatastore):
  *   household[-{id}]/media/favourites.yml   { items: [ {id, kind, title, thumbnail, type, addedAt} ] }
  *   household[-{id}]/media/removed.yml      { items: { <contentId>: { removedAt } } }
+ *   household[-{id}]/media/continue-review.yml
+ *                                           { items: { <contentId>: { decision: keep|clear, decidedAt } } }
+ *     A person's decision on a Continue listening entry from before listened time
+ *     was measured (lookup spec §13): keep it, or clear it.
  */
 import path from 'path';
 import { readHouseholdYamlFile, writeHouseholdYamlFile } from './HouseholdYamlFile.mjs';
@@ -68,6 +72,20 @@ export class YamlHouseholdMediaListsDatastore extends IHouseholdMediaListsDatast
 
   async saveRemoved(removed, householdId) {
     this._save('removed', householdId, { items: { ...(removed || {}) } });
+  }
+
+  async loadContinueDecisions(householdId) {
+    const items = this._loadItems('continue-review', householdId, (value) => isPlainMapping(value)
+      && Object.entries(value).every(([id, entry]) => id.trim() && isPlainMapping(entry)
+        && (entry.decision === 'keep' || entry.decision === 'clear')), {});
+    return Object.fromEntries(Object.entries(items).map(([id, entry]) => [id, {
+      ...entry,
+      decidedAt: entry.decidedAt instanceof Date ? entry.decidedAt.toISOString() : (entry.decidedAt ?? null),
+    }]));
+  }
+
+  async saveContinueDecisions(decisions, householdId) {
+    this._save('continue-review', householdId, { items: { ...(decisions || {}) } });
   }
 }
 

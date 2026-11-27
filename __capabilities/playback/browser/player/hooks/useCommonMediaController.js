@@ -1126,6 +1126,8 @@ export function useCommonMediaController({
           const title = meta.title + (meta.grandparentTitle ? ` (${meta.grandparentTitle} - ${meta.parentTitle})` : '');
           recordPlaybackProgress({
             title, type, assetId, seconds: secs, percent: pct, listId: meta?.listId || null,
+            // Speed scales the listened time home measures between reports (lookup spec §13).
+            ...(Number.isFinite(mediaEl.playbackRate) && mediaEl.playbackRate !== 1 ? { rate: mediaEl.playbackRate } : {}),
             ...(meta?.origin ? { origin: meta.origin } : {}),
           });
         }

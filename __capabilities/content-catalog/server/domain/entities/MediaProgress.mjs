@@ -19,6 +19,14 @@ import { isWatchComplete } from '#shared/contracts/media/watchCompletion.mjs';
  *   stored map in that case. An explicit `{}` clears them.
  * @property {string|null} [lastDevice] - Device id that last recorded a spot.
  *   Undefined = "not touched" (persistence keeps the stored value); null clears.
+ * @property {number} [listenedSec] - Seconds really heard, measured from play/log reports
+ *   (playback/domain/listenedTime.mjs). Undefined = never measured (a record written
+ *   before the rule, or by a writer that does not measure); persistence keeps the stored
+ *   value in that case.
+ * @property {{key:string,pos:number,at:number}|null} [listenRun] - The last report of the
+ *   current listening run (session key, position s, heard at epoch ms).
+ * @property {boolean} [listenLegacy] - The record had progress before listened time was
+ *   measured: its Continue entry is reviewed, not guessed (lookup spec §13).
  * @property {number} [now] - Current time in ms (for bookmark expiry check; avoids impure Date.now())
  */
 
@@ -47,6 +55,10 @@ export class MediaProgress {
     // Undefined (not {}) means "this writer did not touch spots".
     this.spots = props.spots === undefined ? undefined : { ...(props.spots || {}) };
     this.lastDevice = props.lastDevice === undefined ? undefined : (props.lastDevice || null);
+    // Undefined = "this writer did not measure listening" (persistence keeps the stored value).
+    this.listenedSec = Number.isFinite(props.listenedSec) ? props.listenedSec : undefined;
+    this.listenRun = props.listenRun === undefined ? undefined : (props.listenRun || null);
+    this.listenLegacy = props.listenLegacy === true ? true : undefined;
 
     // Bookmark for position recovery (optional, expires after 7 days)
     const rawBookmark = props.bookmark ?? null;

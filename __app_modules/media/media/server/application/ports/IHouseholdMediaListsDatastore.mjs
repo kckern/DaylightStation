@@ -31,6 +31,21 @@ export class IHouseholdMediaListsDatastore {
   async saveRemoved(removed, householdId) {
     throw new Error('IHouseholdMediaListsDatastore.saveRemoved must be implemented');
   }
+
+  /**
+   * Review decisions on Continue listening entries from before listened time was
+   * measured (lookup spec §13).
+   * @param {string} [householdId]
+   * @returns {Promise<Object<string, {decision:'keep'|'clear', decidedAt:string|null}>>}
+   */
+  async loadContinueDecisions(householdId) {
+    throw new Error('IHouseholdMediaListsDatastore.loadContinueDecisions must be implemented');
+  }
+
+  /** @returns {Promise<void>} */
+  async saveContinueDecisions(decisions, householdId) {
+    throw new Error('IHouseholdMediaListsDatastore.saveContinueDecisions must be implemented');
+  }
 }
 
 export default IHouseholdMediaListsDatastore;

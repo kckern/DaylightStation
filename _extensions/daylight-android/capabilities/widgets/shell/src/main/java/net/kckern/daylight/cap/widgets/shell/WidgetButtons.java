@@ -5,7 +5,8 @@ import java.util.List;
 
 /** Which buttons the widget shows, from what the surface cache holds. Pure. */
 final class WidgetButtons {
-    static final String APP_NAME = "Daylight";
+    /** The one button of a widget with nothing assigned: it opens the app. */
+    static final String OPEN = "Open";
 
     static final class Button {
         /** 1 to 4: the view the button is drawn in. */
@@ -34,10 +35,10 @@ final class WidgetButtons {
         for (int i = 0; i < links.length; i++) {
             String link = links[i] == null ? "" : links[i];
             if (link.isEmpty()) continue;
-            String label = i < labels.length && labels[i] != null && !labels[i].isEmpty() ? labels[i] : APP_NAME;
+            String label = i < labels.length && labels[i] != null && !labels[i].isEmpty() ? labels[i] : "Action " + (i + 1);
             out.add(new Button(i + 1, label, link));
         }
-        if (out.isEmpty()) out.add(new Button(1, APP_NAME, ""));
+        if (out.isEmpty()) out.add(new Button(1, OPEN, ""));
         return out;
     }
 }

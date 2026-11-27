@@ -208,9 +208,42 @@ public final class BrowseActivity extends Activity {
         // Back from Now playing or On this phone: the book's progress and Keep's state are read again.
         if (started && detail()) fillHeader();
         started = true;
+        keepShown = keepState();
+        main.removeCallbacks(keepWatch);
+        if (detail()) main.postDelayed(keepWatch, KEEP_WATCH_MS);
     }
 
+    /** How often an open page re-reads its keep (a Keep, a removal or an automatic keep made elsewhere). */
+    private static final long KEEP_WATCH_MS = 2000;
+    /** The keep state the header was drawn with. */
+    private String keepShown = "";
+
+    /**
+     * The page's keep as the header shows it: the kept entry (state, auto or not) and the
+     * collection's line. A change (Keep on a book kept automatically, a download landing)
+     * redraws the header in place, so it never says "Kept automatically" after a Keep.
+     */
+    private String keepState() {
+        if (!detail() || parent == null) return "";
+        String cid = contentIdOf(parent);
+        JSONObject k = KeepLabels.holding(net.kckern.daylight.shellkit.KeptIndex.read(getFilesDir()), cid);
+        return (k == null ? "-" : k.optString("state") + "|" + k.optBoolean("auto")) + "|" + KeepLabels.collectionLine(this, cid);
+    }
+
+    private final Runnable keepWatch = new Runnable() {
+        @Override public void run() {
+            if (isFinishing() || isDestroyed()) return;
+            String now = keepState();
+            if (!now.equals(keepShown)) {
+                keepShown = now;
+                fillHeader();
+            }
+            main.postDelayed(this, KEEP_WATCH_MS);
+        }
+    };
+
     @Override protected void onStop() {
+        main.removeCallbacks(keepWatch);
         mini.stop();
         super.onStop();
     }
@@ -310,7 +343,9 @@ public final class BrowseActivity extends Activity {
             showCached();
             load(0);
         }
-        if (MediaKind.aboutPerson(kind) && "level".equals(mode)) loadAbout();
+        // A person's header; or a page opened by a link with no name yet (daylight://media/book/<id>):
+        // its title, by-line and cover come from home's info.
+        if ((MediaKind.aboutPerson(kind) || (detail() && title.isEmpty())) && "level".equals(mode)) loadAbout();
         prefetchNeighbours();
     }
 
@@ -640,7 +675,7 @@ public final class BrowseActivity extends Activity {
     static String progressUnavailable(net.kckern.daylight.shellkit.FailureWords.Cause cause) {
         switch (cause) {
             case OFFLINE: return "Progress isn't available offline";
-            case STARTING: return "Progress shows once Daylight has started";
+            case STARTING: return "Progress shows once started up";
             default: return "Progress: " + net.kckern.daylight.shellkit.FailureWords.line(cause);
         }
     }
@@ -706,7 +741,7 @@ public final class BrowseActivity extends Activity {
             });
         };
         if (!ask) { run.run(); return; }
-        new AlertDialog.Builder(this, DaylightTheme.alert()).setTitle("Mark " + what + " finished?")
+        new AlertDialog.Builder(this, DaylightTheme.alert()).setTitle(what == null || what.trim().isEmpty() ? "Mark finished?" : "Mark " + what + " finished?")
                 .setMessage("It leaves Continue listening on every screen.").setPositiveButton("Mark finished", (d, w) -> run.run())
                 .setNegativeButton("Cancel", null).show();
     }
@@ -930,7 +965,8 @@ public final class BrowseActivity extends Activity {
                 return b;
             }
             case CHAPTERS: {
-                ImageButton b = iconButton(R.drawable.daylight_np_queue, "Chapters");
+                // The chapters glyph, never the queue's: a book has no queue verbs (media kinds §8).
+                ImageButton b = iconButton(net.kckern.daylight.shellkit.R.drawable.daylight_ic_chapters, "Chapters of " + title);
                 b.setOnClickListener(v -> chapters());
                 UiTelemetry.tag(b, "browse.chapters");
                 return b;
@@ -1063,7 +1099,7 @@ public final class BrowseActivity extends Activity {
         final String key = "about|" + cid;
         String cached = prefs().getString(key, "");
         if (!cached.isEmpty()) {
-            try { about = new JSONObject(cached); fillHeader(); redrawRows(); }
+            try { about = new JSONObject(cached); adoptName(about); fillHeader(); redrawRows(); }
             catch (Exception ignored) { }
         }
         final boolean books = MediaKind.hasBooks(kind);
@@ -1077,11 +1113,25 @@ public final class BrowseActivity extends Activity {
                 if (a.toString().equals(cached)) return;
                 prefs().edit().putString(key, a.toString()).apply();
                 about = a;
+                adoptName(a);
                 fillHeader();
                 // Book rows now know their year and progress: redrawn in place.
                 redrawRows();
             });
         });
+    }
+
+    /** A page with no name yet (opened by a link) takes the item's own title, by-line and cover. */
+    private void adoptName(JSONObject a) {
+        if (a == null || !title.isEmpty()) return;
+        String named = a.optString("title", "");
+        if (named.isEmpty()) return;
+        title = named;
+        if (subtitle.isEmpty()) subtitle = a.optString("byline", "");
+        if (art.isEmpty()) art = a.optString("portrait", "");
+        setTitle(title);
+        if (barTitle != null) barTitle.setText(title);
+        Log.i(TAG, "browse named from info " + contentIdOf(parent));
     }
 
     /** The rows again, in place: only those whose line changed (a book's progress) are drawn anew. */
@@ -1203,14 +1253,25 @@ public final class BrowseActivity extends Activity {
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setBackground(t.pressable(null));
         row.setTag(R.id.daylight_browse_row_id, id);
-        ImageView img = new ImageView(this);
-        img.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        img.setClipToOutline(true);
-        net.kckern.daylight.shellkit.CoverGlyph.behind(img, t, net.kckern.daylight.shellkit.CoverGlyph.of(browsable
-                ? (MediaKind.hasBooks(pageKind) ? "book" : rowKind.isEmpty() ? MediaKind.childKind(pageKind, id) : rowKind)
-                : MediaKind.spoken(pageKind) ? "book" : "track"), dp(48), dp(8));
-        row.addView(img, new LinearLayout.LayoutParams(dp(48), dp(48)));
-        loadCover(img, cover, 144);
+        // A book's or series' parts: the part's number in a quiet square, not the book's
+        // cover again on every row; a cover only where the part has its own picture.
+        int part = playable && !browsable && isPartPage(pageKind) && !n.optBoolean("ownArt") ? RowLine.partNumber(rows, id) : 0;
+        if (part > 0) {
+            TextView number = t.text(this, String.valueOf(part), Type.TITLE, t.inkMuted, false);
+            number.setGravity(Gravity.CENTER);
+            number.setBackground(DaylightTheme.round(t.surfaceVariant, dp(8)));
+            number.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            row.addView(number, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        } else {
+            ImageView img = new ImageView(this);
+            img.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            img.setClipToOutline(true);
+            net.kckern.daylight.shellkit.CoverGlyph.behind(img, t, net.kckern.daylight.shellkit.CoverGlyph.of(browsable
+                    ? (MediaKind.hasBooks(pageKind) ? "book" : rowKind.isEmpty() ? MediaKind.childKind(pageKind, id) : rowKind)
+                    : MediaKind.spoken(pageKind) ? "book" : "track"), dp(48), dp(8));
+            row.addView(img, new LinearLayout.LayoutParams(dp(48), dp(48)));
+            loadCover(img, cover, 144);
+        }
         LinearLayout words = new LinearLayout(this);
         words.setOrientation(LinearLayout.VERTICAL);
         words.setPadding(dp(12), 0, dp(4), 0);
@@ -1242,10 +1303,16 @@ public final class BrowseActivity extends Activity {
             }
         });
         UiTelemetry.tag(row, browsable ? "browse.row" : "browse.track");
-        row.setContentDescription(name + (line.isEmpty() ? "" : ", " + line));
+        row.setContentDescription((part > 0 ? "Part " + part + ", " : "") + name + (line.isEmpty() ? "" : ", " + line));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(ROW_DP));
         row.setLayoutParams(lp);
         return row;
+    }
+
+    /** A page whose playable rows are a book's parts or a series' lectures (numbered, not covered). */
+    private static boolean isPartPage(String pageKind) {
+        String k = MediaKind.normal(pageKind);
+        return "book".equals(k) || "series".equals(k);
     }
 
     /** A row's page, with the list it came from as the paging set (the level's rows, or its search group). */

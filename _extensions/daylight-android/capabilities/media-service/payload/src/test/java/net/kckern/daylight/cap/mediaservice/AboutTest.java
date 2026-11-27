@@ -44,4 +44,13 @@ public class AboutTest {
         assertFalse(a.has("continue"));
         assertFalse(a.getJSONObject("books").getJSONObject("plex:3").getBoolean("started"));
     }
+
+    /** A book opened by a link: its title and author come with the header. */
+    @Test public void aBookHeaderNamesTheBookAndItsAuthor() throws Exception {
+        JSONObject info = new JSONObject().put("id", "plex:728064").put("title", "Richard III")
+                .put("metadata", new JSONObject().put("parentTitle", "William Shakespeare"));
+        JSONObject a = About.of(info, null, null, null);
+        assertEquals("Richard III", a.getString("title"));
+        assertEquals("William Shakespeare", a.getString("byline"));
+    }
 }

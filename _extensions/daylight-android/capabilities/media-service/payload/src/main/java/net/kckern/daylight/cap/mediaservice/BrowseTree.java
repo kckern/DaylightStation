@@ -123,10 +123,23 @@ final class BrowseTree {
             if (count > 0) f.put("trackCount", count);
             String artist = Json.first(Json.str(item, "artist"), Json.str(item, "grandparentTitle"));
             if (!artist.isEmpty()) f.put("artist", artist);
+            if (ownArt(item)) f.put("ownArt", true);
             return f.length() == 0 ? null : f;
         } catch (JSONException impossible) {
             return null;
         }
+    }
+
+    /**
+     * Whether a leaf has its own picture, not its album's or book's: a book's parts all
+     * point at the book's thumb (/library/metadata/&lt;albumId&gt;/thumb/…), so a row shows the
+     * part's number instead of the same cover again. A leaf with no parent id keeps its art.
+     */
+    static boolean ownArt(JSONObject item) {
+        String thumb = Json.str(item, "thumbnail");
+        if (thumb.isEmpty() || "container".equals(Json.str(item, "itemType"))) return false;
+        String parent = Json.first(Json.str(item, "albumId"), Json.str(item, "parentId"));
+        return parent.isEmpty() || !thumb.contains("/metadata/" + parent + "/");
     }
 
     static List<MediaNode> audioListSources(JSONObject response) {
@@ -244,18 +257,63 @@ final class BrowseTree {
     }
 
     /**
+     * "Continue listening" from home's one answer (GET /api/v1/media/household/continue,
+     * lookup spec §13): one row per book or series, each heard for at least the household's
+     * minimum. Each is {id: the play node of the part to resume, contentId: the book (what
+     * Remove and Mark finished act on), playContentId, title: the book, subtitle: the author,
+     * art, playhead and duration of the part, remainingSec in the book, partTitle, partIndex,
+     * partCount, legacy}. An older entry home has no listened time for comes with legacy true.
+     */
+    static JSONArray continueRows(JSONObject answer, Backend backend, int limit) throws org.json.JSONException {
+        JSONArray out = new JSONArray();
+        JSONArray items = answer == null ? null : answer.optJSONArray("items");
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (int i = 0; items != null && i < items.length() && out.length() < limit; i++) {
+            JSONObject item = items.optJSONObject(i);
+            if (item == null) continue;
+            String book = Json.str(item, "contentId");
+            String play = Json.first(Json.str(item, "playContentId"), book);
+            String title = Json.str(item, "title");
+            if (!ContentId.valid(book) || !ContentId.valid(play) || title.isEmpty() || !seen.add(book)) continue;
+            long played = item.optLong("playhead", 0), duration = item.optLong("duration", 0);
+            JSONObject o = new JSONObject().put("id", MediaId.leaf(play, null)).put("contentId", book).put("playContentId", play)
+                    .put("title", title).put("subtitle", Json.str(item, "byline"))
+                    .put("playhead", played).put("duration", duration)
+                    .put("remainingSec", item.has("remainingSec") ? item.optLong("remainingSec") : Math.max(0, duration - played))
+                    .put("legacy", item.optBoolean("legacy"));
+            String part = Json.str(item, "partTitle");
+            if (!part.isEmpty() && !part.equalsIgnoreCase(title)) o.put("partTitle", part);
+            if (item.optInt("partIndex", 0) > 0 && item.optInt("partCount", 0) > 1) {
+                o.put("partIndex", item.optInt("partIndex")).put("partCount", item.optInt("partCount"));
+            }
+            String art = art(backend, Json.str(item, "thumbnail"));
+            if (art != null) o.put("art", art);
+            out.put(o);
+        }
+        return out;
+    }
+
+    /** "Part 2 of 5 · 1 h 10 min left" for a book's row, or the time left alone. */
+    static String continueLine(JSONObject row) {
+        long left = row.has("remainingSec") ? row.optLong("remainingSec")
+                : Math.max(0, row.optLong("duration") - row.optLong("playhead"));
+        String leftText = left >= 3600 ? (left / 3600) + " h " + (left % 3600) / 60 + " min left" : Math.max(1, left / 60) + " min left";
+        int n = row.optInt("partIndex", 0), of = row.optInt("partCount", 0);
+        return n > 0 && of > 1 ? "Part " + n + " of " + of + " · " + leftText : leftText;
+    }
+
+    /**
      * The car's Continue tab: long items in progress first (a tap resumes; the subtitle says
      * how much is left), then the lists played lately (a tap plays the list again).
+     * {@code going} is continueRows' answer (or the older continueItems').
      */
-    static List<MediaNode> continueNodes(JSONObject recent, Backend backend, JSONArray lists) throws org.json.JSONException {
+    static List<MediaNode> continueNodes(JSONArray going, JSONArray lists) throws org.json.JSONException {
         List<MediaNode> out = new ArrayList<>();
-        JSONArray going = continueItems(recent, backend, 8);
-        for (int i = 0; i < going.length(); i++) {
+        for (int i = 0; going != null && i < going.length(); i++) {
             JSONObject c = going.getJSONObject(i);
-            long left = Math.max(0, c.getLong("duration") - c.getLong("playhead"));
             String sub = c.optString("subtitle");
-            String leftText = left >= 3600 ? (left / 3600) + " h " + (left % 3600) / 60 + " min left" : Math.max(1, left / 60) + " min left";
-            out.add(new MediaNode(c.getString("id"), c.getString("title"), sub.isEmpty() ? leftText : leftText + " · " + sub,
+            String line = continueLine(c);
+            out.add(new MediaNode(c.getString("id"), c.getString("title"), sub.isEmpty() ? line : line + " · " + sub,
                     c.optString("art", null), false, true));
         }
         java.util.Set<String> shown = new java.util.HashSet<>();

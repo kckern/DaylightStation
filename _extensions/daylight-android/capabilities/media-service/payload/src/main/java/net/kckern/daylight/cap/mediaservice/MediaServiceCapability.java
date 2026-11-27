@@ -482,12 +482,29 @@ public final class MediaServiceCapability implements Capability {
             if ("continue".equals(op)) {
                 int limit = Math.max(1, Math.min(20, request.optInt("limit", 8)));
                 flushHides();
+                Going going = continueGoing(limit + 4);
                 // A hide home has not heard yet keeps its card away here (offline, or just tapped).
-                JSONArray items = hides().filter(BrowseTree.continueItems(api.recent(50), backend, limit + 4));
+                JSONArray items = hides().filter(going.rows);
                 JSONArray cut = new JSONArray();
                 for (int i = 0; i < items.length() && i < limit; i++) cut.put(items.get(i));
                 health.answered();
-                return new Outcome(200, Replies.ok().put("items", cut));
+                return new Outcome(200, Replies.ok().put("items", cut).put("reviewCount", going.reviewCount));
+            }
+            if ("continue-review".equals(op)) {
+                JSONObject answer = api.continueReview();
+                health.answered();
+                return new Outcome(200, Replies.ok().put("items", BrowseTree.continueRows(answer, backend, 100)));
+            }
+            if ("continue-decide".equals(op)) {
+                String decision = Json.str(request, "decision");
+                boolean all = request.optBoolean("all");
+                if (!("keep".equals(decision) || "clear".equals(decision)) || (all && !"clear".equals(decision))) return failure(400, "bad_request");
+                String id = Json.str(request, "contentId");
+                if (!all && !ContentId.valid(id)) return failure(400, "bad_request");
+                JSONObject answer = api.decideContinueReview(id, all, decision);
+                health.answered();
+                JSONArray decided = answer.optJSONArray("decided");
+                return new Outcome(200, Replies.ok().put("decided", decided == null ? new JSONArray() : decided).put("decision", decision));
             }
             if ("continue-hide".equals(op)) return continueHide(request);
             if ("about".equals(op)) return about(request);
@@ -597,7 +614,7 @@ public final class MediaServiceCapability implements Capability {
     private List<MediaNode> loadFromHome(MediaId id, int pageSize) throws Exception {
         List<MediaNode> nodes;
         if (id.kind == MediaId.Kind.CONTINUE) {
-            nodes = BrowseTree.continueNodes(api.recent(50), backend, recentLists().list());
+            nodes = BrowseTree.continueNodes(hides().filter(continueGoing(8).rows), recentLists().list());
         } else if (id.kind == MediaId.Kind.RECENT) {
             nodes = BrowseTree.fromRecent(api.recent((Integer) core.settings().get(RECENT_LIMIT)), backend);
         } else if (id.kind == MediaId.Kind.CATALOG) {
@@ -1590,6 +1607,27 @@ public final class MediaServiceCapability implements Capability {
      * Mark finished from Continue listening: every part of the book a part belongs to (its
      * info's albumId), then the item leaves Continue. {contentId: a part}.
      */
+    /** Continue listening's rows and how many older entries wait for a decision. */
+    static final class Going {
+        final JSONArray rows;
+        final int reviewCount;
+        Going(JSONArray rows, int reviewCount) { this.rows = rows; this.reviewCount = reviewCount; }
+    }
+
+    /**
+     * Home's one Continue answer (§13: heard, one row per book). A home older than the route
+     * (404) is read the old way, from its recent list, so a phone ahead of home still lists.
+     */
+    private Going continueGoing(int limit) throws Exception {
+        try {
+            JSONObject answer = api.continueListening(limit);
+            return new Going(BrowseTree.continueRows(answer, backend, limit), Math.max(0, answer.optInt("reviewCount", 0)));
+        } catch (MediaApi.Refused older) {
+            if (older.status != 404) throw older;
+            return new Going(BrowseTree.continueItems(api.recent(50), backend, limit), 0);
+        }
+    }
+
     private Outcome bookFinished(JSONObject request) throws Exception {
         String id = Json.str(request, "contentId");
         if (!ContentId.valid(id)) return failure(400, "bad_request");
@@ -1597,10 +1635,14 @@ public final class MediaServiceCapability implements Capability {
         JSONObject info = api.info(id);
         JSONObject meta = info == null ? null : info.optJSONObject("metadata");
         String album = meta == null ? "" : Json.str(meta, "albumId");
-        String book = album.isEmpty() ? "" : ContentId.source(id) + ":" + album;
+        // A Continue row is the book itself (§13): its own parts are listed under its id.
+        String book = album.isEmpty() ? id : ContentId.source(id) + ":" + album;
         List<String> parts = new ArrayList<>();
         if (ContentId.valid(book)) {
-            JSONArray items = api.list(book, 200, 0).optJSONArray("items");
+            JSONArray items;
+            // A lone item (no book above it) has no list of its own: it is marked by itself.
+            try { items = api.list(book, 200, 0).optJSONArray("items"); }
+            catch (MediaApi.Refused notAList) { items = null; }
             for (int i = 0; items != null && i < items.length(); i++) {
                 String part = Json.str(items.optJSONObject(i), "id");
                 if (ContentId.valid(part) && !"container".equals(Json.str(items.optJSONObject(i), "itemType"))) parts.add(part);
@@ -1614,7 +1656,9 @@ public final class MediaServiceCapability implements Capability {
         long place = request.optLong("restoreSeconds", -1), length = request.optLong("durationSeconds", 0);
         if (!finished && place > 0) {
             try {
-                api.log(new ProgressReporter.Report(id, Json.str(request, "title"), null, place,
+                // The place is the part's (a Continue row names the book and the part it is in).
+                String at = ContentId.valid(Json.str(request, "playContentId")) ? Json.str(request, "playContentId") : id;
+                api.log(new ProgressReporter.Report(at, Json.str(request, "title"), null, place,
                         length > 0 ? Math.min(99.0, place * 100.0 / length) : 0, false).toBody());
             } catch (Exception notNow) { /* the part starts over; nothing else is lost */ }
         }
@@ -1703,13 +1747,22 @@ public final class MediaServiceCapability implements Capability {
         return o;
     }
 
+    /** This payload's run: home measures listened time between reports of one session (§13). */
+    static final String SESSION = "phone-" + java.util.UUID.randomUUID().toString().substring(0, 8);
+
     private Outcome event(JSONObject e) throws Exception {
         String id = Json.str(e, "id");
         if (!ContentId.valid(id)) throw new IllegalArgumentException("event needs 'id'");
         List<ProgressReporter.Report> reports = reporter.onEvent(id, Json.str(e, "title"), Json.str(e, "listId"),
                 e.optLong("positionMs", 0), e.optLong("durationMs", 0), Json.str(e, "state"), clock.getAsLong());
         long heard = clock.getAsLong();
-        for (ProgressReporter.Report report : reports) { report.observedAt = heard; send(report); }
+        double rate = e.optDouble("rate", 1.0);
+        for (ProgressReporter.Report report : reports) {
+            report.observedAt = heard;
+            report.rate = Double.isNaN(rate) || rate <= 0 ? 1.0 : rate;
+            report.sessionId = SESSION;
+            send(report);
+        }
         return new Outcome(200, Replies.ok().put("reports", reports.size()));
     }
 

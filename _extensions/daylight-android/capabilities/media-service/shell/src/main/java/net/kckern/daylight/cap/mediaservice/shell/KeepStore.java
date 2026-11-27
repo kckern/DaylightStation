@@ -384,7 +384,7 @@ final class KeepStore {
     static String waitingWords(net.kckern.daylight.shellkit.FailureWords.Cause cause) {
         switch (cause) {
             case OFFLINE: return "Offline: it will be kept when home answers";
-            case STARTING: return "Daylight is still starting: it will be kept when home answers";
+            case STARTING: return "Still starting up: it will be kept when home answers";
             default: return "Home isn't answering: it will be kept when it does";
         }
     }
