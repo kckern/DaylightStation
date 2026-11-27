@@ -122,7 +122,42 @@ public final class DownloadsActivity extends Activity {
         super.onStop();
     }
 
+    /** What the top bar's ⋮ offers, from the last fill. */
+    private boolean barFinished;
+    private int barCount;
+    private long barTotal;
+    private static final int MENU_MORE = 1;
+
+    @Override public boolean onCreateOptionsMenu(android.view.Menu menu) {
+        if (barCount > 0) {
+            MenuItem more = menu.add(0, MENU_MORE, 0, "More");
+            android.graphics.drawable.Drawable d = getDrawable(net.kckern.daylight.shellkit.R.drawable.daylight_ic_more).mutate();
+            d.setTint(t.inkMuted);
+            more.setIcon(d);
+            more.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
+        }
+        return true;
+    }
+
+    /** The top bar's ⋮: Remove finished (when any is) and Remove all, in the item sheet. */
+    private void barSheet() {
+        KeepStore store = KeepStore.get(this);
+        int count = barCount;
+        long total = barTotal;
+        net.kckern.daylight.shellkit.ItemSheet sheet = net.kckern.daylight.shellkit.ItemSheet.of(this, "Downloads")
+                .heading("On this phone", count + (count == 1 ? " item" : " items") + " · " + KeptIndex.size(total));
+        if (barFinished) sheet.destructive(net.kckern.daylight.shellkit.R.drawable.daylight_ic_check, "Remove finished", () -> confirm(
+                "Remove finished books?", "Books you have finished are removed from this phone.",
+                () -> store.removeFinished(this::say)));
+        sheet.destructive(net.kckern.daylight.shellkit.R.drawable.daylight_ic_clear_all, "Remove all", () -> confirm(
+                "Remove all " + count + (count == 1 ? " item" : " items") + "?",
+                KeptIndex.size(total) + " is freed on this phone.", () -> store.removeAll("remove_all", this::say)));
+        UiTelemetry.event("Downloads", "keep.bar_menu", new JSONObject());
+        sheet.show();
+    }
+
     @Override public boolean onOptionsItemSelected(MenuItem item) {
+        if (item.getItemId() == MENU_MORE) { barSheet(); return true; }
         if (item.getItemId() == android.R.id.home) { finish(); return true; }
         return super.onOptionsItemSelected(item);
     }
@@ -217,17 +252,11 @@ public final class DownloadsActivity extends Activity {
         if (KeepRules.SD_MISSING.equals(store.location)) {
             head.addView(t.text(this, "On the SD card — not inserted. Nothing was deleted.", Type.LABEL, t.attention, false));
         }
-        LinearLayout buttons = new LinearLayout(this);
-        buttons.setPadding(0, dp(12), 0, dp(4));
-        if (anyFinished) buttons.addView(button("Remove finished", "keep.remove_finished", () -> confirm(
-                "Remove finished books?", "Books you have finished are removed from this phone.",
-                () -> store.removeFinished(this::say))));
-        if (count > 0) {
-            buttons.addView(button("Remove all", "keep.remove_all", () -> confirm(
-                    "Remove all " + count + (count == 1 ? " item" : " items") + "?",
-                    KeptIndex.size(total) + " is freed on this phone.", () -> store.removeAll("remove_all", this::say))));
-        }
-        head.addView(buttons);
+        // Remove finished and Remove all are in the top bar's ⋮ (D12), not buttons here.
+        barFinished = anyFinished;
+        barCount = count;
+        barTotal = total;
+        invalidateOptionsMenu();
         if (count == 0) {
             TextView none = t.text(this, "Nothing is kept on this phone. Keep a book, an album or a playlist from Now playing's ⋮ or by "
                     + "pressing and holding it on the Play tab.", Type.LABEL, t.inkMuted, false);
@@ -276,8 +305,11 @@ public final class DownloadsActivity extends Activity {
     private static final class Row {
         ImageView cover;
         TextView name, state;
-        LinearLayout actions;
-        String actionsShown;
+        /** The state's icon at the row's end (D12); an error's icon retries when tapped. */
+        android.widget.ImageButton icon;
+        String glyphShown;
+        /** The row's kept item as last drawn: the ⋮ sheet reads it when opened. */
+        JSONObject shown;
         /** What the row shows now: the buttons read it when pressed, so a refresh need not rebuild them. */
         String title = "";
         long size, frees = -1;
@@ -373,45 +405,58 @@ public final class DownloadsActivity extends Activity {
                 .show();
     }
 
+    /**
+     * A kept item as a flat row (D12): cover, name, its state in words, the state's icon, and a
+     * ⋮ whose item sheet holds the verbs (Retry, Resume, Pause, Use mobile data once, Remove).
+     * A tap on the row opens the same sheet.
+     */
     private View row(KeepStore store, JSONObject k) {
         Row h = new Row();
         LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.VERTICAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setMinimumHeight(dp(64));
         // A unit of a group sits under it, indented.
-        row.setPadding(isUnit(k) ? dp(28) : dp(10), dp(10), dp(10), dp(10));
-        row.setBackground(t.round(t.surface, Radius.SMALL));
-        LinearLayout top = new LinearLayout(this);
-        top.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(isUnit(k) ? dp(28) : dp(4), dp(6), 0, dp(6));
+        row.setBackground(t.pressable(null));
         h.cover = new ImageView(this);
         h.cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
         h.cover.setClipToOutline(true);
-        net.kckern.daylight.shellkit.CoverGlyph.behind(h.cover, t, net.kckern.daylight.shellkit.CoverGlyph.Kind.ALBUM, dp(56), t.radius(Radius.SMALL));
-        top.addView(h.cover, new LinearLayout.LayoutParams(dp(52), dp(52)));
+        net.kckern.daylight.shellkit.CoverGlyph.behind(h.cover, t, net.kckern.daylight.shellkit.CoverGlyph.Kind.ALBUM, dp(48), t.radius(Radius.SMALL));
+        row.addView(h.cover, new LinearLayout.LayoutParams(dp(48), dp(48)));
         LinearLayout text = new LinearLayout(this);
         text.setOrientation(LinearLayout.VERTICAL);
-        text.setPadding(dp(12), 0, 0, 0);
+        text.setPadding(dp(12), 0, dp(4), 0);
         h.name = t.text(this, "", Type.BODY, t.ink, true);
-        h.name.setMaxLines(2);
+        h.name.setMaxLines(1);
         h.name.setEllipsize(TextUtils.TruncateAt.END);
         text.addView(h.name);
         h.state = t.text(this, "", Type.LABEL, t.inkMuted, false);
         h.state.setMaxLines(2);
         text.addView(h.state);
-        top.addView(text, new LinearLayout.LayoutParams(0, -2, 1));
-        row.addView(top);
-        h.actions = new LinearLayout(this);
-        h.actions.setGravity(Gravity.END);
-        row.addView(h.actions);
+        row.addView(text, new LinearLayout.LayoutParams(0, -2, 1));
+        h.icon = new android.widget.ImageButton(this);
+        h.icon.setBackground(t.pressable(DaylightTheme.round(0x00000000, dp(24))));
+        h.icon.setScaleType(ImageView.ScaleType.CENTER);
+        row.addView(h.icon, new LinearLayout.LayoutParams(dp(44), dp(48)));
+        android.widget.ImageButton more = new android.widget.ImageButton(this);
+        more.setImageResource(net.kckern.daylight.shellkit.R.drawable.daylight_ic_more);
+        more.setImageTintList(android.content.res.ColorStateList.valueOf(t.inkMuted));
+        more.setBackground(t.pressable(DaylightTheme.round(0x00000000, dp(24))));
+        more.setScaleType(ImageView.ScaleType.CENTER);
+        more.setOnClickListener(v -> rowSheet(KeepStore.get(this), h));
+        UiTelemetry.tag(more, "keep.row.menu");
+        row.addView(more, new LinearLayout.LayoutParams(dp(44), dp(48)));
+        row.setOnClickListener(v -> rowSheet(KeepStore.get(this), h));
         UiTelemetry.tag(row, "keep.row");
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.topMargin = dp(8);
+        lp.topMargin = dp(2);
         row.setLayoutParams(lp);
         row.setTag(h);
         bind(store, row, k);
         return row;
     }
 
-    /** One kept collection's words and buttons on its row (new or refreshed). Buttons are rebuilt only when they change. */
+    /** One kept collection's words and state icon on its row (new or refreshed). The icon changes only with the state. */
     private void bind(KeepStore store, View row, JSONObject k) {
         Row h = (Row) row.getTag();
         String cid = k.optString("contentId");
@@ -426,30 +471,57 @@ public final class DownloadsActivity extends Activity {
         h.size = size;
         h.frees = k.has("frees") ? k.optLong("frees") : -1;
         h.shared = k.optBoolean("shared");
-        String action = KeptIndex.action(k);
-        String s = k.optString("state");
-        // Buttons change with the state, never with a progress tick (a press on Pause survives it).
-        String actionsNow = action + "|" + s;
-        if (actionsNow.equals(h.actionsShown)) return;
-        h.actionsShown = actionsNow;
-        h.actions.removeAllViews();
-        switch (action) {
-            case "Retry": h.actions.addView(link("Retry", "keep.retry", () -> store.retry(cid, this::say))); break;
-            case "Resume": h.actions.addView(link("Resume", "keep.resume", () -> { store.resume(cid); fill(); })); break;
-            case "Manage space": break;   // this screen is where space is managed
-            case "Use mobile data once": h.actions.addView(link("Use mobile data once", "keep.mobile_once", store::useMobileDataOnce)); break;
-            default: break;
+        h.shown = k;
+        View menu = ((LinearLayout) row).getChildAt(3);
+        if (menu != null) menu.setContentDescription("More for " + title);
+        KeepRowState.Glyph g = KeepRowState.glyph(k);
+        if (g.name().equals(h.glyphShown)) return;
+        h.glyphShown = g.name();
+        int icon, tint;
+        String said;
+        switch (g) {
+            case KEPT: icon = R.drawable.daylight_np_kept; tint = t.primary; said = "On this phone"; break;
+            case MOVING: icon = R.drawable.daylight_np_downloading; tint = t.inkMuted; said = words; break;
+            case PAUSED: icon = net.kckern.daylight.shellkit.R.drawable.daylight_mini_pause; tint = t.inkMuted; said = "Paused"; break;
+            case ERROR: icon = net.kckern.daylight.shellkit.R.drawable.daylight_ic_replay; tint = t.attention; said = "Try again"; break;
+            default: icon = R.drawable.daylight_np_downloading; tint = t.disabled; said = words; break;
         }
-        if (KeptIndex.DOWNLOADING.equals(s) || KeptIndex.QUEUED.equals(s) || KeptIndex.UPDATING.equals(s)) {
-            h.actions.addView(link("Pause", "keep.pause", () -> { store.pause(cid); fill(); }));
+        h.icon.setImageResource(icon);
+        h.icon.setImageTintList(android.content.res.ColorStateList.valueOf(tint));
+        h.icon.setContentDescription(said);
+        h.icon.setTooltipText(said);
+        boolean acts = g == KeepRowState.Glyph.ERROR;
+        h.icon.setClickable(acts);
+        h.icon.setFocusable(acts);
+        h.icon.setImportantForAccessibility(acts ? View.IMPORTANT_FOR_ACCESSIBILITY_YES : View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        h.icon.setOnClickListener(acts ? v -> { UiTelemetry.event("Downloads", "keep.retry", new JSONObject()); store.retry(cid, this::say); } : null);
+    }
+
+    /** A kept row's item sheet (D17): the item, then its verbs for its state, Remove last. */
+    private void rowSheet(KeepStore store, Row h) {
+        JSONObject k = h.shown;
+        if (k == null) return;
+        String cid = k.optString("contentId");
+        boolean unit = isUnit(k);
+        net.kckern.daylight.shellkit.ItemSheet sheet = net.kckern.daylight.shellkit.ItemSheet.of(this, "Downloads")
+                .item(k.optString("art"), net.kckern.daylight.shellkit.CoverGlyph.Kind.ALBUM, h.title, "", h.state.getText().toString());
+        for (KeepRowState.Verb v : KeepRowState.verbs(k)) {
+            switch (v) {
+                case RETRY: sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_replay, "Try again", () -> store.retry(cid, this::say)); break;
+                case RESUME: sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_download, "Resume download", () -> { store.resume(cid); fill(); }); break;
+                case PAUSE: sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_stop, "Pause download", () -> { store.pause(cid); fill(); }); break;
+                case MOBILE_ONCE: sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_download, "Use mobile data once", store::useMobileDataOnce); break;
+                case REMOVE:
+                    // What is really freed: only the tracks no other keep holds (shared copies stay).
+                    sheet.destructive(net.kckern.daylight.shellkit.R.drawable.daylight_ic_delete, "Remove from this phone", () -> confirm("Remove " + h.title + "?",
+                            GroupKeepRules.freedLine(h.frees >= 0 ? h.frees : h.size, h.shared) + (unit ? " The rest of the group stays." : ""),
+                            () -> { if (unit) store.removeUnit(cid, this::say); else store.remove(cid, "remove", this::say); }));
+                    break;
+                default: break;
+            }
         }
-        if (!KeptIndex.REMOVING.equals(s) && !KeptIndex.CHECKING.equals(s)) {
-            boolean unit = isUnit(k);
-            // What is really freed: only the tracks no other keep holds (shared copies stay).
-            h.actions.addView(link("Remove", unit ? "keep.group.unit_remove" : "keep.remove", () -> confirm("Remove " + h.title + "?",
-                    GroupKeepRules.freedLine(h.frees >= 0 ? h.frees : h.size, h.shared) + (unit ? " The rest of the group stays." : ""),
-                    () -> { if (unit) store.removeUnit(cid, this::say); else store.remove(cid, "remove", this::say); })));
-        }
+        UiTelemetry.event("Downloads", "keep.row.sheet", new JSONObject());
+        sheet.show();
     }
 
     /** A cover seen before draws in this frame (the memory cache); others load off the main thread. */
@@ -468,10 +540,11 @@ public final class DownloadsActivity extends Activity {
         });
     }
 
+    /** A secondary action as words (no pill, no accent text: rules 2 and 4). */
     private TextView button(String label, String tag, Runnable run) {
-        TextView b = t.text(this, label, Type.LABEL, t.primary, true);
-        b.setPadding(dp(14), dp(10), dp(14), dp(10));
-        b.setBackground(t.pressable(t.round(t.surfaceVariant, Radius.LARGE)));
+        TextView b = t.text(this, label, Type.LABEL, t.ink, true);
+        b.setPadding(dp(4), dp(10), dp(14), dp(10));
+        b.setBackground(t.pressable(null));
         b.setOnClickListener(v -> run.run());
         UiTelemetry.tag(b, tag);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
@@ -481,7 +554,7 @@ public final class DownloadsActivity extends Activity {
     }
 
     private TextView link(String label, String tag, Runnable run) {
-        TextView b = t.text(this, label, Type.LABEL, t.primary, true);
+        TextView b = t.text(this, label, Type.LABEL, t.ink, true);
         b.setPadding(dp(12), dp(8), dp(4), dp(4));
         b.setBackground(t.pressable(null));
         b.setOnClickListener(v -> run.run());
