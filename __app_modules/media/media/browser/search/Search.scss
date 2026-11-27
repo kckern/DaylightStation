@@ -318,7 +318,7 @@
 // vs "Living Room TV" vs "This device"). A long name ellipsises; the chip's
 // tooltip and accessible name carry it whole.
 .media-destination-group {
-  --media-dest-slot: 13.5rem;
+  --media-dest-slot: 14rem;
   display: inline-flex;
   align-items: stretch;
   flex: 0 0 var(--media-dest-slot);
@@ -359,7 +359,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 32px;
+  // A 44 px target on every screen (RELY.11a / NF-DEV-02).
+  flex: 0 0 44px;
   min-height: 44px;
   border-left: 1px solid chalk(0.06);
   color: var(--media-muted);
@@ -376,17 +377,16 @@
 }
 
 // Phone search surface: the chip rides the input's row as its own 44 px
-// control — the name, then a 40 px ▾ — in a fixed slot, so the input keeps
+// control — the name, then a 44 px ▾ — in a fixed slot, so the input keeps
 // one width (and its whole placeholder) whatever the name. The ▾ says it is
 // a control, so the device icon gives its room to the name.
 .search-mode-header .media-destination-group {
-  --media-dest-slot: 7.75rem;
+  --media-dest-slot: 8rem;
   border: 1px solid var(--media-control-line);
   border-radius: var(--mantine-radius-sm);
   overflow: hidden;
 
   .media-destination-chip { padding: 0 2px 0 8px; }
-  .media-destination-list-toggle { flex-basis: 40px; }
 }
 
 // ---- Destination list (the ▾'s careful choice) --------------------------------

@@ -579,12 +579,12 @@ opens it on the current row; ↑ ↓ move, Enter picks, Esc or Tab closes and
 keeps the choice; either way focus returns to the search box, whose words and
 open results stay as they were. The phone's search uses the same list as a
 dropdown below the chip (the phone search's menus are dropdowns, not sheets);
-its ▾ is 40 px wide. Logged as `dest.list-opened {current, screens}` and
+the ▾ is a 44 px target everywhere. Logged as `dest.list-opened {current, screens}` and
 `dest.list-picked {from, to, rank}` (rank: the row's 1-based place in the
 ranked list; This device is last).
 
 **The box keeps one width.** The chip and its ▾ share one fixed slot per
-breakpoint (13.5rem on wide screens, 10rem under 1100 px, 7.75rem on the
+breakpoint (14rem on wide screens, 10rem under 1100 px, 8rem on the
 phone's search row), so a long name ellipsises (the tooltip and accessible
 name carry it whole) and the text field never changes width with the name
 shown. The loader and the clear control share one fixed slot after it
