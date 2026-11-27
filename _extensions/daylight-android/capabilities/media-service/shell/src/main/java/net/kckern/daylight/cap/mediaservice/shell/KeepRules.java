@@ -32,6 +32,30 @@ final class KeepRules {
     /** A failure no retry will fix on its own (the file is gone from the library). Retry now still may. */
     static boolean permanent(int httpStatus) { return httpStatus == 404 || httpStatus == 410; }
 
+    // ── keeps waiting for home ───────────────────────────────────────────────
+
+    /**
+     * The content id a waiting keep shows as, from the media id it was asked with:
+     * "c:<list>" (a list) or "p:<track>|…" (Now playing's album keep), or a bare id.
+     */
+    static String pendingContentId(String mediaId) {
+        if (mediaId == null) return "";
+        if (mediaId.startsWith("c:")) return mediaId.substring(2);
+        if (mediaId.startsWith("p:")) return mediaId.substring(2).split("\\|")[0];
+        return mediaId;
+    }
+
+    /**
+     * The waiting keeps left after removing the row {@code contentId}. Matched by the id
+     * the row shows, so a "p:" keep made from Now playing goes too (before, only "c:"
+     * entries matched and a removed "p:" row came back on the next refresh).
+     */
+    static java.util.List<String> pendingWithout(java.util.List<String> pending, String contentId) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        for (String mid : pending) if (!pendingContentId(mid).equals(contentId)) out.add(mid);
+        return out;
+    }
+
     // ── reasons ──────────────────────────────────────────────────────────────
 
     static final String GONE = "Gone from the library";

@@ -151,6 +151,11 @@ describe('the right install (ops:docs/superpowers/plans/2026-11-26-phone-downloa
     expect(view.received).toEqual([]);
     expect(view.kept[A]).toMatchObject({ freeBytes: 15000000000, limitBytes: 4000000000 });
     expect(view.kept[A].items[0]).toMatchObject({ contentId: 'plex:9', state: 'downloading', done: 3, total: 12 });
+    // Kept automatically while listening: reported with auto, answered with auto.
+    await auth(request(app).post('/api/v1/device/phone/keeps'))
+      .send({ installId: A, items: [{ contentId: 'plex:9', title: 'A book', state: 'ready', done: 12, total: 12, bytes: 9000, auto: true }] });
+    view = (await request(app).get('/api/v1/device/phone/keeps')).body;
+    expect(view.kept[A].items[0]).toMatchObject({ contentId: 'plex:9', state: 'ready', auto: true });
   });
 
   it('two live installs and none named: 409 CHOOSE_PHONE with the installs', async () => {

@@ -242,6 +242,38 @@ describe('PhoneInboxService: installs, auth and durable keeps', () => {
       expect(items.at(-1)).toMatchObject({ neededBytes: 1.2e9, totalBytes: 2e9, failed: 1, reason: 'r', finished: true });
     });
 
+    it('keeps the auto flag of an item kept automatically while listening, and nothing else as auto', async () => {
+      await inbox.poll('phone', 0, { installId: A });
+      await inbox.reportKeeps('phone', { installId: A, items: [
+        { contentId: 'plex:a', state: 'ready', auto: true },
+        { contentId: 'plex:m', state: 'ready' },
+        { contentId: 'plex:s', state: 'ready', auto: 'yes' },
+      ] });
+      const items = inbox.keeps('phone').kept[A].items;
+      expect(items[0]).toMatchObject({ contentId: 'plex:a', auto: true });
+      expect(items[1].auto).toBeUndefined();
+      expect(items[2].auto).toBeUndefined();
+    });
+
+    it('keeps a unit\'s group (spec §3.11), cleaned, and drops a group that is not one', async () => {
+      await inbox.poll('phone', 0, { installId: A });
+      await inbox.reportKeeps('phone', { installId: A, items: [
+        { contentId: 'plex:10', state: 'ready', group: { id: 'plex:100', title: 'William Shakespeare', kind: 'author', follow: true, removeFinished: true, extra: 'x' } },
+        { contentId: 'plex:11', state: 'downloading', group: { id: 'plex:100', title: 'William Shakespeare', kind: 'author', follow: 'yes' } },
+        { contentId: 'plex:12', state: 'ready', group: { id: 'not an id', kind: 'author' } },
+        { contentId: 'plex:13', state: 'ready', group: { id: 'plex:200', kind: 'band' } },
+        { contentId: 'plex:14', state: 'ready', group: 'plex:100' },
+        { contentId: 'plex:15', state: 'ready', group: { id: 'plex:300', kind: 'artist', title: 'x'.repeat(300) } },
+      ] });
+      const items = inbox.keeps('phone').kept[A].items;
+      expect(items[0].group).toEqual({ id: 'plex:100', title: 'William Shakespeare', kind: 'author', follow: true, removeFinished: true });
+      expect(items[1].group).toEqual({ id: 'plex:100', title: 'William Shakespeare', kind: 'author', follow: false, removeFinished: false });
+      expect(items[2].group).toBeUndefined();
+      expect(items[3].group).toBeUndefined();
+      expect(items[4].group).toBeUndefined();
+      expect(items[5].group.title).toHaveLength(200);
+    });
+
     it('shows an install as gone after 30 days', async () => {
       await inbox.poll('phone', 0, { installId: A });
       t.advance(INSTALL_GONE_MS + 1);

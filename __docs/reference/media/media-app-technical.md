@@ -473,7 +473,7 @@ answers **501**.
 | Per-screen spots | `POST /api/v1/play/log` with a device | `spots` / `lastDevice` on the progress record (household `media/memory/**`) |
 | Play ledger | `POST /api/v1/play/log` with a device, on each playback **start** | `history/media-plays/<local YYYY-MM-DD>.yml`, 90-day retention |
 | Favourites | `POST/DELETE /household/favourites` | `media/favourites.yml` (`items: [...]`) |
-| Removed ids | `POST/DELETE /household/removed` | `media/removed.yml` (`items: {<id>: {removedAt}}`) |
+| Removed ids | `POST/DELETE /household/removed`, `POST/DELETE /household/continue/hide` (the phone) | `media/removed.yml` (`items: {<id>: {removedAt}}`) |
 | What is on a screen now | `device-state:<id>` broadcasts | in memory (`DeviceLivenessService`) |
 
 **Screen identity.** `play/log` keys a spot by an explicit body `deviceId`,
@@ -628,6 +628,26 @@ with no ledger wired).
 already present refreshes it (no duplicates). Missing `title`/`thumbnail` are
 filled from the catalog at add time. **400**: missing `id`, unknown `kind`.
 
+#### Audio libraries and their kinds (the phone)
+
+`GET /api/v1/queue/catalog/audio-libraries?profile=audio-only` answers the audio Plex
+libraries with what each holds: `{items: [{id, title, sectionId, kind}], default:
+"music"}`, `kind` one of `music`, `books`, `talks` (talks and courses). The kinds are the
+household media config's `play_on_demand.library_kinds`, keyed by library title or Plex
+section id; a library not named there is music:
+
+```yaml
+play_on_demand:
+  library_kinds:
+    Audiobooks: books
+    Education: talks
+```
+
+The phone's library, search groups, pages and Now playing controls follow it
+(`__docs/reference/android/phone.md`, Lookup and browse). The audio-lists catalog
+(`/catalog/audio-lists`) marks a radio-station playlist (one with a station sequence)
+`station: true`.
+
 #### Removal from the household list
 
 | Route | Body / query | Response |
@@ -635,6 +655,12 @@ filled from the catalog at add time. **400**: missing `id`, unknown `kind`.
 | `GET /household/removed` | — | `{ items: [{ id, removedAt }] }` |
 | `POST /household/removed` | `{ id }` | `{ id, removedAt }` |
 | `DELETE /household/removed` (undo) | `id` (body or query) | `{ id, restored: boolean }` |
+| `POST /household/continue/hide` | `{ contentId }` | `{ contentId, hiddenAt }` |
+| `DELETE /household/continue/hide/:contentId` (undo) | — | `{ contentId, restored: boolean }` |
+
+The phone's "Remove from Continue listening" (`continue/hide`) is the same removal: one
+list, so the web's carry on and every device's Continue honour it, and it comes back by
+itself when played after `hiddenAt`.
 
 A removal hides what was played **up to** `removedAt` from recent and carry
 on; playing the item again brings it back. Server-side suggestions (§2.9)
@@ -1561,11 +1587,21 @@ send is unchanged (`GET /api/v1/device/:id/load`, WakeAndLoad, the dispatch tray
     (`{cancelled:false, removing:true}`); unknown 404.
   - The phone reports what it keeps with `POST /api/v1/device/:id/keeps {installId,
     freeBytes?, limitBytes?, items:[{contentId, state, title?, done, total, bytes,
-    totalBytes?, neededBytes?, failed?, reason?, finished?, trackIds?}]}`: the whole list
+    totalBytes?, neededBytes?, failed?, reason?, finished?, auto?, group?, trackIds?}]}`: the whole list
     each time, token required, 204 (an unchanged report is not written again). `state`
     is a lifecycle state: `asked checking needs-room queued waiting-wifi waiting-home
     waiting-storage downloading paused partly-ready ready updating removing
-    not-available damaged` (and the older `failed refused removed`).
+    not-available damaged` (and the older `failed refused removed`). `auto: true` (only the
+    boolean is taken) marks an item the phone kept automatically while listening (a book,
+    talk or course; lifecycle spec §3.10); the web adds "Kept automatically" to its line,
+    and `phone-inbox.keeps.reported` logs how many items were automatic. `group` marks a
+    unit of a kept artist or author (lifecycle spec §3.11): `{id, title?, kind: artist |
+    author, follow, removeFinished}`; `PhoneInboxService.groupOf` keeps it only with a valid
+    content id and kind (the booleans only when `true`, the title cut to 200), and drops it
+    otherwise. The web's phone page (`phoneKeeps.keptGroups`, `PhoneKeepsView`) shows each
+    group with its line ("2 books · 300 MB · 1 of 2 ready · keeps new ones") and its units
+    under it; Remove all sends an unkeep of the group's id, which the phone answers by
+    removing the group (a unit also kept on its own stays). The log line counts groups.
   - `GET /api/v1/device/:id/keeps` answers `{installs:[{installId, model, firstSeenAt,
     lastPollAt, current, live, gone}], kept:{<installId>:{items, freeBytes, limitBytes,
     at}}, waiting:[{command, commandId, contentId, title?, installId, queuedAt,

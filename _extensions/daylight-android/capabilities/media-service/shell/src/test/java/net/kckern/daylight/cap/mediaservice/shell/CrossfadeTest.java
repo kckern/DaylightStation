@@ -32,6 +32,16 @@ public class CrossfadeTest {
         assertTrue(Crossfade.plan(4, song(200_000, "", ""), song(200_000, "", ""), false, false, false, 0).fades());
     }
 
+    /** A book whose chapters are short, with no household list: its kind still keeps it from fading. */
+    @Test public void aShortChapterOfABookNeverFades() {
+        assertTrue(Crossfade.longForm(true, "", 480_000));
+        assertFalse("a song of the same length is music", Crossfade.longForm(false, "", 480_000));
+        assertTrue("a household list (talks, a course) is long-form", Crossfade.longForm(false, "talks", 480_000));
+        Crossfade.Side chapter = new Crossfade.Side(Crossfade.longForm(true, "", 480_000), 480_000, "Book", "Author");
+        Crossfade.Side next = new Crossfade.Side(Crossfade.longForm(true, "", 500_000), 500_000, "Book 2", "Author");
+        assertEquals(Crossfade.Skip.LONG_FORM, Crossfade.plan(4, chapter, next, true, false, false, 0).skip);
+    }
+
     @Test public void longFormNeverFadesOnEitherSide() {
         Crossfade.Side book = new Crossfade.Side(true, 3_600_000, "Book", "Author");
         assertEquals(Crossfade.Skip.LONG_FORM, Crossfade.plan(4, book, B1, false, false, false, 0).skip);

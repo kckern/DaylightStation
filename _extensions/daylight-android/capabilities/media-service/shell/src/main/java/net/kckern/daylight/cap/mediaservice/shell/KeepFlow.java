@@ -69,6 +69,11 @@ final class KeepFlow {
                 }
                 return;
             }
+            if ("group".equals(p.optString("kind"))) {
+                // An artist or an author: kept as a group of its albums or books, through its sheet.
+                GroupKeepFlow.start(a, p.optString("contentId"), p.optString("groupKind"), p.optString("title"));
+                return;
+            }
             String what = p.optString("keep"), room = p.optString("room");
             if (!p.optBoolean("fits", true)) {
                 new AlertDialog.Builder(a, DaylightTheme.alert())

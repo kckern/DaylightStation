@@ -24,8 +24,11 @@ final class LinkAnswer {
         this.message = message;
     }
 
-    /** The fallback when no payload answered within the wait. */
+    /** The fallback when no payload answered within the wait (the loader's own start deadline). */
     static LinkAnswer notReady() { return new LinkAnswer(Kind.TOAST, NOT_READY); }
+
+    /** The loader gave up: no payload will answer until the app is opened again. */
+    static LinkAnswer failedToStart() { return new LinkAnswer(Kind.TOAST, net.kckern.daylight.shellkit.PayloadReady.FAILED_WORDS); }
 
     static LinkAnswer of(String json) {
         JSONObject o;

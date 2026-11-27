@@ -105,8 +105,9 @@
             android:launchMode="singleTop"
             android:theme="@style/Theme.Daylight" />
 
-        <!-- Not exported: started by this app only, when the payload has accepted a keyed
-             media link. No window of its own. -->
+        <!-- Not exported: started by this app only, when an older payload has accepted a
+             keyed media link. No window of its own: it opens Now playing, which starts the
+             item, and finishes. -->
         <activity
             android:name="net.kckern.daylight.cap.mediaservice.shell.PlayActivity"
             android:exported="false"

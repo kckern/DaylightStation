@@ -151,12 +151,16 @@ export function playNow(snapshot, input, opts) {
  * item in place and becomes current; the rest follow it immediately, in
  * order. With one input this is exactly `playNow`.
  */
-export function playNowMany(snapshot, inputs, { clearRest = false } = {}) {
+export function playNowMany(snapshot, inputs, { clearRest = false, startIndex = 0 } = {}) {
   const newItems = toQueueItems(inputs);
   if (newItems.length === 0) return snapshot;
+  // `startIndex`: an ordered work (a book) is queued whole, in order, and starts
+  // at its part in progress; the parts before it stay behind the cursor.
+  const start = Number.isInteger(startIndex) && startIndex > 0 && startIndex < newItems.length ? startIndex : 0;
+  const startId = newItems[start].queueItemId;
   if (clearRest) {
-    return withQueue(snapshot, newItems, newItems[0].queueItemId,
-      existingExecutionOrder(snapshot) ? newItems.map((item) => item.queueItemId) : undefined);
+    return withQueue(snapshot, newItems, startId,
+      existingExecutionOrder(snapshot) ? newItems.slice(start).map((item) => item.queueItemId) : undefined);
   }
   const { items, currentIndex } = snapshot.queue;
   const currentId = currentIdOf(snapshot);
@@ -165,9 +169,9 @@ export function playNowMany(snapshot, inputs, { clearRest = false } = {}) {
   else next.unshift(...newItems);
   const order = existingExecutionOrder(snapshot);
   const nextOrder = order && currentId != null
-    ? [...newItems.map((item) => item.queueItemId), ...order.slice(1).filter((id) => id !== currentId)]
+    ? [...newItems.slice(start).map((item) => item.queueItemId), ...order.slice(1).filter((id) => id !== currentId)]
     : undefined;
-  return withQueue(snapshot, next, newItems[0].queueItemId, nextOrder);
+  return withQueue(snapshot, next, startId, nextOrder);
 }
 
 /**

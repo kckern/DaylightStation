@@ -289,6 +289,8 @@ export class PlexClient {
           title: item.title,
           parent: item.parentTitle || null, // For TV episodes: season name
           grandparent: item.grandparentTitle || null, // For TV episodes: show name
+          // A track's own performer (Plex sets it where it differs from the album artist).
+          original: item.originalTitle || null,
           year: item.year,
           type: item.type,
           guid: item.guid,

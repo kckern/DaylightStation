@@ -82,7 +82,8 @@ export class TranscodePrewarmService {
       const queueContentIds = [...new Set(items.slice(0, MAX_QUEUE_CONTENT_IDS)
         .map((item) => item?.id).filter((id) => typeof id === 'string' && id))];
 
-      const first = items[0];
+      // An ordered work (a book) is answered in its order with the part to start at.
+      const first = items[Number.isInteger(items.startIndex) ? items.startIndex : 0] ?? items[0];
       const startOffset = first.resumePosition || first.playhead || 0;
       const prepared = await this.#contentCatalog.preparePlayback(resolved, first, { startOffset });
       if (prepared.kind === 'unsupported') {

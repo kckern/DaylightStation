@@ -21,6 +21,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.view.Gravity;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.animation.DecelerateInterpolator;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.*;
@@ -46,7 +47,9 @@ import java.util.concurrent.Executors;
 /** The phone launcher. Incoming intents never select or run an action. */
 public class PhoneHomeActivity extends Activity {
     private static final String NOW_PLAYING = "net.kckern.daylight.cap.mediaservice.shell.NowPlayingActivity";
-    private final ExecutorService worker = Executors.newSingleThreadExecutor();
+    private final net.kckern.daylight.shellkit.TapGuard playGuard = new net.kckern.daylight.shellkit.TapGuard();
+    // Bookmarks, actions, Continue and the screens list are asked at once, not one behind another.
+    private final ExecutorService worker = Executors.newFixedThreadPool(4);
     private JSONArray pages = new JSONArray();
     private JSONArray configuredActions = new JSONArray();
     private LinearLayout column;
@@ -65,9 +68,12 @@ public class PhoneHomeActivity extends Activity {
     private LinearLayout playlistRow;
     private TextView playlistStatus;
     private boolean observingPlacement;
-    private boolean loading = true;
+    /** The Services (bookmarks) and Capture (actions) answers: until each comes only its tab says it is loading. */
+    private boolean pagesLoaded, actionsLoaded;
+    private String pagesError, actionsError;
+    /** A wait for the payload to attach, after which the failed loads run again on their own. */
+    private boolean retryArmed;
     private boolean launcherPicker;
-    private String loadError;
     private DaylightTheme t;
 
     @Override protected void attachBaseContext(android.content.Context base) {
@@ -99,10 +105,8 @@ public class PhoneHomeActivity extends Activity {
         super.onStart();
         // Opened: kept downloads catch up (after an update, a reboot), kept lists re-sync online.
         keepJob("resync-open", "");
-        NowPlayingNote.listen(nowChanged);
-        observingNow = true;
-        drawNowStrip();
-        if (keptBox != null) fillKept();   // a collection kept from Now playing shows on return
+        if (mini != null) mini.start();
+        if (keptBox != null) fillKept();   // a collection kept from Now playing shows on return (in place)
         if (continueBox != null && continueBox.getParent() != null) {
             // Redrawn from the last answer: the offline marks follow the network now.
             fillContinue(continueBox, getSharedPreferences("daylight.home", MODE_PRIVATE).getString("continue", ""));
@@ -115,9 +119,7 @@ public class PhoneHomeActivity extends Activity {
     }
 
     @Override protected void onStop() {
-        NowPlayingNote.unlisten(nowChanged);
-        observingNow = false;
-        timer.removeCallbacks(nowTick);
+        if (mini != null) mini.stop();
         observingPlacement = false;
         placements.prefs.unregisterOnSharedPreferenceChangeListener(placementChanged);
         timer.removeCallbacks(placementTimeout);
@@ -126,6 +128,7 @@ public class PhoneHomeActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
+        if (mini != null) mini.release();
         worker.shutdownNow();
         artworkWorker.shutdownNow();
         super.onDestroy();
@@ -134,24 +137,31 @@ public class PhoneHomeActivity extends Activity {
     private interface Reply { void accept(JSONObject reply); }
 
     private void call(String port, String body, Reply success) {
-        call(port, body, success, message -> {
-            if (loading) { loading = false; loadError = message; draw(); }
-            else toast(message);
-        });
+        call(port, body, success, this::toast);
     }
 
+    /**
+     * Asks the payload on {@code port}. A cold start is waited for as long as the loader
+     * gives a payload to start (PayloadReady), never dropped after a shorter timer; the
+     * failure words are "Starting Daylight…" while it still starts, or the loader's own.
+     */
     private void call(String port, String body, Reply success, java.util.function.Consumer<String> failure) {
         // The service is on demand: Android stops it after a while in the background, so a screen
         // left open can come back to no payload. Start it again before asking.
         ShellStart.ensure(this);
         worker.execute(() -> {
             try {
-                JSONObject result = new JSONObject(PayloadPort.named(port).call(body, 12000));
+                net.kckern.daylight.shellkit.PayloadReady.Answer ready = net.kckern.daylight.shellkit.PayloadReady.await(port);
+                if (!ready.ready()) {
+                    runOnUiThread(() -> { if (!isDestroyed() && !isFinishing()) failure.accept(ready.words()); });
+                    return;
+                }
+                JSONObject result = new JSONObject(PayloadPort.named(port).call(body, 1000));
                 runOnUiThread(() -> { if (!isDestroyed() && !isFinishing()) success.accept(result); });
             } catch (Exception e) {
                 runOnUiThread(() -> {
                     if (isDestroyed() || isFinishing()) return;
-                    String message = e instanceof PayloadPort.NotReadyException ? "Daylight is still starting." : e.getMessage();
+                    String message = e instanceof PayloadPort.NotReadyException ? net.kckern.daylight.shellkit.PayloadReady.STARTING : e.getMessage();
                     failure.accept(message == null ? "Could not complete the action." : message);
                 });
             }
@@ -167,23 +177,53 @@ public class PhoneHomeActivity extends Activity {
         return result;
     }
 
+    /**
+     * Asks for the bookmarks (Services) and the actions (Capture), both at once. The tabs, Play
+     * and Connect are drawn before either answers; only the tab whose answer it is redraws.
+     * A load that could not run (Daylight still starting) runs again on its own the moment
+     * the payload attaches: there is no Try again to press.
+     */
     private void refresh() {
-        loading = true;
-        loadError = null;
+        if (!pagesLoaded) pagesError = null;
+        if (!actionsLoaded) actionsError = null;
         call("phone-bookmarks", request("list").toString(), result -> {
             pages = result.optJSONArray("items");
             if (pages == null) pages = new JSONArray();
-            call("phone-pin-action", "", actions -> {
-                configuredActions = actions.optJSONArray("items");
-                if (configuredActions == null) configuredActions = new JSONArray();
-                loading = false;
-                draw();
-            });
-        });
+            pagesLoaded = true;
+            pagesError = null;
+            answered(0);
+        }, message -> { pagesError = message; answered(0); retryWhenAttached("phone-bookmarks"); });
+        call("phone-pin-action", "", actions -> {
+            configuredActions = actions.optJSONArray("items");
+            if (configuredActions == null) configuredActions = new JSONArray();
+            actionsLoaded = true;
+            actionsError = null;
+            answered(1);
+        }, message -> { actionsError = message; answered(1); retryWhenAttached("phone-pin-action"); });
     }
 
-    private static final String[] TABS = {"Services", "Capture", "Play", "Connect"};
-    private int tab;
+    /** An answer for tab {@code which} came: that tab is redrawn when it is the one showing. */
+    private void answered(int which) {
+        if (launcherPicker) { rebuildPage(); return; }
+        if (playlistScreen == null && tab == which) rebuildPage();
+    }
+
+    /** Waits (off the main thread) for the payload's port, then loads again. One wait at a time. */
+    private void retryWhenAttached(String port) {
+        if (retryArmed) return;
+        retryArmed = true;
+        new Thread(() -> {
+            boolean attached = PayloadPort.named(port).awaitReady(10 * 60_000L);
+            runOnUiThread(() -> {
+                retryArmed = false;
+                if (attached && !isDestroyed() && !isFinishing() && (!pagesLoaded || !actionsLoaded)) refresh();
+            });
+        }, "Daylight-home-retry").start();
+    }
+
+    private static final String[] TABS = HomeSections.NAMES;
+    /** The section shown (HomeSections: 0 Services, 1 Capture, 2 Play, 3 Connect); a cold start opens on Play. */
+    private int tab = HomeSections.first();
     /** Made in onCreate: a detector needs the activity's context, which does not exist yet at construction. */
     private android.view.GestureDetector swipe;
 
@@ -193,14 +233,15 @@ public class PhoneHomeActivity extends Activity {
                     @Override public boolean onFling(android.view.MotionEvent down, android.view.MotionEvent up, float vx, float vy) {
                         // A clear sideways flick on the tabs' page moves to the next or previous tab.
                         if (!tabsShown() || Math.abs(vx) < 900 || Math.abs(vx) < Math.abs(vy) * 1.8f) return false;
-                        selectTab(tab + (vx < 0 ? 1 : -1), vx < 0 ? 1 : -1);
+                        // The neighbour in the bar's order (Play, Capture, Connect, Services).
+                        selectTab(HomeSections.step(tab, vx < 0 ? 1 : -1), vx < 0 ? 1 : -1);
                         return false;
                     }
                 });
     }
 
     private boolean tabsShown() {
-        return !launcherPicker && !loading && loadError == null && playlistScreen == null;
+        return !launcherPicker && playlistScreen == null;
     }
 
     @Override public boolean dispatchTouchEvent(android.view.MotionEvent event) {
@@ -215,7 +256,7 @@ public class PhoneHomeActivity extends Activity {
 
     @Override protected void onRestoreInstanceState(Bundle state) {
         super.onRestoreInstanceState(state);
-        tab = Math.max(0, Math.min(TABS.length - 1, state.getInt("tab", 0)));
+        tab = HomeSections.restored(state.getInt("tab", HomeSections.first()));
         if (tabsShown()) draw();
     }
 
@@ -228,6 +269,8 @@ public class PhoneHomeActivity extends Activity {
         if (next == tab || pageHost == null) return;
         tab = next;
         fillTabs();
+        fillTopBar();
+        if (tabs != null) tabs.announceForAccessibility(TABS[tab]);
         // A quick second swipe: drop whatever is still sliding out before starting the next.
         for (int i = pageHost.getChildCount() - 1; i >= 0; i--) {
             View child = pageHost.getChildAt(i);
@@ -252,20 +295,78 @@ public class PhoneHomeActivity extends Activity {
                 .withEndAction(() -> pageHost.removeView(leaving)).start();
     }
 
-    /** The four tabs as chips of equal width: one is always the page. */
+    /**
+     * The bottom navigation bar (design sweep D2, Material 3's NavigationBar built from plain
+     * views): Play, Capture, Connect, Services, each an icon and its name. The selected one is
+     * ink with a soft indicator behind its icon; the others are muted. No fills, no accent.
+     */
     private void fillTabs() {
         tabs.removeAllViews();
-        for (int i = 0; i < TABS.length; i++) {
-            int index = i;
-            boolean selected = i == tab;
-            TextView chip = PlaylistPicker.text(this, TABS[i], Type.LABEL, selected ? t.onPrimary : t.primary, true);
-            chip.setGravity(Gravity.CENTER);
-            chip.setBackground(t.round(selected ? t.primary : t.surfaceVariant, Radius.LARGE));
-            chip.setContentDescription(TABS[i] + (selected ? ", selected" : ""));
-            chip.setOnClickListener(v -> selectTab(index, index > tab ? 1 : -1));
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(40), 1);
-            if (i > 0) lp.leftMargin = dp(8);
-            tabs.addView(chip, lp);
+        for (int section : HomeSections.ORDER) {
+            boolean selected = section == tab;
+            LinearLayout item = new LinearLayout(this);
+            item.setOrientation(LinearLayout.VERTICAL);
+            item.setGravity(Gravity.CENTER);
+            item.setPadding(0, dp(12), 0, dp(16));
+            android.widget.FrameLayout pill = new android.widget.FrameLayout(this);
+            if (selected) pill.setBackground(DaylightTheme.round(t.surfaceVariant, dp(16)));
+            ImageView icon = new ImageView(this);
+            icon.setImageResource(navIcon(section));
+            icon.setImageTintList(android.content.res.ColorStateList.valueOf(selected ? t.ink : t.inkMuted));
+            android.widget.FrameLayout.LayoutParams ilp = new android.widget.FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER);
+            pill.addView(icon, ilp);
+            item.addView(pill, new LinearLayout.LayoutParams(dp(64), dp(32)));
+            TextView name = t.text(this, TABS[section], Type.LABEL, selected ? t.ink : t.inkMuted, selected);
+            name.setGravity(Gravity.CENTER);
+            name.setPadding(0, dp(4), 0, 0);
+            item.addView(name);
+            item.setBackground(t.pressable(null));
+            item.setContentDescription(HomeSections.spoken(section, selected));
+            item.setSelected(selected);
+            item.setOnClickListener(v -> selectTab(section, HomeSections.position(section) > HomeSections.position(tab) ? 1 : -1));
+            net.kckern.daylight.shellkit.UiTelemetry.tag(item, "home.nav." + TABS[section].toLowerCase(java.util.Locale.ROOT));
+            tabs.addView(item, new LinearLayout.LayoutParams(0, -2, 1));
+        }
+    }
+
+    private static int navIcon(int section) {
+        switch (section) {
+            case HomeSections.PLAY: return R.drawable.daylight_nav_play;
+            case HomeSections.CAPTURE: return R.drawable.daylight_nav_capture;
+            case HomeSections.CONNECT: return R.drawable.daylight_nav_connect;
+            default: return R.drawable.daylight_nav_services;
+        }
+    }
+
+    private LinearLayout topBar;
+
+    /** The top bar: the section's name on the left, its actions on the right (Play: Search). */
+    private void fillTopBar() {
+        if (topBar == null) return;
+        topBar.removeAllViews();
+        TextView name = t.text(this, launcherPicker ? "Choose a shortcut" : TABS[tab], Type.TITLE, t.ink, true);
+        name.setAccessibilityHeading(true);
+        if (!launcherPicker) {
+            // The section's icon before its name (spec §13): the bottom bar's, 24 dp, muted.
+            ImageView icon = new ImageView(this);
+            icon.setImageResource(navIcon(tab));
+            icon.setImageTintList(android.content.res.ColorStateList.valueOf(t.inkMuted));
+            icon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(dp(24), dp(24));
+            ip.setMarginEnd(dp(12));
+            topBar.addView(icon, ip);
+        }
+        topBar.addView(name, new LinearLayout.LayoutParams(0, -2, 1));
+        if (!launcherPicker && tab == HomeSections.PLAY && getPackageManager().resolveActivity(new Intent().setClassName(this, BROWSE), 0) != null) {
+            android.widget.ImageButton search = new android.widget.ImageButton(this);
+            search.setImageResource(R.drawable.daylight_nav_search);
+            search.setImageTintList(android.content.res.ColorStateList.valueOf(t.ink));
+            search.setBackground(t.pressable(DaylightTheme.round(0x00000000, dp(24))));
+            search.setContentDescription("Search");
+            search.setTooltipText("Search");
+            search.setOnClickListener(v -> openBrowse("search"));
+            net.kckern.daylight.shellkit.UiTelemetry.tag(search, "play.search");
+            topBar.addView(search, new LinearLayout.LayoutParams(dp(48), dp(48)));
         }
     }
 
@@ -273,182 +374,37 @@ public class PhoneHomeActivity extends Activity {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(t.background);
-        LinearLayout header = new LinearLayout(this);
-        header.setOrientation(LinearLayout.VERTICAL);
-        header.setPadding(dp(16), dp(16), dp(16), dp(8));
-        TextView title = t.text(this, "Daylight", Type.DISPLAY, t.ink, true);
-        header.addView(title);
-        header.addView(label(launcherPicker ? "Choose a shortcut" : "Add to your Android home screen", Type.BODY, t.inkMuted));
-        root.addView(header);
+        // No "Daylight" header (design sweep D3): the top bar names the section and holds its actions.
+        topBar = new LinearLayout(this);
+        topBar.setGravity(Gravity.CENTER_VERTICAL);
+        topBar.setPadding(dp(16), dp(8), dp(4), dp(4));
+        topBar.setMinimumHeight(dp(56));
+        root.addView(topBar, new LinearLayout.LayoutParams(-1, -2));
+        fillTopBar();
         tabs = null;
-        if (tabsShown()) {
-            tabs = new LinearLayout(this);
-            tabs.setPadding(dp(16), dp(4), dp(16), dp(8));
-            fillTabs();
-            root.addView(tabs);
-        }
         pageHost = new android.widget.FrameLayout(this);
         pageHost.setBackgroundColor(t.background);
         root.addView(pageHost, new LinearLayout.LayoutParams(-1, 0, 1));
-        nowStrip = null;
         if (!launcherPicker) {
-            nowStrip = new LinearLayout(this);
-            nowCover = null; // a new strip: build its views again
-            nowArtUrl = "";
-            root.addView(nowStrip, new LinearLayout.LayoutParams(-1, -2));
-            drawNowStrip();
+            // The one mini player (shell-kit MiniPlayer), the same on every browse screen.
+            if (mini == null) mini = net.kckern.daylight.shellkit.MiniPlayer.attach(this, "Home");
+            View bar = mini.view();
+            if (bar.getParent() instanceof ViewGroup) ((ViewGroup) bar.getParent()).removeView(bar);
+            root.addView(bar, new LinearLayout.LayoutParams(-1, -2));
+        }
+        if (tabsShown()) {
+            // The bottom navigation bar, under the mini player; it stays when the mini player slides away.
+            tabs = new LinearLayout(this);
+            tabs.setBackgroundColor(t.surface);
+            fillTabs();
+            root.addView(tabs, new LinearLayout.LayoutParams(-1, -2));
         }
         setContentView(root);
         page = buildPage();
         pageHost.addView(page);
     }
 
-    private boolean observingNow;
-    private LinearLayout nowStrip;
-    private final NowPlayingNote.Listener nowChanged = () -> runOnUiThread(this::drawNowStrip);
-    private View nowProgress;
-    private android.widget.ImageView nowCover, nowPlay;
-    private TextView nowTitle, nowWhere;
-    private android.widget.ImageButton nowNext;
-    private String nowArtUrl = "";
-    private int nowAccent = net.kckern.daylight.shellkit.CoverColor.NONE;
-    private final Runnable nowTick = this::tickNowStrip;
-
-    /**
-     * The mini player along the bottom while something plays here or on a screen this
-     * phone drives (Plexamp's and JellyBox's): a progress line on its top edge, the cover,
-     * title, artist and where, play/pause and next, on a tint of the cover's color. A tap
-     * opens Now playing on that target. Gone when nothing plays.
-     */
-    private void drawNowStrip() {
-        if (nowStrip == null || isDestroyed()) return;
-        NowPlayingNote.Entry now = NowPlayingNote.current();
-        Intent open = new Intent().setClassName(this, NOW_PLAYING);
-        boolean can = getPackageManager().resolveActivity(open, 0) != null;
-        if (now == null || !can) {
-            nowStrip.setVisibility(View.GONE);
-            timer.removeCallbacks(nowTick);
-            return;
-        }
-        if (nowCover == null) buildNowStrip(open);
-        nowStrip.setVisibility(View.VISIBLE);
-        nowTitle.setText(now.title);
-        String where = "local".equals(now.target) ? "" : "On " + now.targetName;
-        String line = now.artist.isEmpty() ? where : where.isEmpty() ? now.artist : now.artist + " · " + where;
-        nowWhere.setText(line);
-        // Its line is kept even when empty: the strip is one height from its first draw.
-        nowWhere.setVisibility(line.isEmpty() ? View.INVISIBLE : View.VISIBLE);
-        nowPlay.setImageResource(now.playing ? R.drawable.daylight_mini_pause : R.drawable.daylight_mini_play);
-        nowPlay.setContentDescription(now.playing ? "Pause" : "Play");
-        nowPlay.setEnabled(now.transport != null);
-        nowNext.setVisibility(now.canNext && now.transport != null ? View.VISIBLE : View.GONE);
-        nowStrip.setContentDescription((now.playing ? "" : "Paused: ") + now.title + (where.isEmpty() ? "" : ", " + where) + ". Open Now playing");
-        final String target = now.target;
-        nowStrip.setOnClickListener(v -> startActivity(new Intent(open).putExtra("target", target)));
-        if (!now.artworkUrl.equals(nowArtUrl)) loadNowArt(now.artworkUrl);
-        tickNowStrip();
-    }
-
-    private void buildNowStrip(Intent open) {
-        nowStrip.setOrientation(LinearLayout.VERTICAL);
-        nowProgress = new View(this);
-        nowProgress.setPivotX(0);
-        nowStrip.addView(nowProgress, new LinearLayout.LayoutParams(-1, dp(2)));
-        LinearLayout row = new LinearLayout(this);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(12), dp(8), dp(4), dp(8));
-        nowCover = new android.widget.ImageView(this);
-        nowCover.setScaleType(android.widget.ImageView.ScaleType.CENTER_CROP);
-        nowCover.setClipToOutline(true);
-        nowCover.setBackground(t.round(t.tile, DaylightTheme.Radius.SMALL));
-        row.addView(nowCover, new LinearLayout.LayoutParams(dp(44), dp(44)));
-        LinearLayout words = new LinearLayout(this);
-        words.setOrientation(LinearLayout.VERTICAL);
-        words.setPadding(dp(12), 0, dp(8), 0);
-        nowTitle = t.text(this, "", Type.BODY, t.ink, true);
-        nowTitle.setMaxLines(1);
-        nowTitle.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        words.addView(nowTitle);
-        nowWhere = t.text(this, "", Type.LABEL, t.inkMuted, false);
-        nowWhere.setMaxLines(1);
-        nowWhere.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        words.addView(nowWhere);
-        row.addView(words, new LinearLayout.LayoutParams(0, -2, 1));
-        nowPlay = new android.widget.ImageButton(this);
-        nowPlay.setBackground(t.pressable(DaylightTheme.round(0x00000000, dp(22))));
-        nowPlay.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
-        nowPlay.setPadding(dp(8), dp(8), dp(8), dp(8));
-        nowPlay.setOnClickListener(v -> {
-            NowPlayingNote.Entry e = NowPlayingNote.current();
-            if (e != null && e.transport != null) { v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY); e.transport.playPause(); }
-        });
-        UiTelemetry.tag(nowPlay, "mini.play-pause");
-        row.addView(nowPlay, new LinearLayout.LayoutParams(dp(48), dp(48)));
-        nowNext = new android.widget.ImageButton(this);
-        nowNext.setImageResource(R.drawable.daylight_mini_next);
-        nowNext.setBackground(t.pressable(DaylightTheme.round(0x00000000, dp(22))));
-        nowNext.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
-        nowNext.setPadding(dp(8), dp(8), dp(8), dp(8));
-        nowNext.setContentDescription("Next");
-        nowNext.setOnClickListener(v -> {
-            NowPlayingNote.Entry e = NowPlayingNote.current();
-            if (e != null && e.transport != null) { v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY); e.transport.next(); }
-        });
-        UiTelemetry.tag(nowNext, "mini.next");
-        row.addView(nowNext, new LinearLayout.LayoutParams(dp(48), dp(48)));
-        nowStrip.addView(row, new LinearLayout.LayoutParams(-1, -2));
-        UiTelemetry.tag(nowStrip, "mini.open");
-        paintNowStrip();
-    }
-
-    /** The strip's colors: the surface, tinted by the cover's color when there is one. */
-    private void paintNowStrip() {
-        DaylightTheme c = t.withAccent(nowAccent);
-        int fill = ThemeColors.mix(t.surfaceVariant, c.primary, nowAccent == net.kckern.daylight.shellkit.CoverColor.NONE ? 0 : 0.22);
-        nowStrip.setBackground(t.pressable(new android.graphics.drawable.ColorDrawable(fill)));
-        nowProgress.setBackgroundColor(c.primary);
-        int glyph = ThemeColors.readableOn(fill);
-        nowPlay.setImageTintList(android.content.res.ColorStateList.valueOf(glyph));
-        nowNext.setImageTintList(android.content.res.ColorStateList.valueOf(glyph));
-        nowTitle.setTextColor(glyph);
-        nowWhere.setTextColor(ThemeColors.mix(fill, glyph, 0.7));
-    }
-
-    private void loadNowArt(String url) {
-        nowArtUrl = url;
-        nowCover.setImageDrawable(null);
-        nowAccent = net.kckern.daylight.shellkit.CoverColor.NONE;
-        paintNowStrip();
-        if (url.isEmpty()) return;
-        artworkWorker.execute(() -> {
-            android.graphics.Bitmap b = net.kckern.daylight.shellkit.PlaylistArtwork.load(url, 160);
-            int accent = net.kckern.daylight.shellkit.CoverColor.NONE;
-            if (b != null) {
-                android.graphics.Bitmap small = android.graphics.Bitmap.createScaledBitmap(b, 32, 32, true);
-                int[] px = new int[32 * 32];
-                small.getPixels(px, 0, 32, 0, 0, 32, 32);
-                accent = net.kckern.daylight.shellkit.CoverColor.of(px);
-            }
-            int a = accent;
-            runOnUiThread(() -> {
-                if (isDestroyed() || !url.equals(nowArtUrl) || nowCover == null) return;
-                nowCover.setImageBitmap(b);
-                nowAccent = a;
-                paintNowStrip();
-            });
-        });
-    }
-
-    /** The progress line, carried forward between the player's reports. */
-    private void tickNowStrip() {
-        timer.removeCallbacks(nowTick);
-        NowPlayingNote.Entry e = NowPlayingNote.current();
-        if (e == null || nowProgress == null || nowStrip.getVisibility() != View.VISIBLE) return;
-        float f = e.fractionAt(android.os.SystemClock.elapsedRealtime());
-        nowProgress.setVisibility(f < 0 ? View.INVISIBLE : View.VISIBLE);
-        nowProgress.setScaleX(Math.max(0f, Math.min(1f, f)));
-        if (e.playing && observingNow) timer.postDelayed(nowTick, 500);
-    }
+    private net.kckern.daylight.shellkit.MiniPlayer mini;
 
     /** One page: the section the selected tab names, in its own scrolling view. */
     private ScrollView buildPage() {
@@ -462,10 +418,17 @@ public class PhoneHomeActivity extends Activity {
         column.setOrientation(LinearLayout.VERTICAL);
         column.setPadding(dp(16), dp(8), dp(16), dp(16));
         scroll.addView(column);
-        if (loading) { column.addView(label("Loading services…", Type.BODY, t.ink)); return scroll; }
-        if (loadError != null) {
-            column.addView(label(loadError, Type.BODY, t.ink));
-            row("Try again", "Try again", "open", "›", this::refresh);
+        // Services and Capture wait for their own answer; Play and Connect draw from this phone at once.
+        boolean needsPages = launcherPicker || tab == 0, needsActions = launcherPicker || tab == 1;
+        if ((needsPages && !pagesLoaded) || (needsActions && !actionsLoaded)) {
+            String error = needsPages && !pagesLoaded ? pagesError : actionsError;
+            String what = launcherPicker ? "shortcuts" : tab == 0 ? "services" : "capture shortcuts";
+            column.addView(label(error != null ? error : "Loading " + what + "…", Type.BODY, t.ink));
+            if (error != null && !error.equals(net.kckern.daylight.shellkit.PayloadReady.STARTING)) {
+                row("Try again", "Try again", "open", "›", this::refresh);
+            } else if (error != null) {
+                column.addView(label("They show here as soon as Daylight is running.", Type.LABEL, t.inkMuted));
+            }
             return scroll;
         }
         if (!launcherPicker) {
@@ -534,6 +497,10 @@ public class PhoneHomeActivity extends Activity {
             }
             return;
         }
+        // The one line of explanation the header used to give every tab: true of Services only.
+        TextView why = label("Pages of the household site. Tap + to add one to your Android home screen.", Type.BODY, t.inkMuted);
+        why.setPadding(0, dp(4), 0, dp(8));
+        column.addView(why);
         List<JSONObject> items = new ArrayList<>();
         for (int i = 0; i < pages.length(); i++) {
             JSONObject page = pages.optJSONObject(i);
@@ -558,25 +525,10 @@ public class PhoneHomeActivity extends Activity {
         if (!launcherPicker) addGrouped(items, action -> () -> confirmShortcut(action.optString("id"), action.optString("label")));
     }
 
-    private static final String PLAY = "net.kckern.daylight.cap.mediaservice.shell.PlayActivity";
 
     private static final String BROWSE = "net.kckern.daylight.cap.mediaservice.shell.BrowseActivity";
 
     /** The search field at the top of the Play tab: a fixed-height box that opens the search. */
-    private void addLookup() {
-        TextView box = t.text(this, "Search books, albums, artists, playlists", Type.BODY, t.inkMuted, false);
-        box.setGravity(Gravity.CENTER_VERTICAL);
-        box.setPadding(dp(16), 0, dp(16), 0);
-        box.setBackground(t.pressable(t.round(t.surface, Radius.LARGE)));
-        box.setOnClickListener(v -> openBrowse("search"));
-        box.setContentDescription("Search");
-        net.kckern.daylight.shellkit.UiTelemetry.tag(box, "play.search");
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(52));
-        lp.topMargin = dp(4);
-        lp.bottomMargin = dp(8);
-        column.addView(box, lp);
-    }
-
     private void openBrowse(String mode) {
         try { startActivity(new Intent().setClassName(this, BROWSE).putExtra("mode", mode)); }
         catch (RuntimeException absent) { toast("Not available in this build"); }
@@ -590,7 +542,6 @@ public class PhoneHomeActivity extends Activity {
         // Not a library to browse: what this phone is in the middle of, and the playlists
         // already chosen (Drive, widgets, Driving Radio), each one tap from playing here.
         if (player) {
-            addLookup();
             LinearLayout continuing = new LinearLayout(this);
             continuing.setOrientation(LinearLayout.VERTICAL);
             column.addView(continuing);
@@ -604,7 +555,13 @@ public class PhoneHomeActivity extends Activity {
             }
             row("Browse library", "Audiobooks, music, playlists, talks", "play", "›", () -> openBrowse("library"));
             section("Player");
-            row("Now playing", "Control this phone or a screen", "play", "›", () -> startActivity(nowPlaying));
+            row("Now playing", "Control this phone or a screen", "play", "›", () -> {
+                // What plays now, where: Now playing opens on it (and draws it at once) rather than the last target.
+                Intent open = new Intent(nowPlaying).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                NowPlayingNote.Entry e = NowPlayingNote.current();
+                if (e != null) open.putExtra("target", e.target).putExtra("targetName", e.targetName);
+                startActivity(open);
+            });
         }
         row("Drive playlists", "The playlists on the car's Drive tab", "play", "›", this::showMediaChoices);
         row("Driving Radio", "Set the default and day rules", "play", "›", this::showDrivingRadio);
@@ -627,95 +584,204 @@ public class PhoneHomeActivity extends Activity {
         keptBox = new LinearLayout(this);
         keptBox.setOrientation(LinearLayout.VERTICAL);
         column.addView(keptBox);
+        keptHead = null;
+        keptShown = null;
         fillKept();
     }
 
+    /** The parts of "On this phone" a refresh updates in place. */
+    private LinearLayout keptHead, keptCards;
+    private TextView keptRoom, keptOver;
+    private net.kckern.daylight.shellkit.KeyedRows<JSONObject> keptRows;
+    /** What the section shows now (the index and the room line): the same again redraws nothing. */
+    private String keptShown;
+
+    /**
+     * Refreshes "On this phone" in place: the heading and room line keep their views, cards
+     * are kept by content id and only their words, progress and Retry change, and an index
+     * equal to the one shown touches nothing. A press on a card survives the refresh.
+     */
     private void fillKept() {
         timer.removeCallbacks(keptTick);
         if (keptBox == null || keptBox.getParent() == null || isFinishing()) return;
         java.util.List<JSONObject> index = net.kckern.daylight.shellkit.KeptIndex.read(getFilesDir());
-        keptBox.removeAllViews();
-        if (index.isEmpty()) return;
-        TextView heading = label("On this phone", Type.TITLE, t.ink);
-        heading.setPadding(0, dp(10), 0, dp(2));
-        keptBox.addView(heading);
         long cap = net.kckern.daylight.shellkit.KeptIndex.capMb(getFilesDir());
         long used = net.kckern.daylight.shellkit.KeptIndex.usedBytes(index);
         long free = freeOnPhone();
         // "1.2 GB kept · 4 GB limit · 15 GB free on phone": room visible before it is a problem.
-        keptBox.addView(label(net.kckern.daylight.shellkit.KeptIndex.roomLine(used, cap, free), Type.LABEL, t.inkMuted));
+        String room = net.kckern.daylight.shellkit.KeptIndex.roomLine(used, cap, free);
         String over = net.kckern.daylight.shellkit.KeptIndex.overLine(
                 net.kckern.daylight.shellkit.KeptIndex.effectiveLimitBytes(cap, free, used), used);
-        if (!over.isEmpty()) keptBox.addView(label(over, Type.LABEL, t.attention));
-        boolean busy = false;
         net.kckern.daylight.shellkit.KeptIndex.largestFirst(index);
-        int shown = 0;
-        for (JSONObject k : index) {
-            if (shown++ >= 3) continue;   // the rest on On this phone
-            String state = k.optString("state");
-            boolean whole = net.kckern.daylight.shellkit.KeptIndex.READY.equals(state)
-                    || (state.isEmpty() && k.optInt("total") > 0 && k.optInt("done") >= k.optInt("total"));
-            if (net.kckern.daylight.shellkit.KeptIndex.DOWNLOADING.equals(state)) busy = true;
-            keptBox.addView(keptCard(k, whole));
-        }
-        TextView manage = label("Manage downloads ›", Type.LABEL, t.primary);
-        manage.setPadding(dp(4), dp(10), dp(4), dp(6));
-        manage.setContentDescription("Manage downloads: everything kept on this phone");
-        net.kckern.daylight.shellkit.UiTelemetry.tag(manage, "play.kept.manage");
-        manage.setOnClickListener(v -> openDownloads(null));
-        keptBox.addView(manage);
-        // Moving: redrawn every 3 s; waiting: every 30 s (a network or room may come).
+        boolean busy = false;
+        for (JSONObject k : index) if (net.kckern.daylight.shellkit.KeptIndex.DOWNLOADING.equals(k.optString("state"))) busy = true;
+        // The first three blocks (a kept artist or author is one block, its first units under
+        // it; spec §3.11); the rest on On this phone.
+        java.util.List<JSONObject> first = net.kckern.daylight.shellkit.KeptGroups.firstBlocks(
+                net.kckern.daylight.shellkit.KeptGroups.rows(index), 3, 3);
+        // Moving: refreshed every 3 s; waiting: every 30 s (a network or room may come).
         if (busy) timer.postDelayed(keptTick, 3000);
         else if (!index.isEmpty()) timer.postDelayed(keptTick, 30_000);
+        String shown = first + "|" + room + "|" + over + "|" + index.isEmpty();
+        if (shown.equals(keptShown)) return;
+        keptShown = shown;
+        if (index.isEmpty()) {
+            keptBox.removeAllViews();
+            keptHead = null;
+            return;
+        }
+        if (keptHead == null) {
+            keptBox.removeAllViews();
+            keptHead = new LinearLayout(this);
+            keptHead.setOrientation(LinearLayout.VERTICAL);
+            TextView heading = label("On this phone", Type.TITLE, t.ink);
+            heading.setPadding(0, dp(10), 0, dp(2));
+            keptHead.addView(heading);
+            keptRoom = label("", Type.LABEL, t.inkMuted);
+            keptHead.addView(keptRoom);
+            keptOver = label("", Type.LABEL, t.attention);
+            keptHead.addView(keptOver);
+            keptBox.addView(keptHead);
+            keptCards = new LinearLayout(this);
+            keptCards.setOrientation(LinearLayout.VERTICAL);
+            keptBox.addView(keptCards);
+            keptRows = new net.kckern.daylight.shellkit.KeyedRows<>(keptCards, new net.kckern.daylight.shellkit.KeyedRows.Rows<JSONObject>() {
+                @Override public String key(JSONObject k) { return net.kckern.daylight.shellkit.KeptGroups.key(k); }
+                @Override public String signature(JSONObject k) { return k.toString(); }
+                @Override public View create(JSONObject k) { return keptCard(k); }
+                @Override public View update(View card, JSONObject k) { bindKeptCard(card, k); return card; }
+            });
+            TextView manage = label("Manage downloads ›", Type.LABEL, t.inkMuted);
+            manage.setPadding(dp(4), dp(10), dp(4), dp(6));
+            manage.setContentDescription("Manage downloads: everything kept on this phone");
+            net.kckern.daylight.shellkit.UiTelemetry.tag(manage, "play.kept.manage");
+            manage.setOnClickListener(v -> openDownloads(null));
+            keptBox.addView(manage);
+        }
+        keptRoom.setText(room);
+        keptOver.setText(over);
+        keptOver.setVisibility(over.isEmpty() ? View.GONE : View.VISIBLE);
+        keptRows.show(first);
     }
 
-    private View keptCard(JSONObject k, boolean whole) {
-        String title = k.optString("title"), line = net.kckern.daylight.shellkit.KeptIndex.describe(k);
+    /** A kept card's views, so a refresh changes its words and buttons without a new view. */
+    private static final class KeptCard {
+        ImageView cover;
+        TextView name, sub, retry, side;
+    }
+
+    private static boolean keptGroupRow(JSONObject k) {
+        return net.kckern.daylight.shellkit.KeptGroups.GROUP.equals(k.optString(net.kckern.daylight.shellkit.KeptGroups.ROW));
+    }
+
+    private static boolean keptUnitRow(JSONObject k) {
+        return net.kckern.daylight.shellkit.KeptGroups.UNIT.equals(k.optString(net.kckern.daylight.shellkit.KeptGroups.ROW));
+    }
+
+    /** A kept group's ⋮: Choose… (its sheet, on On this phone) and Remove all of <name> (confirmed). */
+    private void keptGroupMenu(View anchor, JSONObject g) {
+        JSONObject grp = g.optJSONObject("group");
+        String gid = grp == null ? "" : grp.optString("id"), title = g.optString("title");
+        net.kckern.daylight.shellkit.ItemSheet.of(this, "Home")
+                .heading(title, net.kckern.daylight.shellkit.KeptGroups.line(g))
+                .row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_tune, "Choose…", () -> {
+                    Intent i = new Intent().setClassName(this, DOWNLOADS).putExtra("choose", gid)
+                            .putExtra("chooseKind", g.optString("kind")).putExtra("chooseTitle", title);
+                    try { startActivity(i); } catch (RuntimeException absent) { toast("Downloads are not in this build"); }
+                })
+                .destructive(net.kckern.daylight.shellkit.R.drawable.daylight_ic_delete, "Remove all of " + title, () ->
+                    new AlertDialog.Builder(this, DaylightTheme.alert()).setTitle("Remove all of " + title + "?")
+                            .setMessage(net.kckern.daylight.shellkit.KeptGroups.line(g) + ". Anything also kept on its own stays.")
+                            .setPositiveButton("Remove", (dlg, w) -> { keepJob("group-remove", gid); toast("Removing " + title); })
+                            .setNegativeButton("Cancel", null).show())
+                .show();
+    }
+
+    private View keptCard(JSONObject k) {
+        KeptCard h = new KeptCard();
         LinearLayout card = new LinearLayout(this);
         card.setGravity(Gravity.CENTER_VERTICAL);
-        card.setPadding(dp(8), dp(8), dp(12), dp(8));
-        card.setBackground(t.pressable(t.round(t.surface, Radius.SMALL)));
-        ImageView cover = new ImageView(this);
-        cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        cover.setClipToOutline(true);
-        cover.setBackground(t.round(t.tile, Radius.SMALL));
-        card.addView(cover, new LinearLayout.LayoutParams(dp(56), dp(56)));
-        loadCover(cover, k.optString("art"));
+        card.setMinimumHeight(dp(72));
+        card.setPadding(0, dp(8), 0, dp(8));
+        card.setBackground(t.pressable(null));
+        h.cover = new ImageView(this);
+        h.cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        net.kckern.daylight.shellkit.CoverGlyph.behind(h.cover, t, net.kckern.daylight.shellkit.CoverGlyph.Kind.ALBUM, dp(56), t.radius(Radius.SMALL));
+        card.addView(h.cover, new LinearLayout.LayoutParams(dp(56), dp(56)));
         LinearLayout words = new LinearLayout(this);
         words.setOrientation(LinearLayout.VERTICAL);
         words.setPadding(dp(12), 0, 0, 0);
-        TextView name = t.text(this, title, Type.BODY, t.ink, true);
-        name.setMaxLines(2);
-        name.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        words.addView(name);
-        TextView sub = label(line, Type.LABEL, t.inkMuted);
-        sub.setMaxLines(1);
-        sub.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        words.addView(sub);
+        h.name = t.text(this, "", Type.BODY, t.ink, true);
+        h.name.setMaxLines(2);
+        h.name.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        words.addView(h.name);
+        h.sub = label("", Type.LABEL, t.inkMuted);
+        h.sub.setMaxLines(1);
+        h.sub.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        words.addView(h.sub);
         card.addView(words, new LinearLayout.LayoutParams(0, -2, 1));
-        String cid = k.optString("contentId");
-        String state = k.optString("state");
-        boolean playable = k.optInt("total") > 0;
-        if (net.kckern.daylight.shellkit.KeptIndex.retryable(k)) {
-            TextView retry = label("Retry", Type.LABEL, t.primary);
-            retry.setPadding(dp(12), dp(10), dp(4), dp(10));
-            retry.setContentDescription("Retry " + title);
-            net.kckern.daylight.shellkit.UiTelemetry.tag(retry, "play.kept.retry");
-            retry.setOnClickListener(v -> { keepJob("retry", cid); toast("Trying again"); });
-            card.addView(retry);
-        }
-        card.setContentDescription(title + ". " + line);
+        // A group's ⋮, or a unit's Remove (an icon button); none on a lone item.
+        h.side = label("", Type.TITLE, t.inkMuted);
+        h.side.setGravity(Gravity.CENTER);
+        h.side.setMinWidth(dp(48));
+        h.side.setMinHeight(dp(48));
+        h.side.setBackground(t.pressable(null));
+        h.retry = label("Retry", Type.LABEL, t.ink);
+        h.retry.setPadding(dp(12), dp(10), dp(4), dp(10));
+        net.kckern.daylight.shellkit.UiTelemetry.tag(h.retry, "play.kept.retry");
+        card.addView(h.retry);
+        card.addView(h.side);
         net.kckern.daylight.shellkit.UiTelemetry.tag(card, "play.kept");
-        String id = "c:" + cid;
-        // A part-kept collection plays too: online it streams the rest; offline, what is here.
-        if (playable) card.setOnClickListener(v -> playHere(id));
-        else card.setOnClickListener(v -> toast(line));
-        // Long-press: On this phone (state, Pause, Retry, Remove, room).
-        card.setOnLongClickListener(v -> { openDownloads(null); return true; });
+        // Long-press: the item sheet (Open on this phone, Remove).
+        card.setOnLongClickListener(v -> {
+            JSONObject k2 = (JSONObject) card.getTag(R.id.daylight_home_kept);
+            if (k2 == null) { openDownloads(null); return true; }
+            return keepMenu(card, "c:" + k2.optString("contentId"), k2.optString("contentId"), k2.optString("kind", "album"), k2.optString("title"), k2.optString("art"));
+        });
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.topMargin = dp(6);
         card.setLayoutParams(lp);
+        card.setTag(h);
+        bindKeptCard(card, k);
         return card;
+    }
+
+    /** Puts one kept collection's words, cover, Retry and tap on its card (new or refreshed). */
+    private void bindKeptCard(View card, JSONObject k) {
+        KeptCard h = (KeptCard) card.getTag();
+        card.setTag(R.id.daylight_home_kept, k);
+        String title = k.optString("title");
+        boolean group = keptGroupRow(k), unit = keptUnitRow(k);
+        String line = group ? net.kckern.daylight.shellkit.KeptGroups.line(k) : net.kckern.daylight.shellkit.KeptIndex.describe(k);
+        String cid = k.optString("contentId");
+        card.setPadding(unit ? dp(28) : dp(8), dp(8), dp(4), dp(8));
+        h.side.setVisibility(group || unit ? View.VISIBLE : View.GONE);
+        if (group) {
+            h.side.setText("⋮");
+            h.side.setContentDescription("More for " + title);
+            h.side.setOnClickListener(v -> keptGroupMenu(v, k));
+        } else if (unit) {
+            h.side.setText("✕");
+            h.side.setContentDescription("Remove " + title);
+            h.side.setOnClickListener(v -> new AlertDialog.Builder(this, DaylightTheme.alert()).setTitle("Remove " + title + "?")
+                    .setMessage("The rest of the group stays, and it is not kept again by itself.")
+                    .setPositiveButton("Remove", (d, w) -> { keepJob("unit-remove", cid); toast("Removing " + title); })
+                    .setNegativeButton("Cancel", null).show());
+        }
+        h.name.setText(title);
+        h.sub.setText(line);
+        loadCover(h.cover, k.optString("art"));
+        boolean retryable = net.kckern.daylight.shellkit.KeptIndex.retryable(k);
+        h.retry.setVisibility(retryable ? View.VISIBLE : View.GONE);
+        h.retry.setContentDescription("Retry " + title);
+        h.retry.setOnClickListener(v -> { keepJob("retry", cid); toast("Trying again"); });
+        card.setContentDescription(title + ". " + line);
+        String id = "c:" + cid;
+        // A group opens On this phone, where its units are; a part-kept collection plays too:
+        // online it streams the rest; offline, what is here.
+        if (group) card.setOnClickListener(v -> openDownloads(null));
+        else if (k.optInt("total") > 0) card.setOnClickListener(v -> playHere(id, title, "", k.optString("art"), false));
+        else card.setOnClickListener(v -> toast(line));
     }
 
     /**
@@ -766,33 +832,44 @@ public class PhoneHomeActivity extends Activity {
         return keepMenu(anchor, mediaId, contentId, null, null, null);
     }
 
-    /** Keep, or its state; and Open (the collection's page) when {@code openKind} is given. */
+    /** Keep, or its state; and Open (the collection's page) when {@code openKind} is given: the item sheet (D17). */
     private boolean keepMenu(View anchor, String mediaId, String contentId, String openKind, String title, String art) {
-        android.widget.PopupMenu menu = new android.widget.PopupMenu(this, anchor);
-        if (openKind != null && mediaId.startsWith("c:")) menu.getMenu().add(0, 3, 0, "Open");
+        JSONObject kept = keptFor(contentId);
+        net.kckern.daylight.shellkit.ItemSheet sheet = net.kckern.daylight.shellkit.ItemSheet.of(this, "Home")
+                .item(art, net.kckern.daylight.shellkit.CoverGlyph.of(openKind), title == null ? "" : title, "",
+                        kept == null ? "" : net.kckern.daylight.shellkit.KeptIndex.describe(kept));
+        if (openKind != null && mediaId.startsWith("c:")) sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_open, "Open", () -> {
+            net.kckern.daylight.shellkit.UiTelemetry.event("Browse", "browse.open_from_tile", new JSONObject());
+            try {
+                startActivity(new Intent().setClassName(this, BROWSE).putExtra("mode", "level").putExtra("parent", mediaId)
+                        .putExtra("kind", openKind).putExtra("title", title == null ? "" : title).putExtra("art", art == null ? "" : art));
+            } catch (RuntimeException absent) { toast("Not available in this build"); }
+        });
+        sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_play, "Play on this phone", () -> playHere(mediaId, title, "", art, false));
+        if (kept == null) sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_download, "Keep on this phone", () -> {
+            net.kckern.daylight.shellkit.UiTelemetry.event("Downloads", "keep.tap", new JSONObject());
+            openDownloads(mediaId);
+        });
+        else {
+            sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_on_phone, "On this phone", net.kckern.daylight.shellkit.KeptIndex.describe(kept), () -> {
+                net.kckern.daylight.shellkit.UiTelemetry.event("Downloads", "keep.screen", new JSONObject());
+                openDownloads(null);
+            });
+            sheet.destructive(net.kckern.daylight.shellkit.R.drawable.daylight_ic_delete, "Remove from this phone", () -> keepJob("remove", contentId));
+        }
+        sheet.show();
+        return true;
+    }
+
+    /** The kept collection holding {@code contentId} (itself or one of its tracks), or null. */
+    private JSONObject keptFor(String contentId) {
         JSONObject kept = null;
         for (JSONObject k : net.kckern.daylight.shellkit.KeptIndex.read(getFilesDir())) {
             if (contentId.equals(k.optString("contentId"))) kept = k;
             org.json.JSONArray ids = k.optJSONArray("trackIds");
             for (int i = 0; ids != null && i < ids.length(); i++) if (contentId.equals(ids.optString(i))) kept = k;
         }
-        if (kept == null) menu.getMenu().add(0, 1, 0, "Keep on this phone");
-        else menu.getMenu().add(0, 2, 0, net.kckern.daylight.shellkit.KeptIndex.describe(kept) + " ›");
-        menu.setOnMenuItemClickListener(item -> {
-            if (item.getItemId() == 3) {
-                net.kckern.daylight.shellkit.UiTelemetry.event("Browse", "browse.open_from_tile", new JSONObject());
-                try {
-                    startActivity(new Intent().setClassName(this, BROWSE).putExtra("mode", "level").putExtra("parent", mediaId)
-                            .putExtra("kind", openKind).putExtra("title", title == null ? "" : title).putExtra("art", art == null ? "" : art));
-                } catch (RuntimeException absent) { toast("Not available in this build"); }
-                return true;
-            }
-            net.kckern.daylight.shellkit.UiTelemetry.event("Downloads", item.getItemId() == 1 ? "keep.tap" : "keep.screen", new JSONObject());
-            openDownloads(item.getItemId() == 1 ? mediaId : null);
-            return true;
-        });
-        menu.show();
-        return true;
+        return kept;
     }
 
     private long freeOnPhone() {
@@ -805,12 +882,25 @@ public class PhoneHomeActivity extends Activity {
     private static final String DOWNLOADS = "net.kckern.daylight.cap.mediaservice.shell.DownloadsActivity";
     private static final int KEEP_ACTION_BASE = 7_300, KEEP_ACTION_SLOTS = 100;
 
-    /** Opens Now playing on this phone and starts {@code mediaId} there (p: resumes a track, c: plays a list). */
-    private void playHere(String mediaId) {
-        Intent now = new Intent().setClassName(this, NOW_PLAYING).putExtra("target", "local");
-        Intent play = new Intent().setClassName(this, PLAY).putExtra("id", mediaId);
-        try { startActivities(new Intent[] { now, play }); }
-        catch (RuntimeException absent) { toast("Could not start playback"); }
+    /**
+     * Opens Now playing on this phone and starts {@code mediaId} there (p: resumes a track, c:
+     * plays a list). Now playing shows the tapped item from its first frame and starts it on
+     * its own controller (media-service's Starting extras, set by name: that class is another
+     * capability's). Nothing sits over it: Back works at once.
+     *
+     * @param longItem a book or a talk: Now playing keeps its chapter line's place from the first frame
+     */
+    private void playHere(String mediaId, String title, String subtitle, String art, boolean longItem) {
+        // A quick double tap on a card starts it once, with one Now playing.
+        if (!playGuard.admit(mediaId, android.os.SystemClock.elapsedRealtime())) return;
+        playGuard.done();   // Now playing takes it from here; only the window holds a repeat
+        Intent now = new Intent().setClassName(this, NOW_PLAYING).putExtra("target", "local")
+                .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                .putExtra("starting.id", mediaId).putExtra("starting.title", title == null ? "" : title)
+                .putExtra("starting.subtitle", subtitle == null ? "" : subtitle).putExtra("starting.art", art == null ? "" : art)
+                .putExtra("starting.play", true).putExtra("starting.long", longItem);
+        try { startActivity(now); }
+        catch (RuntimeException absent) { toast("Not available in this build"); }
     }
 
     /**
@@ -854,14 +944,15 @@ public class PhoneHomeActivity extends Activity {
     private View continueCard(JSONObject item) {
         long played = item.optLong("playhead"), duration = item.optLong("duration");
         String title = item.optString("title"), sub = item.optString("subtitle");
+        // A flat row (design sweep D4): cover, title, by-line, progress line; no box around it.
         LinearLayout card = new LinearLayout(this);
         card.setGravity(Gravity.CENTER_VERTICAL);
-        card.setPadding(dp(8), dp(8), dp(12), dp(8));
-        card.setBackground(t.pressable(t.round(t.surface, Radius.SMALL)));
+        card.setMinimumHeight(dp(72));
+        card.setPadding(0, dp(8), 0, dp(8));
+        card.setBackground(t.pressable(null));
         ImageView cover = new ImageView(this);
         cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        cover.setClipToOutline(true);
-        cover.setBackground(t.round(t.tile, Radius.SMALL));
+        net.kckern.daylight.shellkit.CoverGlyph.behind(cover, t, net.kckern.daylight.shellkit.CoverGlyph.Kind.BOOK, dp(56), t.radius(Radius.SMALL));
         card.addView(cover, new LinearLayout.LayoutParams(dp(56), dp(56)));
         loadCover(cover, item.optString("art"));
         LinearLayout words = new LinearLayout(this);
@@ -877,7 +968,16 @@ public class PhoneHomeActivity extends Activity {
                 net.kckern.daylight.shellkit.KeptIndex.read(getFilesDir()), item.optString("contentId"));
         boolean reachable = here || online();
         String said = !reachable ? "Needs a connection" : (here ? "On this phone · " : "") + (sub.isEmpty() || sub.equals(title) ? left : sub + " · " + left);
-        TextView line = label(said, Type.LABEL, here ? t.primary : t.inkMuted);
+        // "On this phone" is a fact, not an action: muted, with the offline glyph (accent is for primary, selected, progress).
+        TextView line = label(said, Type.LABEL, t.inkMuted);
+        if (here) {
+            android.graphics.drawable.Drawable glyph = getDrawable(net.kckern.daylight.shellkit.R.drawable.daylight_ic_on_phone).mutate();
+            int g = dp(14);
+            glyph.setBounds(0, 0, g, g);
+            glyph.setTint(t.inkMuted);
+            line.setCompoundDrawablesRelative(glyph, null, null, null);
+            line.setCompoundDrawablePadding(dp(4));
+        }
         line.setMaxLines(1);
         line.setEllipsize(android.text.TextUtils.TruncateAt.END);
         words.addView(line);
@@ -899,15 +999,120 @@ public class PhoneHomeActivity extends Activity {
         if (!reachable) card.setAlpha(0.45f);
         card.setOnClickListener(v -> {
             if (!here && !online()) { toast("Needs a connection: this is not kept on the phone"); return; }
-            playHere(id);
+            playHere(id, title, sub, item.optString("art"), true);
         });
-        // Press and hold: Keep the book on this phone (or see it there when it is kept).
-        String cidOf = item.optString("contentId");
-        card.setOnLongClickListener(v -> keepMenu(card, id, cidOf));
+        // Press and hold: Open · Keep on this phone (or its state) · Mark finished · Remove from Continue listening.
+        card.setOnLongClickListener(v -> continueMenu(card, item));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.topMargin = dp(6);
         card.setLayoutParams(lp);
         return card;
+    }
+
+    /**
+     * A Continue card's long-press (ops:docs/superpowers/specs/2026-11-26-phone-lookup-and-browse.md
+     * §10): Open (the book's page), Keep on this phone or its state, Mark finished (every
+     * part, by the book's id), Remove from Continue listening. Remove and Mark finished take
+     * the card away at once, with Undo for 6 s; the hide is home's (every device and the web)
+     * and is queued on the phone while home is away.
+     */
+    private boolean continueMenu(View anchor, JSONObject item) {
+        String id = item.optString("id"), cid = item.optString("contentId"), title = item.optString("title");
+        JSONObject kept = keptFor(cid);
+        long played = item.optLong("playhead"), duration = item.optLong("duration");
+        String state = (duration > 0 ? Math.round(100.0 * played / duration) + " % · " : "") + timeLeft(Math.max(0, duration - played));
+        if (kept != null) state = net.kckern.daylight.shellkit.KeptIndex.describe(kept) + " · " + state;
+        net.kckern.daylight.shellkit.ItemSheet sheet = net.kckern.daylight.shellkit.ItemSheet.of(this, "Home")
+                .item(item.optString("art"), net.kckern.daylight.shellkit.CoverGlyph.Kind.BOOK, title, item.optString("subtitle"), state)
+                .row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_open, "Open", () -> openBookOf(cid, title, item.optString("art")));
+        if (kept == null) sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_download, "Keep on this phone", () -> {
+            net.kckern.daylight.shellkit.UiTelemetry.event("Downloads", "keep.tap", new JSONObject());
+            openDownloads(id);
+        });
+        else sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_on_phone, "On this phone", net.kckern.daylight.shellkit.KeptIndex.describe(kept), () -> {
+            net.kckern.daylight.shellkit.UiTelemetry.event("Downloads", "keep.screen", new JSONObject());
+            openDownloads(null);
+        });
+        sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_check, "Mark finished", () -> finishFromContinue(item, true))
+                .destructive(net.kckern.daylight.shellkit.R.drawable.daylight_ic_remove_circle, "Remove from Continue listening", () -> hideFromContinue(item, true))
+                .show();
+        return true;
+    }
+
+    /** Open: the page of the book a Continue card's part belongs to (its info's album). */
+    private void openBookOf(String contentId, String title, String art) {
+        call("media", request("parents", "id", contentId).toString(), reply -> {
+            JSONObject parents = reply.optJSONObject("parents");
+            JSONObject album = parents == null ? null : parents.optJSONObject("album");
+            if (album == null || album.optString("id").isEmpty()) { toast("Can't find its book now"); return; }
+            try {
+                startActivity(new Intent().setClassName(this, BROWSE).putExtra("mode", "level").putExtra("parent", album.optString("id"))
+                        .putExtra("kind", album.optString("kind", "book")).putExtra("title", album.optString("title", title))
+                        .putExtra("art", art == null ? "" : art));
+            } catch (RuntimeException absent) { toast("Not available in this build"); }
+        }, failure -> toast("Can't reach home: " + failure));
+    }
+
+    /** The cards drawn and cached without (or, Undo, with again) {@code item}. */
+    private void withoutCard(JSONObject item, boolean gone) {
+        android.content.SharedPreferences cache = getSharedPreferences("daylight.home", MODE_PRIVATE);
+        org.json.JSONArray now = new org.json.JSONArray();
+        try {
+            org.json.JSONArray all = new org.json.JSONArray(cache.getString("continue", "[]"));
+            boolean present = false;
+            for (int i = 0; i < all.length(); i++) {
+                JSONObject o = all.optJSONObject(i);
+                if (o == null) continue;
+                if (item.optString("contentId").equals(o.optString("contentId"))) { present = true; if (gone) continue; }
+                now.put(o);
+            }
+            if (!gone && !present) {
+                org.json.JSONArray back = new org.json.JSONArray().put(item);
+                for (int i = 0; i < now.length(); i++) back.put(now.get(i));
+                now = back;
+            }
+        } catch (Exception unreadable) { return; }
+        cache.edit().putString("continue", now.toString()).apply();
+        if (continueBox != null) fillContinue(continueBox, now.toString());
+    }
+
+    private void snack(String text, Runnable undo) {
+        if (pageHost != null) net.kckern.daylight.shellkit.Snack.show(pageHost, t, text, "Undo", undo, 6000);
+    }
+
+    /** Remove from Continue listening (or Undo): gone here at once, home told now or when it answers. */
+    private void hideFromContinue(JSONObject item, boolean hidden) {
+        String cid = item.optString("contentId");
+        withoutCard(item, hidden);
+        net.kckern.daylight.shellkit.UiTelemetry.event("Home", hidden ? "continue.hide" : "continue.unhide", new JSONObject());
+        JSONObject body;
+        try { body = new JSONObject().put("op", "continue-hide").put("contentId", cid).put("hidden", hidden); }
+        catch (Exception impossible) { return; }
+        call("media", body.toString(), reply -> { }, failure -> { /* the payload keeps it and sends it later */ });
+        if (hidden) snack("Removed from Continue listening", () -> hideFromContinue(item, false));
+    }
+
+    /** Mark finished (or Undo): every part of the book, and the card leaves Continue. */
+    private void finishFromContinue(JSONObject item, boolean finished) {
+        String cid = item.optString("contentId");
+        withoutCard(item, finished);
+        net.kckern.daylight.shellkit.UiTelemetry.event("Home", "continue.finished", new JSONObject(java.util.Map.of("undo", !finished)));
+        JSONObject body;
+        try {
+            body = new JSONObject().put("op", "book-finished").put("contentId", cid).put("finished", finished);
+            // Undo puts the card's place back (home's "not finished" would start the part over).
+            if (!finished) body.put("restoreSeconds", item.optLong("playhead")).put("durationSeconds", item.optLong("duration"))
+                    .put("title", item.optString("title"));
+        }
+        catch (Exception impossible) { return; }
+        call("media", body.toString(), reply -> {
+            // A book kept automatically: its day before removal starts now.
+            if (finished) keepJob("finished-check", "");
+        }, failure -> {
+            toast("Can't mark it finished now: " + failure);
+            if (finished) withoutCard(item, false);
+        });
+        if (finished) snack("Marked finished", () -> finishFromContinue(item, false));
     }
 
     /** "2 h 31 min left", "18 min left", "Under a minute left". */
@@ -930,23 +1135,23 @@ public class PhoneHomeActivity extends Activity {
             }
             LinearLayout tile = new LinearLayout(this);
             tile.setOrientation(LinearLayout.VERTICAL);
-            tile.setPadding(dp(6), dp(6), dp(6), dp(8));
-            tile.setBackground(t.pressable(t.round(t.surface, Radius.SMALL)));
+            // Just the cover and the name under it (design sweep D4): no box around the box.
+            tile.setPadding(0, 0, 0, dp(8));
+            tile.setBackground(t.pressable(null));
             AspectCover cover = new AspectCover(this);
             cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            cover.setClipToOutline(true);
-            cover.setBackground(t.round(t.tile, Radius.SMALL));
+            net.kckern.daylight.shellkit.CoverGlyph.behind(cover, t, net.kckern.daylight.shellkit.CoverGlyph.Kind.PLAYLIST, dp(108), t.radius(Radius.SMALL));
             tile.addView(cover, new LinearLayout.LayoutParams(-1, -2));
             loadCover(cover, p.art);
             TextView name = t.text(this, p.title, Type.LABEL, t.ink, true);
             name.setMaxLines(2);
             name.setEllipsize(android.text.TextUtils.TruncateAt.END);
-            name.setPadding(dp(2), dp(6), dp(2), 0);
+            name.setPadding(0, dp(6), 0, 0);
             tile.addView(name);
             tile.setContentDescription("Play " + p.title);
             net.kckern.daylight.shellkit.UiTelemetry.tag(tile, "play.playlist");
             String id = p.id;
-            tile.setOnClickListener(v -> playHere("c:" + id));
+            tile.setOnClickListener(v -> playHere("c:" + id, p.title, "", p.art, false));
             tile.setOnLongClickListener(v -> keepMenu(tile, "c:" + id, id, "playlist", p.title, p.art));
             LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(0, -2, 1);
             if (pair.getChildCount() < 2) tp.setMarginEnd(dp(6));
@@ -962,11 +1167,19 @@ public class PhoneHomeActivity extends Activity {
         buttonRow = null;
     }
 
+    /** A cover seen before (here or on another screen) draws in this frame; others load off the main thread. */
     private void loadCover(ImageView into, String url) {
-        if (url == null || url.isEmpty()) return;
+        if (url == null) url = "";
+        if (url.equals(into.getTag())) return;
+        into.setTag(url);
+        into.setImageDrawable(null);
+        if (url.isEmpty()) return;
+        android.graphics.Bitmap hit = net.kckern.daylight.shellkit.PlaylistArtwork.cached(url, 360);
+        if (hit != null) { into.setImageBitmap(hit); return; }
+        final String wanted = url;
         artworkWorker.execute(() -> {
-            android.graphics.Bitmap b = net.kckern.daylight.shellkit.PlaylistArtwork.load(url, 360);
-            if (b != null) runOnUiThread(() -> { if (!isDestroyed()) into.setImageBitmap(b); });
+            android.graphics.Bitmap b = net.kckern.daylight.shellkit.PlaylistArtwork.load(wanted, 360);
+            if (b != null) runOnUiThread(() -> { if (!isDestroyed() && wanted.equals(into.getTag())) into.setImageBitmap(b); });
         });
     }
 
@@ -1028,8 +1241,8 @@ public class PhoneHomeActivity extends Activity {
                 // A speaker or headset has no screen to move around: no remote for it.
                 if (id.isEmpty() || "speaker".equals(sc.optString("type"))) continue;
                 row(name, "Remote control for " + name, "remote", "›", () -> startActivity(new Intent(remote)
-                        .putExtra("target", id).putExtra("pad", true)
-                        .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)));
+                        .putExtra("target", id).putExtra("targetName", name).putExtra("pad", true)
+                        .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP)));
             }
         } finally {
             column = saved;
@@ -1543,9 +1756,10 @@ public class PhoneHomeActivity extends Activity {
         });
 
         ImageView icon = new ImageView(this);
-        icon.setBackground(DaylightTheme.round(t.primary, dp(8)));
-        icon.setPadding(dp(6), dp(6), dp(6), dp(6));
+        // The accent is for primary, selected and progress (D9): an ordinary row's glyph is muted ink, unfilled.
+        icon.setPadding(dp(2), dp(2), dp(2), dp(2));
         icon.setImageResource(drawable(glyph));
+        icon.setImageTintList(android.content.res.ColorStateList.valueOf(t.inkMuted));
         icon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         line.addView(icon, dp(24), dp(24));
 
@@ -1554,7 +1768,7 @@ public class PhoneHomeActivity extends Activity {
         heading.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         line.addView(heading, new LinearLayout.LayoutParams(0, -2, 1));
 
-        TextView cue = PlaylistPicker.glyph(this, indicator, 20, t.primary);
+        TextView cue = PlaylistPicker.glyph(this, indicator, 20, t.inkMuted);
         cue.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         line.addView(cue);
 

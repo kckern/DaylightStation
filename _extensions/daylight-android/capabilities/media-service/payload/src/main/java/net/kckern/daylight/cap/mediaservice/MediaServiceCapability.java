@@ -62,6 +62,10 @@ public final class MediaServiceCapability implements Capability {
     static final String DOWNLOAD_LOCATION = "media.downloadLocation";
     /** Minutes from finished to removed with media.removeFinished (a day; shorter for a check). */
     static final String REMOVE_FINISHED_AFTER = "media.removeFinishedAfterMin";
+    /** Kept automatically while you listen (spec §3.10): on by default; off removes nothing already kept. */
+    static final String AUTO_KEEP = "media.autoKeep";
+    /** Minutes of a long item heard on this phone before it is kept automatically. */
+    static final String AUTO_KEEP_AFTER = "media.autoKeepAfterMin";
     private static final String RECENT_LIMIT = "media.recentLimit";
     private static final String PAGE_SIZE = "media.pageSize";
     /** How a screen's notes name this device when it pauses or skips there: "Paused by Phone". */
@@ -146,6 +150,8 @@ public final class MediaServiceCapability implements Capability {
         core.settings().declare(DOWNLOAD_ON_CELLULAR, SettingsRegistry.Type.BOOLEAN, false, null);
         core.settings().declare(REMOVE_FINISHED, SettingsRegistry.Type.BOOLEAN, false, null);
         core.settings().declare(REMOVE_FINISHED_AFTER, SettingsRegistry.Type.INTEGER, 1440, SettingsRegistry.range(1, 100_000));
+        core.settings().declare(AUTO_KEEP, SettingsRegistry.Type.BOOLEAN, true, null);
+        core.settings().declare(AUTO_KEEP_AFTER, SettingsRegistry.Type.INTEGER, 10, SettingsRegistry.range(1, 600));
         core.settings().declare(DOWNLOAD_LOCATION, SettingsRegistry.Type.STRING, "internal",
                 value -> "internal".equals(value) || "sd".equals(value) ? null : "media.downloadLocation: internal or sd");
         if (inbox == null) {
@@ -162,7 +168,9 @@ public final class MediaServiceCapability implements Capability {
                     signalKeeper();
                 }
                 @Override public void unkeep(String contentId) {
-                    kept().remove(contentId, clock.getAsLong());
+                    // The web's Remove all on a kept artist or author (spec §3.11): the group goes.
+                    if (kept().group(contentId) != null) kept().removeGroup(contentId, clock.getAsLong());
+                    else kept().remove(contentId, clock.getAsLong());
                     signalKeeper();
                 }
             }, answered -> { if (answered) health.answered(); else health.failed(clock.getAsLong()); });
@@ -383,7 +391,7 @@ public final class MediaServiceCapability implements Capability {
             if ("parents".equals(op)) {
                 String cid = Json.str(request, "id");
                 if (!ContentId.valid(cid)) return failure(400, "bad_request");
-                return new Outcome(200, Replies.ok().put("parents", Lookup.parents(api.info(cid))));
+                return new Outcome(200, Replies.ok().put("parents", Lookup.parents(api.info(cid), kinds())));
             }
             if ("progress".equals(op)) {
                 JSONArray ids = request.optJSONArray("ids");
@@ -411,7 +419,9 @@ public final class MediaServiceCapability implements Capability {
                 return new Outcome(200, Replies.ok().put("finished", finishedBooks(kept().list(), recent)));
             }
             if ("kept-restore".equals(op)) {
-                return new Outcome(200, Replies.ok().put("restored", kept().restore(request.optJSONArray("items"))));
+                int groups = kept().restoreGroups(request.optJSONArray("groups"));
+                return new Outcome(200, Replies.ok().put("restored", kept().restore(request.optJSONArray("items")))
+                        .put("groupsRestored", groups));
             }
             if ("keeps-report".equals(op)) {
                 if (inbox != null) inbox.reportKeeps(request.optJSONArray("items") == null ? new JSONArray() : request.optJSONArray("items"));
@@ -443,20 +453,44 @@ public final class MediaServiceCapability implements Capability {
                         .put("onCellular", Boolean.TRUE.equals(core.settings().get(DOWNLOAD_ON_CELLULAR)))
                         .put("removeFinished", Boolean.TRUE.equals(core.settings().get(REMOVE_FINISHED)))
                         .put("removeFinishedAfterMin", (Integer) core.settings().get(REMOVE_FINISHED_AFTER))
+                        .put("autoKeep", !Boolean.FALSE.equals(core.settings().get(AUTO_KEEP)))
+                        .put("autoKeepAfterMin", (Integer) core.settings().get(AUTO_KEEP_AFTER))
                         .put("location", (String) core.settings().get(DOWNLOAD_LOCATION)));
             }
             if ("unkeep".equals(op)) {
                 String id = Json.str(request, "id");
                 if (!ContentId.valid(id)) return failure(400, "bad_request");
                 JSONArray orphaned = new JSONArray();
-                for (String t : kept().remove(id, clock.getAsLong())) orphaned.put(t);
-                return new Outcome(200, Replies.ok().put("orphaned", orphaned));
+                // From a group's row: the unit leaves the group (kept on its own too, it stays).
+                boolean fromGroup = "group".equals(Json.str(request, "from"));
+                boolean stays = fromGroup && kept().get(id) != null && kept().get(id).optBoolean("alone", false);
+                for (String t : fromGroup ? kept().leaveGroup(id, clock.getAsLong()) : kept().remove(id, clock.getAsLong())) orphaned.put(t);
+                return new Outcome(200, Replies.ok().put("orphaned", orphaned).put("stays", stays));
+            }
+            if ("group-preview".equals(op)) return groupPreview(request, false);
+            if ("group-new".equals(op)) return groupPreview(request, true);
+            if ("group-save".equals(op)) return groupSave(request);
+            if ("group-remove".equals(op)) {
+                String id = Json.str(request, "id");
+                if (!GroupKeeps.validId(id)) return failure(400, "bad_request");
+                int units = kept().unitsOf(id).size();
+                JSONArray orphaned = new JSONArray();
+                for (String t : kept().removeGroup(id, clock.getAsLong())) orphaned.put(t);
+                return new Outcome(200, Replies.ok().put("orphaned", orphaned).put("units", units));
             }
             if ("continue".equals(op)) {
-                JSONArray items = BrowseTree.continueItems(api.recent(50), backend, Math.max(1, Math.min(20, request.optInt("limit", 8))));
+                int limit = Math.max(1, Math.min(20, request.optInt("limit", 8)));
+                flushHides();
+                // A hide home has not heard yet keeps its card away here (offline, or just tapped).
+                JSONArray items = hides().filter(BrowseTree.continueItems(api.recent(50), backend, limit + 4));
+                JSONArray cut = new JSONArray();
+                for (int i = 0; i < items.length() && i < limit; i++) cut.put(items.get(i));
                 health.answered();
-                return new Outcome(200, Replies.ok().put("items", items));
+                return new Outcome(200, Replies.ok().put("items", cut));
             }
+            if ("continue-hide".equals(op)) return continueHide(request);
+            if ("about".equals(op)) return about(request);
+            if ("book-finished".equals(op)) return bookFinished(request);
             if ("track-levels".equals(op)) return trackDetail(request, true);
             if ("track-lyrics".equals(op)) return trackDetail(request, false);
             if ("track-chapters".equals(op)) return trackChapters(request);
@@ -467,16 +501,23 @@ public final class MediaServiceCapability implements Capability {
         } catch (IllegalArgumentException refused) {
             return failure(400, "bad_request");
         } catch (MediaApi.Refused answered) {
-            return answered.status == 404 ? failure(404, "not_found") : failure(502, "backend_refused");
+            Outcome o = answered.status == 404 ? failure(404, "not_found") : failure(502, "backend_refused");
+            return withReason(o, FailureReason.of(answered));
         } catch (IllegalStateException notConfigured) {
             return failure(503, "not_configured");
         } catch (Exception unreachable) {
-            return failure(502, "unreachable");
+            return withReason(failure(502, "unreachable"), FailureReason.of(unreachable));
         }
     }
 
     private static Outcome failure(int status, String code) {
         return new Outcome(status, Replies.err(code));
+    }
+
+    /** A failed answer that also says why home did not answer (FailureReason), for the phone's words. */
+    private static Outcome withReason(Outcome o, String reason) {
+        try { o.body.put("reason", reason); } catch (Exception never) { }
+        return o;
     }
 
     private static Router.Response respond(Outcome o) { return Router.Response.json(o.status, o.body); }
@@ -599,13 +640,54 @@ public final class MediaServiceCapability implements Capability {
         if (!fromList) {
             // A track: keep its album (a book, a record), when the backend names one.
             JSONObject info = api.info(cid);
+            if (groupKindOf(info, cid) != null) {
+                // The web's "Keep on Phone" of an artist or author arrives as a bare id.
+                if ("preview".equals(mode)) {
+                    return new Outcome(200, Replies.ok().put("contentId", cid).put("kind", "group")
+                            .put("groupKind", groupKindOf(info, cid)).put("title", "").put("tracks", new JSONArray()));
+                }
+                if ("keep".equals(mode) && !request.optBoolean("auto", false)) return keepWholeGroup(cid, groupKindOf(info, cid));
+            }
             JSONObject meta = info == null ? null : info.optJSONObject("metadata");
             String album = meta == null ? "" : meta.optString("albumId", "");
             if (!album.isEmpty()) cid = ContentId.source(cid) + ":" + album;
         }
         if ("refresh".equals(mode) && (kept().get(cid) == null || kept().tombstoned(cid))) return failure(409, "not_kept");
+        // An artist or an author is never flattened into one kept item (spec §3.11): a preview
+        // says it is a group (the phone opens "Keep all…"); a keep from the web keeps it as one.
+        if (!"refresh".equals(mode) && !request.optBoolean("auto", false) && kept().get(cid) == null) {
+            String groupKind = groupKindOf(fromList ? safeInfo(cid) : null, cid);
+            if (groupKind != null) {
+                if ("preview".equals(mode)) {
+                    return new Outcome(200, Replies.ok().put("contentId", cid).put("kind", "group").put("groupKind", groupKind)
+                            .put("title", "").put("tracks", new JSONArray()));
+                }
+                return keepWholeGroup(cid, groupKind);
+            }
+        }
+        // Kept automatically while listening (spec §3.10): {auto:true, only:[track ids]}. A
+        // manual keep is never turned into an automatic one; a manual Keep of an automatic
+        // one makes it manual (the whole collection, never removed by those rules).
+        boolean auto = "keep".equals(mode) && request.optBoolean("auto", false);
+        JSONObject existing = kept().tombstoned(cid) ? null : kept().get(cid);
+        if (auto && existing != null && !KeptCollections.auto(existing)) {
+            return new Outcome(200, keepAnswer(cid, existing.optString("title"), existing.optString("art", null),
+                    existing.optJSONArray("tracks"), false, existing.optString("kind")).put("manual", true));
+        }
+        List<String> scope = auto ? strings(request.optJSONArray("only"))
+                : "refresh".equals(mode) && KeptCollections.auto(existing) ? KeptCollections.only(existing) : null;
         // The whole list, not a player's 500-track window: a kept playlist is all of it.
         List<Track> all = QueueMapper.fromQueue(api.queue(cid, false), backend, "daylight-" + core.deviceId());
+        // Home's queue puts a book's heard parts last (its watched/unwatched order, for
+        // shows). Kept, a book is in its own order: its first part first, its next part next
+        // (a place offline moves on to the part after, never to one home has not heard).
+        boolean ordered = false;
+        for (Track t : all) ordered |= t.longForm;
+        JSONObject listing = null;
+        try { listing = api.list(cid, ordered ? Math.min(all.size(), LIST_ORDER_MAX) : 1, 0); }
+        catch (Exception unnamed) { /* the first track's album and cover; home's order */ }
+        if (ordered) all = inListOrder(all, listing);
+        if (scope != null && !scope.isEmpty()) all = scoped(all, scope);
         if (all.isEmpty()) return failure(404, "not_found");
         boolean cut = all.size() > MAX_KEPT_TRACKS;
         if (cut) all = new ArrayList<>(all.subList(0, MAX_KEPT_TRACKS));
@@ -627,17 +709,29 @@ public final class MediaServiceCapability implements Capability {
         }
         String title = all.get(0).album, art = all.get(0).artUrl;
         String listType = "";
-        try {
-            JSONObject l = api.list(cid, 1, 0);
+        if (listing != null) {
+            JSONObject l = listing;
             title = Json.first(Json.str(l, "title"), Json.str(l, "label"), title);
             String image = BrowseTree.art(backend, Json.str(l, "image"));
             if (image != null) art = image;
             listType = Json.first(Json.str(l, "type"), Json.str(l, "itemType"));
-        } catch (Exception unnamed) { /* the first track's album and cover */ }
+        }
         String kind = kindOf(longParts, albums.size(), listType);
         long now = clock.getAsLong();
-        if ("keep".equals(mode)) {
-            kept().save(cid, title, art, tracks, now, kind);
+        String groupId = auto ? "" : Json.str(request, "group");
+        if ("keep".equals(mode) && GroupKeeps.validId(groupId)) {
+            // One unit of a kept artist or author (spec §3.11): its own collection, in the group.
+            kept().saveUnit(cid, title, art, tracks, now, kind, groupId);
+        } else if ("keep".equals(mode)) {
+            kept().save(cid, title, art, tracks, now, kind, auto ? scope : null);
+            if (auto && KeptCollections.auto(existing)) {
+                // The window moved on (or a book's one part became the whole book): what it no
+                // longer holds is released like a re-sync's removal, so its audio may go.
+                java.util.Set<String> fresh = new java.util.HashSet<>(KeptCollections.trackIds(new JSONObject().put("tracks", tracks)));
+                List<String> dropped = new ArrayList<>();
+                for (String t : KeptCollections.trackIds(existing)) if (!fresh.contains(t)) dropped.add(t);
+                kept().release(cid, dropped, now);
+            }
         } else if ("refresh".equals(mode)) {
             JSONObject before = kept().get(cid);
             java.util.Set<String> fresh = new java.util.HashSet<>(KeptCollections.trackIds(new JSONObject().put("tracks", tracks)));
@@ -653,7 +747,240 @@ public final class MediaServiceCapability implements Capability {
             if (!kept().refreshIfKept(cid, title, art, tracks, now, kind)) return failure(409, "not_kept");
             kept().release(cid, dropped, now);
         }
-        return new Outcome(200, keepAnswer(cid, title, art, tracks, cut, kind));
+        JSONObject answer = keepAnswer(cid, title, art, tracks, cut, kind);
+        if (auto) answer.put("auto", true);
+        String member = KeptCollections.groupOf(kept().get(cid));
+        if (!member.isEmpty()) answer.put("group", member);
+        return new Outcome(200, answer);
+    }
+
+    // ── keeping an artist or an author (spec §3.11) ──────────────────────────
+
+    /**
+     * What "Keep all…" on an artist or author would keep, nothing saved: the group (its kind
+     * and, when kept before, its switches) and each unit (album or book) with its tracks
+     * (id, url: the shell reads the sizes), kind, finished, started, whether the group holds
+     * it now and whether it is past the 5000-track cap; in download order (the started book
+     * first, then the author's order; albums newest first). {@code onlyNew}: a re-sync of a
+     * group that follows; only the units it would add now.
+     */
+    private Outcome groupPreview(JSONObject request, boolean onlyNew) throws Exception {
+        String raw = Json.str(request, "id");
+        String gid = raw.startsWith("c:") ? raw.substring(2) : raw;
+        if (!GroupKeeps.validId(gid)) return failure(400, "bad_request");
+        JSONObject saved = kept().group(gid);
+        if (onlyNew && (saved == null || !saved.optBoolean("follow", false))) {
+            return new Outcome(200, Replies.ok().put("units", new JSONArray()));
+        }
+        JSONObject first = api.list(gid, 100, 0);
+        JSONArray items = first == null ? null : first.optJSONArray("items");
+        JSONArray all = new JSONArray();
+        for (int i = 0; items != null && i < items.length(); i++) all.put(items.get(i));
+        int total = first == null ? 0 : first.optInt("total", all.length());
+        for (int skip = all.length(); skip < Math.min(total, GroupKeeps.MAX_UNITS) && items != null && items.length() > 0; skip = all.length()) {
+            JSONObject more = api.list(gid, 100, skip);
+            items = more == null ? null : more.optJSONArray("items");
+            for (int i = 0; items != null && i < items.length(); i++) all.put(items.get(i));
+        }
+        List<JSONObject> units = GroupKeeps.unitsOf(all);
+        if (units.isEmpty()) return failure(404, "not_found");
+        java.util.Set<String> held = new java.util.HashSet<>(kept().unitsOf(gid));
+        if (onlyNew) {
+            java.util.Set<String> elsewhere = new java.util.HashSet<>();
+            for (JSONObject k : kept().list()) if (!gid.equals(KeptCollections.groupOf(k))) elsewhere.add(k.optString("contentId"));
+            List<String> listed = new ArrayList<>();
+            for (JSONObject u : units) listed.add(u.optString("contentId"));
+            java.util.Set<String> fresh = new java.util.HashSet<>(GroupKeeps.newUnits(listed, held, KeptCollections.excluded(saved), elsewhere));
+            List<JSONObject> keep = new ArrayList<>();
+            for (JSONObject u : units) if (fresh.contains(u.optString("contentId"))) keep.add(u);
+            units = keep;
+            if (units.isEmpty()) return new Outcome(200, Replies.ok().put("units", new JSONArray()));
+        }
+        // Each unit's tracks, four at a time (an author of 36 books answers in seconds).
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(4);
+        List<java.util.concurrent.Future<List<Track>>> queued = new ArrayList<>();
+        for (JSONObject u : units) {
+            String uid = u.optString("contentId");
+            queued.add(pool.submit(() -> QueueMapper.fromQueue(api.queue(uid, false), backend, "daylight-" + core.deviceId())));
+        }
+        java.util.Set<String> allTracks = new java.util.HashSet<>();
+        List<List<Track>> tracksOf = new ArrayList<>();
+        try {
+            for (java.util.concurrent.Future<List<Track>> f : queued) {
+                List<Track> ts;
+                try { ts = f.get(30, java.util.concurrent.TimeUnit.SECONDS); } catch (Exception one) { ts = new ArrayList<>(); }
+                tracksOf.add(ts);
+                for (Track t : ts) allTracks.add(t.id);
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+        JSONObject progress = null;
+        try { progress = Lookup.progress(api.recent(500), allTracks); } catch (Exception unknown) { /* none finished */ }
+        List<String> kinds = new ArrayList<>();
+        List<JSONObject> out = new ArrayList<>();
+        for (int i = 0; i < units.size(); i++) {
+            JSONObject u = units.get(i);
+            List<Track> ts = tracksOf.get(i);
+            if (ts.isEmpty()) continue;
+            boolean longParts = false;
+            java.util.Set<String> albums = new java.util.HashSet<>();
+            JSONArray tj = new JSONArray();
+            List<String> ids = new ArrayList<>();
+            for (Track t : ts) {
+                if (t.durationMs >= BOOK_PART_MS || t.longForm) longParts = true;
+                albums.add(t.album);
+                tj.put(new JSONObject().put("id", t.id).put("url", t.url));
+                ids.add(t.id);
+            }
+            String kind = kindOf(longParts, albums.size(), "");
+            kinds.add(kind);
+            String art = BrowseTree.art(backend, u.optString("image"));
+            if (art == null && !ts.isEmpty()) art = ts.get(0).artUrl;
+            JSONObject o = new JSONObject().put("contentId", u.optString("contentId")).put("title", u.optString("title"))
+                    .put("year", u.optInt("year")).put("index", u.optInt("index")).put("kind", kind).put("tracks", tj)
+                    .put("count", ts.size()).put("finished", GroupKeeps.finished(ids, progress))
+                    .put("started", GroupKeeps.started(ids, progress)).put("held", held.contains(u.optString("contentId")));
+            if (art != null) o.put("art", art);
+            out.add(o);
+        }
+        String gkind = GroupKeeps.groupKind(Json.first(Json.str(request, "kind"), saved == null ? "" : saved.optString("kind")), kinds);
+        out = GroupKeeps.ordered(out, gkind);
+        List<Integer> counts = new ArrayList<>();
+        for (JSONObject o : out) counts.add(o.optInt("count"));
+        int within = GroupKeeps.withinCap(counts, MAX_KEPT_TRACKS);
+        int tracks = 0;
+        JSONArray unitsJson = new JSONArray();
+        for (int i = 0; i < out.size(); i++) {
+            tracks += out.get(i).optInt("count");
+            if (i >= within) out.get(i).put("overCap", true);
+            unitsJson.put(out.get(i));
+        }
+        String title = Json.first(Json.str(first, "title"), Json.str(first, "label"), saved == null ? "" : saved.optString("title"));
+        String gart = BrowseTree.art(backend, Json.str(first, "image"));
+        JSONObject group = new JSONObject().put("id", gid).put("title", title).put("kind", gkind)
+                .put("follow", saved == null ? GroupKeeps.AUTHOR.equals(gkind) : saved.optBoolean("follow"))
+                .put("removeFinished", saved == null ? GroupKeeps.AUTHOR.equals(gkind) : saved.optBoolean("removeFinished"))
+                .put("kept", saved != null);
+        if (gart != null) group.put("art", gart);
+        health.answered();
+        return new Outcome(200, Replies.ok().put("group", group).put("units", unitsJson).put("totalTracks", tracks)
+                .put("cap", MAX_KEPT_TRACKS).put("withinCap", within));
+    }
+
+    private JSONObject safeInfo(String cid) {
+        try { return api.info(cid); } catch (Exception unknown) { return null; }
+    }
+
+    /** "artist" or "author" when {@code info} names an artist (an author is an artist of an audiobook library); null otherwise. */
+    static String groupKindOf(JSONObject info, String cid) {
+        if (info == null) return null;
+        JSONObject meta = info.optJSONObject("metadata");
+        String type = Json.first(Json.str(info, "type"), meta == null ? "" : Json.str(meta, "type")).toLowerCase(java.util.Locale.ROOT);
+        if (!"artist".equals(type) && !"author".equals(type)) return null;
+        String library = Json.first(Json.str(info, "librarySectionTitle"), meta == null ? "" : Json.str(meta, "librarySectionTitle"))
+                .toLowerCase(java.util.Locale.ROOT);
+        return "author".equals(type) || library.contains("book") ? GroupKeeps.AUTHOR : GroupKeeps.ARTIST;
+    }
+
+    /**
+     * A keep of a whole artist or author without the sheet (from the web): the group with its
+     * defaults, every unit not finished and within the cap kept as its own item; the phone's
+     * sync then sizes and downloads each under the usual rules.
+     */
+    private Outcome keepWholeGroup(String gid, String kind) throws Exception {
+        Outcome p = groupPreview(new JSONObject().put("id", gid).put("kind", kind), false);
+        if (p.status != 200) return p;
+        JSONObject group = p.body.getJSONObject("group");
+        JSONArray units = p.body.getJSONArray("units");
+        JSONArray chosen = new JSONArray(), listed = new JSONArray();
+        for (int i = 0; i < units.length(); i++) {
+            JSONObject u = units.getJSONObject(i);
+            listed.put(u.optString("contentId"));
+            if (!u.optBoolean("finished") && !u.optBoolean("overCap")) chosen.put(u.optString("contentId"));
+        }
+        groupSave(new JSONObject().put("group", group).put("chosen", chosen).put("listed", listed));
+        int kept = 0;
+        for (int i = 0; i < chosen.length(); i++) {
+            Outcome o = keep(new JSONObject().put("id", "c:" + chosen.getString(i)).put("mode", "keep").put("group", gid));
+            if (o.status == 200) kept++;
+        }
+        if (core != null) core.shell().note("MEDIA", "keep: group kept from a bare id (" + kept + " of " + chosen.length() + " units)");
+        return new Outcome(200, Replies.ok().put("contentId", gid).put("title", group.optString("title")).put("kind", "group")
+                .put("group", gid).put("units", kept).put("tracks", new JSONArray()));
+    }
+
+    /**
+     * The group's record after "Keep all…" or Choose…: its switches, and the units left out
+     * (listed and not chosen) so a re-sync never brings them back. The units themselves are
+     * kept one by one by the shell (keep with {@code group}), in download order.
+     */
+    private Outcome groupSave(JSONObject request) throws Exception {
+        JSONObject in = request.optJSONObject("group");
+        String gid = in == null ? "" : Json.str(in, "id");
+        if (!GroupKeeps.validId(gid)) return failure(400, "bad_request");
+        JSONObject before = kept().group(gid);
+        List<String> chosen = strings(request.optJSONArray("chosen"));
+        List<String> listed = strings(request.optJSONArray("listed"));
+        java.util.Set<String> excluded = GroupKeeps.excludedAfter(KeptCollections.excluded(before), listed, chosen);
+        String kind = GroupKeeps.groupKind(Json.str(in, "kind"), new ArrayList<>());
+        JSONObject g = new JSONObject().put("id", gid).put("title", Json.str(in, "title")).put("kind", kind)
+                .put("follow", in.optBoolean("follow", GroupKeeps.AUTHOR.equals(kind)))
+                .put("removeFinished", GroupKeeps.AUTHOR.equals(kind) && in.optBoolean("removeFinished", true))
+                .put("keptAt", clock.getAsLong()).put("excluded", new JSONArray(new java.util.TreeSet<>(excluded)));
+        if (!Json.str(in, "art").isEmpty()) g.put("art", Json.str(in, "art"));
+        kept().putGroup(g);
+        // Units the group held and the person now unchecked: they leave it.
+        JSONArray orphaned = new JSONArray();
+        int left = 0;
+        java.util.Set<String> keep = new java.util.HashSet<>(chosen);
+        for (String uid : kept().unitsOf(gid)) {
+            if (keep.contains(uid) || !listed.contains(uid)) continue;
+            for (String t : kept().leaveGroup(uid, clock.getAsLong())) orphaned.put(t);
+            left++;
+        }
+        return new Outcome(200, Replies.ok().put("group", kept().group(gid)).put("orphaned", orphaned).put("left", left)
+                .put("new", before == null));
+    }
+
+    /** The most entries of a collection's own listing read to put its parts in order. */
+    static final int LIST_ORDER_MAX = 500;
+
+    /**
+     * {@code all} in the order of the collection's own listing (a book's parts as the book has
+     * them); tracks the listing does not name keep their place after those it does. Unchanged
+     * without a listing.
+     */
+    static List<Track> inListOrder(List<Track> all, JSONObject listing) {
+        JSONArray items = listing == null ? null : listing.optJSONArray("items");
+        if (items == null || items.length() == 0) return all;
+        java.util.Map<String, Integer> at = new java.util.HashMap<>();
+        for (int i = 0; i < items.length(); i++) {
+            JSONObject it = items.optJSONObject(i);
+            String id = it == null ? "" : Json.first(Json.str(it, "id"), Json.str(it, "contentId"));
+            if (!id.isEmpty()) at.putIfAbsent(id, i);
+        }
+        List<Track> out = new ArrayList<>(all);
+        // Stable: the unnamed stay in home's order, after the named.
+        out.sort((a, b) -> Integer.compare(at.getOrDefault(a.id, Integer.MAX_VALUE), at.getOrDefault(b.id, Integer.MAX_VALUE)));
+        return out;
+    }
+
+    /**
+     * The tracks of a collection an automatic keep holds: those named in {@code only}, in the
+     * collection's own play order (the shell downloads the current part first).
+     */
+    static List<Track> scoped(List<Track> all, List<String> only) {
+        java.util.Set<String> want = new java.util.HashSet<>(only);
+        List<Track> out = new ArrayList<>();
+        for (Track t : all) if (want.contains(t.id)) out.add(t);
+        return out;
+    }
+
+    private static List<String> strings(JSONArray a) {
+        List<String> out = new ArrayList<>();
+        for (int i = 0; a != null && i < a.length(); i++) if (ContentId.valid(a.optString(i))) out.add(a.optString(i));
+        return out;
     }
 
     /**
@@ -704,15 +1031,27 @@ public final class MediaServiceCapability implements Capability {
                     .put("tracks", k.optJSONArray("tracks") == null ? new JSONArray() : k.optJSONArray("tracks"))
                     .put("keptAt", k.optLong("keptAt"));
             if (k.has("art")) o.put("art", k.optString("art"));
+            if (!k.optString("kind").isEmpty()) o.put("kind", k.optString("kind"));
+            if (KeptCollections.auto(k)) {
+                o.put("auto", true);
+                List<String> only = KeptCollections.only(k);
+                if (!only.isEmpty()) o.put("only", new JSONArray(only));
+            }
+            if (!KeptCollections.groupOf(k).isEmpty()) {
+                o.put("group", KeptCollections.groupOf(k));
+                if (k.optBoolean("alone", false)) o.put("alone", true);
+            }
             items.put(o);
         }
+        JSONArray groups = new JSONArray();
+        for (JSONObject g : kept().groups()) groups.put(g);
         // Only these tracks' audio may be deleted: ones an explicit removal released. While a
         // kept file could not be read, nothing may be (the shell is told why).
         JSONArray deletable = new JSONArray();
         List<String> bad = kept().quarantined();
         if (bad.isEmpty()) for (String t : kept().deletable()) deletable.put(t);
         return new Outcome(200, Replies.ok().put("items", items).put("deletable", deletable)
-                .put("quarantined", new JSONArray(bad)));
+                .put("quarantined", new JSONArray(bad)).put("groups", groups));
     }
 
     /**
@@ -876,7 +1215,7 @@ public final class MediaServiceCapability implements Capability {
         if (r == null) {
             try {
                 r = Resolver.resolve(mediaIds, request.optInt("startIndex", -1), request.optBoolean("explicitPosition"),
-                        api, backend, "daylight-" + core.deviceId(), request.optBoolean("shuffle"));
+                        queueCache(), backend, "daylight-" + core.deviceId(), request.optBoolean("shuffle"));
                 health.answered();
                 r = newerUnsent(r, request.optBoolean("explicitPosition"));
                 flushSoon();
@@ -893,13 +1232,32 @@ public final class MediaServiceCapability implements Capability {
         JSONArray tracks = new JSONArray();
         for (Track t : r.tracks) tracks.put(t.toJson());
         try {
+            String cache = queueCache == null ? "" : queueCache.last;
             android.util.Log.i("Daylight-Media", "play answered " + (offline != null ? "from the phone" : "by home") + " in "
-                    + (android.os.SystemClock.elapsedRealtime() - began) + " ms");
+                    + (android.os.SystemClock.elapsedRealtime() - began) + " ms" + (cache.isEmpty() ? "" : ", list " + cache));
         } catch (Throwable jvmTest) { /* no android.util.Log in a JVM test */ }
         String first = mediaIds.isEmpty() ? null : mediaIds.get(0);
         if (first != null && first.startsWith("c:") && !r.tracks.isEmpty()) rememberList(first.substring(2));
         return new Outcome(200, Replies.ok().put("tracks", tracks).put("startIndex", r.startIndex)
                 .put("startPositionMs", r.startPositionMs).put("selectionResolved", r.selectionResolved));
+    }
+
+    private QueueCache queueCache;
+    private MediaApi queueCacheFor;
+    private final java.util.concurrent.ExecutorService queueRefresher = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "daylight-queue-refresh");
+        t.setDaemon(true);
+        return t;
+    });
+
+    /** Music lists' last answers, played at once while home is asked again (QueueCache). */
+    private synchronized MediaApi queueCache() {
+        if (queueCache == null || queueCacheFor != api) {
+            queueCacheFor = api;
+            queueCache = new QueueCache(api, new java.io.File(stateDir(), "queue-cache"), queueRefresher, System::currentTimeMillis);
+        }
+        queueCache.last = "";
+        return queueCache;
     }
 
     private RecentLists recentLists;
@@ -1066,7 +1424,12 @@ public final class MediaServiceCapability implements Capability {
         ActionList actions = core.services().find(ActionList.class);
         String contentId = actions == null ? null : actions.mediaContentId(id);
         if (!ContentId.valid(contentId)) return failure(404, "unknown_action");
-        return new Outcome(200, Replies.ok().put("mediaId", MediaId.leaf(contentId, null)));
+        JSONObject ok = Replies.ok().put("mediaId", MediaId.leaf(contentId, null));
+        // The action's own label, so the play service's notice says what is starting.
+        JSONObject described = actions.describe(id);
+        String label = described == null ? "" : described.optString("label", "").trim();
+        if (!label.isEmpty()) ok.put("title", label.length() > 80 ? label.substring(0, 80) : label);
+        return new Outcome(200, ok);
     }
 
     /**
@@ -1087,12 +1450,14 @@ public final class MediaServiceCapability implements Capability {
         final String text = BrowseTree.searchText(raw instanceof String ? (String) raw : "");
         if (text.isEmpty()) return new Outcome(200, Replies.ok().put("groups", new JSONArray()).put("offline", false));
         JSONObject body;
+        String reason = null;
         try {
             JSONObject found = api.search(text, 60);
-            body = Lookup.groups(found, backend, 5);
+            LibraryKinds kinds = kinds();
+            body = Lookup.groups(found, backend, 5, kinds);
             health.answered();
             // An author found by name shows their books too (at most two authors, eight books each).
-            for (String[] a : Lookup.authors(found, 2)) {
+            for (String[] a : Lookup.authors(found, 2, kinds)) {
                 try { Lookup.prependBooks(body, Lookup.booksOf(api.list(a[0], 8, 0), a[1], backend, 8)); }
                 catch (Exception oneAuthor) { /* the author row still leads to them */ }
             }
@@ -1101,23 +1466,163 @@ public final class MediaServiceCapability implements Capability {
         } catch (Exception unreachable) {
             health.failed(clock.getAsLong());
             body = Lookup.offline(kept().list(), text);
+            // Why home did not answer: the phone says "Home isn't answering", not "Offline", for a slow home.
+            reason = FailureReason.of(unreachable);
         }
         JSONObject out = Replies.ok();
+        if (reason != null) out.put("reason", reason);
         for (java.util.Iterator<String> k = body.keys(); k.hasNext(); ) { String key = k.next(); out.put(key, body.get(key)); }
         return new Outcome(200, out);
+    }
+
+    private volatile LibraryKinds kinds;
+    private volatile long kindsAt;
+    static final long KINDS_MS = 10 * 60_000L;
+
+    /**
+     * What each audio library holds, as home says (asked at most every 10 minutes); the last
+     * answer while home is away; the title rule only when home has no such route (404).
+     */
+    LibraryKinds kinds() {
+        LibraryKinds k = kinds;
+        long now = clock.getAsLong();
+        if (k != null && k.fromHome && now - kindsAt < KINDS_MS) return k;
+        try {
+            k = LibraryKinds.of(api.audioLibraries());
+            kinds = k;
+            kindsAt = now;
+            return k;
+        } catch (MediaApi.Refused refused) {
+            if (refused.status == 404) {
+                if (core != null) core.shell().note("MEDIA", "home has no audio-libraries route: library kinds by title until it is updated");
+                kinds = LibraryKinds.legacy();
+                kindsAt = now;
+                return kinds;
+            }
+        } catch (Exception unreachable) { /* the last answer, below */ }
+        return k != null ? k : LibraryKinds.legacy();
+    }
+
+    private ContinueHides hides;
+
+    synchronized ContinueHides hides() {
+        if (hides == null) hides = new ContinueHides(new java.io.File(stateDir(), "continue-hides.json"));
+        return hides;
+    }
+
+    /**
+     * Remove from (or, Undo, back into) Continue listening: applied on the phone at once and
+     * sent to home now or when it answers. {contentId, hidden}.
+     */
+    private Outcome continueHide(JSONObject request) throws Exception {
+        String id = Json.str(request, "contentId");
+        if (!ContentId.valid(id)) return failure(400, "bad_request");
+        boolean hidden = request.optBoolean("hidden", true);
+        if (hidden) hides().hide(id, clock.getAsLong()); else hides().unhide(id, clock.getAsLong());
+        boolean sent = flushHides();
+        return new Outcome(200, Replies.ok().put("hidden", hidden).put("sent", sent));
+    }
+
+    /** Sends the hides home has not heard, oldest first; false when one is still waiting. */
+    private boolean flushHides() {
+        for (JSONObject w : hides().waiting()) {
+            String id = w.optString("contentId"), op = w.optString("op");
+            try {
+                api.hideContinue(id, "hide".equals(op));
+                hides().sent(id, op);
+            } catch (MediaApi.Refused refused) {
+                // 4xx: never accepted (a 404 from a home without the route waits for the update instead).
+                if (refused.status == 404) return false;
+                if (refused.status < 500) { hides().sent(id, op); continue; }
+                return false;
+            } catch (Exception offline) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * An author's, speaker's or artist's header (About): home's info, and for an author or a
+     * speaker their books' lengths and progress. {id: content id, books: true for an author}.
+     */
+    private Outcome about(JSONObject request) throws Exception {
+        String id = Json.str(request, "id");
+        if (!ContentId.valid(id)) return failure(400, "bad_request");
+        JSONObject info = api.info(id);
+        JSONObject leaves = null, recent = null;
+        if (request.optBoolean("books")) {
+            String local = ContentId.local(id);
+            if (local.matches("\\d+")) {
+                try { leaves = api.list(ContentId.source(id) + ":library/metadata/" + local + "/allLeaves", 500, 0); }
+                catch (Exception none) { /* the header without lengths */ }
+            }
+            try { recent = api.recent(200); } catch (Exception none) { /* without progress */ }
+        }
+        health.answered();
+        return new Outcome(200, Replies.ok().put("about", About.of(info, leaves, recent, backend)));
+    }
+
+    /**
+     * Mark finished from Continue listening: every part of the book a part belongs to (its
+     * info's albumId), then the item leaves Continue. {contentId: a part}.
+     */
+    private Outcome bookFinished(JSONObject request) throws Exception {
+        String id = Json.str(request, "contentId");
+        if (!ContentId.valid(id)) return failure(400, "bad_request");
+        boolean finished = request.optBoolean("finished", true);
+        JSONObject info = api.info(id);
+        JSONObject meta = info == null ? null : info.optJSONObject("metadata");
+        String album = meta == null ? "" : Json.str(meta, "albumId");
+        String book = album.isEmpty() ? "" : ContentId.source(id) + ":" + album;
+        List<String> parts = new ArrayList<>();
+        if (ContentId.valid(book)) {
+            JSONArray items = api.list(book, 200, 0).optJSONArray("items");
+            for (int i = 0; items != null && i < items.length(); i++) {
+                String part = Json.str(items.optJSONObject(i), "id");
+                if (ContentId.valid(part) && !"container".equals(Json.str(items.optJSONObject(i), "itemType"))) parts.add(part);
+            }
+        }
+        if (parts.isEmpty()) parts.add(id);
+        int done = 0;
+        for (String part : parts) { api.markWatched(part, finished); done++; }
+        if (finished) hides().hide(id, clock.getAsLong()); else hides().unhide(id, clock.getAsLong());
+        // Undo: home's "not finished" starts a part over; the card's place is put back.
+        long place = request.optLong("restoreSeconds", -1), length = request.optLong("durationSeconds", 0);
+        if (!finished && place > 0) {
+            try {
+                api.log(new ProgressReporter.Report(id, Json.str(request, "title"), null, place,
+                        length > 0 ? Math.min(99.0, place * 100.0 / length) : 0, false).toBody());
+            } catch (Exception notNow) { /* the part starts over; nothing else is lost */ }
+        }
+        flushHides();
+        health.answered();
+        JSONArray all = new JSONArray();
+        for (String part : parts) all.put(part);
+        return new Outcome(200, Replies.ok().put("marked", done).put("book", book).put("parts", all));
     }
 
     /** The library's first level: the audio Plex libraries, then the household's list sources; offline, what is kept. */
     private Outcome library() throws Exception {
         try {
-            JSONArray items = Lookup.libraryRoot(api.libraries(), api.audioSources());
+            JSONObject libraries;
+            try {
+                libraries = api.audioLibraries();
+                kinds = LibraryKinds.of(libraries);
+                kindsAt = clock.getAsLong();
+            } catch (MediaApi.Refused older) {
+                if (older.status != 404) throw older;
+                // A home older than the audio-libraries route: the list endpoint's libraries.
+                libraries = api.libraries();
+            }
+            JSONArray items = Lookup.libraryRoot(libraries, api.audioSources(), kinds());
             health.answered();
             return new Outcome(200, Replies.ok().put("items", items).put("offline", false));
         } catch (Exception unreachable) {
             health.failed(clock.getAsLong());
             JSONArray items = new JSONArray();
             for (MediaNode n : BrowseTree.keptNodes(kept().list(), 200, null)) items.put(n.toJson().put("kind", "kept"));
-            return new Outcome(200, Replies.ok().put("items", items).put("offline", true));
+            return new Outcome(200, Replies.ok().put("items", items).put("offline", true).put("reason", FailureReason.of(unreachable)));
         }
     }
 
@@ -1231,6 +1736,23 @@ public final class MediaServiceCapability implements Capability {
         return out;
     }
 
+    /**
+     * Whether the installed shell's Now playing starts an item itself (Starting.EXTRA_PLAY,
+     * shell 134 and later). The payload is updated apart from the shell, so an older shell is
+     * still handed the play screen. Read from the installed version code.
+     */
+    static final long NOW_PLAYING_PLAYS_FROM = 134;
+
+    private static boolean shellPlaysFromNowPlaying(Context c) {
+        try {
+            android.content.pm.PackageInfo info = c.getPackageManager().getPackageInfo(c.getPackageName(), 0);
+            long code = android.os.Build.VERSION.SDK_INT >= 28 ? info.getLongVersionCode() : info.versionCode;
+            return code >= NOW_PLAYING_PLAYS_FROM;
+        } catch (Exception unknown) {
+            return false;
+        }
+    }
+
     private Launcher launcher() {
         if (launcher == null) {
             final Object context = core.shell().context();
@@ -1239,10 +1761,17 @@ public final class MediaServiceCapability implements Capability {
             launcher = new Launcher() {
                 @Override public void play(String mediaId) {
                     Context c = (Context) context;
-                    // By name: the play screen is installed code in this capability's shell half.
-                    // It is not exported, so only this app can start it. Started while the link
-                    // activity is on screen, which is what lets a service context start one.
-                    c.startActivity(new Intent().setClassName(c, PLAY_ACTIVITY).putExtra("id", mediaId)
+                    // By name: Now playing is installed code in this capability's shell half. It
+                    // shows the item starting from its first frame and starts it on its own
+                    // controller (its Starting extras, by name), so no second screen sits over it.
+                    // Not exported, so only this app can start it. Started while the link activity
+                    // is on screen, which is what lets a service context start one. A shell older
+                    // than these extras ignores them: then the play screen starts it, as before.
+                    Intent now = new Intent().setClassName(c, NOW_PLAYING_ACTIVITY).putExtra("target", "local")
+                            .putExtra("starting.id", mediaId).putExtra("starting.play", true)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                    if (shellPlaysFromNowPlaying(c)) c.startActivity(now);
+                    else c.startActivity(new Intent().setClassName(c, PLAY_ACTIVITY).putExtra("id", mediaId)
                             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
                 }
 

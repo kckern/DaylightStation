@@ -751,13 +751,17 @@ export function createLocalSessionController({
     if (!isContainerInput(input)) {
       return apply([input], opts, context, opOrigin);
     }
-    return expandContainerInput(input, { fetchImpl })
+    return expandContainerInput(input, { fetchImpl, withStart: op === 'playNow' })
       .then((children) => {
         if (children && children.length > 0) {
-          return apply(children, opts, {
+          // A book starts at its part in progress (playNow only; an append
+          // keeps the whole book in order behind what is queued).
+          const startIndex = op === 'playNow' && Number.isInteger(children.startIndex) ? children.startIndex : 0;
+          return apply(children, startIndex > 0 ? { ...opts, startIndex } : opts, {
             ...context,
             expandedFrom: input.contentId,
             expandedCount: children.length,
+            ...(startIndex > 0 ? { startIndex } : {}),
           }, opOrigin);
         }
         return apply([input], opts, context, opOrigin);

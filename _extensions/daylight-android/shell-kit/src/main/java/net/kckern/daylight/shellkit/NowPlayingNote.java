@@ -24,11 +24,23 @@ public final class NowPlayingNote {
         /** The position at {@code reportedAt} (elapsedRealtime); -1 duration when unknown. */
         public final long positionMs, durationMs, reportedAt;
         public final Transport transport;
+        /** Tapped and not playing yet: the mini player says "Starting…" with what was tapped. */
+        public final boolean starting;
+        /** A book's chapter title when known, shown in place of the by-line; "" for none. */
+        public final String detail;
         final long at;
 
         public Entry(String target, String targetName, String title, String artist, String artworkUrl,
                      boolean playing, boolean canNext, long positionMs, long durationMs, long reportedAt,
                      Transport transport) {
+            this(target, targetName, title, artist, artworkUrl, playing, canNext, positionMs, durationMs, reportedAt, transport, false, "");
+        }
+
+        public Entry(String target, String targetName, String title, String artist, String artworkUrl,
+                     boolean playing, boolean canNext, long positionMs, long durationMs, long reportedAt,
+                     Transport transport, boolean starting, String detail) {
+            this.starting = starting;
+            this.detail = detail == null ? "" : detail;
             this.target = target;
             this.targetName = targetName == null ? "" : targetName;
             this.title = title == null ? "" : title;
@@ -65,8 +77,13 @@ public final class NowPlayingNote {
     /** A service's report. An entry with an empty title means nothing is loaded there: it goes. */
     public static void report(Entry e) {
         if (e == null) return;
-        Entry next = e.title.isEmpty() ? null : e;
         Entry before = "local".equals(e.target) ? local : remote;
+        // A chapter line stays with its item across the service's reports (which do not know it).
+        if (!e.starting && e.detail.isEmpty() && before != null && !before.detail.isEmpty() && before.title.equals(e.title)) {
+            e = new Entry(e.target, e.targetName, e.title, e.artist, e.artworkUrl, e.playing, e.canNext, e.positionMs, e.durationMs,
+                    e.reportedAt, e.transport, false, before.detail);
+        }
+        Entry next = e.title.isEmpty() ? null : e;
         if (same(before, next)) return;
         if ("local".equals(e.target)) local = next; else remote = next;
         for (Listener l : listeners) l.changed();
@@ -75,6 +92,26 @@ public final class NowPlayingNote {
     /** Shorthand for a report without detail (and for clearing: an empty title). */
     public static void update(String target, String targetName, String title, boolean playing, long now) {
         report(new Entry(target, targetName, title, "", "", playing, false, 0, -1, now, null));
+    }
+
+    /**
+     * The item just tapped, before its player holds it (Now playing closed while it starts):
+     * the mini player shows it with "Starting…". The service's first report replaces it.
+     */
+    public static void starting(String target, String targetName, String title, String artist, String artworkUrl, long now) {
+        Entry before = "local".equals(target) ? local : remote;
+        // A player already reporting this item is newer than the tap.
+        if (before != null && !before.starting && before.title.equalsIgnoreCase(title == null ? "" : title)) return;
+        report(new Entry(target, targetName, title, artist, artworkUrl, false, false, 0, -1, now, null, true, ""));
+    }
+
+    /** A book's chapter title for {@code target}'s current item (Now playing knows it): the mini player's second line. */
+    public static void detail(String target, String chapter) {
+        Entry e = "local".equals(target) ? local : remote;
+        String c = chapter == null ? "" : chapter;
+        if (e == null || e.detail.equals(c)) return;
+        report(new Entry(e.target, e.targetName, e.title, e.artist, e.artworkUrl, e.playing, e.canNext, e.positionMs, e.durationMs,
+                e.reportedAt, e.transport, e.starting, c));
     }
 
     /** What the strip shows: the one playing (the newer, if both are), else the newer paused one; null for none. */
@@ -97,7 +134,8 @@ public final class NowPlayingNote {
         if (a == null || b == null) return a == b;
         if (!(a.target.equals(b.target) && a.title.equals(b.title) && a.playing == b.playing
                 && a.targetName.equals(b.targetName) && a.artist.equals(b.artist)
-                && a.artworkUrl.equals(b.artworkUrl) && a.canNext == b.canNext && a.durationMs == b.durationMs)) return false;
+                && a.artworkUrl.equals(b.artworkUrl) && a.canNext == b.canNext && a.durationMs == b.durationMs
+                && a.starting == b.starting && a.detail.equals(b.detail))) return false;
         // Off by more than 2 s from where the strip thinks it is: a seek; worth redrawing.
         return Math.abs(a.positionAt(b.reportedAt) - b.positionMs) < 2000;
     }

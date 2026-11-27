@@ -67,6 +67,9 @@ public class AnswersTest {
         assertEquals(120_000, answer.startPositionMs);
         TrackAnswer.Track two = answer.tracks.get(1);
         assertEquals("plex:12", two.id);
+        assertFalse("music unless the payload says long-form", two.longForm);
+        assertTrue(TrackAnswer.parse("{\"ok\":true,\"tracks\":[{\"id\":\"plex:21\",\"url\":\"https://kiosk.example/s/21\","
+                + "\"title\":\"Chapter 1\",\"durationMs\":480000,\"longForm\":true}]}").tracks.get(0).longForm);
         assertEquals("https://kiosk.example/s/12", two.url);
         assertEquals("A", two.artist);
         assertEquals("B", two.album);

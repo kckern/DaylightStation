@@ -102,4 +102,22 @@ public class KeepRulesTest {
         assertTrue("a quarter of the free space asks too", KeepRules.askFirst(600_000_000L, 40_000_000_000L, 2_000_000_000L));
         assertFalse(KeepRules.askFirst(100_000_000L, 4_000_000_000L, 15_000_000_000L));
     }
+
+    // ── keeps waiting for home ───────────────────────────────────────────────
+
+    @Test public void aWaitingKeepShowsAsTheContentItWasAskedFor() {
+        assertEquals("plex:42", KeepRules.pendingContentId("c:plex:42"));
+        assertEquals("plex:7", KeepRules.pendingContentId("p:plex:7|album"));
+        assertEquals("plex:7", KeepRules.pendingContentId("p:plex:7"));
+        assertEquals("plex:9", KeepRules.pendingContentId("plex:9"));
+        assertEquals("", KeepRules.pendingContentId(null));
+    }
+
+    @Test public void removingAWaitingRowMadeFromNowPlayingRemovesItsPEntry() {
+        java.util.List<String> pending = java.util.Arrays.asList("c:plex:42", "p:plex:7|album", "p:plex:8");
+        // The row shows contentId plex:7; removing it must drop the p: entry, or it comes back on refresh.
+        assertEquals(java.util.Arrays.asList("c:plex:42", "p:plex:8"), KeepRules.pendingWithout(pending, "plex:7"));
+        assertEquals(java.util.Arrays.asList("p:plex:7|album", "p:plex:8"), KeepRules.pendingWithout(pending, "plex:42"));
+        assertEquals(pending, KeepRules.pendingWithout(pending, "plex:99"));
+    }
 }

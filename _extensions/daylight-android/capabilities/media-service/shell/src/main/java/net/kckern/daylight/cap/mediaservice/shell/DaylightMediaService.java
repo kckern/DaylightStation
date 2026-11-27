@@ -134,33 +134,64 @@ public class DaylightMediaService extends MediaLibraryService {
         }
     }
 
+    /**
+     * The loudness level for the current item. Asked ahead for the next item at every
+     * transition (prefetch), so a new track starts at its own level rather than at full
+     * volume and then dropping. An item not known yet keeps the level that is playing
+     * until its answer comes (closer than 100 %), and full volume when there is none.
+     */
     private void level(MediaItem item) {
         String id = item == null ? null : item.mediaId;
         if (id == null || id.indexOf(':') <= 0) { levelVolume = 1f; applyVolume(); return; }
         Float known = levels.get(id);
         if (known != null) { levelVolume = known; applyVolume(); return; }
-        levelVolume = 1f;
-        applyVolume();
+        fetchLevel(id, true);
+    }
+
+    /** The next item's level and cover, fetched now so both are in hand when it starts. */
+    private void prefetchNext() {
+        ExoPlayer p = player;
+        if (p == null) return;
+        int next = p.getNextMediaItemIndex();
+        if (next == C.INDEX_UNSET || next < 0 || next >= p.getMediaItemCount()) return;
+        MediaItem item = p.getMediaItemAt(next);
+        if (item.mediaId != null && item.mediaId.indexOf(':') > 0 && !levels.containsKey(item.mediaId)) fetchLevel(item.mediaId, false);
+        Uri art = item.mediaMetadata.artworkUri;
         ExecutorService pool = io;
-        if (pool == null) return;
-        pool.execute(() -> {
-            float v = 1f;
-            try {
-                org.json.JSONObject reply = new org.json.JSONObject(media.trackLevels(id, 16, 5000));
-                org.json.JSONObject q = reply.optJSONObject("levels") == null ? null : reply.optJSONObject("levels").optJSONObject("quality");
-                if (q != null && q.has("gainDb")) v = LongForm.levelFor(q.optDouble("gainDb", Double.NaN));
-            } catch (Exception unknown) { /* no analysis: full volume */ }
-            float level = v;
-            levels.put(id, level);
-            new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
-                MediaItem now = player == null ? null : player.getCurrentMediaItem();
-                if (now != null && id.equals(now.mediaId)) {
-                    levelVolume = level;
-                    applyVolume();
-                    Log.i(TAG, "loudness level " + Math.round(level * 100) + "%");
-                }
+        // Now playing's size: its cover is drawn from memory the moment the track changes (or a swipe shows it).
+        if (art != null && pool != null && PlaylistArtwork.cached(art.toString(), 900) == null) {
+            try { pool.execute(() -> PlaylistArtwork.load(art.toString(), 900)); } catch (RuntimeException stopping) { /* going */ }
+        }
+    }
+
+    private final java.util.Set<String> levelsAsked = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    private void fetchLevel(String id, boolean current) {
+        ExecutorService pool = io;
+        if (pool == null || !levelsAsked.add(id)) return;
+        try {
+            pool.execute(() -> {
+                float v = 1f;
+                try {
+                    org.json.JSONObject reply = new org.json.JSONObject(media.trackLevels(id, 16, 5000));
+                    org.json.JSONObject q = reply.optJSONObject("levels") == null ? null : reply.optJSONObject("levels").optJSONObject("quality");
+                    if (q != null && q.has("gainDb")) v = LongForm.levelFor(q.optDouble("gainDb", Double.NaN));
+                } catch (Exception unknown) { /* no analysis: full volume */ }
+                float level = v;
+                levels.put(id, level);
+                levelsAsked.remove(id);
+                new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
+                    MediaItem now = player == null ? null : player.getCurrentMediaItem();
+                    if (now != null && id.equals(now.mediaId)) {
+                        levelVolume = level;
+                        applyVolume();
+                        Log.i(TAG, "loudness level " + Math.round(level * 100) + "%" + (current ? "" : " (asked ahead)"));
+                    }
+                });
             });
-        });
+        } catch (RuntimeException stopping) {
+            levelsAsked.remove(id);
+        }
     }
     /** The layout the car was last given; null before the first. */
     private Boolean carLongForm;
@@ -178,6 +209,38 @@ public class DaylightMediaService extends MediaLibraryService {
     private final Runnable widgetTick = this::publishPlaylistProgress;
     private int widgetTrackNumber;
     private long handoffGeneration;
+    /** Skip or hold after a playback error (H2): see PlaybackRecovery. Main thread only. */
+    private final PlaybackRecovery recovery = new PlaybackRecovery();
+    private MediaItem heldItem;
+    private final Runnable retryHeld = this::retryHeld;
+
+    /** A streamed item home could not serve: stay on it and prepare again with backoff. */
+    private void holdForHome(MediaItem failed) {
+        heldItem = failed;
+        widgetUpdates.removeCallbacks(retryHeld);
+        long wait = recovery.nextRetryMs();
+        Log.i(TAG, "lost connection to home: retrying in " + wait + " ms at " + player.getCurrentPosition() + " ms");
+        widgetUpdates.postDelayed(retryHeld, wait);
+    }
+
+    /** Prepares the held item again where it was; playWhenReady survives the error, so it plays on if it was playing. */
+    private void retryHeld() {
+        ExoPlayer p = player;
+        MediaItem held = heldItem;
+        if (current != this || p == null || held == null || p.getCurrentMediaItem() != held
+                || p.getPlayerError() == null) return;
+        p.prepare();
+    }
+
+    /** The HTTP status behind an IO_BAD_HTTP_STATUS error, or -1. */
+    private static int httpStatus(PlaybackException error) {
+        for (Throwable t = error.getCause(); t != null; t = t.getCause()) {
+            if (t instanceof androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) {
+                return ((androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) t).responseCode;
+            }
+        }
+        return -1;
+    }
     private boolean playedQueue;
 
     @Override
@@ -243,10 +306,22 @@ public class DaylightMediaService extends MediaLibraryService {
                 },
                 getSharedPreferences(LongFormPolicy.PREFS, MODE_PRIVATE), SystemClock::elapsedRealtime);
         player.addListener(longFormPolicy);
+        // Kept automatically while you listen (spec §3.10): see AutoKeeper.
+        player.addListener(new AutoKeeper(this, player));
         // Loudness levelling: each track at its Plex gain (never above full), times the
         // sleep timer's fade; the two meet here so neither undoes the other.
         player.addListener(new Player.Listener() {
-            @Override public void onMediaItemTransition(MediaItem item, int reason) { level(item); loadChapters(item); }
+            @Override public void onMediaItemTransition(MediaItem item, int reason) {
+                level(item);
+                loadChapters(item);
+                recovery.moved();
+                prefetchNext();
+            }
+
+            @Override public void onTimelineChanged(Timeline timeline, int reason) {
+                // A queue that arrived after its first track (a first tap) has a next item now.
+                if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) prefetchNext();
+            }
         });
         player.addListener(new Player.Listener() {
             @Override public void onEvents(Player player, Player.Events events) {
@@ -275,6 +350,15 @@ public class DaylightMediaService extends MediaLibraryService {
                 if (skipDamagedKept(failed, error)) return;
                 if (failed == null || failed.localConfiguration == null
                         || !"audio".equals(failed.localConfiguration.uri.getQueryParameter("stream"))) return;
+                int kept;
+                try { kept = KeepStore.get(DaylightMediaService.this).where(failed.mediaId); }
+                catch (RuntimeException broken) { kept = PlaybackRecovery.NOT_KEPT; }
+                PlaybackRecovery.Action action = recovery.onError(error.errorCode, httpStatus(error), kept,
+                        player.getPlayWhenReady(), player.hasNextMediaItem());
+                Log.w(TAG, "player error " + error.getErrorCodeName() + " -> " + action
+                        + (action == PlaybackRecovery.Action.SKIP ? " (" + recovery.skips() + " in a row)" : ""));
+                if (action == PlaybackRecovery.Action.HOLD) { holdForHome(failed); return; }
+                if (action != PlaybackRecovery.Action.SKIP) return;
                 widgetUpdates.post(() -> {
                     if (current != DaylightMediaService.this || player.getCurrentMediaItem() != failed
                             || player.getPlayerError() != error || !player.getPlayWhenReady()
@@ -287,6 +371,11 @@ public class DaylightMediaService extends MediaLibraryService {
 
             @Override public void onIsPlayingChanged(boolean playing) {
                 if (playing) {
+                    // The moment sound starts, for the tap-to-sound budget (compare with the tap's own log line).
+                    Log.i(TAG, "playing " + (player.getCurrentMediaItem() == null ? "" : player.getCurrentMediaItem().mediaId)
+                            + " at " + SystemClock.elapsedRealtime());
+                    recovery.played();
+                    widgetUpdates.removeCallbacks(retryHeld);
                     // Playing makes the app foreground: bring the shell (and its inbox long poll)
                     // back if Android stopped it while the app sat in the background.
                     ShellStart.ensure(DaylightMediaService.this);
@@ -361,6 +450,8 @@ public class DaylightMediaService extends MediaLibraryService {
                 () -> SurfaceCache.get(this, ControllerPins.KEY), DaylightMediaService::stopPlayback)
                 .withDrivingRadio(radio, this::cancelRadioHandoff);
         callback.sleep.setFadeSink(v -> { fadeVolume = v; applyVolume(); });
+        // "At the end of this": ExoPlayer pauses at the item's end, before the next one makes a sound.
+        callback.sleep.setPauseAtEndSink(on -> { if (player != null) player.setPauseAtEndOfMediaItems(on); });
         MediaLibrarySession.Builder builder = new MediaLibrarySession.Builder(this, sessionPlayer, callback);
         builder.setCustomLayout(CarControls.layout(false));
         // A tap on the media notification opens the Now playing screen on this phone's
@@ -397,7 +488,9 @@ public class DaylightMediaService extends MediaLibraryService {
         service.io.execute(() -> {
             TrackAnswer tracks;
             try {
-                tracks = service.media.resolveShortcut(mediaId, attempt.shuffle, 8000);
+                // The port wait is what is left of the start's one budget (PlayBudget), not a timer of its own.
+                tracks = service.media.resolveShortcut(mediaId, attempt.shuffle,
+                        Math.max(1000, attempt.left(SystemClock.elapsedRealtime())));
             } catch (Exception failure) {
                 tracks = null;
             }
@@ -628,6 +721,8 @@ public class DaylightMediaService extends MediaLibraryService {
         if (radioPrefs != null) radioPrefs.unregisterOnSharedPreferenceChangeListener(driveChanged);
         if (current == this) current = null;
         widgetUpdates.removeCallbacks(widgetTick);
+        widgetUpdates.removeCallbacks(retryHeld);
+        recovery.release();
         PlaylistWidgetState.progress(this, null, null);
         PlaylistWidgetState.show(this, displayedPlaylist, Phase.READY);
         updateTrackArtwork(null, null);

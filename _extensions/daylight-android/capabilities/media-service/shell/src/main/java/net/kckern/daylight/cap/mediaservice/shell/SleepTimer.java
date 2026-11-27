@@ -15,7 +15,8 @@ import androidx.media3.session.MediaSession;
  * in the session, not the screen, so it holds while Now playing is closed, and it says
  * what it is doing in the session extras (EXTRA_UNTIL) for any controller to show.
  * Set by the SLEEP custom command with ARG_MINUTES: a positive count, END_OF_ITEM, or 0
- * to cancel. Playback stopping or the queue clearing cancels it too.
+ * to cancel. Playback stopping or the queue clearing cancels it too; a playback error
+ * (a lost connection the player is retrying) does not.
  */
 final class SleepTimer {
     static final String ACTION = "net.kckern.daylight.media.SLEEP";
@@ -40,6 +41,22 @@ final class SleepTimer {
 
     void setFadeSink(java.util.function.Consumer<Float> sink) { fadeSink = sink; }
 
+    /**
+     * "At the end of this" through the player itself (ExoPlayer.setPauseAtEndOfMediaItems):
+     * it pauses at the end of the item, before the next one makes any sound. Without it the
+     * timer paused the next item once it had begun, and its first moment was heard.
+     */
+    private java.util.function.Consumer<Boolean> pauseAtEnd;
+    private boolean pausingAtEnd;
+
+    void setPauseAtEndSink(java.util.function.Consumer<Boolean> sink) { pauseAtEnd = sink; }
+
+    private void pauseAtEnd(boolean on) {
+        if (pauseAtEnd == null || pausingAtEnd == on) return;
+        pausingAtEnd = on;
+        pauseAtEnd.accept(on);
+    }
+
     private void fadeTo(float v) {
         if (fadeSink != null) fadeSink.accept(v);
         else if (session != null) session.getPlayer().setVolume(v);
@@ -53,8 +70,16 @@ final class SleepTimer {
     private final Runnable watch = this::watchStep;
 
     private final Player.Listener ends = new Player.Listener() {
+        @Override public void onPlayWhenReadyChanged(boolean playWhenReady, int reason) {
+            if (armed && until == UNTIL_END_OF_ITEM && !playWhenReady
+                    && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM) {
+                Log.i(TAG, "sleep timer: paused at the end of the item");
+                cancel();
+            }
+        }
         @Override public void onMediaItemTransition(MediaItem item, int reason) {
-            if (armed && until == UNTIL_END_OF_ITEM && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
+            // Only without the player's own pause at the end (no sink): pause the next item at its start.
+            if (pauseAtEnd == null && armed && until == UNTIL_END_OF_ITEM && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
                 // The next item has just begun: pause it at its start.
                 Player p = session.getPlayer();
                 p.pause();
@@ -64,7 +89,9 @@ final class SleepTimer {
             }
         }
         @Override public void onPlaybackStateChanged(int state) {
-            if (armed && (state == Player.STATE_ENDED || state == Player.STATE_IDLE)) cancel();
+            // An error leaves the player IDLE too; the timer holds through a lost connection
+            // (the player retries), and ends only when the person stops or the queue ends.
+            if (armed && PlaybackRecovery.endsSleepTimer(state, session.getPlayer().getPlayerError() != null)) cancel();
         }
     };
 
@@ -82,6 +109,7 @@ final class SleepTimer {
         restoreVolume();
         if (minutes == 0) { cancel(); return; }
         armed = true;
+        pauseAtEnd(minutes == END_OF_ITEM);
         main.removeCallbacks(watch);
         if (minutes == END_OF_CHAPTER && chapterEndMs > 0) {
             until = UNTIL_END_OF_CHAPTER;
@@ -145,6 +173,7 @@ final class SleepTimer {
     }
 
     void cancel() {
+        pauseAtEnd(false);
         main.removeCallbacks(fire);
         main.removeCallbacks(watch);
         restoreVolume();
@@ -154,6 +183,7 @@ final class SleepTimer {
     }
 
     void release() {
+        pauseAtEnd(false);
         main.removeCallbacks(fire);
         main.removeCallbacks(watch);
         restoreVolume();
@@ -181,10 +211,8 @@ final class SleepTimer {
         shownArmed = armed;
         shownUntil = until;
         if (session == null) return;
-        // The phone's session sets no other extras (Media3 1.1.1 has no getter to merge with).
-        Bundle extras = new Bundle();
-        if (armed) extras.putLong(EXTRA_UNTIL, until); else extras.remove(EXTRA_UNTIL);
-        session.setSessionExtras(extras);
+        // Merged with the session's other extras (a refused play): SessionExtras.
+        if (armed) SessionExtras.putLong(session, EXTRA_UNTIL, until); else SessionExtras.remove(session, EXTRA_UNTIL);
     }
 
     /** "Sleep in 23 min" or "Sleep at the end of this", for a timer set to {@code until}. Pure. */

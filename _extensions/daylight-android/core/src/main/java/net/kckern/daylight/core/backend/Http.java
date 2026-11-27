@@ -58,6 +58,11 @@ public interface Http {
     /** POST JSON with extra request headers. */
     default Reply postJson(String url, String json, Map<String, String> headers) throws IOException { return postJson(url, json); }
 
+    /** DELETE, no body (an Undo). Fakes that never send one need not implement it. */
+    default Reply delete(String url) throws IOException {
+        throw new IOException("DELETE not supported");
+    }
+
     /** PUT with a JSON body. Fakes that never send one need not implement it. */
     default Reply putJson(String url, String json) throws IOException {
         throw new IOException("PUT not supported");

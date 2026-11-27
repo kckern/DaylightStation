@@ -14,6 +14,8 @@ final class NodeItems {
     static final String ROOT = "root";
     static final String EXTRA_LIST_ID = "listId";
     private static final String EXTRA_DURATION_MS = "durationMs";
+    /** Set on a book's part, a talk or a lecture (TrackAnswer.Track.longForm). */
+    static final String EXTRA_LONG_FORM = "longForm";
 
     private NodeItems() { }
 
@@ -86,6 +88,11 @@ final class NodeItems {
     }
 
     /** A finite original can supply duration even if the encoded stream has no index. */
+    /** Whether the payload called this item long-form by its kind (a book's part, a talk, a lecture). */
+    static boolean longFormKind(MediaItem item) {
+        return item != null && item.mediaMetadata.extras != null && item.mediaMetadata.extras.getBoolean(EXTRA_LONG_FORM, false);
+    }
+
     static String listId(MediaItem item) {
         if (item == null || item.mediaMetadata.extras == null) return "";
         String id = item.mediaMetadata.extras.getString(EXTRA_LIST_ID);
@@ -104,6 +111,7 @@ final class NodeItems {
             Bundle extras = new Bundle();
             extras.putString(EXTRA_LIST_ID, t.listId);
             if (t.durationMs > 0) extras.putLong(EXTRA_DURATION_MS, t.durationMs);
+            if (t.longForm) extras.putBoolean(EXTRA_LONG_FORM, true);
             MediaMetadata.Builder meta = new MediaMetadata.Builder()
                     .setTitle(t.title)
                     .setIsBrowsable(false)

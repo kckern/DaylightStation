@@ -96,13 +96,18 @@ function childToQueueInput(item, { containerTitle, containerContentId, inherited
  * @param {Function} [opts.fetchImpl] - injectable fetch for tests.
  * @param {number} [opts.limit] - hard cap on expanded items.
  * @param {number} [opts.maxDepth] - nested-container recursion budget.
+ * @param {boolean} [opts.withStart] - ask the queue route where an all-audio
+ *   container starts (a play, not an append).
  * @returns {Promise<Array<object>|null>} ordered queue inputs, or `null`
- *   when expansion is impossible (caller falls back to single-item).
+ *   when expansion is impossible (caller falls back to single-item). An
+ *   ordered work's array carries `startIndex` (> 0) when its start is not
+ *   the first part.
  */
 export async function expandContainerInput(input, {
   fetchImpl,
   limit = EXPANSION_LIMIT,
   maxDepth = MAX_NESTED_DEPTH,
+  withStart = false,
 } = {}) {
   const doFetch = fetchImpl ?? daylightApiResponse;
   const containerTitle = input?.title ?? null;
@@ -145,7 +150,36 @@ export async function expandContainerInput(input, {
   } catch {
     return null;
   }
-  return out.length > 0 ? out : null;
+  if (out.length === 0) return null;
+  // An audiobook, talk series or course heard as audio keeps its order, and the
+  // queue route names the part to start at (startIndex; ?limit=1 answers that
+  // part). Only audio is asked: a show or music answer names no start.
+  if (withStart && out.length > 1 && out.every((item) => item.format === 'audio')) {
+    const startIndex = await startOf(input?.contentId, out, doFetch);
+    if (startIndex > 0) return Object.assign(out, { startIndex });
+  }
+  return out;
+}
+
+/**
+ * The part an ordered work starts at, as an index into `items`; 0 when the
+ * queue route names no start (a show, music) or cannot be asked.
+ */
+async function startOf(contentId, items, doFetch) {
+  const parsed = splitContentId(contentId);
+  if (!parsed) return 0;
+  try {
+    const res = await doFetch(`/api/v1/queue/${encodeURIComponent(parsed.source)}/${encodeURIComponent(parsed.localId)}?limit=1`);
+    if (!res || !res.ok) return 0;
+    const body = await res.json();
+    if (!Number.isInteger(body?.startIndex)) return 0;
+    const start = body.items?.[body.startIndex];
+    const startId = start?.contentId ?? start?.id ?? null;
+    const at = startId ? items.findIndex((item) => item.contentId === startId) : -1;
+    return at > 0 ? at : 0;
+  } catch {
+    return 0;
+  }
 }
 
 export default expandContainerInput;

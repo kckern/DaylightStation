@@ -547,6 +547,11 @@ export class PhoneInboxService {
       if (typeof it.reason === 'string' && it.reason) item.reason = it.reason.slice(0, 200);
       for (const k of ['totalBytes', 'neededBytes', 'failed']) if (it[k] !== undefined) item[k] = n(it[k]);
       if (it.finished === true) item.finished = true;
+      // Kept automatically while listening (lifecycle spec §3.10): the web says "Kept automatically".
+      if (it.auto === true) item.auto = true;
+      // A unit of a kept artist or author (lifecycle spec §3.11): the web shows it under its group.
+      const group = PhoneInboxService.groupOf(it.group);
+      if (group) item.group = group;
       if (Array.isArray(it.trackIds)) item.trackIds = it.trackIds.filter((t) => typeof t === 'string' && t.length <= 200).slice(0, 2000);
       clean.push(item);
     }
@@ -567,8 +572,25 @@ export class PhoneInboxService {
     if (digest === box.reportDigest[id] && !receivedChanged) return clean.length;
     box.reportDigest[id] = digest;
     if (!(await this.#save(deviceId, box))) throw new InboxStoreUnavailableError();
-    this.#logger.info?.('phone-inbox.keeps.reported', { deviceId, installId: id, items: clean.length });
+    this.#logger.info?.('phone-inbox.keeps.reported', {
+      deviceId, installId: id, items: clean.length, auto: clean.filter((c) => c.auto).length,
+      groups: new Set(clean.filter((c) => c.group).map((c) => c.group.id)).size,
+    });
     return clean.length;
+  }
+
+  /**
+   * A reported unit's group, cleaned: {id, title?, kind: 'artist'|'author', follow, removeFinished},
+   * or null when it is not a valid one (no id, a bad id, an unknown kind).
+   */
+  static groupOf(g) {
+    if (!g || typeof g !== 'object' || Array.isArray(g)) return null;
+    if (typeof g.id !== 'string' || !/^[A-Za-z0-9_-]{1,40}:[A-Za-z0-9._-]{1,160}$/.test(g.id)) return null;
+    const kind = g.kind === 'author' || g.kind === 'artist' ? g.kind : null;
+    if (!kind) return null;
+    const out = { id: g.id, kind, follow: g.follow === true, removeFinished: g.removeFinished === true };
+    if (typeof g.title === 'string' && g.title) out.title = g.title.slice(0, 200);
+    return out;
   }
 
   /**

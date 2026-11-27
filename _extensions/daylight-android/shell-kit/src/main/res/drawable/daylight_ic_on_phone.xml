@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Material icon "on_phone" (Apache 2.0). Tinted in code (ItemSheet rows, BottomSheet, CoverGlyph). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="#FF000000" android:pathData="M12,2C6.5,2 2,6.5 2,12s4.5,10 10,10 10,-4.5 10,-10S17.5,2 12,2zM17,18H7v-2h10v2zM10,14.6l-3.4,-3.4 1.4,-1.4 2,2 5.6,-5.6 1.4,1.4L10,14.6z" />
+</vector>

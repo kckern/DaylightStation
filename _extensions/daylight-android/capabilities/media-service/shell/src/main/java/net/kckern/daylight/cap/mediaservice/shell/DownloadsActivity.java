@@ -42,6 +42,8 @@ import java.util.concurrent.Executors;
  */
 public final class DownloadsActivity extends Activity {
     static final String EXTRA_KEEP = "keep";
+    /** Opens a kept group's Choose… sheet (the Play tab's group ⋮): the group's id, with "chooseKind" and "chooseTitle". */
+    static final String EXTRA_CHOOSE = "choose";
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService covers = Executors.newSingleThreadExecutor();
     private final Runnable tick = this::fill;
@@ -66,10 +68,24 @@ public final class DownloadsActivity extends Activity {
         column.setOrientation(LinearLayout.VERTICAL);
         column.setPadding(dp(16), dp(12), dp(16), dp(24));
         scroll.addView(column);
-        setContentView(scroll);
+        // The mini player below the list (shell-kit MiniPlayer), as on every browse screen.
+        LinearLayout page = new LinearLayout(this);
+        page.setOrientation(LinearLayout.VERTICAL);
+        page.setBackgroundColor(t.background);
+        page.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+        mini = net.kckern.daylight.shellkit.MiniPlayer.attach(this, "Downloads");
+        page.addView(mini.view(), new LinearLayout.LayoutParams(-1, -2));
+        setContentView(page);
         UiTelemetry.event("Downloads", "keep.screen", new JSONObject());
         String keep = getIntent() == null ? null : getIntent().getStringExtra(EXTRA_KEEP);
         if (keep != null && !keep.isEmpty() && saved == null) KeepFlow.start(this, keep);
+        if (saved == null) choose(getIntent());
+    }
+
+    private void choose(Intent i) {
+        String gid = i == null ? null : i.getStringExtra(EXTRA_CHOOSE);
+        if (gid == null || gid.isEmpty()) return;
+        GroupKeepFlow.start(this, gid, i.getStringExtra("chooseKind"), i.getStringExtra("chooseTitle"));
     }
 
     /** Opened again while showing (a Keep from the Play tab, the notification): the new request is acted on. */
@@ -78,11 +94,14 @@ public final class DownloadsActivity extends Activity {
         setIntent(intent);
         String keep = intent == null ? null : intent.getStringExtra(EXTRA_KEEP);
         if (keep != null && !keep.isEmpty()) KeepFlow.start(this, keep);
+        choose(intent);
     }
 
     @Override protected void onResume() {
         super.onResume();
         KeepStore.get(this).refresh();
+        // Automatic keeps whose removal is due go now (a finished book's 24 h, 30 days unplayed).
+        KeepStore.get(this).autoSweepSoon();
         fill();
     }
 
@@ -91,11 +110,37 @@ public final class DownloadsActivity extends Activity {
         main.removeCallbacks(tick);
     }
 
+    private net.kckern.daylight.shellkit.MiniPlayer mini;
+
+    @Override protected void onStart() {
+        super.onStart();
+        mini.start();
+    }
+
+    @Override protected void onStop() {
+        mini.stop();
+        super.onStop();
+    }
+
     @Override public boolean onOptionsItemSelected(MenuItem item) {
         if (item.getItemId() == android.R.id.home) { finish(); return true; }
         return super.onOptionsItemSelected(item);
     }
 
+    /** The room line, notices and Remove buttons, above the rows; rebuilt only when what they say changes. */
+    private LinearLayout head;
+    private LinearLayout rowsBox;
+    private net.kckern.daylight.shellkit.KeyedRows<JSONObject> rows;
+    private String headShown;
+    private LinearLayout autoBox;
+    private String autoShown;
+
+    /**
+     * Refreshes the screen in place: the top part is redrawn only when its words change,
+     * rows are kept by content id and update their own words and buttons, and only rows
+     * that came or went are added or removed. A press on Pause or Remove survives the
+     * 2-second refresh while something downloads.
+     */
     private void fill() {
         main.removeCallbacks(tick);
         if (isFinishing()) return;
@@ -103,119 +148,324 @@ public final class DownloadsActivity extends Activity {
         JSONObject room = store.room();
         List<JSONObject> items = KeptIndex.read(getFilesDir());
         KeptIndex.largestFirst(items);
-        column.removeAllViews();
-        column.addView(t.text(this, room.optString("room"), Type.BODY, t.ink, true));
-        String over = room.optString("over");
-        if (!over.isEmpty()) {
-            TextView o = t.text(this, over, Type.LABEL, t.attention, false);
-            o.setPadding(0, dp(4), 0, 0);
-            column.addView(o);
+        // A kept artist or author is one group with its units under it (spec §3.11).
+        List<JSONObject> shownRows = net.kckern.daylight.shellkit.KeptGroups.rows(items);
+        if (head == null) {
+            head = new LinearLayout(this);
+            head.setOrientation(LinearLayout.VERTICAL);
+            column.addView(head);
+            rowsBox = new LinearLayout(this);
+            rowsBox.setOrientation(LinearLayout.VERTICAL);
+            column.addView(rowsBox);
+            autoBox = new LinearLayout(this);
+            autoBox.setOrientation(LinearLayout.VERTICAL);
+            column.addView(autoBox);
+            rows = new net.kckern.daylight.shellkit.KeyedRows<>(rowsBox, new net.kckern.daylight.shellkit.KeyedRows.Rows<JSONObject>() {
+                @Override public String key(JSONObject k) { return net.kckern.daylight.shellkit.KeptGroups.key(k); }
+                @Override public String signature(JSONObject k) { return k.toString(); }
+                @Override public View create(JSONObject k) {
+                    return isGroup(k) ? groupRow(KeepStore.get(DownloadsActivity.this), k) : row(KeepStore.get(DownloadsActivity.this), k);
+                }
+                @Override public View update(View row, JSONObject k) {
+                    if (isGroup(k)) bindGroup(row, k);
+                    else bind(KeepStore.get(DownloadsActivity.this), row, k);
+                    return row;
+                }
+            });
         }
-        if (KeepFlow.backgroundRestricted(this)) {
-            // Shown while it is true: downloads stop whenever the app is closed.
-            TextView hint = t.text(this, "Downloads only run while the app is open: Android restricts it in the background.",
-                    Type.LABEL, t.attention, false);
-            hint.setPadding(0, dp(6), 0, 0);
-            column.addView(hint);
-            LinearLayout allow = new LinearLayout(this);
-            allow.addView(button("Allow background use", "keep.allow_background", () -> KeepFlow.openBatterySettings(this)));
-            column.addView(allow);
-        }
-        if (KeepRules.SD_MISSING.equals(store.location)) {
-            column.addView(t.text(this, "On the SD card — not inserted. Nothing was deleted.", Type.LABEL, t.attention, false));
-        }
-        LinearLayout buttons = new LinearLayout(this);
-        buttons.setPadding(0, dp(12), 0, dp(4));
         boolean anyFinished = false;
         long total = 0;
         for (JSONObject k : items) { if (k.optBoolean("finished")) anyFinished = true; total += k.optLong("bytes"); }
-        if (anyFinished) buttons.addView(button("Remove finished", "keep.remove_finished", () -> confirm(
-                "Remove finished books?", "Books you have finished are removed from this phone.",
-                () -> store.removeFinished(this::say))));
-        if (!items.isEmpty()) {
-            long all = total;
-            buttons.addView(button("Remove all", "keep.remove_all", () -> confirm(
-                    "Remove all " + items.size() + (items.size() == 1 ? " item" : " items") + "?",
-                    KeptIndex.size(all) + " is freed on this phone.", () -> store.removeAll("remove_all", this::say))));
+        boolean restricted = KeepFlow.backgroundRestricted(this);
+        String headNow = room.optString("room") + "|" + room.optString("over") + "|" + restricted + "|" + store.location
+                + "|" + anyFinished + "|" + items.size() + "|" + total;
+        if (!headNow.equals(headShown)) {
+            headShown = headNow;
+            fillHead(store, room, items.size(), total, anyFinished, restricted);
         }
-        column.addView(buttons);
-        if (items.isEmpty()) {
-            TextView none = t.text(this, "Nothing is kept on this phone. Keep a book, an album or a playlist from Now playing's ⋮ or by "
-                    + "pressing and holding it on the Play tab.", Type.LABEL, t.inkMuted, false);
-            none.setPadding(0, dp(12), 0, 0);
-            column.addView(none);
-        }
+        rows.show(shownRows);
+        fillAuto(store.autoLogShown());
         boolean moving = false;
         for (JSONObject k : items) {
-            column.addView(row(store, k));
             String s = k.optString("state");
             if (KeptIndex.DOWNLOADING.equals(s) || KeptIndex.CHECKING.equals(s) || KeptIndex.REMOVING.equals(s)
                     || KeptIndex.UPDATING.equals(s) || KeptIndex.QUEUED.equals(s)) moving = true;
         }
-        // Until the store has read the limit, redrawn each second so the room line is the real one.
+        // Until the store has read the limit, refreshed each second so the room line is the real one.
         main.postDelayed(tick, !store.rulesKnown ? 1_000 : moving ? 2_000 : 10_000);
     }
 
+    private void fillHead(KeepStore store, JSONObject room, int count, long total, boolean anyFinished, boolean restricted) {
+        head.removeAllViews();
+        head.addView(t.text(this, room.optString("room"), Type.BODY, t.ink, true));
+        String over = room.optString("over");
+        if (!over.isEmpty()) {
+            TextView o = t.text(this, over, Type.LABEL, t.attention, false);
+            o.setPadding(0, dp(4), 0, 0);
+            head.addView(o);
+        }
+        if (restricted) {
+            // Shown while it is true: downloads stop whenever the app is closed.
+            TextView hint = t.text(this, "Downloads only run while the app is open: Android restricts it in the background.",
+                    Type.LABEL, t.attention, false);
+            hint.setPadding(0, dp(6), 0, 0);
+            head.addView(hint);
+            LinearLayout allow = new LinearLayout(this);
+            allow.addView(button("Allow background use", "keep.allow_background", () -> KeepFlow.openBatterySettings(this)));
+            head.addView(allow);
+        }
+        if (KeepRules.SD_MISSING.equals(store.location)) {
+            head.addView(t.text(this, "On the SD card — not inserted. Nothing was deleted.", Type.LABEL, t.attention, false));
+        }
+        LinearLayout buttons = new LinearLayout(this);
+        buttons.setPadding(0, dp(12), 0, dp(4));
+        if (anyFinished) buttons.addView(button("Remove finished", "keep.remove_finished", () -> confirm(
+                "Remove finished books?", "Books you have finished are removed from this phone.",
+                () -> store.removeFinished(this::say))));
+        if (count > 0) {
+            buttons.addView(button("Remove all", "keep.remove_all", () -> confirm(
+                    "Remove all " + count + (count == 1 ? " item" : " items") + "?",
+                    KeptIndex.size(total) + " is freed on this phone.", () -> store.removeAll("remove_all", this::say))));
+        }
+        head.addView(buttons);
+        if (count == 0) {
+            TextView none = t.text(this, "Nothing is kept on this phone. Keep a book, an album or a playlist from Now playing's ⋮ or by "
+                    + "pressing and holding it on the Play tab.", Type.LABEL, t.inkMuted, false);
+            none.setPadding(0, dp(12), 0, 0);
+            head.addView(none);
+        }
+    }
+
+    /**
+     * Automatic keeps not on the phone (spec §3.10): "Not kept automatically: needs room", and
+     * the ones removed in the last 7 days ("Removed: finished") with Keep again (a manual keep,
+     * its size shown first). Redrawn only when the list changes.
+     */
+    private void fillAuto(List<JSONObject> log) {
+        String now = log.toString();
+        if (now.equals(autoShown)) return;
+        autoShown = now;
+        autoBox.removeAllViews();
+        if (log.isEmpty()) return;
+        TextView heading = t.text(this, "Not on this phone", Type.LABEL, t.inkMuted, true);
+        heading.setPadding(dp(4), dp(18), 0, dp(2));
+        autoBox.addView(heading);
+        for (JSONObject e : log) {
+            String cid = e.optString("contentId");
+            LinearLayout row = new LinearLayout(this);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(dp(10), dp(8), dp(4), dp(8));
+            LinearLayout words = new LinearLayout(this);
+            words.setOrientation(LinearLayout.VERTICAL);
+            String title = TextUtils.isEmpty(e.optString("title")) ? "Kept item" : e.optString("title");
+            words.addView(t.text(this, title, Type.BODY, t.ink, false));
+            String line = AutoKeepLog.words(e);
+            words.addView(t.text(this, line, Type.LABEL, skippedLine(e) ? t.attention : t.inkMuted, false));
+            row.addView(words, new LinearLayout.LayoutParams(0, -2, 1));
+            boolean skipped = AutoKeepLog.SKIPPED.equals(e.optString("kind"));
+            row.addView(link(skipped ? "Keep" : "Keep again", skipped ? "keep.auto.keep" : "keep.auto.keep_again",
+                    () -> KeepFlow.start(this, "c:" + cid)));
+            row.setContentDescription(title + ". " + line);
+            autoBox.addView(row);
+        }
+    }
+
+    private static boolean skippedLine(JSONObject e) { return AutoKeepLog.SKIPPED.equals(e.optString("kind")); }
+
+    /** A row's views, so a refresh changes its words and buttons without a new view. */
+    private static final class Row {
+        ImageView cover;
+        TextView name, state;
+        LinearLayout actions;
+        String actionsShown;
+        /** What the row shows now: the buttons read it when pressed, so a refresh need not rebuild them. */
+        String title = "";
+        long size, frees = -1;
+        boolean shared;
+    }
+
+    private static boolean isGroup(JSONObject k) {
+        return net.kckern.daylight.shellkit.KeptGroups.GROUP.equals(k.optString(net.kckern.daylight.shellkit.KeptGroups.ROW));
+    }
+
+    private static boolean isUnit(JSONObject k) {
+        return net.kckern.daylight.shellkit.KeptGroups.UNIT.equals(k.optString(net.kckern.daylight.shellkit.KeptGroups.ROW));
+    }
+
+    /** A group's views: its words change in place; its ⋮ reads them when pressed. */
+    private static final class GroupRow {
+        ImageView cover;
+        TextView name, line;
+        JSONObject shown;
+    }
+
+    /**
+     * A kept artist or author: its name, "12 books · 4.2 GB", and a ⋮ with Choose… (the sheet
+     * again, with what it holds checked) and "Remove all of <name>" (confirmed, with the total).
+     * A flat row; its units follow, indented.
+     */
+    private View groupRow(KeepStore store, JSONObject g) {
+        GroupRow h = new GroupRow();
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(4), dp(14), 0, dp(4));
+        row.setMinimumHeight(dp(64));
+        h.cover = new ImageView(this);
+        h.cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        h.cover.setClipToOutline(true);
+        h.cover.setBackground(t.round(t.tile, Radius.SMALL));
+        row.addView(h.cover, new LinearLayout.LayoutParams(dp(44), dp(44)));
+        LinearLayout words = new LinearLayout(this);
+        words.setOrientation(LinearLayout.VERTICAL);
+        words.setPadding(dp(12), 0, 0, 0);
+        h.name = t.text(this, "", Type.TITLE, t.ink, true);
+        h.name.setMaxLines(1);
+        h.name.setEllipsize(TextUtils.TruncateAt.END);
+        words.addView(h.name);
+        h.line = t.text(this, "", Type.LABEL, t.inkMuted, false);
+        words.addView(h.line);
+        row.addView(words, new LinearLayout.LayoutParams(0, -2, 1));
+        TextView more = t.text(this, "⋮", Type.TITLE, t.inkMuted, false);
+        more.setGravity(Gravity.CENTER);
+        more.setMinWidth(dp(48));
+        more.setMinHeight(dp(48));
+        more.setBackground(t.pressable(null));
+        more.setOnClickListener(v -> groupMenu(store, v, h.shown));
+        UiTelemetry.tag(more, "keep.group.menu");
+        row.addView(more);
+        row.setTag(h);
+        UiTelemetry.tag(row, "keep.group.row");
+        bindGroup(row, g);
+        return row;
+    }
+
+    private void bindGroup(View row, JSONObject g) {
+        GroupRow h = (GroupRow) row.getTag();
+        h.shown = g;
+        String title = TextUtils.isEmpty(g.optString("title")) ? "Kept group" : g.optString("title");
+        h.name.setText(title);
+        String line = net.kckern.daylight.shellkit.KeptGroups.line(g);
+        h.line.setText(line);
+        row.setContentDescription(title + ". " + line);
+        String more = "More for " + title;
+        View menu = ((LinearLayout) row).getChildAt(2);
+        if (menu != null) menu.setContentDescription(more);
+        loadCover(h.cover, g.optString("art"));
+    }
+
+    private void groupMenu(KeepStore store, View anchor, JSONObject g) {
+        if (g == null) return;
+        JSONObject grp = g.optJSONObject("group");
+        String gid = grp == null ? "" : grp.optString("id");
+        String title = TextUtils.isEmpty(g.optString("title")) ? "this group" : g.optString("title");
+        net.kckern.daylight.shellkit.ItemSheet.of(this, "Downloads")
+                .heading(title, GroupKeepRules.noun(g.optString("kind"), g.optInt("units")) + " · " + KeptIndex.size(g.optLong("bytes")))
+                .row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_tune, "Choose…", () -> {
+                    UiTelemetry.event("Downloads", "keep.group.choose", new JSONObject());
+                    GroupKeepFlow.start(this, gid, g.optString("kind"), g.optString("title"));
+                })
+                .destructive(net.kckern.daylight.shellkit.R.drawable.daylight_ic_delete, "Remove all of " + title, () -> {
+                    int n = g.optInt("units");
+                    confirm("Remove all of " + title + "?", GroupKeepRules.noun(g.optString("kind"), n) + " · "
+                                    + KeptIndex.size(g.optLong("bytes")) + ". Anything also kept on its own stays.",
+                            () -> store.removeGroup(gid, this::say));
+                })
+                .show();
+    }
+
     private View row(KeepStore store, JSONObject k) {
-        String cid = k.optString("contentId");
-        String title = TextUtils.isEmpty(k.optString("title")) ? "Kept item" : k.optString("title");
-        String words = KeptIndex.describe(k);
+        Row h = new Row();
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.VERTICAL);
-        row.setPadding(dp(10), dp(10), dp(10), dp(10));
+        // A unit of a group sits under it, indented.
+        row.setPadding(isUnit(k) ? dp(28) : dp(10), dp(10), dp(10), dp(10));
         row.setBackground(t.round(t.surface, Radius.SMALL));
         LinearLayout top = new LinearLayout(this);
         top.setGravity(Gravity.CENTER_VERTICAL);
-        ImageView cover = new ImageView(this);
-        cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        cover.setClipToOutline(true);
-        cover.setBackground(t.round(t.tile, Radius.SMALL));
-        top.addView(cover, new LinearLayout.LayoutParams(dp(52), dp(52)));
-        String art = k.optString("art");
-        if (!art.isEmpty()) covers.execute(() -> {
-            Bitmap b = net.kckern.daylight.shellkit.PlaylistArtwork.load(art, 160);
-            if (b != null) main.post(() -> cover.setImageBitmap(b));
-        });
+        h.cover = new ImageView(this);
+        h.cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        h.cover.setClipToOutline(true);
+        net.kckern.daylight.shellkit.CoverGlyph.behind(h.cover, t, net.kckern.daylight.shellkit.CoverGlyph.Kind.ALBUM, dp(56), t.radius(Radius.SMALL));
+        top.addView(h.cover, new LinearLayout.LayoutParams(dp(52), dp(52)));
         LinearLayout text = new LinearLayout(this);
         text.setOrientation(LinearLayout.VERTICAL);
         text.setPadding(dp(12), 0, 0, 0);
-        TextView name = t.text(this, title, Type.BODY, t.ink, true);
-        name.setMaxLines(2);
-        name.setEllipsize(TextUtils.TruncateAt.END);
-        text.addView(name);
-        long size = Math.max(k.optLong("bytes"), k.optLong("expectedBytes"));
-        TextView state = t.text(this, words + (size > 0 && !words.contains("MB") && !words.contains("GB") ? " · " + KeptIndex.size(size) : ""),
-                Type.LABEL, t.inkMuted, false);
-        state.setMaxLines(2);
-        text.addView(state);
+        h.name = t.text(this, "", Type.BODY, t.ink, true);
+        h.name.setMaxLines(2);
+        h.name.setEllipsize(TextUtils.TruncateAt.END);
+        text.addView(h.name);
+        h.state = t.text(this, "", Type.LABEL, t.inkMuted, false);
+        h.state.setMaxLines(2);
+        text.addView(h.state);
         top.addView(text, new LinearLayout.LayoutParams(0, -2, 1));
         row.addView(top);
-        LinearLayout actions = new LinearLayout(this);
-        actions.setGravity(Gravity.END);
-        String action = KeptIndex.action(k);
-        String s = k.optString("state");
-        switch (action) {
-            case "Retry": actions.addView(link("Retry", "keep.retry", () -> store.retry(cid, this::say))); break;
-            case "Resume": actions.addView(link("Resume", "keep.resume", () -> { store.resume(cid); fill(); })); break;
-            case "Manage space": break;   // this screen is where space is managed
-            case "Use mobile data once": actions.addView(link("Use mobile data once", "keep.mobile_once", store::useMobileDataOnce)); break;
-            default: break;
-        }
-        if (KeptIndex.DOWNLOADING.equals(s) || KeptIndex.QUEUED.equals(s) || KeptIndex.UPDATING.equals(s)) {
-            actions.addView(link("Pause", "keep.pause", () -> { store.pause(cid); fill(); }));
-        }
-        if (!KeptIndex.REMOVING.equals(s) && !KeptIndex.CHECKING.equals(s)) {
-            actions.addView(link("Remove", "keep.remove", () -> confirm("Remove " + title + "?",
-                    (size > 0 ? KeptIndex.size(size) + " is freed on this phone." : "It is removed from this phone."),
-                    () -> store.remove(cid, "remove", this::say))));
-        }
-        row.addView(actions);
-        row.setContentDescription(title + ". " + words);
+        h.actions = new LinearLayout(this);
+        h.actions.setGravity(Gravity.END);
+        row.addView(h.actions);
         UiTelemetry.tag(row, "keep.row");
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.topMargin = dp(8);
         row.setLayoutParams(lp);
+        row.setTag(h);
+        bind(store, row, k);
         return row;
+    }
+
+    /** One kept collection's words and buttons on its row (new or refreshed). Buttons are rebuilt only when they change. */
+    private void bind(KeepStore store, View row, JSONObject k) {
+        Row h = (Row) row.getTag();
+        String cid = k.optString("contentId");
+        String title = TextUtils.isEmpty(k.optString("title")) ? "Kept item" : k.optString("title");
+        String words = KeptIndex.describe(k);
+        long size = Math.max(k.optLong("bytes"), k.optLong("expectedBytes"));
+        h.name.setText(title);
+        h.state.setText(words + (size > 0 && !words.contains("MB") && !words.contains("GB") ? " · " + KeptIndex.size(size) : ""));
+        loadCover(h.cover, k.optString("art"));
+        row.setContentDescription(title + ". " + words);
+        h.title = title;
+        h.size = size;
+        h.frees = k.has("frees") ? k.optLong("frees") : -1;
+        h.shared = k.optBoolean("shared");
+        String action = KeptIndex.action(k);
+        String s = k.optString("state");
+        // Buttons change with the state, never with a progress tick (a press on Pause survives it).
+        String actionsNow = action + "|" + s;
+        if (actionsNow.equals(h.actionsShown)) return;
+        h.actionsShown = actionsNow;
+        h.actions.removeAllViews();
+        switch (action) {
+            case "Retry": h.actions.addView(link("Retry", "keep.retry", () -> store.retry(cid, this::say))); break;
+            case "Resume": h.actions.addView(link("Resume", "keep.resume", () -> { store.resume(cid); fill(); })); break;
+            case "Manage space": break;   // this screen is where space is managed
+            case "Use mobile data once": h.actions.addView(link("Use mobile data once", "keep.mobile_once", store::useMobileDataOnce)); break;
+            default: break;
+        }
+        if (KeptIndex.DOWNLOADING.equals(s) || KeptIndex.QUEUED.equals(s) || KeptIndex.UPDATING.equals(s)) {
+            h.actions.addView(link("Pause", "keep.pause", () -> { store.pause(cid); fill(); }));
+        }
+        if (!KeptIndex.REMOVING.equals(s) && !KeptIndex.CHECKING.equals(s)) {
+            boolean unit = isUnit(k);
+            // What is really freed: only the tracks no other keep holds (shared copies stay).
+            h.actions.addView(link("Remove", unit ? "keep.group.unit_remove" : "keep.remove", () -> confirm("Remove " + h.title + "?",
+                    GroupKeepRules.freedLine(h.frees >= 0 ? h.frees : h.size, h.shared) + (unit ? " The rest of the group stays." : ""),
+                    () -> { if (unit) store.removeUnit(cid, this::say); else store.remove(cid, "remove", this::say); })));
+        }
+    }
+
+    /** A cover seen before draws in this frame (the memory cache); others load off the main thread. */
+    private void loadCover(ImageView into, String art) {
+        if (art == null) art = "";
+        if (art.equals(into.getTag())) return;
+        into.setTag(art);
+        into.setImageDrawable(null);
+        if (art.isEmpty()) return;
+        Bitmap hit = net.kckern.daylight.shellkit.PlaylistArtwork.cached(art, 160);
+        if (hit != null) { into.setImageBitmap(hit); return; }
+        final String url = art;
+        covers.execute(() -> {
+            Bitmap b = net.kckern.daylight.shellkit.PlaylistArtwork.load(url, 160);
+            if (b != null) main.post(() -> { if (!isDestroyed() && url.equals(into.getTag())) into.setImageBitmap(b); });
+        });
     }
 
     private TextView button(String label, String tag, Runnable run) {
@@ -253,6 +503,7 @@ public final class DownloadsActivity extends Activity {
     private int dp(int v) { return Math.round(v * getResources().getDisplayMetrics().density); }
 
     @Override protected void onDestroy() {
+        mini.release();
         covers.shutdownNow();
         super.onDestroy();
     }

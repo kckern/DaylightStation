@@ -120,7 +120,12 @@ public final class CaptureStatusActivity extends Activity {
         if (!active) return;
         String current = CaptureScope.current();
         if (owner == null && current != null) owner = current;
-        if (!CaptureScope.currentIs(owner)) {
+        net.kckern.daylight.shellkit.PayloadReady.Answer up = net.kckern.daylight.shellkit.PayloadReady.now(MemoFiles.PORT);
+        if (!up.ready() && current == null) {
+            // A cold start: Daylight itself is starting (or could not), not the account missing.
+            net.kckern.daylight.shellkit.ShellStart.ensure(this);
+            clear(up.words());
+        } else if (!CaptureScope.currentIs(owner)) {
             clear(current == null ? "Waiting for the capture account…" : "This capture belongs to another account.");
         } else if (!loading && !acting) {
             request("status", null);
@@ -152,7 +157,10 @@ public final class CaptureStatusActivity extends Activity {
                 if (!CaptureScope.currentIs(selected)) {
                     clear("Capture account changed.");
                 } else if (answer == null || !answer.optBoolean("ok")) {
-                    if ("status".equals(operation)) clear("Capture status is unavailable. Checking again…");
+                    if ("status".equals(operation)) {
+                        net.kckern.daylight.shellkit.PayloadReady.Answer now = net.kckern.daylight.shellkit.PayloadReady.now(MemoFiles.PORT);
+                        clear(now.ready() ? "Capture status did not answer. Checking again…" : now.words());
+                    }
                     else Toast.makeText(this, "This action is unavailable. Check capture status and try again.", Toast.LENGTH_SHORT).show();
                 } else if ("status".equals(operation)) {
                     render(answer.optJSONArray("inputs"));

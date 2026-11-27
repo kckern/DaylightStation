@@ -49,7 +49,6 @@ public class PlayActionService extends Service {
     private static final String CHANNEL = "daylight_play_start";
     private static final String STOP = "net.kckern.daylight.media.STOP_START";
     private static final int NOTICE_ID = 0x0da7;
-    private static final long PAYLOAD_WAIT_MS = 8000;
     private static final long POLL_MS = 500;
 
     private static PlayActionService current;
@@ -115,22 +114,36 @@ public class PlayActionService extends Service {
         releaseAttempt();
         currentStartId = startId;
         failed = false;
+        // One budget for the whole start, owned here and shared with Now playing (PlayBudget): a
+        // payload still coming up at the tap gets the loader's own deadline on top.
+        boolean warm = net.kckern.daylight.shellkit.PayloadReady.now(PayloadMedia.PORT).ready();
         PlayStart.Attempt requested = new PlayStart.Attempt(actionId == null ? playlist : null, SystemClock.elapsedRealtime(),
-                actionId == null && intent.getBooleanExtra(DirectPlayIntents.EXTRA_PLAYLIST_SHUFFLE, true));
+                actionId == null && intent.getBooleanExtra(DirectPlayIntents.EXTRA_PLAYLIST_SHUFFLE, true),
+                PlayBudget.giveUpMs(warm));
+        requested.title = playlistTitle(playlist);
         attempt = requested;
+        if (!requested.title.isEmpty()) enterForeground(requested.title);
         PlaylistWidgetState.show(this, requested.playlist, Phase.STARTING);
         ShellStart.ensure(this);
         Thread ask = new Thread(() -> {
-            String mediaId;
+            String mediaId, named = "";
             try {
-                mediaId = actionId == null ? requested.playlist
-                        : PlayStart.mediaId(new PayloadMedia().action(actionId, PAYLOAD_WAIT_MS));
+                if (actionId == null) mediaId = requested.playlist;
+                else {
+                    String answer = new PayloadMedia().action(actionId, requested.left(SystemClock.elapsedRealtime()));
+                    mediaId = PlayStart.mediaId(answer);
+                    named = PlayStart.title(answer);
+                }
             } catch (Throwable notReadyOrRefused) {
                 mediaId = null;
             }
-            final String id = mediaId;
+            final String id = mediaId, title = named;
             main.post(() -> {
                 if (!isCurrent(requested)) return;
+                if (!title.isEmpty() && requested.title.isEmpty()) {
+                    requested.title = title;
+                    enterForeground(title);
+                }
                 if (id == null) fail(requested); else connect(requested, id);
             });
         }, "Daylight-play-action");
@@ -141,7 +154,10 @@ public class PlayActionService extends Service {
         return START_NOT_STICKY;
     }
 
-    private void enterForeground() {
+    private void enterForeground() { enterForeground(""); }
+
+    /** The starting notice, naming what starts when that is known ("Starting Morning Mix…"). */
+    private void enterForeground(String title) {
         NotificationManager nm = getSystemService(NotificationManager.class);
         if (nm != null && nm.getNotificationChannel(CHANNEL) == null) {
             nm.createNotificationChannel(new NotificationChannel(CHANNEL, "Starting playback", NotificationManager.IMPORTANCE_LOW));
@@ -150,7 +166,7 @@ public class PlayActionService extends Service {
                 new Intent(this, PlayActionService.class).setAction(STOP), PendingIntent.FLAG_IMMUTABLE);
         Notification notice = new Notification.Builder(this, CHANNEL)
                 .setSmallIcon(android.R.drawable.ic_media_play)
-                .setContentTitle("Starting playback")
+                .setContentTitle(PlayStart.notice(title))
                 .setOngoing(true)
                 .addAction(new Notification.Action.Builder(null, "Stop", stop).build())
                 .build();
@@ -172,6 +188,7 @@ public class PlayActionService extends Service {
                 try {
                     controller = connecting.get();
                     DaylightMediaService.playShortcut(requested, mediaId, () -> fail(requested));
+                    Log.i(TAG, "play action: resolving, " + requested.left(SystemClock.elapsedRealtime()) + " ms of the budget left");
                 } catch (Exception e) {
                     Log.w(TAG, "no media controller: " + e.getClass().getSimpleName());
                     fail(requested);
@@ -195,12 +212,12 @@ public class PlayActionService extends Service {
         main.removeCallbacks(poll);
         boolean playing = DaylightMediaService.shortcutPlaying(attempt);
         long elapsed = SystemClock.elapsedRealtime() - attempt.startedAt;
-        PlayStart.Step next = PlayStart.next(elapsed, failed || DaylightMediaService.shortcutFailed(attempt),
+        PlayStart.Step next = PlayStart.next(elapsed, attempt.budgetMs, failed || DaylightMediaService.shortcutFailed(attempt),
                 attempt.played(), playing, DaylightMediaService.inForeground());
         switch (next) {
-            case FAIL: finish("Could not start playback. Tap the button again to retry.", currentStartId); return;
+            case FAIL: finish(PlayStart.failure(attempt.title), currentStartId); return;
             case RELEASE: finish(null, currentStartId); return;
-            default: main.postDelayed(poll, attempt.played() ? POLL_MS : Math.min(POLL_MS, PlayStart.GIVE_UP_MS - elapsed));
+            default: main.postDelayed(poll, attempt.played() ? POLL_MS : Math.max(50, Math.min(POLL_MS, attempt.budgetMs - elapsed)));
         }
     }
 
@@ -213,7 +230,8 @@ public class PlayActionService extends Service {
         String playlist = attempt == null ? null : attempt.playlist;
         releaseAttempt();
         if (message != null) PlaylistWidgetState.show(this, playlist, Phase.FAILED);
-        if (message != null) Toast.makeText(getApplicationContext(), message, Toast.LENGTH_SHORT).show();
+        // Now playing on screen showing this start says so itself; a second toast would contradict it.
+        if (message != null && !NowPlayingActivity.showingStart()) Toast.makeText(getApplicationContext(), message, Toast.LENGTH_SHORT).show();
         stopForeground(STOP_FOREGROUND_REMOVE);
         stopSelfResult(startId);
     }
@@ -232,6 +250,16 @@ public class PlayActionService extends Service {
         else if (pending != null) MediaController.releaseFuture(pending);
         controller = null;
         pending = null;
+    }
+
+    /** A widget's playlist by its saved name ("c:<id>" or the id); "" when it is not one of yours. */
+    private String playlistTitle(String playlist) {
+        if (playlist == null) return "";
+        String id = playlist.startsWith("c:") ? playlist.substring(2) : playlist;
+        for (net.kckern.daylight.shellkit.DrivingRadioSettings.Staple s : new net.kckern.daylight.shellkit.DrivingRadioSettings(this).staged()) {
+            if (s.id.equals(id) || s.id.equals(playlist)) return s.title;
+        }
+        return "";
     }
 
     @Override public void onDestroy() {

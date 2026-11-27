@@ -21,6 +21,10 @@
  * - GET    /household/removed      — Ids removed from the household list
  * - POST   /household/removed      — Remove {id} from the household list
  * - DELETE /household/removed      — Restore {id} (undo)
+ * - POST   /household/continue/hide — Hide {contentId} from Continue listening (the
+ *                                     removed list: back by itself when played after
+ *                                     hiddenAt); answers {contentId, hiddenAt}
+ * - DELETE /household/continue/hide/:contentId — Undo of the hide
  * - POST   /household/watched      — Mark {contentId, watched: boolean}
  * - GET    /household/plays        — Play ledger (?deviceId=&from=&to=&limit=)
  */
@@ -309,6 +313,27 @@ export function createMediaRouter(config) {
     const id = idFrom(req);
     if (!id) return res.status(400).json({ error: 'id is required' });
     res.json(await householdMediaMemory.restoreToList(resolveHid(req), id));
+  }));
+
+  // Continue listening's hide (the phone, lookup spec §10). One truth with the web's
+  // "Remove": the household's removed list, so carry-on and recent leave the item out on
+  // every device until it is played again after the hide.
+  router.post('/household/continue/hide', asyncHandler(async (req, res) => {
+    if (!requireHouseholdMemory(res)) return;
+    const contentId = idFrom(req, 'contentId');
+    if (!contentId) return res.status(400).json({ error: 'contentId is required' });
+    const { removedAt } = await householdMediaMemory.removeFromList(resolveHid(req), contentId);
+    logger.info?.('media.continue.hide', { contentId, householdId: resolveHid(req) ?? null });
+    res.json({ contentId, hiddenAt: removedAt });
+  }));
+
+  router.delete('/household/continue/hide/:contentId', asyncHandler(async (req, res) => {
+    if (!requireHouseholdMemory(res)) return;
+    const contentId = String(req.params.contentId || '').trim();
+    if (!contentId) return res.status(400).json({ error: 'contentId is required' });
+    const { restored } = await householdMediaMemory.restoreToList(resolveHid(req), contentId);
+    logger.info?.('media.continue.unhide', { contentId, restored, householdId: resolveHid(req) ?? null });
+    res.json({ contentId, restored });
   }));
 
   router.post('/household/watched', asyncHandler(async (req, res) => {

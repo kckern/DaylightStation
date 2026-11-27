@@ -54,6 +54,11 @@ public class KeepOfflineTest {
         positions.keep(new JSONObject().put("assetId", "plex:13").put("seconds", 70).put("observedAt", 20));
         assertEquals(2, Offline.resolve("c:plex:10", kept, positions).startIndex);
         assertNull("nothing kept answers a stranger", Offline.resolve("p:plex:99", kept, positions));
+        // A leaf that names the collection itself (a link's media/play?id=<book>) plays as the
+        // collection: where it was last heard, not its first track from the top.
+        Resolver.Resolved byOwnId = Offline.resolve("p:plex:10", kept, positions);
+        assertEquals(2, byOwnId.startIndex);
+        assertEquals(70_000, byOwnId.startPositionMs);
     }
 
     @Test public void progressWaitsNewestFirstPerItem() throws Exception {
@@ -68,5 +73,40 @@ public class KeepOfflineTest {
         pending.sent("plex:12");
         assertEquals(1, pending.waiting().size());
         assertTrue(pending.waiting().get(0).getString("assetId").equals("plex:13"));
+    }
+
+    @Test public void anAutomaticKeepKeepsItsScopeThroughARefreshAndAManualKeepEndsIt() throws Exception {
+        KeptCollections kept = new KeptCollections(tmp.newFolder("kept"));
+        kept.save("plex:30", "A course", null, tracks("plex:32", "plex:33", "plex:34"), 1, "album",
+                java.util.Arrays.asList("plex:32", "plex:33", "plex:34"));
+        JSONObject k = kept.get("plex:30");
+        assertTrue(KeptCollections.auto(k));
+        assertEquals(java.util.Arrays.asList("plex:32", "plex:33", "plex:34"), KeptCollections.only(k));
+        // A re-sync stays automatic, to the same lectures.
+        kept.refreshIfKept("plex:30", "A course", null, tracks("plex:32", "plex:33", "plex:34"), 5, "album");
+        assertTrue(KeptCollections.auto(kept.get("plex:30")));
+        assertEquals(3, KeptCollections.only(kept.get("plex:30")).size());
+        // Restored from the shell's mirror: still automatic.
+        org.json.JSONArray mirror = new org.json.JSONArray().put(kept.get("plex:30"));
+        kept.remove("plex:30", 6);
+        kept.save("plex:30", "A course", null, tracks("plex:32"), 7, "album", java.util.Collections.emptyList());
+        assertTrue("the whole collection kept automatically has no scope", KeptCollections.only(kept.get("plex:30")).isEmpty());
+        // Keep by hand: a manual keep, never removed by the automatic rules.
+        kept.save("plex:30", "A course", null, tracks("plex:31", "plex:32", "plex:33", "plex:34"), 8, "album");
+        assertTrue(!KeptCollections.auto(kept.get("plex:30")));
+        KeptCollections other = new KeptCollections(tmp.newFolder("kept2"));
+        assertEquals(1, other.restore(mirror));
+        assertTrue(KeptCollections.auto(other.get("plex:30")));
+    }
+
+    @Test public void anAutomaticKeepHoldsOnlyItsPartsInPlayOrder() throws Exception {
+        java.util.List<Track> all = new java.util.ArrayList<>();
+        for (String id : new String[] { "plex:41", "plex:42", "plex:43", "plex:44" }) {
+            all.add(new Track(id, "https://home.example/s/" + id, "T", "", "Course", null, "talks", 1_800_000));
+        }
+        java.util.List<Track> got = MediaServiceCapability.scoped(all, java.util.Arrays.asList("plex:43", "plex:42"));
+        assertEquals(2, got.size());
+        assertEquals("plex:42", got.get(0).id);
+        assertEquals("plex:43", got.get(1).id);
     }
 }

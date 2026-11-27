@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isKeepable, keepTargets, keepStatus, keepEntries, parseKeepKind, keepIdsFor, phonePage, expandPhoneInstalls, splitInstallTarget } from './phoneKeeps.js';
+import { isKeepable, keepTargets, keepStatus, keepEntries, parseKeepKind, keepIdsFor, phonePage, expandPhoneInstalls, splitInstallTarget, keptGroups } from './phoneKeeps.js';
 
 // ops:docs/superpowers/specs/2026-11-26-phone-downloads-lifecycle.md §2, §3.2, §3.8.
 const A = 'install-aaaa-1111';
@@ -116,5 +116,39 @@ describe('phoneKeeps', () => {
     expect(splitInstallTarget(`phone#${B}`)).toEqual({ deviceId: 'phone', installId: B });
     expect(splitInstallTarget('office-tv')).toEqual({ deviceId: 'office-tv', installId: null });
     expect(splitInstallTarget('phone#x')).toEqual({ deviceId: 'phone', installId: null });
+  });
+  it('an item the phone kept automatically while listening says "Kept automatically", on the item and the phone page', () => {
+    const v = view({ kept: report([
+      { contentId: 'plex:7', title: 'A book', state: 'ready', bytes: 230e6, done: 14, total: 14, auto: true },
+      { contentId: 'plex:8', title: 'An album', state: 'ready', bytes: 90e6, done: 9, total: 9 },
+    ]) });
+    const auto = keepStatus(v, T, { id: 'plex:7' });
+    expect(auto).toMatchObject({ state: 'ready', kept: true, auto: true, line: 'On Phone · 230 MB · Kept automatically' });
+    expect(keepEntries(T, auto)).toEqual([{ kind: `unkeepOn:phone@${A}`, label: 'Remove from Phone' }]);
+    expect(keepStatus(v, T, { id: 'plex:8' }).line).toBe('On Phone · 90 MB');
+    const downloading = keepStatus(view({ kept: report([{ contentId: 'plex:7', state: 'downloading', done: 1, total: 14, auto: true }]) }), T, { id: 'plex:7' });
+    expect(downloading.line).toBe('Downloading 1 of 14 on Phone · Kept automatically');
+    const page = phonePage({ id: 'phone', name: 'Phone' }, v);
+    const rows = page.installs[0].items;
+    expect(rows.find((r) => r.contentId === 'plex:7')).toMatchObject({ auto: true });
+    expect(rows.find((r) => r.contentId === 'plex:7').status.line).toMatch(/Kept automatically$/);
+    expect(rows.find((r) => r.contentId === 'plex:8').status.auto).toBeUndefined();
+  });
+  it('a kept artist or author is one group with its units under it (§3.11); the rest stay loose', () => {
+    const shakespeare = { id: 'plex:100', title: 'William Shakespeare', kind: 'author', follow: true, removeFinished: true };
+    const v = view({ kept: report([
+      { contentId: 'plex:10', title: 'Hamlet', state: 'ready', bytes: 200e6, group: shakespeare },
+      { contentId: 'plex:11', title: 'Macbeth', state: 'downloading', bytes: 100e6, done: 1, total: 3, group: shakespeare },
+      { contentId: 'plex:20', title: 'Loose album', state: 'ready', bytes: 50e6 },
+      { contentId: 'plex:30', title: 'Album', state: 'ready', bytes: 20e6, group: { id: 'plex:300', title: 'A Band', kind: 'artist' } },
+    ]) });
+    const install = phonePage({ id: 'phone', name: 'Phone' }, v).installs[0];
+    expect(install.groups.map((g) => g.id)).toEqual(['plex:100', 'plex:300']);
+    expect(install.groups[0].units.map((u) => u.title)).toEqual(['Hamlet', 'Macbeth']);
+    expect(install.groups[0].line).toBe('2 books · 300 MB · 1 of 2 ready · keeps new ones, removes each when finished');
+    expect(install.groups[1].line).toBe('1 album · 20 MB');
+    expect(install.loose.map((i) => i.title)).toEqual(['Loose album']);
+    expect(install.items).toHaveLength(4);
+    expect(keptGroups([]).groups).toEqual([]);
   });
 });

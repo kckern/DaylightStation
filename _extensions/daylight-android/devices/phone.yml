@@ -9,7 +9,7 @@ abis: []
 # all. Its installed components (the link activity, the tiles, the widget) reach the
 # payload in-process. Debugging is over adb: logcat, and run-as for its files.
 control: { port: 8780, lifelinePort: 8781, bind: none }
-shell: { versionCode: 128, versionName: "0.1-phone.128" }
+shell: { versionCode: 139, versionName: "0.1-phone.139" }
 # The household site's host, so an https link to it (in a relayed push, say) can open in
 # the app. Private: resolved from `placeholders:` when this device's manifest is built.
 appLinks: { host: "{phone_link_host}" }
@@ -104,6 +104,12 @@ defaults:
   # Keep on this phone: downloads wait for Wi-Fi, and take at most 4 GB.
   media.downloadOnCellular: false
   media.downloadCapMb: 4096
+  # Kept automatically while you listen: a book, talk or course (never music) heard on this
+  # phone for this many minutes is kept (a book all its parts, a series the current lecture
+  # and the next two), within a quarter of the limit, and removed a day after it is finished
+  # or after 30 days unplayed. Off removes nothing already kept.
+  media.autoKeep: true
+  media.autoKeepAfterMin: 10
   # Crossfade between songs (music only; never inside an album played in order, never for
   # books or talks), seconds; 0 is off. The person's choice in Now playing's menu wins.
   media.crossfadeSec: 4

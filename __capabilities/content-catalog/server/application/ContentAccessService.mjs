@@ -1,5 +1,8 @@
 import { sequenceQueue } from '../domain/utils/stationSequence.mjs';
 
+/** What an audio library may hold (play_on_demand.library_kinds). */
+const AUDIO_LIBRARY_KINDS = new Set(['music', 'books', 'talks']);
+
 /** Semantic content resolution facade for display, info, and queue queries. */
 export class ContentAccessService {
   /**
@@ -68,6 +71,34 @@ export class ContentAccessService {
     });
   }
 
+  /**
+   * The audio libraries and what each holds: music, books, or talks (talks and courses).
+   * The household media config's `play_on_demand.library_kinds` names a library (by its
+   * title or its Plex section id) and its kind; a library not named is music. This is
+   * the one place the phone learns a library's kind: it never reads it from a title.
+   * @returns {Promise<Array<{id:string, title:string, sectionId:string|null, kind:string}>>}
+   */
+  async audioLibraries() {
+    const configured = this.audioListConfig()?.library_kinds;
+    const kinds = new Map();
+    if (configured && typeof configured === 'object') {
+      for (const [key, value] of Object.entries(configured)) {
+        const kind = typeof value === 'string' ? value.trim().toLowerCase() : '';
+        if (AUDIO_LIBRARY_KINDS.has(kind)) kinds.set(String(key).trim().toLowerCase(), kind);
+      }
+    }
+    const resolution = this.resolver.resolve('plex:audio');
+    if (!resolution) return [];
+    const result = await this.catalog.getList(resolution, 'audio');
+    const libraries = Array.isArray(result) ? result : result?.items ?? result?.children ?? [];
+    return libraries.flatMap((library) => {
+      if (!library?.id || !library?.title) return [];
+      const sectionId = library.metadata?.sectionId != null ? String(library.metadata.sectionId) : null;
+      const kind = (sectionId && kinds.get(sectionId)) || kinds.get(String(library.title).trim().toLowerCase()) || 'music';
+      return [{ id: library.id, title: library.title, sectionId, kind }];
+    });
+  }
+
   async audioListCatalog({ source, skip, take }) {
     const id = source.includes(':') ? source : `${source}:`;
     if (!this.audioListSources().some(entry => entry.id === id)) return null;
@@ -84,9 +115,9 @@ export class ContentAccessService {
           return { id: candidate.id, title: candidate.title, thumbnail: candidate.thumbnail || null };
         }
         const resolution = this.resolver.resolve(candidate.id);
+        let sequenced;
         if (resolution) {
           const ref = `${resolution.source}:${resolution.localId}`;
-          let sequenced;
           try { sequenced = this.sequenceStore?.lookup(ref); } catch { sequenced = true; }
           if (!sequenced) {
             const sample = await this.catalog.findAudioListItem?.(resolution, ref,
@@ -105,6 +136,8 @@ export class ContentAccessService {
           id: candidate.id,
           title: candidate.title,
           thumbnail: candidate.thumbnail || queue.thumbnail || queue.items[0].thumbnail || null,
+          // A radio-station playlist (a station sequence: station IDs between songs) plays whole.
+          ...(sequenced && sequenced !== true ? { station: true } : {}),
         };
       } catch (error) {
         this.logger?.warn?.('queue.catalog.list_failed', { id: candidate.id, error: error.message });
@@ -124,10 +157,14 @@ export class ContentAccessService {
     const playables = await this.catalog.resolvePlayables(resolved, finalId);
     if (playables === null) return { kind: 'unsupported', source };
     const items = await this.#orderQueue(playables, source, finalId, shuffle);
+    // An ordered work (a book) keeps its order and names its start; carried by id so
+    // the audio projection and the presentation (limit, surround) can keep it.
+    const startId = Number.isInteger(items?.startIndex) ? items[items.startIndex]?.id ?? null : null;
     return {
       kind: 'found', source, finalId, audio: playables.audio || null,
       thumbnail: playables.thumbnail || null,
       items: profile === 'audio-only' ? await this.#projectAudio(items) : items,
+      ...(startId ? { startId } : {}),
     };
   }
 

@@ -57,6 +57,50 @@ public class ResolverTest {
         assertEquals(250_000, r.startPositionMs);
     }
 
+    // A book (an ordered work) is answered in its own order with startIndex: the part
+    // in progress, at its place. Before 2026-11-26 the backend put that part first.
+    private static final String BOOK = "{\"startIndex\":2,\"items\":["
+            + "{\"contentId\":\"plex:21\",\"title\":\"One\",\"mediaType\":\"audio\",\"mediaUrl\":\"/s/21\",\"duration\":1800,\"resumable\":true,\"resumePosition\":948},"
+            + "{\"contentId\":\"plex:v\",\"title\":\"A video\",\"mediaType\":\"video\",\"mediaUrl\":\"/v\"},"
+            + "{\"contentId\":\"plex:22\",\"title\":\"Two\",\"mediaType\":\"audio\",\"mediaUrl\":\"/s/22\",\"duration\":1800,\"resumable\":true,\"resumePosition\":600},"
+            + "{\"contentId\":\"plex:23\",\"title\":\"Three\",\"mediaType\":\"audio\",\"mediaUrl\":\"/s/23\",\"duration\":1800,\"resumable\":true}]}";
+
+    @Test public void aBookStartsAtTheStartTheBackendNamesAtItsPlace() throws Exception {
+        api.responses.put("queue plex:20", BOOK);
+        Resolver.Resolved r = resolve("c:plex:20");
+        assertEquals("the book keeps its order", Arrays.asList("plex:21", "plex:22", "plex:23"), ids(r));
+        assertEquals("startIndex is found by id: the video in between is not a track", 1, r.startIndex);
+        assertEquals(600_000, r.startPositionMs);
+    }
+
+    @Test public void aBookStartsAtItsStartEvenWhenShuffleIsAsked() throws Exception {
+        api.responses.put("queue plex:20", BOOK);
+        Resolver.Resolved r = Resolver.resolve(Collections.singletonList("c:plex:20"), -1, false, api, backend, "s", true);
+        assertEquals("the backend ignores shuffle for a book", Arrays.asList("plex:21", "plex:22", "plex:23"), ids(r));
+        assertEquals(1, r.startIndex);
+        assertEquals(600_000, r.startPositionMs);
+    }
+
+    @Test public void aQueueWithoutStartIndexStartsAtItsFirstItemAsBefore() throws Exception {
+        api.responses.put("queue plex:20", BOOK.replace("\"startIndex\":2,", ""));
+        Resolver.Resolved r = resolve("c:plex:20");
+        assertEquals(0, r.startIndex);
+        assertEquals("an older backend put the part in progress first", 948_000, r.startPositionMs);
+    }
+
+    @Test public void aStartIndexThatNamesNoTrackFallsBackToTheFirst() throws Exception {
+        api.responses.put("queue plex:20", BOOK.replace("\"startIndex\":2,", "\"startIndex\":1,"));
+        assertEquals(0, resolve("c:plex:20").startIndex);
+        api.responses.put("queue plex:20", BOOK.replace("\"startIndex\":2,", "\"startIndex\":9,"));
+        assertEquals(0, resolve("c:plex:20").startIndex);
+    }
+
+    private static java.util.List<String> ids(Resolver.Resolved r) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        for (Track t : r.tracks) out.add(t.id);
+        return out;
+    }
+
     @Test public void aLeafThatIsNotInItsContainersQueuePlaysAlone() throws Exception {
         api.responses.put("play plex:99", "{\"id\":\"plex:99\",\"title\":\"Loose\",\"mediaType\":\"audio\",\"mediaUrl\":\"/s/99\",\"duration\":60}");
         Resolver.Resolved r = resolve("p:plex:99|plex:10");

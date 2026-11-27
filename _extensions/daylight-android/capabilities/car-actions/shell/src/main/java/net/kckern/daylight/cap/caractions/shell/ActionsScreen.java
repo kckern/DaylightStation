@@ -2,6 +2,7 @@ package net.kckern.daylight.cap.caractions.shell;
 
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
@@ -38,6 +39,8 @@ final class ActionsScreen extends Screen {
     private static final long LIST_WAIT_MS = 4000;
     private static final long RUN_WAIT_MS = 8000;
     private static final long STARTING_WAIT_MS = 120_000;
+    /** A running action takes taps again after this, even with no answer. */
+    private static final long RUN_DEADLINE_MS = RUN_WAIT_MS + 4000;
 
     private final DaylightCarAppService service;
     private final PayloadCar payload = new PayloadCar();
@@ -51,6 +54,8 @@ final class ActionsScreen extends Screen {
     private final AtomicBoolean waiting = new AtomicBoolean();
     /** Null until the first answer. Touched on the main thread only. */
     private List<CarAnswers.Entry> rows;
+    /** Actions whose answer has not come back. Touched on the main thread only. */
+    private final RunGuard runs = new RunGuard(RUN_DEADLINE_MS);
 
     ActionsScreen(CarContext carContext, DaylightCarAppService service) {
         super(carContext);
@@ -76,6 +81,9 @@ final class ActionsScreen extends Screen {
         ItemList.Builder items = new ItemList.Builder().setNoItemsMessage("No actions are set for the car");
         for (final CarAnswers.Entry e : current) {
             Row.Builder row = new Row.Builder().setTitle(e.label);
+            if (CarAnswers.RUN.equals(e.kind) && runs.running(e.id, SystemClock.uptimeMillis())) {
+                row.addText(RunGuard.SENDING + "…");
+            }
             if (CarAnswers.RUN.equals(e.kind)) row.setOnClickListener(() -> run(e));
             if (CarAnswers.VOICE.equals(e.kind)) row.setOnClickListener(() -> record(e));
             items.addItem(row.build());
@@ -158,9 +166,18 @@ final class ActionsScreen extends Screen {
         getScreenManager().push(screen);
     }
 
-    /** A row's click: the one place an action runs from the car. */
+    /**
+     * A row's click: the one place an action runs from the car. "Sending <label>…" shows
+     * at once and the row reads "Sending…" until the answer; a tap on a running action
+     * is ignored, so a second tap does not run a door or the lights twice.
+     */
     private void run(final CarAnswers.Entry e) {
         if (!service.servesHost()) return;
+        if (!runs.tryStart(e.id, SystemClock.uptimeMillis())) return;
+        toast(RunGuard.sending(e.label));
+        invalidate();
+        // The row takes taps again at the deadline even if the answer never comes.
+        main.postDelayed(this::redraw, RUN_DEADLINE_MS);
         try {
             io.execute(() -> {
                 String message;
@@ -174,15 +191,31 @@ final class ActionsScreen extends Screen {
                 }
                 final String shown = message;
                 main.post(() -> {
-                    try {
-                        CarToast.makeText(getCarContext(), shown, CarToast.LENGTH_LONG).show();
-                    } catch (RuntimeException gone) {
-                        // The car disconnected while the action ran.
-                    }
+                    runs.finish(e.id);
+                    toast(shown);
+                    redraw();
                 });
             });
         } catch (RuntimeException stopping) {
             // The screen is gone.
+            runs.finish(e.id);
+        }
+    }
+
+    private void redraw() {
+        if (!getLifecycle().getCurrentState().isAtLeast(androidx.lifecycle.Lifecycle.State.CREATED)) return;
+        try {
+            invalidate();
+        } catch (RuntimeException gone) {
+            // The car disconnected while the action ran.
+        }
+    }
+
+    private void toast(String text) {
+        try {
+            CarToast.makeText(getCarContext(), text, CarToast.LENGTH_LONG).show();
+        } catch (RuntimeException gone) {
+            // The car disconnected.
         }
     }
 }

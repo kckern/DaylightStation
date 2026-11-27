@@ -35,6 +35,7 @@ public class TextInputActivity extends Activity {
     });
 
     private final CaptureScopeWait bindingWait = new CaptureScopeWait();
+    private TextView checkingLine;
     private final DraftDiscard confirmation = new DraftDiscard();
     private AlertDialog discardDialog;
     private CaptureDraftStore store;
@@ -67,7 +68,9 @@ public class TextInputActivity extends Activity {
         if (savedInstanceState != null && CaptureScope.valid(owner) && CaptureScope.current() == null) {
             deferredState = savedInstanceState;
             TextView checking = new TextView(this);
-            checking.setText(CaptureScopeWait.CHECKING);
+            checking.setText(net.kckern.daylight.api.PayloadPort.named(MemoFiles.PORT).ready()
+                    ? CaptureScopeWait.CHECKING : net.kckern.daylight.shellkit.PayloadReady.STARTING);
+            checkingLine = checking;
             setContentView(checking);
         } else {
             open(getIntent(), savedInstanceState);
@@ -82,7 +85,7 @@ public class TextInputActivity extends Activity {
                 Bundle selected = deferredState;
                 deferredState = null;
                 open(getIntent(), selected);
-            }, this::bindingUnavailable);
+            }, this::bindingUnavailable, checkingLine);
         } else if (!CaptureScope.currentIs(owner)) {
             bindingUnavailable();
         }
@@ -94,7 +97,7 @@ public class TextInputActivity extends Activity {
     }
 
     private void bindingUnavailable() {
-        say(CaptureScopeWait.UNAVAILABLE);
+        say(bindingWait.why());
         finish();
     }
 

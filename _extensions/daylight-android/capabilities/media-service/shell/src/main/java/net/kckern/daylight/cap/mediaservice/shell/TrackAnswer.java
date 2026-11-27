@@ -24,6 +24,8 @@ final class TrackAnswer {
         final String artUrl;
         final String listId;
         final long durationMs;
+        /** A book's part, a talk or a lecture (the payload's "longForm"), however short. */
+        boolean longForm;
 
         Track(String id, String url, String title, String artist, String album, String artUrl, String listId, long durationMs) {
             this.id = id;
@@ -62,9 +64,11 @@ final class TrackAnswer {
             String url = t.optString("url", "");
             if (id.isEmpty() || !(url.startsWith("https://") || url.startsWith("http://"))) continue;
             if (i == start) keptStart = out.size();
-            out.add(new Track(id, url, t.optString("title", ""), t.optString("artist", ""), t.optString("album", ""),
+            Track track = new Track(id, url, t.optString("title", ""), t.optString("artist", ""), t.optString("album", ""),
                     BrowseAnswer.https(t.optString("artUrl", "")), t.optString("listId", ""),
-                    Math.max(0, t.optLong("durationMs", 0))));
+                    Math.max(0, t.optLong("durationMs", 0)));
+            track.longForm = t.optBoolean("longForm", false);
+            out.add(track);
         }
         if (out.isEmpty()) throw new BrowseAnswer.Failed("nothing to play");
         return new TrackAnswer(out, Math.max(0, keptStart), Math.max(0, o.optLong("startPositionMs", 0)),

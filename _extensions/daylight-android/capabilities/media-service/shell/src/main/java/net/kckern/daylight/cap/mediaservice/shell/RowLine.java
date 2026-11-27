@@ -1,0 +1,100 @@
+package net.kckern.daylight.cap.mediaservice.shell;
+
+import org.json.JSONObject;
+
+/**
+ * A row's second line never repeats the page (ops:docs/superpowers/specs/2026-11-26-phone-lookup-and-browse.md
+ * §8): what the page heading already says is left out for the next useful fact. Under an
+ * author: the book's year and, once started, what is left ("1998 · 2 h 10 min left"), or its
+ * length with no year; under a music artist: year and track count; on an album: the track's
+ * length, and its artist only when it is not the album's; in search, lists and Continue the
+ * author or artist stays. The facts are home's (the payload passes year, durationSec,
+ * trackCount, artist with the row). Pure.
+ */
+final class RowLine {
+    private RowLine() { }
+
+    /**
+     * @param pageKind   the page the row is on ("" for search and lists)
+     * @param row        the payload's row: subtitle, year, durationSec, trackCount, artist
+     * @param pageArtist the album's own artist (an album page's by-line), or ""
+     * @param book       an author's book facts (seconds, playedSec, started, finished), or null
+     */
+    static String of(String pageKind, JSONObject row, String pageArtist, JSONObject book) {
+        String year = row.optString("year", "");
+        long seconds = row.optLong("durationSec", 0);
+        switch (MediaKind.normal(pageKind)) {
+            case "author": case "speaker": {
+                long total = book != null && book.optLong("seconds", 0) > 0 ? book.optLong("seconds") : seconds;
+                String progress = book == null ? "" : progress(book);
+                if (!year.isEmpty()) return progress.isEmpty() ? year : year + " · " + progress;
+                if (!progress.isEmpty()) return progress;
+                return total > 0 ? length(total) : "";
+            }
+            case "artist": {
+                int n = row.optInt("trackCount", 0);
+                String count = n > 0 ? n + (n == 1 ? " track" : " tracks") : "";
+                if (!year.isEmpty()) return count.isEmpty() ? year : year + " · " + count;
+                return count;
+            }
+            case "album": {
+                String artist = row.optString("artist", "");
+                String len = seconds > 0 ? length(seconds) : "";
+                boolean guest = !artist.isEmpty() && !pageArtist.isEmpty() && !artist.equalsIgnoreCase(pageArtist);
+                if (guest) return len.isEmpty() ? artist : len + " · " + artist;
+                return len;
+            }
+            case "book": case "series":
+                return seconds > 0 ? length(seconds) : "";
+            case "playlist": {
+                // Nothing else on screen names a playlist track's artist: it stays.
+                String artist = row.optString("artist", row.optString("subtitle", ""));
+                String len = seconds > 0 ? length(seconds) : "";
+                if (artist.isEmpty()) return len;
+                return len.isEmpty() ? artist : artist + " · " + len;
+            }
+            default:
+                return row.optString("subtitle", "");
+        }
+    }
+
+    /** "2 h 10 min left", "Finished", or "" for a book not started. */
+    static String progress(JSONObject book) {
+        if (book.optBoolean("finished")) return "Finished";
+        if (!book.optBoolean("started")) return "";
+        long left = Math.max(0, book.optLong("seconds") - book.optLong("playedSec"));
+        return left >= 3600 ? (left / 3600) + " h " + (left % 3600) / 60 + " min left" : Math.max(1, left / 60) + " min left";
+    }
+
+    /** "9 h 40 min" or "42 min" for long items; "3:45" for a song. */
+    static String length(long seconds) {
+        if (seconds >= 3600) return (seconds / 3600) + " h " + (seconds % 3600) / 60 + " min";
+        if (seconds >= 600) return seconds / 60 + " min";
+        return seconds / 60 + ":" + String.format(java.util.Locale.ROOT, "%02d", seconds % 60);
+    }
+
+    /** An author's facts line: "United Kingdom · 12 books · 96 h"; an artist's: "United Kingdom · Rock · 9 albums". */
+    static String facts(String kind, JSONObject about, int childrenShown) {
+        StringBuilder b = new StringBuilder();
+        org.json.JSONArray countries = about == null ? null : about.optJSONArray("countries");
+        if (countries != null && countries.length() > 0) b.append(countries.optString(0));
+        int n = about == null ? 0 : about.optInt("children", 0);
+        if (n <= 0) n = childrenShown;
+        if (MediaKind.aboutPerson(kind) && !MediaKind.hasBooks(kind)) {
+            org.json.JSONArray styles = about == null ? null : about.optJSONArray("styles");
+            org.json.JSONArray genres = about == null ? null : about.optJSONArray("genres");
+            String g = styles != null && styles.length() > 0 ? styles.optString(0) : genres != null && genres.length() > 0 ? genres.optString(0) : "";
+            if (!g.isEmpty()) sep(b).append(g);
+            if (n > 0) sep(b).append(n).append(n == 1 ? " album" : " albums");
+            return b.toString();
+        }
+        String noun = "speaker".equals(MediaKind.normal(kind)) ? (n == 1 ? " course" : " courses") : (n == 1 ? " book" : " books");
+        if (n > 0) sep(b).append(n).append(noun);
+        long total = about == null ? 0 : about.optLong("totalSec", 0);
+        if (total >= 3600) sep(b).append(Math.round(total / 3600.0)).append(" h");
+        else if (total > 0) sep(b).append(Math.max(1, total / 60)).append(" min");
+        return b.toString();
+    }
+
+    private static StringBuilder sep(StringBuilder b) { return b.length() == 0 ? b : b.append(" · "); }
+}

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- View tags the library pages read: a row's media id (Back to the list scrolls to it). -->
+<resources>
+    <item name="daylight_browse_row_id" type="id" />
+</resources>

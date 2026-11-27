@@ -50,7 +50,27 @@ final class FakeMediaApi implements MediaApi {
         if ("none".equals(responses.get(call))) { calls.add(call); return null; }
         return answer("chapters", call);
     }
+    /** GET info: answered when a response is set for "info <id>", none otherwise (as before). */
+    @Override public JSONObject info(String contentId) throws Exception {
+        String call = "info " + contentId;
+        if (!responses.containsKey(call)) return null;
+        return answer("info", call);
+    }
     @Override public JSONObject search(String text, int take) throws Exception { return answer("search", "search " + text + " " + take); }
+    @Override public JSONObject audioLibraries() throws Exception { return answer("audio libraries", "audioLibraries"); }
+    final List<String> hides = Collections.synchronizedList(new ArrayList<String>());
+    volatile int hideStatus = 200;
+    @Override public void hideContinue(String contentId, boolean hidden) throws Exception {
+        calls.add("hide " + contentId + " " + hidden);
+        if (down) throw new IOException("no route to host");
+        if (hideStatus != 200) throw new Refused("continue hide", hideStatus);
+        hides.add((hidden ? "+" : "-") + contentId);
+    }
+    final List<String> marked = Collections.synchronizedList(new ArrayList<String>());
+    @Override public void markWatched(String contentId, boolean watched) throws Exception {
+        if (down) throw new IOException("no route to host");
+        marked.add(contentId + "=" + watched);
+    }
     /** What play/log answers (e.g. {response:{stale:true, seconds:900}}). */
     JSONObject logAnswer = new JSONObject();
     @Override public JSONObject log(JSONObject body) throws Exception {

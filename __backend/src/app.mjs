@@ -2766,6 +2766,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     contentCatalog: contentServices.contentCatalog,
     mediaProgressMemory: mediaProgressMemory,
     appBaseUrl: `http://localhost:${appPort}`,
+    libraryKinds: () => configService.getHouseholdAppConfig?.(null, 'media')?.play_on_demand?.library_kinds,
     logger: rootLogger.child({ module: 'prewarm' })
   });
 

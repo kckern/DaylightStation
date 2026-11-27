@@ -34,6 +34,21 @@ public class BrowseKindTest {
         assertEquals("Progress isn't available offline", BrowseActivity.progressWords(ids, null));
     }
 
+    @Test public void missingProgressSaysWhy() {
+        java.util.List<String> ids = java.util.Arrays.asList("plex:1");
+        assertEquals("Progress: Home isn't answering", BrowseActivity.progressWords(ids, null,
+                BrowseActivity.progressUnavailable(net.kckern.daylight.shellkit.FailureWords.Cause.HOME_SLOW)));
+        assertEquals("Progress isn't available offline",
+                BrowseActivity.progressUnavailable(net.kckern.daylight.shellkit.FailureWords.Cause.OFFLINE));
+    }
+
+    @Test public void aKeepWaitingForHomeSaysWhy() {
+        assertEquals("Offline: it will be kept when home answers",
+                KeepStore.waitingWords(net.kckern.daylight.shellkit.FailureWords.Cause.OFFLINE));
+        assertEquals("Home isn't answering: it will be kept when it does",
+                KeepStore.waitingWords(net.kckern.daylight.shellkit.FailureWords.Cause.HOME_SLOW));
+    }
+
     @Test public void contentIdsComeOutOfMediaIds() {
         assertEquals("plex:731396", BrowseActivity.contentIdOf("c:plex:731396"));
         assertEquals("plex:5", BrowseActivity.contentIdOf("p:plex:5|plex:9"));

@@ -307,11 +307,18 @@ does with a household URL in a push.
 ### Cold start
 
 Android can create the link activity in a process with no payload loaded. The
-activity is visible, so it is allowed to start the shell service. It then waits up
-to eight seconds on the `links` port for the payload to attach. If none does, it
-shows "Daylight is still starting. Try again in a moment." and leaves the service
-starting. A request that was handed to the payload is never sent twice. Unproven
-on a phone: how long a cold payload takes, so whether eight seconds is enough.
+activity is visible, so it is allowed to start the shell service. It keeps the link
+and waits on the port (`links`, or `launcher-capture` for a capture shortcut) for as
+long as the shell's loader gives a payload to start (shell-kit `PayloadReady`, see
+"Waiting for Daylight to start" below), and runs the link the moment the payload
+attaches. A tap still waiting after 300 ms shows a small card along the bottom,
+"Starting Daylight… · Lights off" (what was tapped, from `LinkLabel`), with
+**Cancel**; Back cancels too, and a cancelled link is never sent. Warm, nothing is
+shown before the answer. Only when the loader gave up does it say "Daylight could not
+start. Close it and open it again.", and only when the whole start deadline passed
+with no payload, "Daylight is still starting. Try again in a moment." A request that
+was handed to the payload is never sent twice; a link activity recreated by a
+rotation does not run the link a second time.
 
 When a link opens a page and no window is up, the URL is kept for up to a minute
 and the window the link activity then brings forward loads it in place of the
@@ -456,8 +463,8 @@ natively and answers "Could not start playback"; it plays in the web view.
 | Piece | Installed (shell half) | Payload | With no payload loaded |
 |---|---|---|---|
 | `DaylightMediaService`, a Media3 `MediaLibraryService` | The ExoPlayer, the session, audio focus, "headphones unplugged", the media notification and the foreground state (type `mediaPlayback`) | What a browse level holds, which stream a media id resolves to, when progress is reported | Starts the shell service, which loads the payload. A browse of the root waits up to 4 s and then answers one tab, "Daylight is starting", with nothing under it; browsers of the root are told to ask again when a payload attaches (within two minutes). A play request fails. Nothing crashes and nothing runs on the main thread |
-| `PlayActivity` (not exported, no window) | Builds a media controller, sets one media id, plays, and stays up until playback started, failed or 8 s passed | Starts it, on a keyed `media` link | Not reached: the link activity already waited for the payload |
-| `PlayActionService` (not exported, foreground service of type `mediaPlayback`) | Started by a widget button or a tile with one action id. Enters the foreground at once with a "Starting playback" notice, asks the payload for the action's media id, plays it through a media controller, and lets go once the media service holds the foreground state | Answers `action` with the media id of a configured or pinned media action, or 404 | Starts the shell service and waits up to 8 s; with no payload it says "Could not start playback" |
+| `PlayActivity` (not exported, no window) | Kept for a payload older than shell 134: opens Now playing with the id (Starting, "play it") and finishes at once. Nothing waits in it and nothing sits over Now playing | A current payload opens Now playing directly on a keyed `media` link (shell 134 and later, read from the installed version code; an older shell still gets `PlayActivity`) | Not reached: the link activity already waited for the payload |
+| `PlayActionService` (not exported, foreground service of type `mediaPlayback`) | Started by a widget button or a tile with one action id. Enters the foreground at once with a notice naming what starts ("Starting Morning Mix…": the widget's playlist by its saved name, an action by its label, else "Starting playback"), asks the payload for the action's media id, plays it through a media controller, and lets go once the media service holds the foreground state. One budget for the whole start (`PlayBudget`: 24 s warm, plus the loader's own wait when the payload was not up at the tap); each step waits only what is left of it | Answers `action` with the media id of a configured or pinned media action (and its label as `title`), or 404 | Starts the shell service and waits within the same budget; with no payload it says "Could not start <name>. Tap the button again to retry." The toast is not shown while Now playing is on screen showing a start |
 
 The installed service asks the payload through the `media` `PayloadPort`, in
 process, as JSON: `browse`, `resolve`, `event`, and, from the play service,
@@ -476,12 +483,93 @@ targets are Media3 sessions behind one `MediaController`:
 
 | Piece | Installed (shell half) | Payload |
 |---|---|---|
-| `NowPlayingActivity` (not exported) | Laid out after Plexamp (ops:docs/superpowers/specs/2026-11-26-phone-player-parity-design.md). Top: close, the target (its icon and name, ▾ opens **Play on** with the current one checked) and, for a screen, the D-pad. The **stage** holds the cover (square, or 16:9 for a video still; swipe it left for next, right for previous, with a haptic tick), or the **lyrics** or the **queue** in its place (Back returns to the cover). Under it the **seek bar is the track's loudness** (Plex's analysis, as bars; a plain line when there is none), elapsed on the left and remaining on the right (tap: the length; remembered). Then artist, title (bold) and album (year), centred, and the audio quality ("FLAC · 24-bit · 96 kHz", "MP3 · 256 kbps · 44.1 kHz") when the backend knows it. One transport row: previous, play/pause in a disc of the cover's color, next; an item of 20 minutes or more adds back 10 / forward 10 at its ends. One icon row: queue, lyrics (enabled only when the track has lyrics), shuffle, ⋮ (Sleep timer and Crossfade on this phone, Stop, Clear queue), repeat, output (opens **Play on**). The page takes its colors from the cover (`CoverColor`, `DaylightTheme.withAccent`) over a soft copy of it. With a screen as the target the volume keys set the screen's volume and show the level for a moment. The status line shows only when something is wrong, or a sleep timer is set. A control is enabled only when the target's player makes its command available. It opens as a sheet rising from the bottom, and the down chevron or Back drops it. **Play on** says what each player is doing (Off, Nothing playing, the title); an off player is greyed and can't be picked. A screen with nothing on it shows **Play something on <screen>** in the stage: Continue listening and your playlists, one tap starting it there (the payload's `screen-command` `load`, i.e. `GET /api/v1/device/<id>/load?play|queue=…&deferredRetry=0`, as the web's Play on), and Browse on the screen through the D-pad. An off screen offers this phone or another screen instead. **Chapters** (a long item whose chapters the backend or the kept copy knows): a line under the album ("Chapter 4 of 12 · 9 min left in chapter", or "4/12 · The Return · 9 min left" for a named one; time left at the play speed; the line is reserved blank for any long item so nothing jumps, and a tap opens the list), ticks on the seek bar at each chapter start (the current one in the accent; numbered in the press-and-hold zoom), Next / Previous by chapter (Previous restarts the chapter when more than 3 s in), the queue's place shows **Chapters · N** for a single-file book (number, name, length; a tap goes there), the sleep timer offers **End of chapter** (pauses at that chapter's end, fading over its last minute), and the session subtitle names the chapter (notification, lock screen, Android Auto). No chapters means none of this shows | Opens it on a `media/now-playing?target=` link (a `player:` action); `track-levels`, `track-lyrics` and `track-chapters` read `GET /api/v1/track/levels/<source>/<id>?samples=N`, `GET /api/v1/track/lyrics/<source>/<id>` and `GET /api/v1/track/chapters/<source>/<id>` (chapters: without home, the ones kept with the track, then the ones seen this session) (none, or an older backend's 404, is "none": the strip is a line and the button is off) |
+| `NowPlayingActivity` (not exported) | Laid out after Plexamp (ops:docs/superpowers/specs/2026-11-26-phone-player-parity-design.md). Top: close, the target (its icon and name, ▾ opens **Play on** with the current one checked) and, for a screen, the D-pad. The **stage** holds the cover (square, or 16:9 for a video still; swipe it left for next, right for previous, with a haptic tick), or the **lyrics** or the **queue** in its place (Back returns to the cover). Under it the **seek bar is the track's loudness** (Plex's analysis, as bars; a plain line when there is none), elapsed on the left and remaining on the right (tap: the length; remembered). Then artist, title (bold) and album (year), centred, and the audio quality ("FLAC · 24-bit · 96 kHz", "MP3 · 256 kbps · 44.1 kHz") when the backend knows it. One transport row: previous, play/pause in a disc of the cover's color, next; an item of 20 minutes or more adds back 10 / forward 10 at its ends. One icon row: queue, lyrics (enabled only when the track has lyrics), shuffle, ⋮ (the item sheet: Sleep timer, Progress bar for a book with chapters, Keep on this phone or its state, Crossfade on this phone, Stop; then Clear queue and Remove from this phone), repeat, output (opens **Play on**). A long item (a book, a talk, a course: `MediaKind.controls`) shows speed in shuffle's place and no repeat, lyrics or crossfade. The seek bar of an item of 10 minutes or more shows a time scale while it is touched (see **The seek bar's time scale**). The page takes its colors from the cover (`CoverColor`, `DaylightTheme.withAccent`) over a soft copy of it. With a screen as the target the volume keys set the screen's volume and show the level for a moment. The status line shows only when something is wrong, or a sleep timer is set. A control is enabled only when the target's player makes its command available. It opens as a sheet rising from the bottom, and the down chevron or Back drops it. **Play on** (the bottom sheet described under **Lookup and browse**) says what each player is doing (Off, Nothing playing, the title); off players are folded under **Off · N** and can't be picked. A screen with nothing on it shows **Play something on <screen>** in the stage: Continue listening and your playlists, one tap starting it there (the payload's `screen-command` `load`, i.e. `GET /api/v1/device/<id>/load?play|queue=…&deferredRetry=0`, as the web's Play on), and Browse on the screen through the D-pad. An off screen offers this phone or another screen instead. **Chapters** (a long item whose chapters the backend or the kept copy knows): a line under the album (with the bar on the chapter, "Canto 7 of 33 · 2 h 46 left in book"; on the whole book "Chapter 4 of 12 · 9 min left in chapter", or "4/12 · The Return · 9 min left" for a named one; time left at the play speed; the line is reserved blank for any long item so nothing jumps, and a tap opens the list), the seek bar on the current chapter or, by choice, the whole book with chapter notches only when they are 24 dp apart (see **The seek bar's time scale**; numbered in the press-and-hold zoom), Next / Previous by chapter (Previous restarts the chapter when more than 3 s in), the queue's place shows **Chapters · N** for a single-file book (number, name, length; a tap goes there), the sleep timer offers **End of chapter** (pauses at that chapter's end, fading over its last minute), and the session subtitle names the chapter (notification, lock screen, Android Auto). No chapters means none of this shows | Opens it on a `media/now-playing?target=` link (a `player:` action); `track-levels`, `track-lyrics` and `track-chapters` read `GET /api/v1/track/levels/<source>/<id>?samples=N`, `GET /api/v1/track/lyrics/<source>/<id>` and `GET /api/v1/track/chapters/<source>/<id>` (chapters: without home, the ones kept with the track, then the ones seen this session) (none, or an older backend's 404, is "none": the strip is a line and the button is off) |
 | `RemoteControlService`, a Media3 `MediaSessionService` (not exported, session id `screen-remote`) | A second session beside `DaylightMediaService`, holding a `ScreenPlayer`. Its notification and lock-screen card drive the screen; it reports remote playback (0–100), so the phone's volume keys set the screen's volume while it is the active session | — |
 | `ScreenPlayer`, a `SimpleBasePlayer` | The screen's snapshot as a Media3 player: its queue by `queueItemId`, its position carried forward while it plays. Every call becomes one command (`ScreenCommands`); its future completes after the session is read again, so the controls settle on what the screen did | `screens`, `screen-session`, `screen-command` (`ScreenRemote`): `GET /api/v1/device/config`, `GET /api/v1/device/<id>/session`, and the transport, queue, shuffle, repeat and volume routes of `__docs/reference/media/media-app-technical.md` §4 |
 
-- **The screen owns its session.** The phone keeps no copy of it: it shows the
-  screen's last answer. A command the screen did not confirm (502) shows "Not
+### The play path
+
+Every handoff carries what the sender knows; loading is drawn as the thing itself; the
+first useful answer wins (budgets on the phone: picture under 100 ms, sound under 1 s
+from the phone, under 2 s from home).
+
+- **Starting through Now playing.** The Play tab's Continue cards, kept cards and
+  playlist tiles, Now playing's own idle panel, a `media/play` link and Play on… open
+  Now playing with the tapped item's Starting extras and `starting.play`; Now playing
+  sets the item on its own controller once it connects, once per intent (a rotation, a
+  recreation after the process was stopped or a reopen from Recents does not play it
+  again). No second screen sits over it, so Back works at once. Browse's Play and
+  Shuffle still start on Browse's controller and open Now playing with the same extras.
+- **One budget** (`PlayBudget`): the resolve (8 s, a 2 s pause, 8 s again) plus 6 s for
+  the first audio, 24 s; a start made while the payload was still coming up adds the
+  loader's own wait (`PayloadStart.WAIT_MS`). Now playing's Starting state, the widget
+  and tile play service and a media link all use it; a refusal or a player error ends
+  a start before it. A start on a screen has one number for the screen command's wait
+  and the Starting give-up (30 s); a late accept takes back a failure already shown.
+- **The first frame** (`FirstFrame`). Opened from the mini player, the Play tab's Now
+  playing row, a notification or a Connect row, Now playing draws the mini player's
+  entry for that target (title, artist, cover from memory, the place and whether it
+  plays, carried forward) before its controller connects, with "Connecting…". The mini
+  strip and the Play row pass the target and its name, so a raw device id is never
+  shown. When the player goes away the last frame stays, greyed, with "Reconnecting…",
+  instead of "Nothing playing".
+- **Laid out once.** The Starting frame lays out exactly as the playing frame: the
+  waveform row is there (flat, off), the album and quality lines keep their place, the
+  chapter line is reserved only for a long item (a book or a talk, said by the tapping
+  screen with `starting.long`), and the cover box is the same size, so nothing moves
+  when the track lands.
+- **Switching to a screen.** The picker reads each screen's session as it opens; that
+  answer goes with the pick into Now playing and the remote (`ScreenPlayer` starts from
+  it, greyed and with no commands, "Checking <screen>…", until its own first read).
+  Each screen's last answer is kept on the phone with its time (`ScreenMemory`, 30
+  minutes), from the picker's checks and the remote's own reads, so a screen opened
+  later starts from it too.
+- **Play on…** opens at once from the cached screens list, every screen row
+  "Checking…" and refreshed in place, all checked at the same time; the list itself is
+  refreshed behind it. A tap on a row still being checked says "Checking… plays here
+  when it answers" and picks it when the answer comes, or greys it if the screen is
+  off (`PickRow`). With no cached list, the picker opens with this phone and "Looking
+  for screens…".
+- **A first tap on a list** (`FirstTap`). A track tapped on an album or playlist page
+  asks for the track alone and for the whole list at the same time. A music track
+  (one item under 20 minutes, no saved place) plays as soon as it is answered, and the
+  list's other tracks are put before and after it when the list arrives: it stays
+  current and does not restart. A cached list (QueueCache) answers first and plays
+  whole. A book's part, a talk or anything with a place waits for the list, so its
+  place comes from home. Logcat: `first tap: the track alone in N ms`, `first tap: the
+  list in N ms -> SPLICE`.
+- **Detail** (waveform and quality, chapters, lyrics) is asked at the same time on
+  three threads, each dropped before it is sent when the track has changed; a song
+  under 20 minutes is not asked for chapters. The lyrics stay up across a track change
+  with "Loading lyrics…" and go back to the cover only when the new track has none.
+- **Ahead of the next track** the phone's service asks for its loudness level and
+  loads its cover into memory, so a new track starts at its own level and its cover
+  draws at once. A track whose level is not known yet keeps the level playing until its
+  answer comes. A swipe to skip slides in the next item's cover (from memory, or a
+  plain box), never the old one.
+- **Screen commands settle on the screen's answer** (`CommandSettle`). The command goes
+  out on the commands thread and the reads that follow on the reads thread, so a second
+  tap is not held behind them. The pressed button keeps its new state until a read
+  shows it (play/pause, shuffle, repeat, volume) or 3 s pass; a skip or a seek settles
+  on the first read.
+- **Sleep timer.** The line counts down with the clock. "At the end of this" pauses at
+  the end of the item through the player itself (`setPauseAtEndOfMediaItems`), before
+  the next one makes a sound.
+- **This phone, nothing loaded** shows a start panel like a screen's: Resume <what
+  played last>, Continue listening, your playlists, and Play on a screen; one tap starts
+  it here.
+- **Shuffle** from a library page is asked of home with the request (`daylight.shuffle`
+  on the request item); the queue that was playing is never shuffled first, and the
+  player's own shuffle goes off in the same step as the new queue.
+- **The car's now-playing card** still shows the previous item while a play resolves:
+  Media3 1.1.1 keeps the session's state until `onSetMediaItems` answers, Android Auto's
+  request carries only the media id, and ExoPlayer cannot hold an item with no stream to
+  stand in for it.
+
+### The screen remote
+
+- **The screen owns its session.** The phone shows the screen's last answer and keeps
+  only that answer (`ScreenMemory`), to start from when the screen is next chosen. A command the screen did not confirm (502) shows "Not
   confirmed by Office Screen" for 8 s; an off screen (503 or 409) "Office Screen is
   off" with its last item; a screen not heard from since the backend started (404)
   "… is not on"; no backend "Can't reach home". The newest screen note ("Paused by
@@ -498,7 +586,8 @@ targets are Media3 sessions behind one `MediaController`:
   ("Can't reach home", "Daylight is starting", "Home could not answer for …"). After
   three failures and 20 s it gives way to the empty state; it recovers on its own at the
   next good answer. A 503 that is not a screen being off is a backend failure.
-- **Commands** go one at a time, in tap order, on their own thread. Of several play/pause
+- **Commands** go one at a time, in tap order, on their own thread (the reads after them
+  on the reads thread; see **The play path**). Of several play/pause
   or volume presses still waiting only the newest is sent; any command still waiting
   after 5 s is dropped ("Too slow to send; try again"). A command sent and not answered
   in time says "… did not answer in time; it may still happen" and is never re-sent.
@@ -547,8 +636,8 @@ targets are Media3 sessions behind one `MediaController`:
   none). A tap on the cover, or on the badge, turns to the lyrics; in the lyrics a small
   cover in the corner turns back. The two cross-fade.
 - **Long items** (talks, courses, books: from a household list, or 20 minutes or
-  more) after the audiobookshelf app: the shuffle slot becomes the **speed** (0.8× to
-  3×); remaining time is counted at that speed; resuming after a pause steps back a
+  more) after the audiobookshelf app: the shuffle slot becomes the **speed** (the speed
+  sheet, 0.5× to 3×); remaining time is counted at that speed; resuming after a pause steps back a
   little (under 10 s none, under a minute 3 s, under 5 minutes 10 s, under 30 minutes
   20 s, else 30 s). The speed is kept in the phone's session (`LongFormPolicy`, prefs
   `daylight.playback`), so the notification and the car follow it: remembered per
@@ -562,11 +651,26 @@ targets are Media3 sessions behind one `MediaController`:
   of this item. It lives in the phone's media session (`SleepTimer`, custom command
   `net.kckern.daylight.media.SLEEP` with `minutes`, -1 for the end of the item), so it
   holds with Now playing closed; stopping playback or clearing the queue cancels it.
+  A playback error does not (the player is left idle by an error too, and a lost
+  connection that comes back keeps the timer).
   Over its last minute the volume fades to 10%, then it pauses and the volume returns.
+- **Playback errors** (this phone's streamed items; `PlaybackRecovery`). Two causes, two
+  answers. Home not reachable (connection failed or timed out, a 5xx, 401, 403, 408 or
+  429): the player stays on the item at its position, Now playing's status line reads
+  "Lost connection to home · will resume", and the item is prepared again after 2, 5, 10
+  and 30 s, then every 30 s while the session lives; it plays on where it was if it was
+  playing. The item itself will not play (a decode or format error, a 404 or 410 for it):
+  the player skips to the next item, at most 3 in a row, then stops on the item with
+  "This item won't play · 3 in a row didn't, so playback stopped"; one item that plays
+  resets the count. A paused item or the last one is not skipped past ("This item won't
+  play"). A kept item plays from the phone, so its errors are never read as a lost
+  connection (a damaged kept file: see Keep, "Whole, or not ready"). Each error is logged
+  as `player error <code> -> SKIP|HOLD|STOP`.
 - **Crossfade between songs** (⋮ → Crossfade, this phone only; `CrossfadeEngine`, rules in
   `Crossfade`). Off, 2, 4, 6, 8 or 12 s; the person's choice is kept on the phone
   (`daylight.player` prefs) and wins over the household default `media.crossfadeSec` (4).
-  Music only: never for long-form (books, talks: `CarControls.longForm`) on either side,
+  Music only: never for long-form on either side (books, talks, courses: a track home calls
+  resumable, `NodeItems.longFormKind`, or `CarControls.longForm`; `Crossfade.longForm`),
   never inside an album played in order (shuffle off and the next track from the same
   album title and artist: a plain gapless transition), never across a track shorter than
   twice the fade, never at the end of the queue or on repeat-one, never while a sleep
@@ -746,9 +850,23 @@ home is a new file (lifecycle spec §3.5). Contract:
 - **Widgets.** Apex cannot be asked to pin a widget, so there the sheet shows the real steps
   (hold an empty spot on Home, Widgets, Daylight playlist, choose the playlist) instead of an
   "Add widget" button. A launcher that can pin gets the button.
-- **Home tabs.** Services, Capture, Play and Connect are pages that slide as one; swiping moves
-  both pages. Services and Capture list what is already on the home screen first, then what is
-  Available. A placement banner shows only when it needs an answer (confirm, failed, extra widget).
+- **Home sections.** A bottom navigation bar (design sweep D2, `HomeSections`): **Play,
+  Capture, Connect, Services**, each an icon and its name, Play first and the section a cold
+  start opens on; the selected one is ink on a soft indicator, the others muted. There is no
+  app header: the top bar holds the section's icon (24 dp, muted), its name and its actions
+  (Play: Search). The mini player sits directly above the bar. A flick sideways moves to the
+  neighbouring section in the bar's order. Services and Capture list what is already on the
+  home screen first, then what is Available. A placement banner shows only when it needs an
+  answer (confirm, failed, extra widget).
+- **The Play section** (D4, D5, D9): Continue listening and On this phone are flat 72 dp
+  rows (cover, title, by-line, a progress line under Continue's), no box around them;
+  "On this phone" in a by-line is muted with the offline glyph, never the accent. Your
+  playlists are tiles of just a cover and its name. A missing or loading cover is its kind's
+  glyph on the tile colour (shell-kit `CoverGlyph`: book, album, playlist, person, track),
+  here and on every Browse row and header. Covers are kept in a bounded disk cache in the
+  app's cache folder (`PlaylistArtwork`, 48 MB, least recently used first: `DiskCovers`),
+  so a cold start draws them from disk. Ordinary rows' glyphs and "›" are muted ink: the
+  accent marks only the primary action, the selected state and progress.
 
 ### Only household media plays
 
@@ -968,6 +1086,72 @@ out of reach the last answer is served, however old; a level never loaded fails
 only when it is an https URL on the backend; anything else is left out, in the
 payload and again in the installed service.
 
+### Waiting for Daylight to start
+
+The phone's service starts on demand, so a tap may come while the payload is still
+loading. The shell's loader (`PayloadLoader`) gives one payload's `start()` 20 s
+(`PayloadStart.START_DEADLINE_MS`, in shell-api, read by both sides) and notes in
+`PayloadStart` when no payload could be started. Every installed screen that needs the
+payload waits through shell-kit `PayloadReady`:
+
+- **Ready**: the port is attached (PayloadPort's own signal, so it answers the moment
+  the payload attaches).
+- **Still starting**: the wait (`PayloadStart.WAIT_MS`, the deadline plus 5 s) ran out
+  with no failure: "Starting Daylight…".
+- **Failed**: the loader gave up (its reason goes to the log): "Daylight could not
+  start. Close it and open it again."
+
+Used by the link activity (above); the phone home (the tabs, Play and Connect draw at
+once from the phone; only Services and Capture say "Loading…" or "Starting Daylight…";
+the bookmarks and actions are asked at the same time, and a load that could not run is
+asked again on its own when the payload attaches, with no Try again to press); the
+capture screens recreated after Android stopped the app (voice, text, photo: "Starting
+Daylight…" while it starts, then up to 5 s for the account binding); Capture status;
+and Share to Daylight. The play path has one budget of its own on top of it,
+`PlayBudget` (see **The play path** under `media-service`).
+
+### When home does not answer: four lines
+
+A slow home is not "offline". The payload says why a call to home failed (`reason`
+on its answer: `timeout`, `home-error`, `unreachable`, `not-found`, `refused`;
+media-service `FailureReason`), on failed answers and on the offline answers of
+search and the library. The shell adds whether Android reports a validated network
+and picks the words (shell-kit `FailureWords`):
+
+| Cause | Line |
+|---|---|
+| No validated network | "Offline · showing what's on this phone" |
+| Timeout, 5xx, home unreachable on a working network | "Home isn't answering" (with Retry; what was shown stays under it) |
+| 404 | "Not found at home" |
+| 401 / 403 | "Home refused this phone" |
+
+Browse uses them for a level, the library, search ("Home isn't answering · searching
+what's on this phone"), More and a book's progress line; Keep's preview and keep say
+"Offline: it will be kept when home answers", "Home isn't answering: it will be kept
+when it does", "This can't be kept: home does not have it" or "… home refused this
+phone". An offline answer is never written into Browse's cache of home's answers.
+
+### Covers, lists and threads
+
+- **One cover cache.** Every cover decoded in the process goes into one memory cache
+  (shell-kit `PlaylistArtwork`, an `LruCache` of an eighth of the app's memory, at most
+  32 MB, keyed by URL and size step: `CoverCache`). Browse rows, the home's cards,
+  tiles and mini player, On this phone and Now playing look it up on the main thread
+  before posting work, so a cover one screen showed draws on the next in the same frame
+  (Now playing draws a smaller copy at once and swaps in its full size). A cover that
+  failed to load waits its backoff (a minute, doubling to a day) before it is fetched
+  again, so offline does not cost a 4 s connect per cover on every draw.
+- **Lists update in place.** On this phone (the Play tab's section and the Downloads
+  screen) and a Browse level keep their rows by content id (shell-kit `KeyedRows`): an
+  answer equal to what shows touches nothing, a changed row has its words, progress and
+  buttons updated in its own view, and only rows that came or went are added or removed.
+  A press in progress, the covers and the A–Z strip survive the refresh.
+- **One thread per purpose.** Browse searches on their own thread (a search typed past
+  while it waited is skipped), screen commands and the Play on list on another, levels
+  and progress on a third. Keep's index, Remove, Pause and Resume run on a local thread
+  that never waits on the network; previews, keeps, retries, the sync and saving covers
+  run on the network one. A Remove made while a sync runs is not undone by it.
+
 ### Lookup and browse
 
 Lookup, not discovery (ops:docs/superpowers/specs/2026-11-26-phone-lookup-and-browse.md):
@@ -975,48 +1159,211 @@ anything the household has can be found in two taps; nothing is proposed. Audio 
 One screen, `BrowseActivity` (not exported), in three modes:
 
 - **Search**: the box at the top of the Play tab. Results as you type (250 ms after the
-  last key), grouped Books · Albums · Artists · Playlists · Tracks, five each with "N
-  more". Books are albums in a library whose name holds "book", "stor" or "speech". The
-  last ten searches show under an empty box (kept on the phone; Clear recent searches).
-  No home: "Searching this phone", the kept collections whose title holds every word.
+  last key), grouped **Books · Talks and courses · Albums · Artists · Playlists ·
+  Tracks**, five each with "N more". Tracks is music only: a book part is under Books and
+  a lecture under Talks and courses. An author is in Books (with their books first), a
+  speaker in Talks and courses; Artists is music artists. The last ten searches show under
+  an empty box (kept on the phone; Clear recent searches). No home: the kept collections
+  whose title holds every word, under "Offline · searching what's on this phone" or
+  "Home isn't answering · searching what's on this phone".
 - **Library** (Play tab → Browse library): every audio Plex library, then the household's
   list sources (Plex's audio playlists as **Playlists**, programs, watchlists, custom
-  lists). Offline: what is kept, "Showing what's on this phone".
-- **A level** (a library, an artist, an album, a book, a playlist): rows of a fixed
-  64 dp height, the last answer drawn at once from the phone and replaced in place, fixed
-  placeholders the first time; a long level ends in **More**, which appends the next
-  50 in place. A collection has a header: cover, name, Play (a book: Resume), Shuffle,
-  Play on… (Now playing's picker, `TargetPicker`: this phone first, each screen's state, off ones greyed; a screen gets the screen's load, as the web's Play on) and Keep (the
-  one Keep flow). A track's ⋮: Play here, Play next, Add to queue, Play on…, Keep.
-  Playing goes through the media session (the same media ids the car uses) and opens
-  Now playing.
+  lists). Offline: what is kept, "Offline · showing what's on this phone" (or "Home
+  isn't answering · …").
+- **A level**: rows of a fixed 64 dp height, flat (no card behind them; covers carry
+  their own 8 dp radius), the last answer drawn at once from the phone and updated in
+  place row by row, fixed placeholders the first time; a long level ends in **More**,
+  which appends the next 50 in place. A level of 40 rows or more gets an **A–Z** strip,
+  letters in A–Z order whatever order the level comes in. A playlist is read through the
+  list catalog (`a:0|<id>`), as the car reads it.
+
+**Media kinds.** Every page, row, menu, search group and Now playing control is chosen
+by the item's kind (`MediaKind`). The kind comes from home: each audio library's kind is
+the household media config's `play_on_demand.library_kinds` (see
+`__docs/reference/media/media-app-technical.md`), served by
+`GET /api/v1/queue/catalog/audio-libraries?profile=audio-only`; the payload (`LibraryKinds`)
+tags each entry with it. A home without that route (404) falls back to the old title rule
+until it is updated, and the payload notes it. Kinds: **album, playlist, station, artist**
+(music); **author, book, part** (books); **speaker, series, lecture** (talks and courses).
+A station is a radio-station playlist sequenced at home (the audio-lists catalog marks it
+`station: true`): it plays whole and lists no tracks.
+
+A detail page's actions are one `ActionSet` per kind: one **primary** action, a 56 dp
+filled circular button in the accent at the header's right edge ("Play <title>",
+"Resume <title>"); at most four **secondary** 48 dp icon buttons under the header, muted,
+no fill, each with a content description and a long-press tooltip; the rarer actions in
+**⋮**. No pill buttons; the accent is only the primary button, selected states and
+progress.
+
+| Kind | Primary | Icons | ⋮ | Row tap | Row ⋮ |
+|---|---|---|---|---|---|
+| Album, playlist | Play | Shuffle · Play on · Keep | Add to Your playlists | plays from that track | Play next · Add to queue · Go to album · Go to artist |
+| Station | Play | Play on · Keep | | (no rows) | |
+| Music artist | Shuffle this artist | | | opens the album | |
+| Author, speaker | "Continue <book>" when one is started, else none | | | opens the book | |
+| Book | Resume | Play on · Keep · Speed · Chapters | Play from the start · Mark finished | plays from that part | Play from here · Mark finished up to here |
+| Talk or course series | Resume (the next unfinished) | Play on · Keep | | plays that lecture | Mark watched · Mark unwatched |
+
+Keep's icon shows its state: download (not kept), downloading (queued or downloading),
+done in the accent (kept); kept, a tap opens On this phone. Chapters opens Now playing
+on its chapter list (resuming the book first when it is not the one playing). Your
+playlists is music only. Now playing on a book, a talk or a course (long-form) has no
+shuffle, repeat, lyrics or crossfade; speed, chapters, ±30 s and sleep stay.
+
+**Artist and author pages keep a ⋮** beside the primary (today it holds "Search for
+<name>"; it is where collection-wide actions on a person go).
+
+**One item sheet** (design sweep D17, shell-kit `ItemSheet` on `BottomSheet`) is every
+long-press and ⋮ in the phone app; there is no PopupMenu. A modal bottom sheet with a scrim
+and a drag handle, closed by a swipe down, a tap on the scrim or Back. It starts with the
+item itself: its cover (or kind glyph), title, by-line and state ("Kept automatically ·
+79 MB", "71 % · 1 h 16 min left"). Then rows with a 24 dp icon and a label (a second line
+for a state), then, after a divider, the destructive rows in the error colour (Remove from
+Continue listening, Remove from this phone, Clear queue): `SheetRows` orders them. The
+verbs are the kind's (`MediaKind`). It serves the Continue long-press, the Play tab's
+tiles and On this phone rows, a detail page's ⋮, a row's ⋮ and Now playing's ⋮.
+
+**The speed sheet** (D19, `SpeedSheet`, arithmetic in `SpeedSteps`) is the one speed
+control, on Now playing's speed button and a book page's Speed: a compact card over the
+button (under it when the button is in the top half), under half the screen. The current
+value large ("1.5×"); a slider from 0.5× to 3× in 0.05 steps between − and + (0.1 each),
+with a haptic tick at each quarter; the presets 1× (with "Normal" under it), 1.25, 1.5, 1.75
+and 2 as plain text, the current one in ink with a check; for a long item the footnote
+"For this book · remembered". It applies as it moves, with no OK. The book page writes the
+same memory Now playing's session uses ("speed:" + the book's key, and the long-form
+default).
+
+**Play on** (D18, `TargetPicker` on the same sheet): This phone; then **Available**, the
+screens playing or paused first, then the idle ones, each with its device icon and what it
+is doing; a row still being checked waits in Available ("Checking…") and moves to its place
+when it answers, animated; then one collapsed **Off · N** row that opens in place to the off
+screens (dimmed, not pickable). Off starts collapsed every time; the screen in use is never
+filed under Off (`PickerGroups`).
+
+**The author page is about the author.** The header is the portrait (info's
+`thumbnail`, cached), the name, a facts line ("Italy · 1 book · 3 h": country when known ·
+book count · total length; a music artist: "Iceland · Art Pop · 9 albums") and the
+summary clamped to four lines with **More** (opens in place). The book count, each book's
+length and progress, and which one to continue come from the `about` op: home's info and
+the author's tracks (`/api/v1/list/<id>/allLeaves`: each track's book and length) with the
+household's recent list. **A name is shown once**: on a detail page the top bar holds only
+Back while the header is on screen; the name fades into the bar when the header's name
+scrolls out of view.
+
+**Row second lines never repeat the page** (`RowLine`): under an author the book's year
+and, once started, what is left ("1998 · 2 h 10 min left"), or its length with no year;
+under a music artist year and track count ("2007 · 13 tracks"); on an album the track's
+length, with its artist only when it is not the album's; in search, lists and Continue the
+author or artist stays. Year, length, track count and artist are home's (the payload
+passes them with each row).
+
+**Swipe through neighbours** (`Neighbours`). A detail page opened from a list pages left
+and right through exactly that list in its order: an author page through the library's
+authors, a book through its author's books, a search result through its search group.
+Opened from Now playing's album line, the album pages through its artist's albums;
+opened by a link, there is no paging. The header shows the neighbours ("‹ Dante · Thomas
+More ›"; TalkBack hears Previous and Next buttons). Both neighbours' pages, their headers
+and covers are fetched as a page opens, so a swipe lands on a drawn page. At an edge: a
+rubber-band pull and "First book" / "Last book". Back returns to the list (one step),
+scrolled to the entry shown. Detail pages have no other horizontal gesture.
+
+Playing goes through the media session (the same media ids the car uses) and opens
+Now playing. A second tap on the same Play or Shuffle within a second, or while the
+player is still connecting, is dropped (shell-kit `TapGuard`), and taps while the
+controller connects share its one connection. Every Now playing launch from Browse and
+the phone home carries `SINGLE_TOP | CLEAR_TOP`, so an open Now playing takes the new
+item rather than a second one opening; the home's cards use the same guard. Play on… is
+Now playing's picker (`TargetPicker`).
 
 Now playing's artist and album lines open that artist's or album's page, found from the
 playing track's own `albumId`/`artistId` (`parents` op over `/api/v1/info`); only without
 them does the line open the search on the name. A link
 `daylight://media/<book|album|artist|playlist>/<content id>` (or
 `daylight://media/open?kind=…&id=…`; through the link activity, with the install key)
-opens a page. Long-press on a Play tab playlist tile offers **Open** (its page).
+opens a page. Long-press on a Play tab playlist tile opens its item sheet: **Open** (its page), Play on
+this phone, Keep on this phone (or its state, and Remove from this phone).
 
-A **book** page also shows how far in it is ("2 h 10 min left · 34 %", Finished, Not
-started: from the household's recent list), **Speed** (the book's remembered long-form
-speed, the same key Now playing uses) and **Mark finished** (the web's mark-watched for
-each part). An album or playlist page offers **Add to Your playlists** (the Play tab's
-tiles and the widget picker's list). A level of 40 rows or more gets an **A–Z** strip, letters in A–Z order whatever order the level comes in (a library may list by date added). A playlist is read through the list catalog (`a:0|<id>`), as the car reads it.
-Search adds an author's books (Plex finds "Boethius" the author, not the book) to the top
-of Books. There is no Favourites row: the household's favourites list is empty.
+A **book** page shows how far in it is ("2 h 10 min left · 34 %", Finished, Not started:
+from the household's recent list) under its title; Speed is the book's remembered
+long-form speed (the same key Now playing uses); Mark finished posts the web's
+mark-watched for each part. There is no Favourites row: the household's favourites list
+is empty.
+
+**Continue listening's long-press** (the item sheet): Open (the book's page) · Keep on this phone (or its
+state) · Mark finished · Remove from Continue listening. Remove takes the card away at
+once with "Removed from Continue listening · Undo" (6 s). The hide is home's: the
+household's removed list (`POST /api/v1/media/household/continue/hide {contentId}`,
+Undo `DELETE …/continue/hide/<contentId>`), so it is gone from every device's Continue and
+the web's, and comes back by itself when it is played again after the hide. Offline it is
+applied on the phone at once and queued (`continue-hides.json` in the payload's state)
+until home answers; the card does not reappear meanwhile. Mark finished marks every part
+of the card's book (found from the part's info), removes it from Continue, starts the day
+before an automatic keep of it is removed, and has Undo too.
+
+**One mini player on every browse screen** (shell-kit `MiniPlayer`): the home's tabs,
+Search, the Library and every level and detail page, On this phone. Not on Now playing nor
+the capture screens. Each screen adds the same bar as the last child of its vertical
+root, so its list ends above it. It shows the cover, title, the by-line ("On <screen>"
+for a screen, "Starting…" while a tapped item starts after Now playing was closed, a
+book's chapter while Now playing knows it), a progress line run by an animator to the
+item's end, Play/Pause (flips at once; the player's report corrects it) and Next. Tap or
+swipe up opens Now playing on that target, drawn from the same entry; swipe down hides it
+on that screen until the next item (playback goes on). It reads `NowPlayingNote`, which
+the two media services write: one connection to the player for the app, no polling. It
+slides away when nothing is loaded and never says "Nothing playing".
 
 | Payload op | Answers | Endpoint |
 |---|---|---|
 | `lookup` `{query}` | `{groups:[{key, title, items, more}], offline}` | `GET /api/v1/content/query/search` |
-| `library` | `{items:[{id, title, kind}], offline}` | `GET /api/v1/list/plex`, `GET /api/v1/queue/catalog/audio-sources` |
-| `browse` `{parent}` | a level, as the car's | `GET /api/v1/list/…`, the audio-lists catalog |
-| `parents` `{id}` | `{parents:{album?, artist?}}` | `GET /api/v1/info/<id>` |
+| `library` | `{items:[{id, title, kind}], offline}` | `GET /api/v1/queue/catalog/audio-libraries` (a home without it: `GET /api/v1/list/plex`), `GET /api/v1/queue/catalog/audio-sources` |
+| `browse` `{parent}` | a level, as the car's, each row with `year`, `durationSec`, `trackCount`, `artist`, `kind` when home gives them | `GET /api/v1/list/…`, the audio-lists catalog |
+| `about` `{id, books}` | `{about:{portrait, summary, countries, genres, styles, children, totalSec, books, continue}}` | `GET /api/v1/info/<id>`, `GET /api/v1/list/<id>/allLeaves`, `GET /api/v1/media/household/recent` |
+| `parents` `{id}` | `{parents:{album?, artist?}}` with their kinds | `GET /api/v1/info/<id>` |
 | `progress` `{ids}` | `{progress:{id:{playhead, duration, finished}}}` | `GET /api/v1/media/household/recent` |
 | `mark-finished` `{ids, finished}` | `{marked}` | `POST /api/v1/media/household/watched` |
+| `continue` `{limit}` | Continue listening, without the phone's unsent hides | `GET /api/v1/media/household/recent` |
+| `continue-hide` `{contentId, hidden}` | `{hidden, sent}` | `POST`/`DELETE /api/v1/media/household/continue/hide` |
+| `book-finished` `{contentId, finished}` | `{marked, book, parts}` | `GET /api/v1/info`, `GET /api/v1/list`, `POST …/watched`, the hide |
 
 Telemetry: `browse.view` (kind), `search.query` (length, result count, offline: never
-the words), `browse.action` (verb, kind), and a tag on every row and button.
+the words), `browse.action` (verb, kind), `browse.swipe` (kind, direction, edge),
+`continue.hide`, `continue.unhide`, `continue.finished`, `mini.open`, `mini.toggle`,
+`mini.dismiss` (screen), and a tag on every row and button.
+
+### The seek bar's time scale
+
+The seek bar carries labels only while a finger is on it (`TimeScale`, drawn by
+`WaveformBar`; spec §12b). At rest (§12c) it has short, faint notches on the line by the
+length of the span shown, in one row, with no dots and no labels: 6 h or more, one each
+hour; 1 to 6 h, one each 30 min (the hours a little taller); 20 to 60 min, one each 10 min;
+under 20 min, none.
+
+**What the bar spans** (§12d, `BarScope`). An item with chapters shows **the current
+chapter** by default: the bar spans it, the times either side are the chapter's elapsed and
+remaining, and the line under the title reads "Canto 7 of 33 · 2 h 46 left in book" (the
+chapters' own word when most titles share one, else "Chapter"; time left at the play
+speed). Crossing into the next chapter moves the span on without a jump. Now playing's ⋮
+**Progress bar** switches to **Whole book** (remembered on the phone): the bar spans the
+file, a lighter band marks the current chapter, and chapter notches are drawn only when
+every two are at least 24 dp apart (none at all otherwise: 33 cantos at phone width get
+none, 6 chapters get theirs). Time notches follow the span shown, so a 10 min canto has
+none. The press-and-hold zoom works in both.
+
+- **Touched**: 2 to 4 labels at round points fade in above the bars, in words ("45 m",
+  "1 h", "2 h 30"; never "1:00:00"), with one row of short ticks between the labels only.
+  They fade out on release.
+- **Press and hold** (the zoom, FineScrub's 2 to 10 minute window): clock labels ("1:42",
+  "1:43"; "42:30" under an hour), the window's end times, a thin strip of the whole item
+  with the window on it, and above the finger its time and its distance from where the
+  press began ("1:42:30 · +0:30"); seconds appear only here. Each labelled mark the finger
+  crosses gives a light tick (haptic `CLOCK_TICK`); released, the player seeks to the time
+  shown.
+
+One rule chooses the labels for the whole bar and the zoom: the smallest round step (10 s
+up to 24 h) giving 2 to 4 labels at least three of their own widths apart; ticks divide it
+into 4, 3, 5 or 2 round steps at least 12 dp apart, or there are none. Songs (under 10 min)
+have no scale. A label that would touch a zoom chapter number, the window's ends or the
+finger's readout is dropped, never moved; the marks crossfade when the span changes.
 
 ### Downloads: Keep on this phone
 
@@ -1063,7 +1410,11 @@ removed.
   more), the shell reads each missing track's size (a HEAD, only on an allowed network) and
   shows "1.2 GB · 13.8 GB left · on Wi-Fi". Above a quarter of the limit or of the free
   space, one confirmation; over the limit, "Needs 1.2 GB more room" with Manage space; with
-  home out of reach, the keep waits ("Waiting for home") and is made when home answers.
+  home out of reach, the keep waits ("Offline: it will be kept when home answers", or "Home
+  isn't answering: it will be kept when it does") and is made when home answers.
+  A waiting keep is held on the phone by the media id it was asked with (`c:<list>`, or
+  `p:<track>` for Now playing's album keep) and shown, and removed, by its content id
+  (`KeepRules.pendingContentId`); Remove drops it even when home does not answer.
 - **Kept from the web.** A `keep` command from the inbox (see "The phone's inbox" below)
   is recorded by the payload and then goes through the same rules on the phone: it is
   Checking until its size is known on an allowed network, then Queued or Needs room. The
@@ -1087,7 +1438,8 @@ removed.
   before a keep, and a standing line with the button on On this phone, open the app's
   settings page.
 - **Running with the app closed.** `KeepService` runs in the foreground (`dataSync`) with one
-  grouped notification, "Keeping 2 items · 3 of 26", Pause and Cancel, a tap opens On this
+  grouped notification, "Keeping 2 items · 3 of 26" ("Keeping <title> for offline" when only
+  automatic keeps are moving), Pause and Cancel, a tap opens On this
   phone. Waiting downloads are scheduled by `KeepScheduler`, this app's own job
   (`KeepJob`, id 7206) with the network and storage constraints: not Media3's
   PlatformScheduler, whose job starts a foreground service from the background, which
@@ -1095,7 +1447,8 @@ removed.
   the foreground service only where Android allows it. Every `KeepJob` starts the shell first
   and waits for the payload; without one it is rescheduled, not dropped. Its other jobs: sync
   now (7204, the payload schedules it on a web keep), a retry when a network comes (7207),
-  daily re-sync on Wi-Fi (7205), a weekly check of every kept file (7209), and screen actions
+  daily re-sync on Wi-Fi (7205), a weekly check of every kept file (7209), an automatic
+  keep's removal falling due (7212), automatic keeps waiting for Wi-Fi (7213), and screen actions
   (7300–7399, one id per action and item).
 - **Never stuck.** A failed track is tried again after 1 min, 10 min, 1 h, then daily, each
   time with a fresh URL from the payload's `keep` op in `refresh` mode; a 404 gets one fresh
@@ -1144,7 +1497,19 @@ removed.
   kept track. Media calls give up connecting after 3 s and reading after 10 s; a call that
   failed marks home down for a minute, during which a kept item plays from the phone at once
   (a Wi-Fi that reaches nothing behaves like airplane mode). Offline, a kept collection
-  resumes at the part heard most recently, a track of one plays on from itself, and the car
+  resumes at the part heard most recently (a part heard to its end moves on to the book's
+  next part), a track of one plays on from itself, and a play by the collection's own id as
+  a leaf (`p:<book>`, what a `media/play?id=<book>` link sends) plays as the collection. A
+  kept book's parts are stored in the book's own order (its `GET /api/v1/list/<id>`
+  listing). Online, a `p:<book>` starts at the part and place home's play route answers,
+  and a `c:<book>` at the queue's `startIndex` (`QueueMapper.startIndex`, the item found
+  by id among the audio tracks), at that part's saved place. Home answers a book in its
+  own order and names the start; shuffle is ignored for a book, so a shuffled `c:<book>`
+  starts there too. A queue with no `startIndex` (a show, music, a backend before
+  2026-11-26, which put the part in progress first) starts at its first item, at that
+  item's saved place unless shuffled. See `__docs/reference/content/content-playback.md`
+  ("Order and `startIndex`"). Each track's `longForm` (home's `resumable`) travels to the
+  shell, so a book whose chapters are short never crossfades. The car
   has an **On phone** tab (`media.roots` target `kept`) answered from the phone; offline,
   every other car level shows "Offline: showing what is on this phone".
 - **Where you were.** Every progress report carries `observedAt` (when it was heard) and
@@ -1153,6 +1518,105 @@ removed.
   the phone (`positions.json`, `pending-progress.json`) are written beside and renamed, the
   oldest heard goes first past 200, never one still kept. A play sends waiting reports after
   it starts, one flush at a time, and resumes from an unsent place on this phone.
+- **Kept automatically while you listen** (spec §3.10; `AutoKeeper`, `AutoKeepRules`,
+  `KeepStore.autoKeep`). Long items are heard over many sittings, often where the
+  connection is worst, so the phone keeps what you are in the middle of:
+  - **Trigger.** A long item played on this phone for `media.autoKeepAfterMin` minutes in
+    total (default 10, counted over every sitting on the uptime clock, per book or list:
+    `ListenMeter`, prefs `daylight.autokeep`). Long means the player's own test (from a
+    household list, or at least 20 minutes) and never music: an item from a list must be at
+    least 8 minutes, one not from a list at least 20, and a collection the payload calls a
+    playlist is never kept this way. An item resumed from Continue listening (its id is in
+    the Play tab's last Continue answer) is kept at once when the phone is on Wi-Fi.
+    `media.autoKeep: false` stops it; turning it off removes nothing already kept.
+  - **What.** A book (no list): all its parts, the part playing downloaded first, then the
+    rest in play order. A talk or course series (an item from a household list): the
+    lecture playing and the next two in its album's order (a rolling window): each new
+    lecture moves the window, and the lecture it passed is released and deleted
+    (`keep.auto.removed{reason: window}`). The payload records the keep with `auto: true`
+    and, for a window, `only: [track ids]` (`KeptCollections`); a re-sync keeps the scope.
+  - **Network and room.** The keep rules: Wi-Fi unless `media.downloadOnCellular`. On
+    mobile data only the part playing is fetched, and only when mobile data is allowed; the
+    rest follows on Wi-Fi (job 7213, unmetered). Automatic keeps share a quarter of the limit
+    between them and never push out a manual keep; with no room the keep is skipped and On
+    this phone (and the book's page) say "Not kept automatically: needs room". Automatic
+    keeps have no notification of their own; while their bytes move Android still requires
+    the downloads notification, which then reads "Keeping <title> for offline".
+  - **Shown as.** "Kept automatically" in the item's state everywhere the kept index is
+    shown ("Kept automatically · 230 MB" when ready, "Downloading 3 of 12 · 84 MB · Kept
+    automatically" before): On this phone, the Play tab's On this phone, Now playing's ⋮;
+    on the book's page under its title; Now playing says "Playing from this phone · Kept
+    automatically". **Keep** on such an item makes it a manual keep (the whole collection,
+    never removed by these rules). **Remove** on one stops it being kept automatically
+    again until it is kept by hand.
+  - **Removed automatically.** A book finished (home says so after Mark finished or 97 %,
+    or its last part heard to 97 % here) goes 24 hours later, so the last chapter can still
+    be replayed; anything kept automatically and not played for 30 days goes. A series is
+    never "finished" by its window's last lecture (the window moves on; an unplayed one goes
+    after 30 days). Each removal is listed under On this phone for 7 days ("Removed:
+    finished", "Removed: not played for 30 days") with **Keep again**. Manual keeps are never
+    removed by these rules (only by `media.removeFinished`). The removals run in every sync,
+    when On this phone opens, and at the time one falls due (job 7212).
+  - **Mid-play.** The part playing streams until its copy is complete (the player's cache
+    key is `track:<content id>`, the download's too), and the next part plays from the copy.
+    Offline, a part of a kept item whose copy is not complete holds the player (it never
+    skips past the place) and Now playing says "Not on this phone yet: needs a connection"
+    (`PlaybackRecovery.KEPT_NOT_YET`; before, a kept part still downloading was skipped).
+  - **Reported.** Each automatic keep goes to home in the keeps report with `auto: true`; the
+    web's phone page and item menus say "Kept automatically". Automatic keeps are per install.
+  - **Checking it quickly.** A debuggable build reads `files/autokeep-debug.json`
+    (`{"afterMin": 1, "graceMin": 2, "staleMin": 5}`, written with `adb shell run-as`) to
+    shorten the threshold, the 24-hour grace and the 30 days; a release build ignores it.
+  - **Telemetry** (`Downloads`, no titles): `keep.auto.started{kind, minutes, trigger,
+    tracks}`, `keep.auto.ready{tracks, bytes}`, `keep.auto.skipped{reason: needs_room |
+    mobile_data | music}`, `keep.auto.removed{reason: finished | stale | window | setting}`.
+- **Keeping an artist or an author** (spec §3.11; `GroupKeepFlow`, `GroupKeepRules`,
+  payload `GroupKeeps`, `KeptCollections.saveUnit/leaveGroup/removeGroup`, shell-kit
+  `KeptGroups`). A keep of an artist or author is never flattened into one item:
+  - **Units.** Each album (artist) or book (author) is its own kept collection carrying the
+    group's id (`group` in its record), with its own size, state, Remove, place and finished;
+    a book stays a book (parts in book order, chapters). The group is a record of its own in
+    `kept/groups.keep` (`{id, title, kind, follow, removeFinished, keptAt, excluded}`),
+    mirrored by the shell (`kept-groups-mirror.json`) like the kept list. Keeping a group
+    turns any automatic keep in it manual.
+  - **The sheet.** "Keep all…" is in the ⋮ of an artist's or author's page (the flat Keep is
+    gone there), and a Keep or a preview that lands on an artist (search, the web) opens the
+    same sheet. It is a modal bottom sheet: the units with size and a check (finished books
+    unchecked, "Include finished (n)"; units past the 5000-track cap unchecked and disabled,
+    with "Over 5000 tracks (n): the first N books can be kept"), the total and the room left
+    after ("4.2 GB · 9.8 GB left · on Wi-Fi"), **Keep new ones too** (on for an author, off
+    for an artist), **Remove each when finished** (books only, on), and one primary button
+    "Keep 12 books · 4.2 GB". Sizes come from `group-preview` (the payload lists the group
+    and queues each unit, four at a time) and the shell's HEAD sizes; a track already on the
+    phone counts nothing. When it does not fit: "1.2 GB more than there is room for" and
+    "Keep the 7 that fit" (in the sheet's order, skipping one too large).
+  - **Order.** The started book first, then the author's order (finished last); albums
+    newest first. Units are kept one after another in that order (`unitOrder`), each
+    through the usual size, room and network rules, so each is ready on its own.
+  - **On this phone.** The screen and the Play tab show a group row ("William Shakespeare ·
+    12 books · 4.2 GB", with "3 of 12 ready" while some are not) and its units indented
+    under it. A unit's Remove removes that unit only; the group then leaves it out
+    (`excluded`), so Keep new ones too never brings it back until it is kept by hand. The
+    group's ⋮ has **Choose…** (the sheet again, with what it holds checked; unchecking
+    removes) and **Remove all of <name>** (confirmed, with the total).
+  - **Shared copies.** A track's audio stays while any keep holds it (the payload's
+    tombstones name only tracks no kept item holds). An album kept on its own and through
+    its artist is one collection held twice (`alone`): leaving the group, or the group's
+    removal, keeps it on the phone. Remove's confirmation and its result say what is really
+    freed (`frees` in the kept index: the bytes of tracks only this item holds).
+  - **Follow and finishing.** At each daily re-sync a group that keeps new ones asks
+    `group-new` and keeps what home added (not what was unchecked or removed). With
+    Remove each when finished, a finished book (home says so, or its last part heard to
+    97 % here) goes a day later and is listed under "Not on this phone" with Keep again; a
+    debuggable build's `files/autokeep-debug.json` `graceMin` shortens the day.
+  - **Reported.** Each unit goes to home with `group: {id, title, kind, follow,
+    removeFinished}`; the web's phone page shows the groups. A web Keep of an artist keeps
+    it as a group with the defaults (unfinished units); a web Remove of the group's id
+    removes the group.
+  - **Telemetry** (`Downloads`): `keep.group.started{kind, units, bytes, follow}`,
+    `keep.group.unit_added{reason: initial | new, tracks}`, `keep.group.unit_removed{reason:
+    user | finished, units?}`, and the sheet's `keep.group.tap`, `keep.group.sheet`,
+    `keep.group.fit_chosen`, `keep.group.choose`.
 - **Location.** `media.downloadLocation: sd` keeps downloads on a removable card when the
   phone has one (takes effect on the next start; the kept items download again there). A
   card that is out makes every item Not available: nothing is reconciled, nothing deleted,
@@ -1176,6 +1640,8 @@ removed.
 | `media.removeFinished` | false | Remove a kept book a day after it is finished, with Undo for a day |
 | `media.removeFinishedAfterMin` | 1440 | Minutes from finished to removed (at least 1); shortened only to check the Undo notification |
 | `media.downloadLocation` | internal | `internal` or `sd` (a removable card, when the phone has one) |
+| `media.autoKeep` | true | Keep a book, talk or course automatically while listening (never music); off removes nothing already kept |
+| `media.autoKeepAfterMin` | 10 | Minutes of a long item heard on this phone before it is kept automatically (1–600) |
 
 ### The phone's inbox: Play on Phone and Keep from the web
 
@@ -1430,9 +1896,12 @@ any problem fails `DeviceDefaultsTest` at build time.
 `{op: list}` and `{op: run, id}`. A run takes an id on the car list, and only such an
 id (anything else answers "That is not on the car list"), and goes through
 `ActionList.run`, the path a keyed `daylight://action/<id>` link takes. No link is
-built and no key leaves the payload. The tap runs off the main thread; the answer is
-a car toast. Drawing the list, a refresh and the car connecting run nothing: only a
-row's own click does.
+built and no key leaves the payload. The tap runs off the main thread. A car toast
+"Sending <label>…" shows at once and the row's second line reads "Sending…"; further
+taps on that action are ignored until its answer arrives or 12 s pass (the 8 s run wait
+plus a margin; `RunGuard`), so a second tap cannot run a door or the lights twice. The
+answer is a second car toast. Drawing the list, a refresh and the car connecting run
+nothing: only a row's own click does.
 
 **Cold start.** The service starts the shell service, as the media service does.
 With no payload yet the list is one row, "Daylight is starting"; when a payload
@@ -1737,7 +2206,9 @@ provider's scene following the real fetch.
 - **Share destinations** are the text destinations whose id is `share` or starts
   with `share-`, in slot order. The first one is the big button. The screen asks the
   payload for them (port op `share-targets`, ids and labels only) once the payload
-  has started. A cold start waits up to 8 s for it (`READY_WAIT_MS`).
+  has started. A cold start shows "Starting Daylight…" and waits as long as the loader
+  gives the payload (`PayloadReady`), then up to 8 s for the account and the answer
+  (`READY_WAIT_MS`).
 - **No destination** ("Sharing has no destination on this phone") or **not set up**
   ("Daylight is not set up on this phone yet"): nothing is queued.
 - **Text over the intake's 16 KB** keeps its start, where the link is.
@@ -2088,6 +2559,11 @@ components.
   decisions are in pure classes that are tested (`LinkRequest`, `LinkAnswer`,
   `TileFace`, `WidgetButtons`, `ButtonFace`); the Android calls around them are
   not: the widget host, the chooser's list, what Android answers for a widget id.
+- `KeyedRows` moving real views, `PlaylistArtwork`'s `LruCache`, `FailureWords`'
+  network check and the screens that use them (`BrowseActivity`, `DownloadsActivity`,
+  `PhoneHomeActivity`, the link activity's card). Their decisions are in `RowDiff`,
+  `CoverCache`, `FailureWords.cause`, `PayloadReady`, `LinkLabel`,
+  `CaptureScopeWait.step` and media-service `FailureReason`, which are tested.
 - `AndroidSurfaces` and `AndroidWidgetSink` against a real launcher. On the JVM
   they are started over a context with no shortcut service and no widget host,
   which shows only that they do nothing and do not throw there.

@@ -49,7 +49,25 @@ final class QueueMapper {
                 Json.first(Json.str(item, "artist"), Json.str(meta, "artist"), Json.str(item, "grandparentTitle")),
                 Json.first(Json.str(item, "album"), Json.str(meta, "album"), Json.str(item, "parentTitle")),
                 BrowseTree.art(backend, Json.str(item, "thumbnail")), Json.str(item, "listId"),
-                Json.seconds(item, "duration"), fileVersion(item));
+                Json.seconds(item, "duration"), fileVersion(item)).longForm(item.optBoolean("resumable", false));
+    }
+
+    /**
+     * Where a queue answer starts, as an index into {@code tracks} (the answer's audio
+     * items): the item at the answer's {@code startIndex}, found by id because items
+     * that are not audio are dropped. -1 when the answer names no start (a show, music,
+     * an older backend) or names an item that is not among the tracks.
+     */
+    static int startIndex(JSONObject response, List<Track> tracks) {
+        if (response == null || !response.has("startIndex")) return -1;
+        int at = response.optInt("startIndex", -1);
+        JSONArray items = response.optJSONArray("items");
+        if (items == null || at < 0 || at >= items.length()) return -1;
+        String id = id(items.optJSONObject(at));
+        for (int i = 0; !id.isEmpty() && i < tracks.size(); i++) {
+            if (tracks.get(i).id.equals(id)) return i;
+        }
+        return -1;
     }
 
     /** The file version the backend names ("<partId>:<updatedAt>"), short and printable, or "". */

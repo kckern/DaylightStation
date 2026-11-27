@@ -120,6 +120,12 @@ export function createQueueRouter(config) {
     return res.json({ items: contentAccessService.audioListSources() });
   }));
 
+  // The audio libraries with their kinds (music, books, talks): the phone's library and search.
+  router.get('/catalog/audio-libraries', asyncHandler(async (req, res) => {
+    if (req.query.profile !== 'audio-only') return res.status(400).json({ error: 'Unknown playback profile' });
+    return res.json({ items: await contentAccessService.audioLibraries(), default: 'music' });
+  }));
+
   router.get('/catalog/audio-lists', asyncHandler(async (req, res) => {
     const { source, profile } = req.query;
     const skip = Number(req.query.skip ?? 0);
@@ -176,10 +182,11 @@ export function createQueueRouter(config) {
 
     const finalId = outcome.finalId;
     const audioConfig = outcome.audio;
-    const { items, totalDuration } = queuePresentationService.prepare({
+    const { items, totalDuration, startIndex } = queuePresentationService.prepare({
       containerId: finalId,
       items: outcome.items,
       limit,
+      ...(outcome.startId && { startId: outcome.startId }),
       ...(profile && { profile }),
     });
 
@@ -187,7 +194,8 @@ export function createQueueRouter(config) {
       source: resolvedSource,
       localId,
       count: items.length,
-      totalDuration
+      totalDuration,
+      ...(Number.isInteger(startIndex) && { startIndex }),
     });
 
     const queueItems = presentPublicResources(items.map(toQueueItem));
@@ -197,6 +205,11 @@ export function createQueueRouter(config) {
       id: compoundId,
       count: queueItems.length,
       totalDuration,
+      // An ordered work (a book, a talk series, a course heard as audio) is answered in
+      // its own order, never reordered or shuffled; startIndex is where to start (the
+      // part heard last, at its resumePosition). Absent for shows and music, whose
+      // order already starts at the next item. A client that ignores it starts at 0.
+      ...(Number.isInteger(startIndex) && { startIndex }),
       thumbnail: outcome.thumbnail || queueItems[0]?.thumbnail || null,
       ...(audioConfig && { audio: audioConfig }),
       items: queueItems

@@ -60,7 +60,7 @@ public final class PayloadLoader {
     private static final String TAG = "Daylight-Loader";
     static final String ENTRY_CLASS = "net.kckern.daylight.payload.Main";
     static final String BAKED_ASSET = "payload-baked.jar";
-    static final long START_DEADLINE_MS = 20_000L;
+    static final long START_DEADLINE_MS = net.kckern.daylight.api.PayloadStart.START_DEADLINE_MS;
     /** The largest pushed payload the shell will download. A payload jar is a few megabytes. */
     static final long MAX_PAYLOAD_BYTES = 64L * 1024 * 1024;
     private static final Pattern SHA256 = Pattern.compile("[0-9a-fA-F]{64}");
@@ -130,7 +130,15 @@ public final class PayloadLoader {
      * Queue the boot: pick the payload for this process and start it. Returns at
      * once, so the service's main thread is never held by a payload's start().
      */
-    public Future<?> boot() { return submit(() -> { if (active == null) bootNow(); }); }
+    public Future<?> boot() {
+        return submit(() -> {
+            if (active != null) return;
+            net.kckern.daylight.api.PayloadStart.starting();
+            bootNow();
+            // A screen waiting for the payload (PayloadReady) hears at once that none will come.
+            if (active == null && !closed) net.kckern.daylight.api.PayloadStart.failed(lastError);
+        });
+    }
 
     private void bootNow() {
         long now = System.currentTimeMillis();
@@ -440,6 +448,7 @@ public final class PayloadLoader {
             }
         }
         shell.note("PAYLOAD", "no payload could be started (" + lastError + ")");
+        net.kckern.daylight.api.PayloadStart.failed(lastError);
         return false;
     }
 
@@ -489,6 +498,7 @@ public final class PayloadLoader {
             startingPayload = null;
             activeJar = jar;
             lastError = null;
+            net.kckern.daylight.api.PayloadStart.started();
             Log.i(TAG, "payload ACTIVE " + jar + " v=" + safeVersion());
             return true;
         } finally {

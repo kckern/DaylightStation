@@ -120,6 +120,27 @@ export function isLongAudio(item) {
  * @param {Object} item - Plex metadata
  * @returns {string|null}
  */
+
+/**
+ * Plex's Country, Genre and Style tags of an artist or an album, as string arrays
+ * (`countries`, `genres`, `styles`): the phone's author and artist pages say
+ * "United Kingdom · 12 books" and "Iceland · Art Pop · 9 albums" from them. Empty tags are
+ * left out; other types get none.
+ */
+export function plexPersonTags(item) {
+  if (!item || !['artist', 'album'].includes(item.type)) return {};
+  const tags = (list) => (Array.isArray(list) ? list : [])
+    .map((t) => (typeof t === 'string' ? t : t?.tag))
+    .filter((t) => typeof t === 'string' && t.trim())
+    .map((t) => t.trim());
+  const out = {};
+  const countries = tags(item.Country), genres = tags(item.Genre), styles = tags(item.Style);
+  if (countries.length) out.countries = countries;
+  if (genres.length) out.genres = genres;
+  if (styles.length) out.styles = styles;
+  return out;
+}
+
 export function plexAddedAt(item) {
   const raw = item?.addedAt;
   const seconds = typeof raw === 'number' ? raw : (typeof raw === 'string' && /^\d+$/.test(raw) ? Number(raw) : NaN);
@@ -636,6 +657,15 @@ export class PlexAdapter {
         items = this._filterPlaylistsByLibraryName(items, libraryNameFilter);
       }
 
+      // A container's children (an album's tracks, a season's episodes) do not name
+      // their library; the container does. Carry it to each child, so the queue can
+      // tell a book's parts (play_on_demand.library_kinds) from an album's songs.
+      if (container.librarySectionID != null || container.librarySectionTitle) {
+        items = items.map(item => (item.librarySectionID == null && !item.librarySectionTitle
+          ? { ...item, librarySectionID: container.librarySectionID ?? null, librarySectionTitle: container.librarySectionTitle ?? null }
+          : item));
+      }
+
       return this._toContainerItems(items);
     } catch (err) {
       this.logger.error?.('plex.getList.exception', {
@@ -1058,6 +1088,7 @@ export class PlexAdapter {
     };
 
     if (item.type === 'playlist' && item.playlistType) metadata.playlistType = item.playlistType;
+    Object.assign(metadata, plexPersonTags(item));
 
     // Add parent info based on type
     if (item.type === 'season') {
@@ -1123,7 +1154,8 @@ export class PlexAdapter {
         librarySectionID: item.librarySectionID || null,
         librarySectionTitle: item.librarySectionTitle || null,
         childCount: item.leafCount || item.childCount || 0,
-        addedAt: plexAddedAt(item)
+        addedAt: plexAddedAt(item),
+        ...plexPersonTags(item),
       };
 
       // Add parent info for containers
@@ -2784,7 +2816,9 @@ export class PlexAdapter {
         // Album / artist context (canonical music fields + relative hierarchy)
         album: item.parent || null,
         parentTitle: item.parent || null,
-        artist: item.grandparent || null,
+        // The track's performer first, as getItem's metadata does (originalTitle ||
+        // grandparentTitle), so a search row and the player name the same artist.
+        artist: item.original || item.grandparent || null,
         albumArtist: item.grandparent || null,
         grandparentTitle: item.grandparent || null
       }

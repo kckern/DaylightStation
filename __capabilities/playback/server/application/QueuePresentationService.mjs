@@ -7,7 +7,14 @@ export class QueuePresentationService {
     this.logger = logger?.child?.({ app: 'surround', module: 'queue-router' }) ?? logger;
   }
 
-  prepare({ containerId, items, limit = null }) {
+  /**
+   * @param {Object} args
+   * @param {string|null} [args.startId] - an ordered work's start item (QueueService);
+   *   the answer's `startIndex` is that item's place in the prepared items. With a
+   *   `limit` the window starts there, so `?limit=1` names the part to play.
+   * @returns {{ items: Array, totalDuration: number, startIndex?: number }}
+   */
+  prepare({ containerId, items, limit = null, startId = null }) {
     const plan = this.planner?.({
       surroundStore: this.store,
       containerId,
@@ -16,7 +23,9 @@ export class QueuePresentationService {
       logger: this.logger,
     }) ?? null;
     const ordered = plan ? plan.items : items;
-    const selected = limit ? ordered.slice(0, limit) : ordered;
+    const startAt = startId ? ordered.findIndex((item) => item?.id === startId) : -1;
+    const from = limit && startAt > 0 ? startAt : 0;
+    const selected = limit ? ordered.slice(from, from + limit) : ordered;
     const prepared = selected.map((item) => {
       try {
         const part = plan?.surroundFor.get(item.id) ?? null;
@@ -50,6 +59,7 @@ export class QueuePresentationService {
     return {
       items: prepared,
       totalDuration: prepared.reduce((sum, item) => sum + (item.duration || 0), 0),
+      ...(startAt >= 0 ? { startIndex: startAt - from } : {}),
     };
   }
 }
