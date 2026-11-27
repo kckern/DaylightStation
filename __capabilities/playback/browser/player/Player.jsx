@@ -48,6 +48,7 @@ import { REVIEW_ACTIVE } from "../player-support/reviewParams.js";
 import { DaylightAPI } from '../../../../frontend/src/lib/api.mjs';
 import { seekToLiveEdge } from "../media/liveEdge.js";
 import { problemClearedByPlaying } from './lib/lastProblem.js';
+import { queueStartIndex } from './lib/queueStart.js';
 import { getActionBus } from "../../../../frontend/src/lib/input/ActionBus.js";
 import {
   hasNativePlaybackRenderer,
@@ -110,7 +111,8 @@ async function resolveQueueCommand(contentId, { clearRest, quality, signal }) {
       if (Array.isArray(queue?.items) && queue.items.length > 0) {
         const items = queue.items.map(item => item.format === 'audio' || item.mediaType === 'audio'
           ? item : withPlaybackQuality(item, quality));
-        return { queue: { items, audio: queue.audio || null } };
+        // startIndex: an ordered work (a book) keeps its order and starts there.
+        return { queue: { items, audio: queue.audio || null, startIndex: queueStartIndex(queue, items.length) } };
       }
     } catch {
       // Leaf content may not expose a collection endpoint.
@@ -2857,7 +2859,7 @@ const Player = forwardRef(function Player(props, ref) {
     if (resolvedQueue) {
       ownerStoppedRef.current = false;
       setQueueHasAdvanced(true);
-      replaceQueue(resolvedQueue.items, { audio: resolvedQueue.audio });
+      replaceQueue(resolvedQueue.items, { audio: resolvedQueue.audio, startIndex: resolvedQueue.startIndex });
       const aliased = SHADER_ALIASES[requestedShader] ?? requestedShader;
       if (aliased && classes.includes(aliased)) {
         setShader(aliased);

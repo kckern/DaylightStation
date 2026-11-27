@@ -5,6 +5,7 @@ import { guid } from '../lib/helpers.js';
 import { playbackLog } from '../lib/playbackLogger.js';
 import { shouldEmitTrackChanged } from '../lib/shouldEmitTrackChanged.js';
 import { resolveSourceContentKey } from '../utils/mediaIdentity.js';
+import { queueStartIndex } from '../lib/queueStart.js';
 
 // Module-level signature cache — survives React remounts for the same content.
 // Prevents re-fetching queue when the player remounts during resilience recovery.
@@ -121,15 +122,18 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
 
   // A screen-level launch replaces the active program, including its tail and
   // auxiliary audio. In-session playNow intentionally replaces only the head.
-  const replaceQueue = useCallback((items, { audio = null } = {}) => {
+  // `startIndex`: an ordered work (a book) keeps its order and starts there; the
+  // parts before it stay in originalQueue, so Previous reaches them.
+  const replaceQueue = useCallback((items, { audio = null, startIndex = 0 } = {}) => {
     const ownedItems = items.map((item) => ({ ...item, guid: guid() }));
+    const startAt = queueStartIndex({ startIndex }, ownedItems.length);
     issueOwnerRevision({ playback: true, queue: true });
     setOriginalQueue(ownedItems);
-    setQueue(ownedItems);
+    setQueue(startAt > 0 ? ownedItems.slice(startAt) : ownedItems);
     setQueueAudio(audio);
     setOnDeckState(null);
     setDetachedQueue(null);
-    playbackLog('queue-replaced', { queueLength: ownedItems.length, hasAudio: !!audio }, { level: 'info' });
+    playbackLog('queue-replaced', { queueLength: ownedItems.length, hasAudio: !!audio, startIndex: startAt }, { level: 'info' });
   }, [issueOwnerRevision]);
 
   // Append without changing the selected/current visit. The completion callback
@@ -275,6 +279,7 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
       // Used to gate the empty-queue onError branch so it doesn't misfire
       // on caller-supplied empty arrays or inline-media fall-throughs.
       let fetchedFromApi = false;
+      let startGuid = null;
 
       // Extract overrides that should apply to all generated items
       const sourceObj = (play && typeof play === 'object' && !Array.isArray(play)) ? play :
@@ -308,10 +313,17 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
           fetchedFromApi = true;
           newQueue = response.items.map(item => ({ ...item, ...itemOverrides, guid: guid() }));
           fetchedAudio = response.audio || null;
+          // An ordered work (a book) is answered in its own order with the part to
+          // start at; a show or music list has no startIndex and starts at 0.
+          const startAt = queueStartIndex(response, newQueue.length);
+          startGuid = startAt > 0 ? newQueue[startAt].guid : null;
+          if (startGuid) {
+            playbackLog('queue-start-index', { contentRef, startIndex: startAt, contentId: newQueue[startAt].contentId }, { level: 'info' });
+          }
 
-          // Inject pre-warmed DASH URL into first matching queue item
+          // Inject pre-warmed DASH URL into the queue item that plays first
           if (prewarmToken && prewarmContentId && newQueue.length > 0) {
-            const firstItem = newQueue[0];
+            const firstItem = newQueue[startAt];
             if (firstItem.contentId === prewarmContentId) {
               try {
                 const resp = await DaylightAPI(`api/v1/prewarm/${prewarmToken}`);
@@ -404,7 +416,8 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
         // state so a later capture cannot miss it between polls.
         issueOwnerRevision({ playback: true, queue: true });
         if (contentRef) _signatureCache.set(contentRef, nextSignature);
-        setQueue(validQueue);
+        const startAt = startGuid ? validQueue.findIndex((item) => item.guid === startGuid) : -1;
+        setQueue(startAt > 0 ? validQueue.slice(startAt) : validQueue);
         setOriginalQueue(validQueue);
         setQueueAudio(fetchedAudio);
         isCompleted = true;
