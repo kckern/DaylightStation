@@ -643,7 +643,10 @@ public final class BrowseActivity extends Activity {
         actions.addView(button(book ? "Resume" : "Play", "browse.play", () -> play(self, false, title, subtitle, art)));
         if (!book) actions.addView(button("Shuffle", "browse.shuffle", () -> play(self, true, title, subtitle, art)));
         actions.addView(button("Play on…", "browse.play_on", () -> playOn(self, title, subtitle, art)));
-        actions.addView(button("Keep", "browse.keep", () -> KeepFlow.start(this, self)));
+        // An artist or an author is kept as a group of its albums or books (spec §3.11): "Keep all…" in ⋮.
+        boolean group = kind.matches("artist|artists|author|authors");
+        if (!group) actions.addView(button("Keep", "browse.keep", () -> KeepFlow.start(this, self)));
+        else actions.addView(groupMenu(self));
         android.widget.HorizontalScrollView actionScroll = new android.widget.HorizontalScrollView(this);
         actionScroll.setHorizontalScrollBarEnabled(false);
         actionScroll.addView(actions);
@@ -666,6 +669,27 @@ public final class BrowseActivity extends Activity {
             h.addView(more);
         }
         return h;
+    }
+
+    /** The ⋮ on an artist's or an author's page: Keep all… (GroupKeepFlow's sheet). */
+    private View groupMenu(String self) {
+        TextView more = t.text(this, "⋮", Type.TITLE, t.inkMuted, false);
+        more.setGravity(Gravity.CENTER);
+        more.setMinWidth(dp(48));
+        more.setMinHeight(dp(48));
+        more.setBackground(t.pressable(null));
+        more.setContentDescription("More");
+        UiTelemetry.tag(more, "browse.more");
+        more.setOnClickListener(v -> {
+            PopupMenu menu = new PopupMenu(this, v);
+            menu.getMenu().add(0, 1, 0, "Keep all…");
+            menu.setOnMenuItemClickListener(item -> {
+                GroupKeepFlow.start(this, self, kind.startsWith("author") ? "author" : "artist", title);
+                return true;
+            });
+            menu.show();
+        });
+        return more;
     }
 
     // ── rows ────────────────────────────────────────────────────────────────

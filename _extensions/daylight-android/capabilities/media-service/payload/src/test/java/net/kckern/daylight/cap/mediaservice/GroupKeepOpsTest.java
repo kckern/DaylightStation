@@ -124,6 +124,29 @@ public class GroupKeepOpsTest {
         assertEquals(0, call(new JSONObject().put("op", "kept")).getJSONArray("groups").length());
     }
 
+    @Test public void aKeepOfAnAuthorFromTheWebKeepsItsUnfinishedBooksAsAGroupNeverFlattened() throws Exception {
+        author(false);
+        api.responses.put("info plex:100", new JSONObject().put("type", "artist")
+                .put("metadata", new JSONObject().put("type", "artist").put("librarySectionTitle", "Audiobooks")).toString());
+        JSONObject p = call(new JSONObject().put("op", "keep").put("id", "c:plex:100").put("mode", "preview"));
+        assertEquals("group", p.getString("kind"));
+        assertEquals("author", p.getString("groupKind"));
+        // The web's Keep on Phone arrives as a bare id.
+        JSONObject k = call(new JSONObject().put("op", "keep").put("id", "plex:100"));
+        assertEquals("group", k.getString("kind"));
+        assertEquals(2, k.getInt("units"));
+        JSONObject kept = call(new JSONObject().put("op", "kept"));
+        assertEquals("finished Hamlet is left out", 2, kept.getJSONArray("items").length());
+        for (int i = 0; i < 2; i++) assertEquals("plex:100", kept.getJSONArray("items").getJSONObject(i).getString("group"));
+        assertTrue(kept.getJSONArray("groups").getJSONObject(0).getBoolean("follow"));
+    }
+
+    @Test public void groupKindReadsTheLibrary() throws Exception {
+        assertEquals("author", MediaServiceCapability.groupKindOf(new JSONObject().put("type", "artist").put("librarySectionTitle", "Audiobooks"), "plex:1"));
+        assertEquals("artist", MediaServiceCapability.groupKindOf(new JSONObject().put("type", "artist").put("librarySectionTitle", "Music"), "plex:1"));
+        assertEquals(null, MediaServiceCapability.groupKindOf(new JSONObject().put("type", "album"), "plex:1"));
+    }
+
     @Test public void anArtistIsNewestFirstAndDoesNotFollowByDefault() throws Exception {
         JSONArray albums = new JSONArray().put(book("plex:10", "Old", 1990)).put(book("plex:20", "New", 2021));
         api.responses.put("list plex:200 100 0", new JSONObject().put("title", "A Band").put("total", 2).put("items", albums).toString());

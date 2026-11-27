@@ -42,6 +42,8 @@ import java.util.concurrent.Executors;
  */
 public final class DownloadsActivity extends Activity {
     static final String EXTRA_KEEP = "keep";
+    /** Opens a kept group's Choose… sheet (the Play tab's group ⋮): the group's id, with "chooseKind" and "chooseTitle". */
+    static final String EXTRA_CHOOSE = "choose";
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService covers = Executors.newSingleThreadExecutor();
     private final Runnable tick = this::fill;
@@ -70,6 +72,13 @@ public final class DownloadsActivity extends Activity {
         UiTelemetry.event("Downloads", "keep.screen", new JSONObject());
         String keep = getIntent() == null ? null : getIntent().getStringExtra(EXTRA_KEEP);
         if (keep != null && !keep.isEmpty() && saved == null) KeepFlow.start(this, keep);
+        if (saved == null) choose(getIntent());
+    }
+
+    private void choose(Intent i) {
+        String gid = i == null ? null : i.getStringExtra(EXTRA_CHOOSE);
+        if (gid == null || gid.isEmpty()) return;
+        GroupKeepFlow.start(this, gid, i.getStringExtra("chooseKind"), i.getStringExtra("chooseTitle"));
     }
 
     /** Opened again while showing (a Keep from the Play tab, the notification): the new request is acted on. */
@@ -78,6 +87,7 @@ public final class DownloadsActivity extends Activity {
         setIntent(intent);
         String keep = intent == null ? null : intent.getStringExtra(EXTRA_KEEP);
         if (keep != null && !keep.isEmpty()) KeepFlow.start(this, keep);
+        choose(intent);
     }
 
     @Override protected void onResume() {
@@ -119,6 +129,8 @@ public final class DownloadsActivity extends Activity {
         JSONObject room = store.room();
         List<JSONObject> items = KeptIndex.read(getFilesDir());
         KeptIndex.largestFirst(items);
+        // A kept artist or author is one group with its units under it (spec §3.11).
+        List<JSONObject> shownRows = net.kckern.daylight.shellkit.KeptGroups.rows(items);
         if (head == null) {
             head = new LinearLayout(this);
             head.setOrientation(LinearLayout.VERTICAL);
@@ -130,10 +142,16 @@ public final class DownloadsActivity extends Activity {
             autoBox.setOrientation(LinearLayout.VERTICAL);
             column.addView(autoBox);
             rows = new net.kckern.daylight.shellkit.KeyedRows<>(rowsBox, new net.kckern.daylight.shellkit.KeyedRows.Rows<JSONObject>() {
-                @Override public String key(JSONObject k) { return k.optString("contentId"); }
+                @Override public String key(JSONObject k) { return net.kckern.daylight.shellkit.KeptGroups.key(k); }
                 @Override public String signature(JSONObject k) { return k.toString(); }
-                @Override public View create(JSONObject k) { return row(KeepStore.get(DownloadsActivity.this), k); }
-                @Override public View update(View row, JSONObject k) { bind(KeepStore.get(DownloadsActivity.this), row, k); return row; }
+                @Override public View create(JSONObject k) {
+                    return isGroup(k) ? groupRow(KeepStore.get(DownloadsActivity.this), k) : row(KeepStore.get(DownloadsActivity.this), k);
+                }
+                @Override public View update(View row, JSONObject k) {
+                    if (isGroup(k)) bindGroup(row, k);
+                    else bind(KeepStore.get(DownloadsActivity.this), row, k);
+                    return row;
+                }
             });
         }
         boolean anyFinished = false;
@@ -146,7 +164,7 @@ public final class DownloadsActivity extends Activity {
             headShown = headNow;
             fillHead(store, room, items.size(), total, anyFinished, restricted);
         }
-        rows.show(items);
+        rows.show(shownRows);
         fillAuto(store.autoLogShown());
         boolean moving = false;
         for (JSONObject k : items) {
@@ -243,14 +261,108 @@ public final class DownloadsActivity extends Activity {
         String actionsShown;
         /** What the row shows now: the buttons read it when pressed, so a refresh need not rebuild them. */
         String title = "";
-        long size;
+        long size, frees = -1;
+        boolean shared;
+    }
+
+    private static boolean isGroup(JSONObject k) {
+        return net.kckern.daylight.shellkit.KeptGroups.GROUP.equals(k.optString(net.kckern.daylight.shellkit.KeptGroups.ROW));
+    }
+
+    private static boolean isUnit(JSONObject k) {
+        return net.kckern.daylight.shellkit.KeptGroups.UNIT.equals(k.optString(net.kckern.daylight.shellkit.KeptGroups.ROW));
+    }
+
+    /** A group's views: its words change in place; its ⋮ reads them when pressed. */
+    private static final class GroupRow {
+        ImageView cover;
+        TextView name, line;
+        JSONObject shown;
+    }
+
+    /**
+     * A kept artist or author: its name, "12 books · 4.2 GB", and a ⋮ with Choose… (the sheet
+     * again, with what it holds checked) and "Remove all of <name>" (confirmed, with the total).
+     * A flat row; its units follow, indented.
+     */
+    private View groupRow(KeepStore store, JSONObject g) {
+        GroupRow h = new GroupRow();
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(4), dp(14), 0, dp(4));
+        row.setMinimumHeight(dp(64));
+        h.cover = new ImageView(this);
+        h.cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        h.cover.setClipToOutline(true);
+        h.cover.setBackground(t.round(t.tile, Radius.SMALL));
+        row.addView(h.cover, new LinearLayout.LayoutParams(dp(44), dp(44)));
+        LinearLayout words = new LinearLayout(this);
+        words.setOrientation(LinearLayout.VERTICAL);
+        words.setPadding(dp(12), 0, 0, 0);
+        h.name = t.text(this, "", Type.TITLE, t.ink, true);
+        h.name.setMaxLines(1);
+        h.name.setEllipsize(TextUtils.TruncateAt.END);
+        words.addView(h.name);
+        h.line = t.text(this, "", Type.LABEL, t.inkMuted, false);
+        words.addView(h.line);
+        row.addView(words, new LinearLayout.LayoutParams(0, -2, 1));
+        TextView more = t.text(this, "⋮", Type.TITLE, t.inkMuted, false);
+        more.setGravity(Gravity.CENTER);
+        more.setMinWidth(dp(48));
+        more.setMinHeight(dp(48));
+        more.setBackground(t.pressable(null));
+        more.setOnClickListener(v -> groupMenu(store, v, h.shown));
+        UiTelemetry.tag(more, "keep.group.menu");
+        row.addView(more);
+        row.setTag(h);
+        UiTelemetry.tag(row, "keep.group.row");
+        bindGroup(row, g);
+        return row;
+    }
+
+    private void bindGroup(View row, JSONObject g) {
+        GroupRow h = (GroupRow) row.getTag();
+        h.shown = g;
+        String title = TextUtils.isEmpty(g.optString("title")) ? "Kept group" : g.optString("title");
+        h.name.setText(title);
+        String line = net.kckern.daylight.shellkit.KeptGroups.line(g);
+        h.line.setText(line);
+        row.setContentDescription(title + ". " + line);
+        String more = "More for " + title;
+        View menu = ((LinearLayout) row).getChildAt(2);
+        if (menu != null) menu.setContentDescription(more);
+        loadCover(h.cover, g.optString("art"));
+    }
+
+    private void groupMenu(KeepStore store, View anchor, JSONObject g) {
+        if (g == null) return;
+        JSONObject grp = g.optJSONObject("group");
+        String gid = grp == null ? "" : grp.optString("id");
+        String title = TextUtils.isEmpty(g.optString("title")) ? "this group" : g.optString("title");
+        android.widget.PopupMenu menu = new android.widget.PopupMenu(this, anchor);
+        menu.getMenu().add(0, 1, 0, "Choose…");
+        menu.getMenu().add(0, 2, 1, "Remove all of " + title);
+        menu.setOnMenuItemClickListener(item -> {
+            if (item.getItemId() == 1) {
+                UiTelemetry.event("Downloads", "keep.group.choose", new JSONObject());
+                GroupKeepFlow.start(this, gid, g.optString("kind"), g.optString("title"));
+            } else {
+                int n = g.optInt("units");
+                confirm("Remove all of " + title + "?", GroupKeepRules.noun(g.optString("kind"), n) + " · "
+                                + KeptIndex.size(g.optLong("bytes")) + ". Anything also kept on its own stays.",
+                        () -> store.removeGroup(gid, this::say));
+            }
+            return true;
+        });
+        menu.show();
     }
 
     private View row(KeepStore store, JSONObject k) {
         Row h = new Row();
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.VERTICAL);
-        row.setPadding(dp(10), dp(10), dp(10), dp(10));
+        // A unit of a group sits under it, indented.
+        row.setPadding(isUnit(k) ? dp(28) : dp(10), dp(10), dp(10), dp(10));
         row.setBackground(t.round(t.surface, Radius.SMALL));
         LinearLayout top = new LinearLayout(this);
         top.setGravity(Gravity.CENTER_VERTICAL);
@@ -296,6 +408,8 @@ public final class DownloadsActivity extends Activity {
         row.setContentDescription(title + ". " + words);
         h.title = title;
         h.size = size;
+        h.frees = k.has("frees") ? k.optLong("frees") : -1;
+        h.shared = k.optBoolean("shared");
         String action = KeptIndex.action(k);
         String s = k.optString("state");
         // Buttons change with the state, never with a progress tick (a press on Pause survives it).
@@ -314,9 +428,11 @@ public final class DownloadsActivity extends Activity {
             h.actions.addView(link("Pause", "keep.pause", () -> { store.pause(cid); fill(); }));
         }
         if (!KeptIndex.REMOVING.equals(s) && !KeptIndex.CHECKING.equals(s)) {
-            h.actions.addView(link("Remove", "keep.remove", () -> confirm("Remove " + h.title + "?",
-                    (h.size > 0 ? KeptIndex.size(h.size) + " is freed on this phone." : "It is removed from this phone."),
-                    () -> store.remove(cid, "remove", this::say))));
+            boolean unit = isUnit(k);
+            // What is really freed: only the tracks no other keep holds (shared copies stay).
+            h.actions.addView(link("Remove", unit ? "keep.group.unit_remove" : "keep.remove", () -> confirm("Remove " + h.title + "?",
+                    GroupKeepRules.freedLine(h.frees >= 0 ? h.frees : h.size, h.shared) + (unit ? " The rest of the group stays." : ""),
+                    () -> { if (unit) store.removeUnit(cid, this::say); else store.remove(cid, "remove", this::say); })));
         }
     }
 

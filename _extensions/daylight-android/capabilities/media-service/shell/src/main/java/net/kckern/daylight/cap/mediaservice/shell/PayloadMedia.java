@@ -157,6 +157,39 @@ final class PayloadMedia {
                 .put("only", new JSONArray(only)).toString(), waitMs);
     }
 
+    // ── keeping an artist or an author (spec §3.11) ──
+
+    /** What "Keep all…" would keep: {ok, group, units:[{contentId, title, kind, tracks, finished, started, held, overCap}], totalTracks, cap, withinCap}. */
+    String groupPreview(String groupId, String kind, long waitMs) throws Exception {
+        return port.call(new JSONObject().put("op", "group-preview").put("id", groupId).put("kind", kind == null ? "" : kind).toString(), waitMs);
+    }
+
+    /** A following group's new units since it was kept (empty when it does not follow). */
+    String groupNew(String groupId, long waitMs) throws Exception {
+        return port.call(new JSONObject().put("op", "group-new").put("id", groupId).toString(), waitMs);
+    }
+
+    /** The group's record after a choice: {ok, group, orphaned, left, new}. */
+    String groupSave(JSONObject group, List<String> chosen, List<String> listed, long waitMs) throws Exception {
+        return port.call(new JSONObject().put("op", "group-save").put("group", group).put("chosen", new JSONArray(chosen))
+                .put("listed", new JSONArray(listed)).toString(), waitMs);
+    }
+
+    /** "Remove all of <name>": {ok, orphaned, units}. */
+    String groupRemove(String groupId, long waitMs) throws Exception {
+        return port.call(new JSONObject().put("op", "group-remove").put("id", groupId).toString(), waitMs);
+    }
+
+    /** One unit kept in a group. */
+    String keepUnit(String unitId, String groupId, long waitMs) throws Exception {
+        return port.call(new JSONObject().put("op", "keep").put("id", "c:" + unitId).put("mode", "keep").put("group", groupId).toString(), waitMs);
+    }
+
+    /** A unit leaves its group: {ok, orphaned, stays}. */
+    String unkeepFromGroup(String unitId, long waitMs) throws Exception {
+        return port.call(new JSONObject().put("op", "unkeep").put("id", unitId).put("from", "group").toString(), waitMs);
+    }
+
     /** The kept books home says are finished: {ok, finished:[contentId]}. */
     String keptFinished(long waitMs) throws Exception {
         return port.call(new JSONObject().put("op", "kept-finished").toString(), waitMs);
@@ -179,7 +212,11 @@ final class PayloadMedia {
 
     /** Puts back kept collections the payload lost (from the shell's mirror): {ok, restored}. */
     String keptRestore(org.json.JSONArray items, long waitMs) throws Exception {
-        return port.call(new JSONObject().put("op", "kept-restore").put("items", items).toString(), waitMs);
+        return keptRestore(items, new JSONArray(), waitMs);
+    }
+
+    String keptRestore(org.json.JSONArray items, org.json.JSONArray groups, long waitMs) throws Exception {
+        return port.call(new JSONObject().put("op", "kept-restore").put("items", items).put("groups", groups).toString(), waitMs);
     }
 
     /** The background job's inbox check with the app closed: {ok, status: checked|off|unauthorized|not served|unreachable}. */

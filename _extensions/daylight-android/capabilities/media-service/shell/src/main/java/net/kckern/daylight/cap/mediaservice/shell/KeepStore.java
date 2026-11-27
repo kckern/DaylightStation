@@ -334,6 +334,13 @@ final class KeepStore {
                     long need = networkAllowsNow() ? missingBytes(tracks) : -1;
                     long limit = limitBytes(), kept = keptBytes(), free = freeBytes();
                     boolean wifiOnly = !onCellular;
+                    if ("group".equals(r.optString("kind"))) {
+                        prefs.edit().remove("checking." + mediaId).apply();
+                        refreshSoon();
+                        JSONObject group = r;
+                        main.post(() -> done.accept(group));
+                        return;
+                    }
                     out = new JSONObject().put("ok", true).put("contentId", r.optString("contentId")).put("title", r.optString("title"))
                             .put("kind", r.optString("kind")).put("count", n).put("need", need)
                             .put("keep", KeepRules.keepWords(r.optString("kind"), n))
@@ -483,7 +490,9 @@ final class KeepStore {
         if (autoInIndex(contentId)) prefs.edit().putBoolean("autoDeclined." + contentId, true).apply();
         refreshSoon();
         local.execute(() -> {
-            String line = removeNow(contentId, reason) ? "Removed from this phone" : "Could not remove it";
+            long freed = removeNowFreed(contentId, reason, false);
+            String line = freed < 0 ? "Could not remove it"
+                    : freed > 0 ? "Removed from this phone · " + KeptIndex.size(freed) + " freed" : "Removed from this phone";
             refreshSoon();
             say(done, line);
         });
@@ -491,34 +500,50 @@ final class KeepStore {
 
     void remove(String contentId, Consumer<String> done) { remove(contentId, "remove", done); }
 
-    private boolean removeNow(String contentId, String reason) {
+    private boolean removeNow(String contentId, String reason) { return removeNowFreed(contentId, reason, false) >= 0; }
+
+    /**
+     * Removes one kept item ({@code fromGroup}: the unit leaves its group, and stays when it
+     * is also kept on its own); deletes only the tracks no other keep holds. Answers the
+     * bytes really freed, or -1 when it could not be removed.
+     */
+    private long removeNowFreed(String contentId, String reason, boolean fromGroup) {
         try {
             long freed = 0;
-            JSONObject reply = new JSONObject(media.unkeep(contentId, WAIT_MS));
+            JSONObject reply = new JSONObject(fromGroup ? media.unkeepFromGroup(contentId, WAIT_MS) : media.unkeep(contentId, WAIT_MS));
             JSONArray orphaned = reply.optJSONArray("orphaned");
+            boolean stays = reply.optBoolean("stays", false);
             synchronized (downloadsLock) {
-            Map<String, Download> all = downloads();
-            for (int i = 0; orphaned != null && i < orphaned.length(); i++) {
-                String id = orphaned.getString(i);
-                for (Download d : all.values()) {
-                    if (!id.equals(trackOf(d.request.id))) continue;
-                    freed += d.getBytesDownloaded();
-                    delete(d.request.id, reason);
-                }
-                KEYS.remove(id);
-                prefs.edit().remove("key." + id).remove("ver." + id).apply();
-            }
-            clearItem(contentId);
+            freed = deleteOrphaned(orphaned, reason);
+            if (stays) prefs.edit().remove("removing." + contentId).remove("unitOrder." + contentId).apply();
+            else clearItem(contentId);
             }
             event("keep.removed", new JSONObject().put("reason", reason).put("tracks", orphaned == null ? 0 : orphaned.length()).put("bytes", freed));
-            return true;
+            return freed;
         } catch (Exception failed) {
             prefs.edit().remove("removing." + contentId).apply();
             // A keep still waiting for home lives only on this phone: it goes without home.
             boolean waitingOnly = removePendingFor(contentId) && !keptHas(contentId);
             if (waitingOnly) event("keep.removed", eventOf("reason", reason));
-            return waitingOnly;
+            return waitingOnly ? 0 : -1;
         }
+    }
+
+    /** Deletes the audio of tracks the payload says no keep holds any more (every version of each). */
+    private long deleteOrphaned(JSONArray orphaned, String reason) throws Exception {
+        Map<String, Download> all = downloads();
+        long bytes = 0;
+        for (int i = 0; orphaned != null && i < orphaned.length(); i++) {
+            String id = orphaned.getString(i);
+            for (Download d : all.values()) {
+                if (!id.equals(trackOf(d.request.id))) continue;
+                bytes += d.getBytesDownloaded();
+                delete(d.request.id, reason);
+            }
+            KEYS.remove(id);
+            prefs.edit().remove("key." + id).remove("ver." + id).apply();
+        }
+        return bytes;
     }
 
     private boolean keptHas(String contentId) {
@@ -533,7 +558,7 @@ final class KeepStore {
     private void clearItem(String cid) {
         SharedPreferences.Editor e = prefs.edit();
         for (String p : new String[] { "removing.", "admitted.", "size.", "paused.", "needroom.", "undecided.", "finishedAt.", "wasReady.", "startedAt.",
-                "autoFinishedAt.", "autoPlayedAt.", "autoReady.", "autoSeries." }) {
+                "autoFinishedAt.", "autoPlayedAt.", "autoReady.", "autoSeries.", "unitOrder.", "groupFinishedAt." }) {
             e.remove(p + cid);
         }
         e.apply();
@@ -646,6 +671,8 @@ final class KeepStore {
             case "keep": keep(mediaId.isEmpty() ? "c:" + contentId : mediaId, done); break;
             case "retry": retry(contentId, done); break;
             case "remove": remove(contentId, "remove", done); break;
+            case "unit-remove": removeUnit(contentId, done); break;
+            case "group-remove": removeGroup(contentId, done); break;
             case "pause": pause(contentId); if (then != null) then.run(); break;
             case "resume": resume(contentId); if (then != null) then.run(); break;
             case "resume-all": resumeAll(); if (then != null) then.run(); break;
@@ -721,6 +748,7 @@ final class KeepStore {
             boolean due = resync || now - KeepRules.notAfterNow(prefs.getLong("resyncAt", 0), now) > KeepRules.DAY_MS;
             if (due && networkAllowsNow()) {
                 resyncAll(reply.optJSONArray("items"));
+                followGroups(reply.optJSONArray("groups"));
                 prefs.edit().putLong("resyncAt", now).apply();
                 JSONObject fresh = keptReply();
                 if (fresh != null) reply = fresh;
@@ -729,6 +757,7 @@ final class KeepStore {
             admit(reply.optJSONArray("items"));
             reconcile(reply, now);
             autoSweep(reply.optJSONArray("items"), now);
+            groupSweep(reply.optJSONArray("items"), reply.optJSONArray("groups"), now);
             autoPendingOnWifi();
             if (prefs.getBoolean("cellularOnce", false) && allReady()) {
                 prefs.edit().remove("cellularOnce").apply();
@@ -1057,6 +1086,7 @@ final class KeepStore {
             if (!reply.optBoolean("ok", false) || reply.optJSONArray("items") == null) return null;
             if (reply.optJSONArray("quarantined") == null) reply.put("quarantined", new JSONArray());
             if (reply.optJSONArray("deletable") == null) reply.put("deletable", new JSONArray());
+            if (reply.optJSONArray("groups") == null) reply.put("groups", new JSONArray());
             return reply;
         } catch (Exception noAnswer) {
             return null;
@@ -1081,7 +1111,7 @@ final class KeepStore {
         JSONArray mirror = readMirror();
         boolean lost = (items.length() == 0 && mirror.length() > 0) || reply.optJSONArray("quarantined").length() > 0;
         if (lost && mirror.length() > 0) {
-            int restored = new JSONObject(media.keptRestore(mirror, WAIT_MS)).optInt("restored", 0);
+            int restored = new JSONObject(media.keptRestore(mirror, readGroupsMirror(), WAIT_MS)).optInt("restored", 0);
             if (restored > 0) {
                 Log.w(TAG, "keep: restored " + restored + " kept collections from the shell's copy");
                 event("keep.restored", new JSONObject().put("count", restored));
@@ -1089,8 +1119,28 @@ final class KeepStore {
                 if (again != null) reply = again;
             }
         }
-        if (reply.optJSONArray("quarantined").length() == 0) writeMirror(reply.optJSONArray("items"));
+        if (reply.optJSONArray("quarantined").length() == 0) {
+            writeMirror(reply.optJSONArray("items"));
+            writeFile(GROUPS_MIRROR, reply.optJSONArray("groups").toString());
+        }
         return reply;
+    }
+
+    private static final String GROUPS_MIRROR = "kept-groups-mirror.json";
+
+    private JSONArray readGroupsMirror() {
+        try {
+            File f = new File(app.getFilesDir(), GROUPS_MIRROR);
+            return f.isFile() ? new JSONArray(new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8)) : new JSONArray();
+        } catch (Exception unreadable) { return new JSONArray(); }
+    }
+
+    private void writeFile(String name, String text) {
+        try {
+            File tmp = new File(app.getFilesDir(), name + ".tmp");
+            Files.write(tmp.toPath(), text.getBytes(StandardCharsets.UTF_8));
+            if (!tmp.renameTo(new File(app.getFilesDir(), name))) Files.write(new File(app.getFilesDir(), name).toPath(), text.getBytes(StandardCharsets.UTF_8));
+        } catch (Exception notWritten) { /* the next sync */ }
     }
 
     private JSONArray readMirror() {
@@ -1156,6 +1206,212 @@ final class KeepStore {
         }
         if (pending().length() > 0) KeepJob.scheduleRetry(app);
     }
+
+    // ── keeping an artist or an author (spec §3.11) ──────────────────────────
+
+    /**
+     * What "Keep all…" on {@code groupId} (an artist or an author) would keep, for the sheet:
+     * the payload's units with each one's size read here (what is already on the phone,
+     * shared copies included, costs nothing), the room, the limit and the network rule.
+     * {@code done} hears it on the main thread ({ok:false, words} when it cannot be read).
+     */
+    void groupPreview(String groupId, String kind, Consumer<JSONObject> done) {
+        io.execute(() -> {
+            JSONObject out;
+            try {
+                applyRules();
+                JSONObject r = new JSONObject(media.groupPreview(groupId, kind, 120_000));
+                if (!r.optBoolean("ok", false)) {
+                    out = notPreviewed(r.optString("error", ""), net.kckern.daylight.shellkit.FailureWords.reasonOf(r));
+                } else {
+                    boolean sized = networkAllowsNow();
+                    JSONArray units = r.optJSONArray("units");
+                    for (int i = 0; units != null && i < units.length(); i++) {
+                        JSONObject u = units.getJSONObject(i);
+                        JSONArray tracks = u.optJSONArray("tracks");
+                        long have = downloadedBytes(tracks);
+                        long need = sized ? missingBytes(tracks) : -1;
+                        u.put("need", need).put("bytes", Math.max(0, need) + have);
+                        u.remove("tracks");   // the sheet needs sizes, not stream URLs
+                    }
+                    long limit = limitBytes(), kept = keptBytes();
+                    out = r.put("limit", limit).put("kept", kept).put("room", Math.max(0, limit - kept)).put("wifiOnly", !onCellular)
+                            .put("sized", sized);
+                }
+            } catch (Exception e) {
+                out = notPreviewed("unreachable", e instanceof net.kckern.daylight.api.PayloadPort.NotReadyException ? "starting" : "");
+            }
+            JSONObject answer = out;
+            main.post(() -> done.accept(answer));
+        });
+    }
+
+    /**
+     * Keeps the chosen units of a group, one by one in the sheet's order (the started book
+     * first; albums newest first), each as its own kept item through the usual rules (size,
+     * room, network); units the group held and the person unchecked leave it. The group's
+     * record says whether new ones are kept and finished ones removed.
+     */
+    void keepGroup(JSONObject group, List<String> chosen, List<String> listed, long bytes, Consumer<String> done) {
+        io.execute(() -> {
+            String line;
+            try {
+                applyRules();
+                JSONObject saved = new JSONObject(media.groupSave(group, chosen, listed, 30_000));
+                if (!saved.optBoolean("ok", false)) throw new IllegalStateException(saved.optString("error"));
+                String gid = group.optString("id"), kind = group.optString("kind");
+                synchronized (downloadsLock) { deleteOrphaned(saved.optJSONArray("orphaned"), "group_choose"); }
+                int left = saved.optInt("left", 0);
+                if (left > 0) event("keep.group.unit_removed", new JSONObject().put("reason", "user").put("units", left));
+                if (saved.optBoolean("new", false)) {
+                    event("keep.group.started", new JSONObject().put("kind", kind).put("units", chosen.size()).put("bytes", bytes)
+                            .put("follow", group.optBoolean("follow")));
+                }
+                int added = 0, needRoom = 0;
+                for (int i = 0; i < chosen.size(); i++) {
+                    String uid = chosen.get(i);
+                    prefs.edit().putInt("unitOrder." + uid, i).apply();
+                    try {
+                        String said = keepUnitNow(uid, gid, "initial");
+                        if (said == null) continue;
+                        added++;
+                        if (said.startsWith("Needs")) needRoom++;
+                    } catch (Exception one) { Log.i(TAG, "keep: a unit was not kept now (" + one.getClass().getSimpleName() + ")"); }
+                }
+                String noun = GroupKeepRules.noun(kind, chosen.size());
+                line = added == 0 && left == 0 ? "Nothing new to keep"
+                        : needRoom > 0 ? "Keeping " + noun + " · " + needRoom + " need more room"
+                        : "Keeping " + noun + " of " + Json.first(group.optString("title"), "them") + " on this phone"
+                                + (onCellular ? "" : " · on Wi-Fi");
+            } catch (Exception failed) {
+                Log.w(TAG, "keep group failed: " + failed.getClass().getSimpleName());
+                line = "Could not keep these on the phone";
+            }
+            refreshSoon();
+            say(done, line);
+        });
+    }
+
+    /**
+     * One unit kept under its group (it keeps its own nature: a book in its order with its
+     * chapters); an automatic keep of it becomes manual. Answers the line, or null when the
+     * group already held it.
+     */
+    private String keepUnitNow(String uid, String gid, String reason) throws Exception {
+        boolean already = false;
+        for (JSONObject k : keptItemsOrEmpty()) {
+            if (k != null && uid.equals(k.optString("contentId")) && gid.equals(k.optString("group")) && !k.optBoolean("auto")) already = true;
+        }
+        if (already) return null;
+        JSONObject reply = new JSONObject(media.keepUnit(uid, gid, 60_000));
+        if (!reply.optBoolean("ok", false)) throw new IllegalStateException(reply.optString("error"));
+        String kc = reply.optString("contentId");
+        prefs.edit().remove("autoDeclined." + kc).remove("autoFinishedAt." + kc).remove("autoSeries." + kc)
+                .remove("autoReady." + kc).remove("autoPlayedAt." + kc).apply();
+        autoLog.clear(kc);
+        event("keep.group.unit_added", new JSONObject().put("reason", reason).put("tracks", count(reply)));
+        return decide(reply);
+    }
+
+    /** Remove on a unit's row under its group: that unit goes, the group stays and leaves it out from now on. */
+    void removeUnit(String contentId, Consumer<String> done) {
+        prefs.edit().putBoolean("removing." + contentId, true).apply();
+        refreshSoon();
+        local.execute(() -> {
+            long freed = removeNowFreed(contentId, "group_unit", true);
+            if (freed >= 0) eventQuiet("keep.group.unit_removed", "user");
+            refreshSoon();
+            say(done, freed < 0 ? "Could not remove it" : freed > 0 ? "Removed from this phone · " + KeptIndex.size(freed) + " freed"
+                    : "Removed from the group · its audio stays (kept elsewhere too)");
+        });
+    }
+
+    /** "Remove all of <name>": every unit of the group goes (one kept on its own as well stays), then the group. */
+    void removeGroup(String groupId, Consumer<String> done) {
+        local.execute(() -> {
+            String line;
+            try {
+                List<String> units = new ArrayList<>();
+                for (JSONObject k : keptItemsOrEmpty()) if (k != null && groupId.equals(k.optString("group"))) units.add(k.optString("contentId"));
+                for (String u : units) prefs.edit().putBoolean("removing." + u, true).apply();
+                refreshSoon();
+                JSONObject reply = new JSONObject(media.groupRemove(groupId, WAIT_MS));
+                if (!reply.optBoolean("ok", false)) throw new IllegalStateException(reply.optString("error"));
+                long freed;
+                synchronized (downloadsLock) {
+                    freed = deleteOrphaned(reply.optJSONArray("orphaned"), "group_remove");
+                    for (String u : units) clearItem(u);
+                }
+                event("keep.group.unit_removed", new JSONObject().put("reason", "user").put("units", reply.optInt("units")).put("bytes", freed));
+                line = "Removed " + reply.optInt("units") + (reply.optInt("units") == 1 ? " item" : " items") + " from this phone"
+                        + (freed > 0 ? " · " + KeptIndex.size(freed) + " freed" : "");
+            } catch (Exception failed) {
+                for (String key : new ArrayList<>(prefs.getAll().keySet())) if (key.startsWith("removing.")) prefs.edit().remove(key).apply();
+                line = "Could not remove them now";
+            }
+            refreshSoon();
+            say(done, line);
+        });
+    }
+
+    /** At a re-sync: each group that keeps new ones too picks up what home added since (spec §3.11). */
+    private void followGroups(JSONArray groups) {
+        for (int i = 0; groups != null && i < groups.length(); i++) {
+            JSONObject g = groups.optJSONObject(i);
+            if (g == null || !g.optBoolean("follow")) continue;
+            try {
+                JSONObject r = new JSONObject(media.groupNew(g.optString("id"), 120_000));
+                JSONArray units = r.optJSONArray("units");
+                for (int j = 0; units != null && j < units.length(); j++) {
+                    String uid = units.getJSONObject(j).optString("contentId");
+                    try {
+                        prefs.edit().putInt("unitOrder." + uid, 1000 + j).apply();
+                        keepUnitNow(uid, g.optString("id"), "new");
+                    } catch (Exception one) { /* the next re-sync */ }
+                }
+            } catch (Exception later) { /* the next re-sync */ }
+        }
+    }
+
+    /**
+     * "Remove each when finished" (books): a finished book of such a group goes a day after it
+     * was finished (home says so, or its last part was heard to 97 % here), listed under On
+     * this phone with Keep again for 7 days; a debuggable build may shorten the day.
+     */
+    private void groupSweep(JSONArray items, JSONArray groups, long now) {
+        java.util.Set<String> removing = new HashSet<>();
+        for (int i = 0; groups != null && i < groups.length(); i++) {
+            JSONObject g = groups.optJSONObject(i);
+            if (g != null && g.optBoolean("removeFinished")) removing.add(g.optString("id"));
+        }
+        if (removing.isEmpty()) return;
+        List<String> doneAtHome = networkAllowsNow() ? finishedOrNull() : null;
+        long grace = timing().graceMs, next = 0;
+        for (int i = 0; items != null && i < items.length(); i++) {
+            JSONObject k = items.optJSONObject(i);
+            if (k == null || !removing.contains(k.optString("group")) || !"book".equals(k.optString("kind"))) continue;
+            String cid = k.optString("contentId");
+            if (doneAtHome != null && doneAtHome.contains(cid) && !prefs.contains("groupFinishedAt." + cid)) {
+                prefs.edit().putLong("groupFinishedAt." + cid, now).apply();
+            }
+            long at = prefs.getLong("groupFinishedAt." + cid, 0);
+            if (at == 0) continue;
+            if (!GroupKeepRules.finishedRemovalDue(at, now, grace)) {
+                long due = at + grace;
+                if (next == 0 || due < next) next = due;
+                continue;
+            }
+            String title = k.optString("title");
+            if (removeNowFreed(cid, "group_finished", true) >= 0) {
+                prefs.edit().remove("groupFinishedAt." + cid).apply();
+                autoLog.removed(cid, title, AutoKeepRules.FINISHED, now);
+                eventQuiet("keep.group.unit_removed", "finished");
+            }
+        }
+        if (next > 0) KeepJob.scheduleSweep(app, Math.max(60_000L, next - now));
+    }
+
+    private static void eventQuiet(String name, String reason) { event(name, eventOf("reason", reason)); }
 
     // ── kept automatically while you listen (spec §3.10) ─────────────────────
 
@@ -1354,7 +1610,21 @@ final class KeepStore {
     void notePlaying(String trackId, long positionMs, long durationMs) {
         local.execute(() -> {
             JSONObject k = keptHolding(trackId);
-            if (k == null || !k.optBoolean("auto")) return;
+            if (k != null && !k.optBoolean("auto")) {
+                // A book of a group that removes finished ones: heard to the end here, finished now.
+                JSONObject g = k.optJSONObject("group");
+                JSONArray ids = k.optJSONArray("trackIds");
+                boolean last = ids != null && ids.length() > 0 && trackId.equals(ids.optString(ids.length() - 1));
+                String cid = k.optString("contentId");
+                if (g != null && g.optBoolean("removeFinished") && "book".equals(k.optString("kind")) && last
+                        && AutoKeepRules.heardToEnd(positionMs, durationMs) && !prefs.contains("groupFinishedAt." + cid)) {
+                    prefs.edit().putLong("groupFinishedAt." + cid, System.currentTimeMillis()).apply();
+                    KeepJob.scheduleSweep(app, timing().graceMs);
+                    refreshSoon();
+                }
+                return;
+            }
+            if (k == null) return;
             String cid = k.optString("contentId");
             autoPlayed(cid);
             JSONArray ids = k.optJSONArray("trackIds");
@@ -1468,6 +1738,23 @@ final class KeepStore {
             JSONArray items = reply == null ? null : reply.optJSONArray("items");
             if (items == null) return;
             Map<String, Download> all = downloads();
+            Map<String, JSONObject> groupsById = new HashMap<>();
+            JSONArray gs = reply.optJSONArray("groups");
+            for (int i = 0; gs != null && i < gs.length(); i++) {
+                JSONObject g = gs.optJSONObject(i);
+                if (g != null) groupsById.put(g.optString("id"), new JSONObject().put("id", g.optString("id")).put("title", g.optString("title"))
+                        .put("kind", g.optString("kind")).put("follow", g.optBoolean("follow")).put("removeFinished", g.optBoolean("removeFinished"))
+                        .put("art", g.optString("art", "")));
+            }
+            // How many kept items hold each track: a Remove frees only what one item alone holds.
+            Map<String, Integer> holders = new HashMap<>();
+            Map<String, Long> trackBytes = new HashMap<>();
+            for (int i = 0; i < items.length(); i++) {
+                JSONArray ts = items.getJSONObject(i).optJSONArray("tracks");
+                java.util.Set<String> mine = new HashSet<>();
+                for (int j = 0; ts != null && j < ts.length(); j++) mine.add(ts.getJSONObject(j).optString("id"));
+                for (String id : mine) holders.merge(id, 1, Integer::sum);
+            }
             JSONArray index = new JSONArray(), report = new JSONArray();
             Set<String> covers = new HashSet<>();
             int notMet = manager.getNotMetRequirements();
@@ -1491,6 +1778,7 @@ final class KeepStore {
                     if (prefs.getBoolean("damaged." + key, false)) f.damaged++;
                     if (d == null) continue;
                     bytes += d.getBytesDownloaded();
+                    trackBytes.put(id, d.getBytesDownloaded());
                     if (d.contentLength > 0) expected += d.contentLength;
                     if (d.state == Download.STATE_COMPLETED && whole(d)) f.done++;
                     else if (d.state == Download.STATE_FAILED) {
@@ -1529,6 +1817,21 @@ final class KeepStore {
                     }
                 }
                 if (!reason.isEmpty() && f.failed > 0) e.put("reason", reason);
+                // A unit of a kept artist or author (spec §3.11): shown under its group.
+                JSONObject grp = groupsById.get(k.optString("group"));
+                if (grp != null) {
+                    e.put("group", grp);
+                    if (prefs.contains("unitOrder." + cid)) e.put("unitOrder", prefs.getInt("unitOrder." + cid, 0));
+                    if (k.optBoolean("alone")) e.put("alone", true);
+                    if (prefs.contains("groupFinishedAt." + cid)) e.put("finished", true);
+                }
+                List<String> mineIds = new ArrayList<>();
+                java.util.Set<String> shared = new HashSet<>();
+                for (int j = 0; j < ids.length(); j++) {
+                    mineIds.add(ids.optString(j));
+                    if (holders.getOrDefault(ids.optString(j), 0) > 1) shared.add(ids.optString(j));
+                }
+                e.put("frees", GroupKeepRules.freedBytes(mineIds, shared, trackBytes)).put("shared", !shared.isEmpty() || k.optBoolean("alone"));
                 if (k.has("art")) { e.put("art", k.optString("art")); covers.add(k.optString("art")); }
                 index.put(e);
                 report.put(reportItem(e, free, limit));
@@ -1583,6 +1886,12 @@ final class KeepStore {
         if (!e.optString("title").isEmpty()) o.put("title", e.optString("title"));
         // Kept automatically while listening (spec §3.10): the web says so.
         if (e.optBoolean("auto")) o.put("auto", true);
+        // A unit of a kept artist or author (spec §3.11): the web shows it under its group.
+        JSONObject g = e.optJSONObject("group");
+        if (g != null) {
+            o.put("group", new JSONObject().put("id", g.optString("id")).put("title", g.optString("title")).put("kind", g.optString("kind"))
+                    .put("follow", g.optBoolean("follow")).put("removeFinished", g.optBoolean("removeFinished")));
+        }
         // The phone's own words, so the web says exactly what the phone says.
         o.put("reason", e.has("reason") && !KeptIndex.READY.equals(state) ? e.optString("reason") : KeptIndex.describe(e));
         return o;

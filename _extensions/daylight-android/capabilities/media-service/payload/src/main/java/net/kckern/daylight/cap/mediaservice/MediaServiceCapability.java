@@ -630,11 +630,31 @@ public final class MediaServiceCapability implements Capability {
         if (!fromList) {
             // A track: keep its album (a book, a record), when the backend names one.
             JSONObject info = api.info(cid);
+            if (groupKindOf(info, cid) != null) {
+                // The web's "Keep on Phone" of an artist or author arrives as a bare id.
+                if ("preview".equals(mode)) {
+                    return new Outcome(200, Replies.ok().put("contentId", cid).put("kind", "group")
+                            .put("groupKind", groupKindOf(info, cid)).put("title", "").put("tracks", new JSONArray()));
+                }
+                if ("keep".equals(mode) && !request.optBoolean("auto", false)) return keepWholeGroup(cid, groupKindOf(info, cid));
+            }
             JSONObject meta = info == null ? null : info.optJSONObject("metadata");
             String album = meta == null ? "" : meta.optString("albumId", "");
             if (!album.isEmpty()) cid = ContentId.source(cid) + ":" + album;
         }
         if ("refresh".equals(mode) && (kept().get(cid) == null || kept().tombstoned(cid))) return failure(409, "not_kept");
+        // An artist or an author is never flattened into one kept item (spec §3.11): a preview
+        // says it is a group (the phone opens "Keep all…"); a keep from the web keeps it as one.
+        if (!"refresh".equals(mode) && !request.optBoolean("auto", false) && kept().get(cid) == null) {
+            String groupKind = groupKindOf(fromList ? safeInfo(cid) : null, cid);
+            if (groupKind != null) {
+                if ("preview".equals(mode)) {
+                    return new Outcome(200, Replies.ok().put("contentId", cid).put("kind", "group").put("groupKind", groupKind)
+                            .put("title", "").put("tracks", new JSONArray()));
+                }
+                return keepWholeGroup(cid, groupKind);
+            }
+        }
         // Kept automatically while listening (spec §3.10): {auto:true, only:[track ids]}. A
         // manual keep is never turned into an automatic one; a manual Keep of an automatic
         // one makes it manual (the whole collection, never removed by those rules).
@@ -836,6 +856,48 @@ public final class MediaServiceCapability implements Capability {
         health.answered();
         return new Outcome(200, Replies.ok().put("group", group).put("units", unitsJson).put("totalTracks", tracks)
                 .put("cap", MAX_KEPT_TRACKS).put("withinCap", within));
+    }
+
+    private JSONObject safeInfo(String cid) {
+        try { return api.info(cid); } catch (Exception unknown) { return null; }
+    }
+
+    /** "artist" or "author" when {@code info} names an artist (an author is an artist of an audiobook library); null otherwise. */
+    static String groupKindOf(JSONObject info, String cid) {
+        if (info == null) return null;
+        JSONObject meta = info.optJSONObject("metadata");
+        String type = Json.first(Json.str(info, "type"), meta == null ? "" : Json.str(meta, "type")).toLowerCase(java.util.Locale.ROOT);
+        if (!"artist".equals(type) && !"author".equals(type)) return null;
+        String library = Json.first(Json.str(info, "librarySectionTitle"), meta == null ? "" : Json.str(meta, "librarySectionTitle"))
+                .toLowerCase(java.util.Locale.ROOT);
+        return "author".equals(type) || library.contains("book") ? GroupKeeps.AUTHOR : GroupKeeps.ARTIST;
+    }
+
+    /**
+     * A keep of a whole artist or author without the sheet (from the web): the group with its
+     * defaults, every unit not finished and within the cap kept as its own item; the phone's
+     * sync then sizes and downloads each under the usual rules.
+     */
+    private Outcome keepWholeGroup(String gid, String kind) throws Exception {
+        Outcome p = groupPreview(new JSONObject().put("id", gid).put("kind", kind), false);
+        if (p.status != 200) return p;
+        JSONObject group = p.body.getJSONObject("group");
+        JSONArray units = p.body.getJSONArray("units");
+        JSONArray chosen = new JSONArray(), listed = new JSONArray();
+        for (int i = 0; i < units.length(); i++) {
+            JSONObject u = units.getJSONObject(i);
+            listed.put(u.optString("contentId"));
+            if (!u.optBoolean("finished") && !u.optBoolean("overCap")) chosen.put(u.optString("contentId"));
+        }
+        groupSave(new JSONObject().put("group", group).put("chosen", chosen).put("listed", listed));
+        int kept = 0;
+        for (int i = 0; i < chosen.length(); i++) {
+            Outcome o = keep(new JSONObject().put("id", "c:" + chosen.getString(i)).put("mode", "keep").put("group", gid));
+            if (o.status == 200) kept++;
+        }
+        if (core != null) core.shell().note("MEDIA", "keep: group kept from a bare id (" + kept + " of " + chosen.length() + " units)");
+        return new Outcome(200, Replies.ok().put("contentId", gid).put("title", group.optString("title")).put("kind", "group")
+                .put("group", gid).put("units", kept).put("tracks", new JSONArray()));
     }
 
     /**
