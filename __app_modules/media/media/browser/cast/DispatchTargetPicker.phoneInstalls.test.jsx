@@ -12,7 +12,8 @@ vi.mock("./useDispatch.js", () => ({ useDispatch: () => ({ dispatchToTarget }) }
 const phone = { id: 'phone', name: 'Phone', type: 'phone', content_control: { provider: 'phone-inbox' } };
 const fleetDevices = [phone, { id: 'office-tv', name: 'Office TV' }];
 vi.mock("../fleet/useDevice.js", () => ({
-  useDevice: (id) => ({ device: fleetDevices.find((d) => d.id === id) ?? null, entry: null }),
+  // A live install is a listening phone: its fleet entry is fresh (Play on is offered).
+  useDevice: (id) => ({ device: fleetDevices.find((d) => d.id === id) ?? null, entry: id === 'phone' ? { snapshot: { state: 'idle' } } : null }),
 }));
 vi.mock("./useCastTarget.js", () => ({ useCastTarget: () => ({ targetIds: [], mode: 'fork' }) }));
 vi.mock("../logging/mediaLog.js", () => {

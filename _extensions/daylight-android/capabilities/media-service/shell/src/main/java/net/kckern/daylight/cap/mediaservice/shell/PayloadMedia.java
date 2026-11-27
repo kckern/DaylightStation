@@ -86,6 +86,11 @@ final class PayloadMedia {
         }
     }
 
+    /** The player's household rules: {ok, crossfadeSec} (media.crossfadeSec). */
+    String playerRules(long waitMs) throws Exception {
+        return port.call(new JSONObject().put("op", "playerRules").toString(), waitMs);
+    }
+
     /** The screens this phone can be a remote for: {ok, items:[{id, name}]}. */
     String screens(long waitMs) throws Exception {
         return port.call(new JSONObject().put("op", "screens").toString(), waitMs);
@@ -142,6 +147,11 @@ final class PayloadMedia {
         return port.call(new JSONObject().put("op", "kept-restore").put("items", items).toString(), waitMs);
     }
 
+    /** The background job's inbox check with the app closed: {ok, status: checked|off|unauthorized|not served|unreachable}. */
+    String inboxOnce(long waitMs) throws Exception {
+        return port.call(new JSONObject().put("op", "inbox-once").toString(), waitMs);
+    }
+
     /** The whole kept list with each one's state, for the web (through the inbox). */
     String keepsReport(org.json.JSONArray items, long waitMs) throws Exception {
         return port.call(new JSONObject().put("op", "keeps-report").put("items", items).toString(), waitMs);
@@ -149,6 +159,11 @@ final class PayloadMedia {
 
     String trackLyrics(String contentId, long waitMs) throws Exception {
         return port.call(new JSONObject().put("op", "track-lyrics").put("id", contentId).toString(), waitMs);
+    }
+
+    /** One track's chapters: {ok, chapters:{chapters:[{startMs,endMs,title}], durationMs, provider}} or {ok, none:true}. */
+    String trackChapters(String contentId, long waitMs) throws Exception {
+        return port.call(new JSONObject().put("op", "track-chapters").put("id", contentId).toString(), waitMs);
     }
 
     /** Waits for a payload to attach. True as soon as one has. */

@@ -16,6 +16,7 @@ import java.util.List;
 import androidx.media3.common.AudioAttributes;
 import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
+import androidx.media3.common.MediaMetadata;
 import androidx.media3.common.ForwardingPlayer;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
@@ -64,14 +65,75 @@ public class DaylightMediaService extends MediaLibraryService {
     private MediaLibrarySession session;
     private LibraryCallback callback;
     private LongFormPolicy longFormPolicy;
-    private volatile float levelVolume = 1f, fadeVolume = 1f;
+    private volatile float levelVolume = 1f, fadeVolume = 1f, crossfadeGain = 1f;
+    private CrossfadeEngine crossfade;
     private final java.util.Map<String, Float> levels = new java.util.concurrent.ConcurrentHashMap<>();
 
     private void applyVolume() {
-        if (player != null) player.setVolume(levelVolume * fadeVolume);
+        // Loudness level x the sleep timer's fade x the crossfade's (or a skip's) ramp.
+        if (player != null) player.setVolume(levelVolume * fadeVolume * crossfadeGain);
     }
 
     /** The level for this item from its Plex gain (track levels route), kept per item. */
+    // ── chapters (ops:docs/superpowers/specs/2026-11-26-phone-audiobook-chapters.md §4.5) ──
+
+    private volatile Chapters chapters = Chapters.NONE;
+    private volatile String chaptersFor = "";
+    private int publishedChapter = -1;
+    private Player sessionPlayerRef;
+    private final java.util.List<Player.Listener> sessionListeners = new java.util.concurrent.CopyOnWriteArrayList<>();
+    private final Runnable chapterTick = this::chapterTick;
+
+    /** A long item's chapters, asked of the payload (home, else the kept copy); none for music. */
+    private void loadChapters(MediaItem item) {
+        widgetUpdates.removeCallbacks(chapterTick);
+        boolean had = !chapters.isEmpty();
+        chapters = Chapters.NONE;
+        chaptersFor = "";
+        publishedChapter = -1;
+        if (had) emitMetadata();
+        String id = item == null ? null : item.mediaId;
+        ExecutorService pool = io;
+        if (id == null || id.indexOf(':') <= 0 || pool == null) return;
+        long fileMs = NodeItems.durationMs(item, androidx.media3.common.C.TIME_UNSET);
+        if (fileMs > 0 && fileMs < 20 * 60_000L) return;
+        pool.execute(() -> {
+            Chapters found;
+            try {
+                found = Chapters.parse(new org.json.JSONObject(media.trackChapters(id, 8000)), Math.max(0, fileMs));
+            } catch (Exception none) { found = Chapters.NONE; }
+            Chapters got = found;
+            widgetUpdates.post(() -> {
+                MediaItem now = player == null ? null : player.getCurrentMediaItem();
+                if (now == null || !id.equals(now.mediaId) || got.isEmpty()) return;
+                chapters = got;
+                chaptersFor = id;
+                Log.i(TAG, "chapters: " + got.count() + " for the current item");
+                chapterTick();
+            });
+        });
+    }
+
+    /** Re-publishes the subtitle when the position crosses into another chapter. */
+    private void chapterTick() {
+        Chapters c = chapters;
+        if (c.isEmpty() || player == null) return;
+        int i = c.indexAt(player.getCurrentPosition());
+        if (i != publishedChapter) { publishedChapter = i; emitMetadata(); }
+        widgetUpdates.postDelayed(chapterTick, 2000);
+    }
+
+    private void emitMetadata() {
+        Player sp = sessionPlayerRef;
+        if (sp == null) return;
+        MediaMetadata m = sp.getMediaMetadata();
+        Player.Events events = new Player.Events(new androidx.media3.common.FlagSet.Builder().add(Player.EVENT_MEDIA_METADATA_CHANGED).build());
+        for (Player.Listener l : sessionListeners) {
+            l.onMediaMetadataChanged(m);
+            l.onEvents(sp, events);
+        }
+    }
+
     private void level(MediaItem item) {
         String id = item == null ? null : item.mediaId;
         if (id == null || id.indexOf(':') <= 0) { levelVolume = 1f; applyVolume(); return; }
@@ -122,6 +184,14 @@ public class DaylightMediaService extends MediaLibraryService {
     public void onCreate() {
         super.onCreate();
         ShellStart.ensure(this);
+        // The notification's second line is the artist; for a chaptered book it leads with
+        // the chapter ("Chapter 4 of 12 · The Return · Boethius"), as the session subtitle does.
+        setMediaNotificationProvider(new androidx.media3.session.DefaultMediaNotificationProvider(this) {
+            @Override protected CharSequence getNotificationContentText(MediaMetadata m) {
+                CharSequence chapter = Chapters.notificationLine(m.subtitle, m.artist);
+                return chapter != null ? chapter : super.getNotificationContentText(m);
+            }
+        });
         io = Executors.newFixedThreadPool(2, r -> {
             Thread t = new Thread(r, "Daylight-media-io");
             t.setDaemon(true);
@@ -133,6 +203,7 @@ public class DaylightMediaService extends MediaLibraryService {
         // Audio focus and "headphones unplugged" are the player's: it pauses for a call,
         // ducks for a prompt and stops when the output goes away. The wake mode holds the
         // CPU and the network while playing with the screen off.
+        androidx.media3.datasource.DataSource.Factory source = playbackSource();
         player = new ExoPlayer.Builder(this)
                 .setAudioAttributes(new AudioAttributes.Builder()
                         .setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true)
@@ -141,8 +212,27 @@ public class DaylightMediaService extends MediaLibraryService {
                 .setSeekBackIncrementMs(CarControls.SEEK_STEP_MS)
                 .setSeekForwardIncrementMs(CarControls.SEEK_STEP_MS)
                 // Tracks kept on this phone play from the download cache, with no network.
-                .setMediaSourceFactory(new androidx.media3.exoplayer.source.DefaultMediaSourceFactory(playbackSource()))
+                .setMediaSourceFactory(new androidx.media3.exoplayer.source.DefaultMediaSourceFactory(source))
                 .build();
+
+        // Crossfade between songs (music only, this phone only): a private tail player plays
+        // the outgoing song's last seconds; this player stays the one truth. See CrossfadeEngine.
+        crossfade = new CrossfadeEngine(this, player, source, new CrossfadeEngine.Mix() {
+            @Override public float levelOf(MediaItem item) {
+                Float known = item == null ? null : levels.get(item.mediaId);
+                return known == null ? 1f : known;
+            }
+            @Override public float sleepFade() { return fadeVolume; }
+            @Override public void incomingGain(float gain) { crossfadeGain = gain; applyVolume(); }
+        }, (item, durationMs) -> { if (events != null) events.finishedByFade(item, durationMs); });
+        io.execute(() -> {
+            try {
+                org.json.JSONObject rules = new org.json.JSONObject(media.playerRules(5000));
+                if (rules.optBoolean("ok", false) && rules.has("crossfadeSec")) {
+                    CrossfadeEngine.rememberDefault(this, rules.optInt("crossfadeSec", Crossfade.DEFAULT_SEC));
+                }
+            } catch (Exception keepLast) { /* the last default stays */ }
+        });
 
         // Long items: the listener's speed (music stays 1x) and a short step back on resume.
         longFormPolicy = new LongFormPolicy(player, this::longForm, () -> {
@@ -156,7 +246,7 @@ public class DaylightMediaService extends MediaLibraryService {
         // Loudness levelling: each track at its Plex gain (never above full), times the
         // sleep timer's fade; the two meet here so neither undoes the other.
         player.addListener(new Player.Listener() {
-            @Override public void onMediaItemTransition(MediaItem item, int reason) { level(item); }
+            @Override public void onMediaItemTransition(MediaItem item, int reason) { level(item); loadChapters(item); }
         });
         player.addListener(new Player.Listener() {
             @Override public void onEvents(Player player, Player.Events events) {
@@ -197,6 +287,9 @@ public class DaylightMediaService extends MediaLibraryService {
 
             @Override public void onIsPlayingChanged(boolean playing) {
                 if (playing) {
+                    // Playing makes the app foreground: bring the shell (and its inbox long poll)
+                    // back if Android stopped it while the app sat in the background.
+                    ShellStart.ensure(DaylightMediaService.this);
                     playedQueue = true;
                     radio.remember(player.getCurrentMediaItem());
                 }
@@ -208,6 +301,25 @@ public class DaylightMediaService extends MediaLibraryService {
         });
 
         Player sessionPlayer = new ForwardingPlayer(player) {
+            // A chaptered book: the subtitle names the chapter (notification, lock screen, car).
+            @Override public MediaMetadata getMediaMetadata() {
+                MediaMetadata base = super.getMediaMetadata();
+                Chapters c = chapters;
+                MediaItem cur = player.getCurrentMediaItem();
+                if (c.isEmpty() || cur == null || !chaptersFor.equals(cur.mediaId)) return base;
+                return base.buildUpon().setSubtitle(c.subtitle(player.getCurrentPosition())).build();
+            }
+
+            @Override public void addListener(Player.Listener listener) {
+                super.addListener(listener);
+                sessionListeners.add(listener);
+            }
+
+            @Override public void removeListener(Player.Listener listener) {
+                super.removeListener(listener);
+                sessionListeners.remove(listener);
+            }
+
             @Override public long getDuration() {
                 return NodeItems.durationMs(player.getCurrentMediaItem(), super.getDuration());
             }
@@ -227,10 +339,11 @@ public class DaylightMediaService extends MediaLibraryService {
                 return !(longForm() && CarControls.isTrackSkip(command)) && super.isCommandAvailable(command);
             }
 
-            @Override public void seekToNext() { if (!skip("next", true)) super.seekToNext(); }
-            @Override public void seekToNextMediaItem() { if (!skip("next-item", true)) super.seekToNextMediaItem(); }
-            @Override public void seekToPrevious() { if (!skip("previous", false)) super.seekToPrevious(); }
-            @Override public void seekToPreviousMediaItem() { if (!skip("previous-item", false)) super.seekToPreviousMediaItem(); }
+            // A music skip is a cut with a 150 ms fade-out (never a crossfade); see CrossfadeEngine.cut.
+            @Override public void seekToNext() { if (!skip("next", true)) crossfade.cut(() -> super.seekToNext(), false); }
+            @Override public void seekToNextMediaItem() { if (!skip("next-item", true)) crossfade.cut(() -> super.seekToNextMediaItem(), false); }
+            @Override public void seekToPrevious() { if (!skip("previous", false)) crossfade.cut(() -> super.seekToPrevious(), false); }
+            @Override public void seekToPreviousMediaItem() { if (!skip("previous-item", false)) crossfade.cut(() -> super.seekToPreviousMediaItem(), false); }
             @Override public void seekBack() { Log.i(TAG, "transport back-10"); super.seekBack(); }
             @Override public void seekForward() { Log.i(TAG, "transport forward-10"); super.seekForward(); }
 
@@ -243,6 +356,7 @@ public class DaylightMediaService extends MediaLibraryService {
                 return true;
             }
         };
+        sessionPlayerRef = sessionPlayer;
         callback = new LibraryCallback(media, io, getPackageName(), new AndroidPackageFacts(getPackageManager()),
                 () -> SurfaceCache.get(this, ControllerPins.KEY), DaylightMediaService::stopPlayback)
                 .withDrivingRadio(radio, this::cancelRadioHandoff);
@@ -518,6 +632,7 @@ public class DaylightMediaService extends MediaLibraryService {
         PlaylistWidgetState.show(this, displayedPlaylist, Phase.READY);
         updateTrackArtwork(null, null);
         clearListener();
+        if (crossfade != null) { crossfade.release(); crossfade = null; }
         if (events != null) { events.detach(); events = null; }
         if (callback != null) { callback.sleep.release(); callback = null; }
         net.kckern.daylight.shellkit.NowPlayingNote.update("local", "", "", false, android.os.SystemClock.elapsedRealtime());

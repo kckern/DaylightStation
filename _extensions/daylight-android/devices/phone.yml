@@ -9,7 +9,7 @@ abis: []
 # all. Its installed components (the link activity, the tiles, the widget) reach the
 # payload in-process. Debugging is over adb: logcat, and run-as for its files.
 control: { port: 8780, lifelinePort: 8781, bind: none }
-shell: { versionCode: 124, versionName: "0.1-phone.124" }
+shell: { versionCode: 126, versionName: "0.1-phone.126" }
 # The household site's host, so an https link to it (in a relayed push, say) can open in
 # the app. Private: resolved from `placeholders:` when this device's manifest is built.
 appLinks: { host: "{phone_link_host}" }
@@ -104,6 +104,9 @@ defaults:
   # Keep on this phone: downloads wait for Wi-Fi, and take at most 4 GB.
   media.downloadOnCellular: false
   media.downloadCapMb: 4096
+  # Crossfade between songs (music only; never inside an album played in order, never for
+  # books or talks), seconds; 0 is off. The person's choice in Now playing's menu wins.
+  media.crossfadeSec: 4
   # The apps that may connect to the media session beside this app and the system (a
   # car, an assistant): "package=sha256 of its signing certificate", comma-separated.
   # Signer verified on the Play-installed Android Auto app. The package must also

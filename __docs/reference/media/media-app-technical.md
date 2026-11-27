@@ -1083,7 +1083,7 @@ Log events (frontend, `mediaLog`): `home.shown`, `household.load-failed`,
 `play.spot-chosen`, `outcome.start-over`, `outcome.start-over-failed`, `move-here.initiated`,
 `move-here.succeeded`, `move-here.failed`, `played-earlier.shown`.
 
-### 2.11 Track extras (waveform, quality, lyrics)
+### 2.11 Track extras (waveform, quality, lyrics, chapters)
 
 What a player shows beside the transport for one track. Router
 `__app_modules/media/media/server/api/track.mjs`, service
@@ -1132,6 +1132,32 @@ Only Plex tracks have extras today (`PlexAdapter.getTrackLevels` /
 - Cache: every answer, found or not, is kept at
   `<data>/system/cache/lyrics/<source>/<id>.json` (found for 30 days, a miss for
   7). Deleting the directory only costs lookups.
+
+#### `GET /api/v1/track/chapters/:source/*`
+
+```json
+200 { "chapters": [{ "startMs": 0, "endMs": 202246, "title": "Chapter 1" }, …], "durationMs": 13039125, "provider": "audiobookshelf" }
+```
+
+Audiobook chapters for one track (one file). `TrackChaptersService`.
+
+- **Order:** the file's own chapter markers in Plex (`includeChapters=1`), then
+  the **same book in Audiobookshelf**. It is the same book only when all three
+  hold: the last two folders of the Plex file path (author / book) equal the last
+  two of the Audiobookshelf item path (case-insensitive); the Audiobookshelf book
+  is one audio file; and its length is within 2 s of the Plex track's. Candidates
+  come from an Audiobookshelf search by the Plex title in each book library.
+- A list is kept only with 2 or more chapters, starting at 0, in order, and
+  ending within 2 s of the track's length. Anything else is no chapters
+  (`media.trackChapters.none` with `reason`: `no-folder-match`, `multi-file`,
+  `duration-mismatch`, `bad-chapters`, `too-few`).
+- `204`: no chapters (none, no safe match, Audiobookshelf not configured, or the
+  lookup failed this time: `media.trackChapters.lookup-failed`, not cached).
+  `404`: unknown item.
+- Cache: `<data>/system/cache/chapters/<source>/<id>.json`, found for 30 days, a
+  miss for 1. Audiobookshelf calls time out after 8 s each.
+- Multi-file books (a Plex album of parts) answer none: their parts are the queue.
+- Spec: ops:docs/superpowers/specs/2026-11-26-phone-audiobook-chapters.md.
 
 ---
 
@@ -1480,6 +1506,13 @@ send is unchanged (`GET /api/v1/device/:id/load`, WakeAndLoad, the dispatch tray
   `phone-inbox.unauthenticated` (sampled); set it to `false` once every phone sends its
   token. A miss re-reads the auth file from disk (at most once a minute per device), so a
   rotated token needs no restart.
+- **Listening vs a background check.** A poll with `background=1` (the phone app closed;
+  its job checks every 15 min with `wait=0`) hands over what waits for that install but
+  makes the phone neither present (no device-state heartbeat, no `lastPollAt`) nor live,
+  and never supersedes a listening poll. So Play on is offered only to a listening phone:
+  a phone whose fleet entry is missing, offline or stale reads "Open Daylight to play
+  here" in the picker and is disabled (`pickerRowState`), and a keep not yet handed over
+  reads "Waiting for Phone · asked 12:04 · usually within 15 min".
 - **Which install.** Every poll names its install: `installId` (8–64 of
   `[A-Za-z0-9_-]`, made once per install, new on a reinstall) and `model`. The inbox
   remembers the installs (household data `history/devices/<id>/inbox.yml`; `lastPollAt`
@@ -1488,7 +1521,7 @@ send is unchanged (`GET /api/v1/device/:id/load`, WakeAndLoad, the dispatch tray
   phone with two live installs as one row per install, "Phone · SM-S921U", whose target
   id `phone#<installId>` the dispatch splits into the device and its `installId`), else
   the only live install
-  (polled within 2 minutes), else the install seen last; with **two live installs and
+  (listened within 2 minutes: a long poll, not a background check), else the install seen last; with **two live installs and
   none named** the load fails at once with `code: CHOOSE_PHONE` and the live
   `installs` (no page load or socket fallback is tried). A poll from another install
   never receives it. A new poll from an install answers its own older held poll empty, so

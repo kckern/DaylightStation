@@ -52,6 +52,8 @@ public final class MediaServiceCapability implements Capability {
     static final String PLAY_ON_TARGET = "media.playOnTarget";
     /** Downloads kept on this phone: the most they may take (MB; 0 for no cap), and whether mobile data may be used. */
     static final String DOWNLOAD_CAP_MB = "media.downloadCapMb";
+    /** Crossfade between songs on this phone, seconds (0 = off): the household default; the person's choice in Now playing wins. */
+    static final String CROSSFADE_SEC = "media.crossfadeSec";
     static final String DOWNLOAD_ON_CELLULAR = "media.downloadOnCellular";
     /** A kept book is removed a day after it is finished (with Undo for a day). Off by default. */
     static final String REMOVE_FINISHED = "media.removeFinished";
@@ -137,6 +139,7 @@ public final class MediaServiceCapability implements Capability {
         core.settings().declare(PAGE_SIZE, SettingsRegistry.Type.INTEGER, 50, SettingsRegistry.range(10, 200));
         core.settings().declare(PLAY_ON_TARGET, SettingsRegistry.Type.BOOLEAN, false, null);
         core.settings().declare(DOWNLOAD_CAP_MB, SettingsRegistry.Type.INTEGER, 4096, SettingsRegistry.range(0, 512_000));
+        core.settings().declare(CROSSFADE_SEC, SettingsRegistry.Type.INTEGER, 4, SettingsRegistry.range(0, 12));
         core.settings().declare(DOWNLOAD_ON_CELLULAR, SettingsRegistry.Type.BOOLEAN, false, null);
         core.settings().declare(REMOVE_FINISHED, SettingsRegistry.Type.BOOLEAN, false, null);
         core.settings().declare(REMOVE_FINISHED_AFTER, SettingsRegistry.Type.INTEGER, 1440, SettingsRegistry.range(1, 100_000));
@@ -235,6 +238,7 @@ public final class MediaServiceCapability implements Capability {
         port.attach(onCall);
         if (Boolean.TRUE.equals(core.settings().get(PLAY_ON_TARGET)) && inbox != null) {
             inbox.start();
+            scheduleInboxJob();
             // Which inbox this install answers (an emulator never the phone's); never the token.
             core.shell().note("MEDIA", "inbox: polling as " + inbox.deviceId() + ", token " + (inboxToken().isEmpty() ? "absent" : "present"));
         }
@@ -293,6 +297,47 @@ public final class MediaServiceCapability implements Capability {
         }
     }
 
+    /** Chapters answered this session, so a replay or a reopen of Now playing asks home once. */
+    private final java.util.Map<String, JSONObject> chaptersSeen = java.util.Collections.synchronizedMap(
+            new java.util.LinkedHashMap<String, JSONObject>(16, 0.75f, true) {
+                @Override protected boolean removeEldestEntry(java.util.Map.Entry<String, JSONObject> e) { return size() > 64; }
+            });
+
+    /**
+     * One track's chapters for Now playing: {ok, chapters:{chapters, durationMs, provider}} or
+     * {ok, none:true}. Home first; without home, the chapters kept with the track on this phone,
+     * then the ones seen this session; never an error (spec: no chapters is just no chapter UI).
+     */
+    private Outcome trackChapters(JSONObject request) throws Exception {
+        String id = Json.str(request, "id");
+        if (!ContentId.valid(id)) return failure(400, "bad_request");
+        JSONObject found = null;
+        try {
+            found = api.chapters(id);
+            if (found != null) chaptersSeen.put(id, found);
+            else return new Outcome(200, Replies.ok().put("none", true));
+        } catch (MediaApi.Refused refused) {
+            if (refused.status == 404) return new Outcome(200, Replies.ok().put("none", true));
+            if (refused.status < 500) throw refused;
+        } catch (java.io.IOException offline) {
+            // fall through to what this phone holds
+        }
+        if (found == null) found = keptChapters(id);
+        if (found == null) found = chaptersSeen.get(id);
+        return new Outcome(200, found == null ? Replies.ok().put("none", true) : Replies.ok().put("chapters", found));
+    }
+
+    /** The chapters stored with a kept track, or null. */
+    private JSONObject keptChapters(String trackId) {
+        JSONObject holder = kept().holding(trackId);
+        JSONArray tracks = holder == null ? null : holder.optJSONArray("tracks");
+        for (int i = 0; tracks != null && i < tracks.length(); i++) {
+            JSONObject t = tracks.optJSONObject(i);
+            if (t != null && trackId.equals(t.optString("id")) && t.optJSONObject("chapters") != null) return t.optJSONObject("chapters");
+        }
+        return null;
+    }
+
     // ── the one entry for the port and the routes ─────────────────────────────
 
     Outcome call(JSONObject request) {
@@ -321,10 +366,26 @@ public final class MediaServiceCapability implements Capability {
                 if (inbox != null) inbox.reportKeeps(request.optJSONArray("items") == null ? new JSONArray() : request.optJSONArray("items"));
                 return new Outcome(200, Replies.ok());
             }
+            if ("inbox-once".equals(op)) {
+                // The background job's check with the app closed (KeepJob.INBOX_ID, every 15 min).
+                if (inbox == null || !Boolean.TRUE.equals(core.settings().get(PLAY_ON_TARGET))) {
+                    return new Outcome(200, Replies.ok().put("status", "off"));
+                }
+                String result;
+                try { inbox.checkOnce(); result = "checked"; }
+                catch (PlayInbox.Unauthorized refused) { result = "unauthorized"; }
+                catch (PlayInbox.NotServed none) { result = "not served"; }
+                catch (Exception unreachable) { result = "unreachable"; health.failed(clock.getAsLong()); }
+                core.shell().note("MEDIA", "inbox: background check " + result);
+                return new Outcome(200, Replies.ok().put("status", result));
+            }
             if ("inbox".equals(op)) {
                 return new Outcome(200, Replies.ok().put("status", inbox == null ? "none" : inbox.status())
                         .put("deviceId", inbox == null ? "" : inbox.deviceId()).put("installId", inbox == null ? "" : inbox.installId())
                         .put("homeDown", health.down(clock.getAsLong())));
+            }
+            if ("playerRules".equals(op)) {
+                return new Outcome(200, Replies.ok().put("crossfadeSec", (Integer) core.settings().get(CROSSFADE_SEC)));
             }
             if ("downloadRules".equals(op)) {
                 return new Outcome(200, Replies.ok().put("capMb", (Integer) core.settings().get(DOWNLOAD_CAP_MB))
@@ -347,6 +408,7 @@ public final class MediaServiceCapability implements Capability {
             }
             if ("track-levels".equals(op)) return trackDetail(request, true);
             if ("track-lyrics".equals(op)) return trackDetail(request, false);
+            if ("track-chapters".equals(op)) return trackChapters(request);
             if ("screens".equals(op)) return new Outcome(200, ScreenRemote.without(screens.screens(), core.deviceId(), InboxIdentity.inboxDeviceId(core.deviceId(), runningOnEmulator())));
             if ("screen-session".equals(op)) return new Outcome(200, screens.session(Json.str(request, "device")));
             if ("screen-command".equals(op)) return new Outcome(200, screens.command(request));
@@ -500,7 +562,15 @@ public final class MediaServiceCapability implements Capability {
         boolean longParts = false;
         java.util.Set<String> albums = new java.util.HashSet<>();
         for (Track t : all) {
-            tracks.put(t.toJson());
+            JSONObject tj = t.toJson();
+            // A long part keeps its chapters with it, so they show offline (spec §5).
+            if (t.durationMs >= BOOK_PART_MS && all.size() <= 4) {
+                try {
+                    JSONObject ch = api.chapters(t.id);
+                    if (ch != null) { tj.put("chapters", ch); chaptersSeen.put(t.id, ch); }
+                } catch (Exception noChapters) { /* kept without; a later refresh may add them */ }
+            }
+            tracks.put(tj);
             if (t.durationMs >= BOOK_PART_MS) longParts = true;
             albums.add(t.album);
         }
@@ -842,6 +912,33 @@ public final class MediaServiceCapability implements Capability {
     /** Kept collections changed from here (the inbox): the shell's keeper downloads or deletes to match. */
     static final String KEEP_JOB = "net.kckern.daylight.cap.mediaservice.shell.KeepJob";
     static final int KEEP_JOB_SYNC_ID = 7_204;
+
+    /** The shell's background inbox check (KeepJob.INBOX_ID); keep in step. */
+    static final int INBOX_JOB_ID = 7_211;
+    static final long INBOX_JOB_EVERY_MS = 15 * 60_000L;
+
+    /**
+     * Every 15 min with any network, persisted over reboots: the inbox checked with the app
+     * closed, so a keep from the web lands without opening the app. Scheduled once; a pending
+     * job is left as it is. (setPersisted needs RECEIVE_BOOT_COMPLETED, which the shell holds.)
+     */
+    @android.annotation.SuppressLint("MissingPermission")
+    private void scheduleInboxJob() {
+        Object context = core == null ? null : core.shell().context();
+        if (context == null) return;
+        try {
+            android.content.Context c = (android.content.Context) context;
+            android.app.job.JobScheduler js = (android.app.job.JobScheduler) c.getSystemService(android.content.Context.JOB_SCHEDULER_SERVICE);
+            if (js.getPendingJob(INBOX_JOB_ID) != null) return;
+            js.schedule(new android.app.job.JobInfo.Builder(INBOX_JOB_ID,
+                    new android.content.ComponentName(c.getPackageName(), KEEP_JOB))
+                    .setPeriodic(INBOX_JOB_EVERY_MS)
+                    .setRequiredNetworkType(android.app.job.JobInfo.NETWORK_TYPE_ANY)
+                    .setPersisted(true).build());
+        } catch (Throwable noJob) {
+            core.shell().note("MEDIA", "inbox: background check not scheduled (" + noJob.getClass().getSimpleName() + ")");
+        }
+    }
 
     private void signalKeeper() {
         Object context = core == null ? null : core.shell().context();

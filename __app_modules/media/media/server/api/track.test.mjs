@@ -49,3 +49,23 @@ describe('clampSamples', () => {
     expect(clampSamples('64')).toBe(64);
   });
 });
+
+describe('GET /track/chapters/:source/*', () => {
+  function appWith(trackChapters) {
+    const a = express();
+    a.use('/track', createTrackRouter({ trackExtras: {}, trackChapters, logger: { debug() {} } }));
+    return a;
+  }
+  it('answers chapters, 204 for none, 404 for unknown', async () => {
+    const chapters = [{ startMs: 0, endMs: 1000, title: 'a' }, { startMs: 1000, endMs: 2000, title: 'b' }];
+    const svc = { chapters: vi.fn(async () => ({ kind: 'ok', chapters, durationMs: 2000, provider: 'audiobookshelf' })) };
+    const res = await request(appWith(svc)).get('/track/chapters/plex/731397').expect(200);
+    expect(res.body).toEqual({ chapters, durationMs: 2000, provider: 'audiobookshelf' });
+    expect(svc.chapters).toHaveBeenCalledWith('plex', '731397');
+    await request(appWith({ chapters: async () => ({ kind: 'none' }) })).get('/track/chapters/plex/1').expect(204);
+    await request(appWith({ chapters: async () => ({ kind: 'not_found' }) })).get('/track/chapters/plex/1').expect(404);
+  });
+  it('204s when chapters are not set up', async () => {
+    await request(appWith(null)).get('/track/chapters/plex/1').expect(204);
+  });
+});

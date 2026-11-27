@@ -136,7 +136,7 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
     public ListenableFuture<SessionResult> onCustomCommand(MediaSession session, MediaSession.ControllerInfo controller,
                                                             SessionCommand command, Bundle arguments) {
         if (SleepTimer.ACTION.equals(command.customAction)) {
-            sleep.set(session, arguments.getInt(SleepTimer.ARG_MINUTES, 0));
+            sleep.set(session, arguments.getInt(SleepTimer.ARG_MINUTES, 0), arguments.getLong(SleepTimer.ARG_AT_MS, -1));
             return Futures.immediateFuture(new SessionResult(SessionResult.RESULT_SUCCESS));
         }
         if (!CarControls.run(command.customAction, session.getPlayer(), stopPlayback))
