@@ -44,7 +44,10 @@ final class CaptureUi {
         TextView where = text(a, "Capture status shows where it is", Type.LABEL, t.inkMuted, false);
         panel.addView(line);
         panel.addView(where);
-        root.addView(panel, new android.widget.FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM));
+        // Over the screen's whole button area (Send and the links under it), so no edge of
+        // a button shows above it: from the bottom up to the end of the typed or recorded content.
+        panel.setGravity(Gravity.BOTTOM);
+        root.addView(panel, new android.widget.FrameLayout.LayoutParams(-1, Math.max(dp(a, 200), root.getHeight() / 3), Gravity.BOTTOM));
         net.kckern.daylight.shellkit.UiTelemetry.event("Capture", "capture.saved", new org.json.JSONObject());
         android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
         long until = android.os.SystemClock.uptimeMillis() + OUTCOME_WAIT_MS;

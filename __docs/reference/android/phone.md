@@ -1557,7 +1557,8 @@ removed.
   isn't answering: it will be kept when it does") and is made when home answers.
 - **The keep belongs to KeepStore, not the screen** (audit H12–H14). A tap starts a
   `KeepStore.Attempt` named by the item's title; the screen draws it inline at the bottom
-  (`KeepBar`): "Checking size of Paradise Lost… · Cancel", then the outcome for six seconds
+  (`KeepBar`, placed above the mini player: shell-kit `MiniPlayer.VIEW_TAG`): "Checking size
+  of Paradise Lost… · Cancel", then the outcome for six seconds
   ("Keeping Paradise Lost on this phone · 412 MB"). Leaving the screen removes the line,
   never the keep; only Cancel (offered while the size is checked) stops it. A choice that
   needs the person is asked on the screen while it is open; with the screen gone, a large
@@ -2413,7 +2414,8 @@ continues to support legacy uploads with its existing aggregate controls.
   row whose id is the draft's) every half second for up to 6 s, and settles on "Sent to
   Journal" (Delivered or Accepted), "Saved · sends when home answers" (no network, or still
   waiting when the 6 s end), "Saved · sends when the daily allowance renews", or "Saved ·
-  not accepted: see Capture status"; then it closes 1.6 s later (`CaptureOutcome`). Photo
+  not accepted: see Capture status"; then it closes 1.6 s later (`CaptureOutcome`). The
+  panel covers the bottom third of the screen, so no edge of Send shows above it. Photo
   opens Capture status on the item. Telemetry: `capture.saved`, `capture.sent_seen`,
   `capture.saved_waiting`.
 - **Reachable from the Capture tab** (H16): its first row is **Capture status** with the

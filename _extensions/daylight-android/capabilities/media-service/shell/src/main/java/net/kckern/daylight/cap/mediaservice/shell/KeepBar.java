@@ -60,6 +60,17 @@ final class KeepBar {
         }
     }
 
+    /** The bottom margin that keeps the line above the mini player (and the bar under it) when one shows. */
+    static int above(ViewGroup root, float d) {
+        View mini = root.findViewWithTag(net.kckern.daylight.shellkit.MiniPlayer.VIEW_TAG);
+        int gap = (int) (16 * d);
+        if (mini == null || mini.getVisibility() != View.VISIBLE || mini.getHeight() == 0) return gap;
+        int[] r = new int[2], m = new int[2];
+        root.getLocationInWindow(r);
+        mini.getLocationInWindow(m);
+        return Math.max(gap, root.getHeight() - (m[1] - r[1]) + (int) (8 * d));
+    }
+
     private static void draw(Activity activity, KeepStore store, KeepStore.Attempt a) {
         ViewGroup root = activity.findViewById(android.R.id.content);
         if (!(root instanceof FrameLayout)) return;
@@ -100,8 +111,7 @@ final class KeepBar {
         }
         FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM);
         int side = (int) (16 * d);
-        // Above a bottom bar or mini player when the screen has one.
-        lp.setMargins(side, 0, side, (int) (96 * d));
+        lp.setMargins(side, 0, side, above(root, d));
         root.addView(bar, lp);
     }
 }

@@ -70,6 +70,7 @@ public final class MiniPlayer {
         this.screen = screen;
         t = DaylightTheme.of(a);
         bar = new LinearLayout(a);
+        bar.setTag(VIEW_TAG);
         bar.setOrientation(LinearLayout.VERTICAL);
         bar.setVisibility(View.GONE);
         progress = new View(a);
@@ -115,6 +116,9 @@ public final class MiniPlayer {
 
     /** The bar, to add as the last child of the screen's vertical root. */
     public View view() { return bar; }
+
+    /** The mini player's view tag: a line drawn over the screen (a keep in progress) sits above it. */
+    public static final String VIEW_TAG = "daylight.miniPlayer";
 
     public void start() {
         if (listening) return;
