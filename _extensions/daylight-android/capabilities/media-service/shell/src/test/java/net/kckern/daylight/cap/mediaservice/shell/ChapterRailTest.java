@@ -103,6 +103,59 @@ public class ChapterRailTest {
         assertEquals(0, grouped.tapTo(0));
     }
 
+    /** Paradise in twos: 17 segments, the last one short (chapter index 32 alone). */
+    private static ChapterRail.Layout paradise(int current) { return ChapterRail.layout(33, current, WIDTH, MIN, GAP); }
+
+    @Test public void theLastShortGroupTapsAndFindsItsOneChapter() {
+        ChapterRail.Layout l = paradise(0);
+        assertEquals(17, l.segments);
+        float mid = l.left(16) + l.segmentPx / 2;
+        assertEquals(16, l.segmentAt(mid));
+        assertEquals(32, l.tapTo(16));
+        assertEquals(-1, paradise(32).tapTo(16));
+        // The far right edge of the rail is still the last segment.
+        assertEquals(16, l.segmentAt(l.left(16) + l.segmentPx));
+    }
+
+    /** Press and slide: x maps linearly across a segment to the chapters it holds. */
+    @Test public void scrubbingMapsXToEveryChapter() {
+        ChapterRail.Layout l = paradise(0);
+        // The first chapter at the rail's left edge, the last at its right.
+        assertEquals(0, l.chapterAt(0));
+        assertEquals(32, l.chapterAt(l.left(16) + l.segmentPx));
+        // A segment's left half is its first chapter, its right half the second: even cantos too.
+        assertEquals(30, l.chapterAt(l.left(15) + l.segmentPx * 0.25f));
+        assertEquals(31, l.chapterAt(l.left(15) + l.segmentPx * 0.75f));
+        // The last, short group: anywhere in it is chapter index 32, never past the book.
+        assertEquals(32, l.chapterAt(l.left(16) + l.segmentPx * 0.25f));
+        assertEquals(32, l.chapterAt(l.left(16) + l.segmentPx * 0.9f));
+        // In a gap: its left half is the segment before's last chapter, its right half the next's first.
+        float gapStart = l.left(4) + l.segmentPx;
+        assertEquals(9, l.chapterAt(gapStart + l.gapPx * 0.25f));
+        assertEquals(10, l.chapterAt(gapStart + l.gapPx * 0.75f));
+        // Off the rail: nothing.
+        assertEquals(-1, l.chapterAt(-l.gapPx * 2));
+        assertEquals(-1, l.chapterAt(WIDTH + l.gapPx * 2));
+        assertEquals(-1, ChapterRail.layout(0, -1, WIDTH, MIN, GAP).chapterAt(10));
+    }
+
+    @Test public void oneChapterPerSegmentScrubsOneToOne() {
+        ChapterRail.Layout l = ChapterRail.layout(20, 0, WIDTH, MIN, GAP);
+        for (int i = 0; i < 20; i++) assertEquals(i, l.chapterAt(l.left(i) + l.segmentPx * 0.9f));
+    }
+
+    /** A rail narrower than one minimum segment: one segment holding the whole book. */
+    @Test public void aRailNarrowerThanOneSegmentIsOneSegment() {
+        ChapterRail.Layout l = ChapterRail.layout(33, 3, MIN / 2, MIN, GAP);
+        assertEquals(1, l.segments);
+        assertEquals(33, l.perSegment);
+        assertEquals(0, l.current);
+        assertEquals(MIN / 2, l.segmentPx, 0.001f);
+        assertEquals(-1, l.tapTo(0));
+        assertEquals(0, l.segmentAt(MIN / 4));
+        assertEquals(16, l.chapterAt(MIN / 4));
+    }
+
     @Test public void noChaptersNoRail() {
         assertEquals(0, ChapterRail.layout(0, -1, WIDTH, MIN, GAP).segments);
         assertFalse(ChapterRail.layout(0, -1, WIDTH, MIN, GAP).done(0));

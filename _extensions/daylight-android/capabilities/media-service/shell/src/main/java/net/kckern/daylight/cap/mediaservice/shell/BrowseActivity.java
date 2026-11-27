@@ -1505,7 +1505,6 @@ public final class BrowseActivity extends Activity {
 
     // ── neighbours ──────────────────────────────────────────────────────────
 
-    /** Now playing's album line: the artist's albums are the paging set. */
     /** The artist's albums are being asked (loadNeighboursFrom): the neighbours line's place is held. */
     private boolean neighboursPending;
 
@@ -1520,11 +1519,11 @@ public final class BrowseActivity extends Activity {
             for (int i = 0; items != null && i < items.length(); i++) list.add(items.optJSONObject(i));
             Neighbours n = Neighbours.fromRows(list, at, kind);
             main.post(() -> {
-                if (isFinishing()) return;
+                // A stale answer, for a page this one has since left, changes nothing here.
+                if (isFinishing() || isDestroyed() || !at.equals(parent)) return;
                 // Answered either way: the held place goes (a failed fetch, or an artist with
                 // one album, leaves no blank block above the list).
                 neighboursPending = false;
-                if (!at.equals(parent)) return;
                 if (n.pages()) neighbours = n;
                 fillHeader();
                 if (n.pages()) prefetchNeighbours();

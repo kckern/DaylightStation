@@ -61,6 +61,20 @@ final class ChapterRail {
         /** The left edge of segment {@code i}, from the rail's left. */
         float left(int i) { return i * (segmentPx + gapPx); }
 
+        /**
+         * Press and slide: the chapter under {@code x} (from the rail's left), x mapped linearly
+         * across a segment to the chapters it holds, so a grouped rail still reaches every chapter.
+         * In a gap, its left half is the segment before's last chapter and its right half the
+         * next one's first. Clamped to the book; -1 off the rail.
+         */
+        int chapterAt(float x) {
+            int seg = segmentAt(x);
+            if (seg < 0 || segmentPx <= 0) return -1;
+            float fraction = Math.max(0f, Math.min(1f, (x - left(seg)) / segmentPx));
+            int within = Math.min(perSegment - 1, (int) Math.floor(fraction * perSegment));
+            return Math.max(0, Math.min(chapters - 1, seg * perSegment + within));
+        }
+
         /** The segment under {@code x} (from the rail's left), the nearest one for a tap in a gap; -1 off the rail. */
         int segmentAt(float x) {
             if (segments <= 0 || x < -gapPx || x > left(segments - 1) + segmentPx + gapPx) return -1;
