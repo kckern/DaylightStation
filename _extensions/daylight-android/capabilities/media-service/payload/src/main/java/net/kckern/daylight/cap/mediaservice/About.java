@@ -33,6 +33,12 @@ final class About {
         if (!summary.isEmpty()) out.put("summary", summary);
         out.put("countries", tags(meta, "countries")).put("genres", tags(meta, "genres")).put("styles", tags(meta, "styles"));
         out.put("children", meta == null ? 0 : meta.optInt("childCount", 0));
+        // The item's own name and by-line: a page opened by a link (no list row behind it)
+        // is titled from these, never "Library".
+        String title = info == null ? "" : Json.str(info, "title");
+        if (!title.isEmpty()) out.put("title", title);
+        String by = meta == null ? "" : Json.first(Json.str(meta, "artist"), Json.str(meta, "grandparentTitle"), Json.str(meta, "parentTitle"));
+        if (!by.isEmpty()) out.put("byline", by);
 
         // The books, in the order the tracks came (the author's order), with their parts.
         Map<String, JSONObject> books = new LinkedHashMap<>();
