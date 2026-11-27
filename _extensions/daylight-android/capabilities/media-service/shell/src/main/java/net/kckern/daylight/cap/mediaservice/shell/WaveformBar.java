@@ -44,6 +44,10 @@ final class WaveformBar extends View {
     /** Fine scrubbing: a press held still zooms the bar to FineScrub's window around it. */
     private long durationMs;
     private float[] zoom;
+    /** What the bar spans when not zoomed (BarScope): the whole file, or the current chapter. */
+    private float[] base = { 0f, 1f };
+    /** In whole-book mode, the current chapter's span as a lighter band (null for none). */
+    private float[] band;
     private float downX;
     private static final long HOLD_MS = 400;
     private final Runnable zoomIn = this::zoomIn;
@@ -117,7 +121,7 @@ final class WaveformBar extends View {
      */
     private void rescale(boolean fade) {
         float w = getWidth() - getPaddingLeft() - getPaddingRight();
-        float[] span = zoom == null ? new float[] { 0f, 1f } : zoom;
+        float[] span = zoom == null ? base : zoom;
         TimeScale.Scale next = !hasScale() || w <= 0 || !scrubbing ? TimeScale.Scale.NONE
                 : TimeScale.of((long) (span[0] * durationMs), (long) (span[1] * durationMs), durationMs, w, density, textWidth,
                         zoom == null ? TimeScale.Style.TOUCH : TimeScale.Style.ZOOM);
@@ -168,7 +172,17 @@ final class WaveformBar extends View {
     }
 
     /** Fraction of the item at bar position {@code x} (0..1), zoomed or not. */
-    private float at(float x) { return zoom == null ? x : FineScrub.map(x, zoom); }
+    private float at(float x) { return zoom == null ? base[0] + x * (base[1] - base[0]) : FineScrub.map(x, zoom); }
+
+    /** The span shown at rest, as fractions of the file (BarScope.Span); a change moves on without a jump. */
+    void setSpan(float start, float end, float[] currentBand) {
+        float s0 = Math.max(0f, Math.min(1f, start)), e0 = Math.max(s0 + 1e-4f, Math.min(1f, end));
+        boolean same = Math.abs(s0 - base[0]) < 1e-5f && Math.abs(e0 - base[1]) < 1e-5f && java.util.Arrays.equals(band, currentBand);
+        if (same) return;
+        base = new float[] { s0, e0 };
+        band = currentBand;
+        rescale(false);
+    }
 
     /** Where the playhead is, 0..1; ignored while a finger holds it. */
     void setFraction(float f, String spokenPosition) {
@@ -194,7 +208,7 @@ final class WaveformBar extends View {
         float top = barsTop();
         float h = getHeight() - top - getPaddingBottom();
         float left = getPaddingLeft(), mid = top + h / 2f;
-        float[] view = zoom == null ? new float[] { 0f, 1f } : zoom;
+        float[] view = zoom == null ? base : zoom;
         float x = left + w * Math.max(0f, Math.min(1f, (fraction - view[0]) / (view[1] - view[0])));
         if (zoom != null) {
             // Fine scrubbing says so: a soft band of the accent behind the bar, ticks at its ends.
@@ -206,6 +220,14 @@ final class WaveformBar extends View {
             float t = 1.5f * density;
             c.drawRect(left - t, top, left + t, top + h, head);
             c.drawRect(left + w - t, top, left + w + t, top + h, head);
+        }
+        if (band != null && zoom == null) {
+            // Whole book: the current chapter's span, a lighter band behind the bars.
+            float b0 = (band[0] - view[0]) / (view[1] - view[0]), b1 = (band[1] - view[0]) / (view[1] - view[0]);
+            Paint soft = new Paint(Paint.ANTI_ALIAS_FLAG);
+            soft.setColor((rest.getColor() & 0x00ffffff) | 0x26000000);
+            float r4 = 4 * density;
+            c.drawRoundRect(left + w * Math.max(0f, b0), top + 2 * density, left + w * Math.min(1f, b1), top + h - 2 * density, r4, r4, soft);
         }
         if (samples.length == 0) {
             float t = 1.5f * density;
@@ -249,9 +271,11 @@ final class WaveformBar extends View {
         if (zoom == null && !scrubbing) {
             overview.setColor((rest.getColor() & 0x00ffffff) | 0x80000000);
             float tw = 1f * density;
-            for (TimeScale.Tick tk : TimeScale.restTicks(durationMs)) {
+            // Ticks for the span shown (a chapter, or the file), at round times from its start.
+            float spanF = view[1] - view[0];
+            for (TimeScale.Tick tk : TimeScale.restTicks((long) (spanF * durationMs))) {
                 boolean onChapter = false;
-                for (float m : marks) if (Math.abs(m - tk.x) * w < 2 * density) { onChapter = true; break; }
+                for (float m : marks) if (Math.abs((m - view[0]) / spanF - tk.x) * w < 2 * density) { onChapter = true; break; }
                 if (onChapter) continue;
                 float mx = left + w * tk.x, th = (tk.hour ? 3.5f : 2.5f) * density;
                 c.drawRect(mx - tw / 2f, mid - th, mx + tw / 2f, mid + th, overview);

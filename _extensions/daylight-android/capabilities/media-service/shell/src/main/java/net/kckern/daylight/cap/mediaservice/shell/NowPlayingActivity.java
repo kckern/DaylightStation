@@ -27,7 +27,6 @@ import android.widget.FrameLayout;
 import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
-import android.widget.PopupMenu;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
@@ -389,6 +388,39 @@ public class NowPlayingActivity extends Activity {
     // ── targets ──────────────────────────────────────────────────────────────
 
     private SharedPreferences prefs() { return getSharedPreferences(PREFS, MODE_PRIVATE); }
+
+    /** The seek bar's span for an item with chapters: Chapter (default) or Whole book, remembered (§12d). */
+    private BarScope.Mode barMode() { return BarScope.mode(prefs().getString(BarScope.PREF, null)); }
+
+    private BarScope.Span barSpan(long position, long duration) {
+        if (chapters.isEmpty() || remote()) return BarScope.span(duration, null, null, position, BarScope.Mode.BOOK);
+        return BarScope.span(duration, chapters.starts, chapters.ends, position, barMode());
+    }
+
+    /** The times either side of the bar: the chapter's elapsed and remaining in chapter mode, the file's otherwise. */
+    private void setTimes(long position, long duration, float speed) {
+        BarScope.Span s = barSpan(position, duration);
+        long at = s.chapterMode ? Math.max(0, position - s.startMs) : position;
+        long length = s.chapterMode ? s.lengthMs() : duration;
+        elapsed.setText(clock(at));
+        remaining.setText(timeDisplay.right(at, length, speed));
+    }
+
+    private void chooseBarMode() {
+        BarScope.Mode now = barMode();
+        net.kckern.daylight.shellkit.ItemSheet.of(this, "NowPlaying").heading("Progress bar", "What the seek bar spans in a book with chapters")
+                .row(now == BarScope.Mode.CHAPTER ? net.kckern.daylight.shellkit.R.drawable.daylight_ic_check : net.kckern.daylight.shellkit.R.drawable.daylight_ic_chapters,
+                        "Chapter", "The current chapter, its time either side", () -> setBarMode(BarScope.Mode.CHAPTER))
+                .row(now == BarScope.Mode.BOOK ? net.kckern.daylight.shellkit.R.drawable.daylight_ic_check : net.kckern.daylight.shellkit.R.drawable.daylight_ic_progress_bar,
+                        "Whole book", "The whole book, the current chapter marked", () -> setBarMode(BarScope.Mode.BOOK))
+                .show();
+    }
+
+    private void setBarMode(BarScope.Mode m) {
+        prefs().edit().putString(BarScope.PREF, BarScope.saved(m)).apply();
+        note("player.progress-bar", "mode", BarScope.saved(m));
+        tickPosition();
+    }
 
     private void chooseInitialTarget(Intent intent, Bundle saved) {
         String asked = saved != null ? saved.getString(EXTRA_TARGET) : null;
@@ -1025,8 +1057,9 @@ public class NowPlayingActivity extends Activity {
         wave.setVisibility(any ? View.VISIBLE : View.INVISIBLE);
         if (!wave.scrubbing()) {
             wave.setFraction(known ? position / (float) duration : 0f, clock(position) + (known ? " of " + clock(duration) : ""));
-            elapsed.setText(any ? clock(position) : "");
-            remaining.setText(known ? timeDisplay.right(position, duration, c.getPlaybackParameters().speed) : "");
+            if (!any) { elapsed.setText(""); remaining.setText(""); }
+            else if (!known) { elapsed.setText(clock(position)); remaining.setText(""); }
+            else setTimes(position, duration, c.getPlaybackParameters().speed);
         }
         if (stage == Stage.LYRICS) lyricsView.setPosition(position);
         renderChapters(position, known ? duration : 0, c == null ? 1f : c.getPlaybackParameters().speed);
@@ -1349,9 +1382,18 @@ public class NowPlayingActivity extends Activity {
             chapterLine.setText("");
             chapterLine.setVisibility(longForm() && !remote() ? View.INVISIBLE : View.GONE);
             wave.setMarks(null, -1, 0);
+            wave.setSpan(0f, 1f, null);
             return;
         }
-        String line = chapters.line(position, speed);
+        // The bar's span (§12d): the current chapter by default, or the whole book (⋮ Progress bar).
+        BarScope.Mode mode = barMode();
+        BarScope.Span span = barSpan(position, durationMs);
+        if (durationMs > 0) {
+            float[] band = !span.chapterMode && span.chapter >= 0
+                    ? new float[] { chapters.starts[span.chapter] / (float) durationMs, Math.min(1f, chapters.ends[span.chapter] / (float) durationMs) } : null;
+            wave.setSpan(span.startFraction(durationMs), span.endFraction(durationMs), band);
+        }
+        String line = span.chapterMode ? BarScope.line(BarScope.word(chapters.titles), span, position, durationMs, speed) : chapters.line(position, speed);
         if (!line.contentEquals(chapterLine.getText())) {
             chapterLine.setText(line);
             chapterLine.setContentDescription(line + ". Opens the chapters");
@@ -1360,7 +1402,9 @@ public class NowPlayingActivity extends Activity {
         // The mini player's second line on every screen: the chapter, while this book plays.
         NowPlayingNote.detail(LOCAL, chapters.subtitle(position));
         int at = chapters.indexAt(position);
-        wave.setMarks(chapters.marks(durationMs), at - 1, theme.inkMuted);
+        float[] notches = BarScope.notches(chapters.marks(durationMs), wave.getWidth() - wave.getPaddingLeft() - wave.getPaddingRight(),
+                getResources().getDisplayMetrics().density, mode);
+        wave.setMarks(notches, notches.length == 0 ? -1 : at - 1, theme.inkMuted);
         if (stage == Stage.QUEUE && chapterList() && at != listedChapter) fillQueue();
     }
 
@@ -1613,53 +1657,42 @@ public class NowPlayingActivity extends Activity {
         return out;
     }
 
+    /** ⋮: the item sheet (D17), headed by what plays now. */
     private void openMore() {
-        PopupMenu menu = new PopupMenu(this, moreButton);
         boolean any = controller != null && controller.getMediaItemCount() > 0;
-        if (!remote() && any) menu.getMenu().add(0, 5, 0, SleepTimer.isSet() ? "Sleep timer: " + SleepTimer.describeNow() : "Sleep timer…");
-        else if (!remote() && SleepTimer.isSet()) menu.getMenu().add(0, 5, 0, "Sleep timer: " + SleepTimer.describeNow());
-        // Keep on this phone: the collection now playing (its list, or the track's album).
         MediaItem current = controller == null ? null : controller.getCurrentMediaItem();
-        org.json.JSONObject kept = null;
+        androidx.media3.common.MediaMetadata md = controller == null ? null : controller.getMediaMetadata();
+        String name = md != null && md.title != null ? md.title.toString() : "";
+        String by = md != null && md.artist != null ? md.artist.toString() : "";
+        String cover = md != null && md.artworkUri != null ? md.artworkUri.toString() : "";
+        org.json.JSONObject kept = !remote() && current != null && !current.mediaId.isEmpty() ? KeepStore.get(this).keptHolding(current.mediaId) : null;
+        net.kckern.daylight.shellkit.ItemSheet sheet = net.kckern.daylight.shellkit.ItemSheet.of(this, "NowPlaying")
+                .item(cover, longForm() ? net.kckern.daylight.shellkit.CoverGlyph.Kind.BOOK : net.kckern.daylight.shellkit.CoverGlyph.Kind.TRACK,
+                        name, remote() ? "On " + targetName : by, kept == null ? "" : net.kckern.daylight.shellkit.KeptIndex.describe(kept));
+        if (!remote() && (any || SleepTimer.isSet())) sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_timer, "Sleep timer", SleepTimer.isSet() ? SleepTimer.describeNow() : "", this::chooseSleep);
+        if (!remote() && !chapters.isEmpty()) sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_progress_bar, "Progress bar",
+                barMode() == BarScope.Mode.BOOK ? "Whole book" : "Chapter", this::chooseBarMode);
+        // Keep on this phone: the collection now playing (its list, or the track's album).
         if (!remote() && current != null && !current.mediaId.isEmpty()) {
-            kept = KeepStore.get(this).keptHolding(current.mediaId);
-            if (kept == null) menu.getMenu().add(0, 6, 0, "Keep on this phone");
+            if (kept == null) sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_download, "Keep on this phone", () -> keepHere(current));
             else {
-                menu.getMenu().add(0, 8, 0, net.kckern.daylight.shellkit.KeptIndex.describe(kept)).setEnabled(false);
-                if (net.kckern.daylight.shellkit.KeptIndex.retryable(kept)) menu.getMenu().add(0, 9, 0, "Retry");
-                menu.getMenu().add(0, 10, 0, "On this phone…");
-                menu.getMenu().add(0, 7, 0, "Remove from this phone");
+                if (net.kckern.daylight.shellkit.KeptIndex.retryable(kept)) sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_replay, "Retry", () -> {
+                    note("download.retry.tap");
+                    KeepStore.get(this).retry(kept.optString("contentId"), this::say);
+                });
+                sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_on_phone, "On this phone", net.kckern.daylight.shellkit.KeptIndex.describe(kept), () -> DownloadsActivity.open(this));
             }
         }
-        final org.json.JSONObject keptNow = kept;
         // Crossfade between songs: this phone's player only (a screen decides its own).
-        if (!remote() && MediaKind.controls(longForm()).crossfade) menu.getMenu().add(0, 11, 0, "Crossfade: " + crossfadeLabel(crossfadeSeconds()));
-        if (can(Player.COMMAND_STOP) && any) menu.getMenu().add(0, 1, 0, remote() ? "Stop on " + targetName : "Stop");
-        if (can(Player.COMMAND_CHANGE_MEDIA_ITEMS) && any) menu.getMenu().add(0, 2, 0, "Clear queue");
-        menu.setOnMenuItemClickListener(item -> {
-            if (controller == null) return true;
-            switch (item.getItemId()) {
-                case 1: stop(); break;
-                case 2: confirmClear(); break;
-                case 5: chooseSleep(); break;
-                case 6: keepHere(current); break;
-                case 7: if (keptNow != null) {
-                        note("download.remove.tap");
-                        KeepStore.get(this).remove(keptNow.optString("contentId"), this::say);
-                    }
-                    break;
-                case 10: DownloadsActivity.open(this); break;
-                case 11: chooseCrossfade(); break;
-                case 9: if (keptNow != null) {
-                        note("download.retry.tap");
-                        KeepStore.get(this).retry(keptNow.optString("contentId"), this::say);
-                    }
-                    break;
-                default: break;
-            }
-            return true;
+        if (!remote() && MediaKind.controls(longForm()).crossfade)
+            sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_tune, "Crossfade", crossfadeLabel(crossfadeSeconds()), this::chooseCrossfade);
+        if (can(Player.COMMAND_STOP) && any) sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_stop, remote() ? "Stop on " + targetName : "Stop", this::stop);
+        if (can(Player.COMMAND_CHANGE_MEDIA_ITEMS) && any) sheet.destructive(net.kckern.daylight.shellkit.R.drawable.daylight_ic_clear_all, "Clear queue", this::confirmClear);
+        if (kept != null) sheet.destructive(net.kckern.daylight.shellkit.R.drawable.daylight_ic_delete, "Remove from this phone", () -> {
+            note("download.remove.tap");
+            KeepStore.get(this).remove(kept.optString("contentId"), this::say);
         });
-        menu.show();
+        sheet.show();
     }
 
     /** Keeps the collection {@code item} belongs to: its household list when it came from one, its album otherwise. */
@@ -1678,27 +1711,18 @@ public class NowPlayingActivity extends Activity {
     }
 
     /**
-     * The speed for long items: the presets, the current one checked. The session keeps the
-     * choice for this collection and as the default for long items not set yet; music stays 1x.
+     * The speed for long items in the speed sheet (D19) over the speed button: it applies as
+     * it moves. The session keeps the choice for this collection and as the default for long
+     * items not set yet; music stays 1x.
      */
     private void chooseSpeed() {
-        float now = controller.getPlaybackParameters().speed;
-        String[] labels = new String[LongForm.SPEEDS.length];
-        int checked = -1;
-        for (int i = 0; i < labels.length; i++) {
-            labels[i] = LongForm.speedLabel(LongForm.SPEEDS[i]);
-            if (Math.abs(LongForm.SPEEDS[i] - now) < 0.001f) checked = i;
-        }
-        new AlertDialog.Builder(this, DaylightTheme.alert())
-                .setTitle("Speed")
-                .setSingleChoiceItems(labels, checked, (d, which) -> {
-                    d.dismiss();
-                    if (controller == null) return;
-                    controller.setPlaybackSpeed(LongForm.SPEEDS[which]);
-                    note("player.speed", "speed", LongForm.SPEEDS[which]);
-                    main.postDelayed(this::render, 150);
-                })
-                .show();
+        if (controller == null) return;
+        SpeedSheet.show(this, speedButton, controller.getPlaybackParameters().speed, longForm(), s -> {
+            if (controller == null) return;
+            controller.setPlaybackSpeed(s);
+            note("player.speed", "speed", s);
+            main.postDelayed(this::render, 150);
+        });
     }
 
     private static final int[] SLEEP_MINUTES = { 0, 15, 30, 45, 60, SleepTimer.END_OF_ITEM };
@@ -2121,8 +2145,7 @@ public class NowPlayingActivity extends Activity {
                 long d = c.getDuration();
                 if (d == C.TIME_UNSET || d <= 0) return;
                 long to = (long) (fraction * d);
-                elapsed.setText(clock(to));
-                remaining.setText(timeDisplay.right(to, d));
+                setTimes(to, d, c.getPlaybackParameters().speed);
                 if (done && can(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)) {
                     note("player.scrub", "fromPct", Math.round(100f * c.getCurrentPosition() / d), "toPct", Math.round(100f * fraction));
                     c.seekTo(to);

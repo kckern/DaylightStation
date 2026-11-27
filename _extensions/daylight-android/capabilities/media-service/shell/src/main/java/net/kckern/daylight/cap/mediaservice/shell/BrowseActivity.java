@@ -28,7 +28,6 @@ import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
-import android.widget.PopupMenu;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -679,18 +678,16 @@ public final class BrowseActivity extends Activity {
         return LongForm.clampSpeed(p.getFloat("speed:" + speedKey(), fallback));
     }
 
-    /** The book's speed, the same one Now playing remembers for it (and the long-form default). */
-    private void chooseSpeed() {
-        final float[] options = { 0.8f, 1f, 1.1f, 1.25f, 1.5f, 1.75f, 2f, 2.5f, 3f };
-        String[] labels = new String[options.length];
-        for (int i = 0; i < options.length; i++) labels[i] = LongForm.speedLabel(options[i]);
-        new AlertDialog.Builder(this, DaylightTheme.alert()).setTitle("Speed for this book").setItems(labels, (d, which) -> {
-            SharedPreferences.Editor e = speeds().edit();
-            e.putFloat("speed:" + speedKey(), options[which]).putFloat(LongForm.DEFAULT_KEY, options[which]).apply();
+    /**
+     * The book's speed in the speed sheet (D19), the same memory Now playing uses for it
+     * ("speed:" + its key) and the long-form default. Applies as it moves; the Speed label
+     * redraws when the sheet closes.
+     */
+    private void chooseSpeed(View anchor) {
+        SpeedSheet.show(this, anchor, bookSpeed(), true, s -> {
+            speeds().edit().putFloat("speed:" + speedKey(), s).putFloat(LongForm.DEFAULT_KEY, s).apply();
             action("speed");
-            Toast.makeText(this, "Plays at " + labels[which], Toast.LENGTH_SHORT).show();
-            fillHeader();
-        }).setNegativeButton("Cancel", null).show();
+        }).onClose(this::fillHeader);
     }
 
     /** Marks {@code ids} finished (or not): the whole book, its parts up to one, or one lecture. */
@@ -817,14 +814,14 @@ public final class BrowseActivity extends Activity {
         String summary = about == null ? "" : about.optString("summary", "");
         if (!summary.isEmpty()) headerBox.addView(summaryView(summary));
 
-        if (!set.secondary.isEmpty() || !set.overflow.isEmpty()) {
+        if (!set.secondary.isEmpty() || !set.overflow.isEmpty() || person) {
             LinearLayout icons = new LinearLayout(this);
             icons.setGravity(Gravity.CENTER_VERTICAL);
             icons.setPadding(0, dp(8), 0, 0);
             for (MediaKind.Action a : set.secondary) icons.addView(secondaryButton(a), new LinearLayout.LayoutParams(dp(48), dp(48)));
             View gap = new View(this);
             icons.addView(gap, new LinearLayout.LayoutParams(0, 1, 1));
-            if (!set.overflow.isEmpty()) {
+            if (!set.overflow.isEmpty() || person) {
                 ImageButton more = iconButton(R.drawable.daylight_np_more, "More actions for " + title);
                 more.setOnClickListener(v -> overflow(v, set.overflow));
                 UiTelemetry.tag(more, "browse.overflow");
@@ -920,7 +917,7 @@ public final class BrowseActivity extends Activity {
                 String said = "Speed " + LongForm.speedLabel(bookSpeed());
                 b.setContentDescription(said);
                 b.setTooltipText(said);
-                b.setOnClickListener(v -> chooseSpeed());
+                b.setOnClickListener(this::chooseSpeed);
                 UiTelemetry.tag(b, "browse.speed");
                 return b;
             }
@@ -935,31 +932,28 @@ public final class BrowseActivity extends Activity {
         }
     }
 
-    /** The rarer actions, in ⋮. */
+    /** The rarer actions, in ⋮: the item sheet (D17), headed by this page's item. */
     private void overflow(View anchor, List<MediaKind.Action> actions) {
-        PopupMenu menu = new PopupMenu(this, anchor);
-        for (int i = 0; i < actions.size(); i++) {
-            MediaKind.Action a = actions.get(i);
-            String label;
+        String portrait = about == null ? "" : about.optString("portrait", "");
+        boolean person = MediaKind.aboutPerson(kind);
+        String by = person ? RowLine.facts(kind, about, childRows()) : subtitle;
+        net.kckern.daylight.shellkit.ItemSheet sheet = net.kckern.daylight.shellkit.ItemSheet.of(this, "Browse")
+                .item(!portrait.isEmpty() && (person || art.isEmpty()) ? portrait : art, net.kckern.daylight.shellkit.CoverGlyph.of(kind), title, by, "");
+        for (MediaKind.Action a : actions) {
             switch (a) {
-                case PLAY_FROM_START: label = "Play from the start"; break;
-                case MARK_FINISHED: label = "Mark finished"; break;
-                case ADD_TO_PLAYLISTS: label = new net.kckern.daylight.shellkit.DrivingRadioSettings(this).isStaged(contentIdOf(parent))
-                        ? "In Your playlists" : "Add to Your playlists"; break;
-                default: label = a.name();
-            }
-            menu.getMenu().add(0, i, i, label);
-        }
-        menu.setOnMenuItemClickListener(item -> {
-            switch (actions.get(item.getItemId())) {
-                case PLAY_FROM_START: playFromStart(); break;
-                case MARK_FINISHED: markFinished(trackIds(), true, title, true); break;
-                case ADD_TO_PLAYLISTS: addToYourPlaylists(); break;
+                case PLAY_FROM_START: sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_replay, "Play from the start", this::playFromStart); break;
+                case MARK_FINISHED: sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_check, "Mark finished", () -> markFinished(trackIds(), true, title, true)); break;
+                case ADD_TO_PLAYLISTS: {
+                    boolean staged = new net.kckern.daylight.shellkit.DrivingRadioSettings(this).isStaged(contentIdOf(parent));
+                    sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_queue_add, staged ? "In Your playlists" : "Add to Your playlists", this::addToYourPlaylists);
+                    break;
+                }
                 default: break;
             }
-            return true;
-        });
-        menu.show();
+        }
+        // A person's page keeps its ⋮ (another wave adds "Keep all…"); today it searches for them.
+        if (person) sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_search, "Search for " + title, () -> search(this, title, null));
+        sheet.show();
     }
 
     /** "‹ Dante · Thomas More ›": the neighbours a swipe goes to; for TalkBack, Previous and Next buttons. */
@@ -1280,41 +1274,27 @@ public final class BrowseActivity extends Activity {
 
     private void rowMenu(View anchor, List<MediaKind.RowAction> actions, JSONObject n) {
         final String id = n.optString("id"), name = n.optString("title", "Untitled"), sub = n.optString("subtitle", ""), cover = n.optString("artUrl", "");
-        PopupMenu menu = new PopupMenu(this, anchor);
-        for (int i = 0; i < actions.size(); i++) {
-            String label;
-            switch (actions.get(i)) {
-                case PLAY_NEXT: label = "Play next"; break;
-                case ADD_TO_QUEUE: label = "Add to queue"; break;
-                case GO_TO_ALBUM: label = "Go to album"; break;
-                case GO_TO_ARTIST: label = "Go to artist"; break;
-                case PLAY_FROM_HERE: label = "Play from here"; break;
-                case MARK_FINISHED_UP_TO_HERE: label = "Mark finished up to here"; break;
-                case MARK_WATCHED: label = "Mark watched"; break;
-                default: label = "Mark unwatched";
-            }
-            menu.getMenu().add(0, i, i, label);
-        }
-        menu.setOnMenuItemClickListener(item -> {
-            switch (actions.get(item.getItemId())) {
-                case PLAY_NEXT: enqueue(id, true, name); break;
-                case ADD_TO_QUEUE: enqueue(id, false, name); break;
-                case GO_TO_ALBUM: goToParent(id, "album"); break;
-                case GO_TO_ARTIST: goToParent(id, "artist"); break;
-                case PLAY_FROM_HERE: play(id, false, name, sub, cover); break;
-                case MARK_FINISHED_UP_TO_HERE: {
+        net.kckern.daylight.shellkit.ItemSheet sheet = net.kckern.daylight.shellkit.ItemSheet.of(this, "Browse")
+                .item(cover.isEmpty() ? art : cover, MediaKind.spoken(kind) ? net.kckern.daylight.shellkit.CoverGlyph.Kind.BOOK : net.kckern.daylight.shellkit.CoverGlyph.Kind.TRACK,
+                        name, sub, "");
+        for (MediaKind.RowAction a : actions) {
+            switch (a) {
+                case PLAY_NEXT: sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_play_next, "Play next", () -> enqueue(id, true, name)); break;
+                case ADD_TO_QUEUE: sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_queue_add, "Add to queue", () -> enqueue(id, false, name)); break;
+                case GO_TO_ALBUM: sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_album, "Go to album", () -> goToParent(id, "album")); break;
+                case GO_TO_ARTIST: sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_person, "Go to artist", () -> goToParent(id, "artist")); break;
+                case PLAY_FROM_HERE: sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_play, "Play from here", () -> play(id, false, name, sub, cover)); break;
+                case MARK_FINISHED_UP_TO_HERE: sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_check, "Mark finished up to here", () -> {
                     List<String> upTo = new ArrayList<>();
                     for (String t : trackIds()) { upTo.add(t); if (t.equals(contentIdOf(id))) break; }
                     markFinished(upTo, true, "everything up to " + name, true);
-                    break;
-                }
-                case MARK_WATCHED: markFinished(java.util.Collections.singletonList(contentIdOf(id)), true, name, false); break;
-                case MARK_UNWATCHED: markFinished(java.util.Collections.singletonList(contentIdOf(id)), false, name, false); break;
+                }); break;
+                case MARK_WATCHED: sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_check, "Mark watched", () -> markFinished(java.util.Collections.singletonList(contentIdOf(id)), true, name, false)); break;
+                case MARK_UNWATCHED: sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_replay, "Mark unwatched", () -> markFinished(java.util.Collections.singletonList(contentIdOf(id)), false, name, false)); break;
                 default: break;
             }
-            return true;
-        });
-        menu.show();
+        }
+        sheet.show();
     }
 
     /** Go to album / artist: the track's own parents (its info's ids). */

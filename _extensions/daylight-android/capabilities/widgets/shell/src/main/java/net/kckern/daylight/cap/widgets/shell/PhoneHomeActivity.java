@@ -765,33 +765,44 @@ public class PhoneHomeActivity extends Activity {
         return keepMenu(anchor, mediaId, contentId, null, null, null);
     }
 
-    /** Keep, or its state; and Open (the collection's page) when {@code openKind} is given. */
+    /** Keep, or its state; and Open (the collection's page) when {@code openKind} is given: the item sheet (D17). */
     private boolean keepMenu(View anchor, String mediaId, String contentId, String openKind, String title, String art) {
-        android.widget.PopupMenu menu = new android.widget.PopupMenu(this, anchor);
-        if (openKind != null && mediaId.startsWith("c:")) menu.getMenu().add(0, 3, 0, "Open");
+        JSONObject kept = keptFor(contentId);
+        net.kckern.daylight.shellkit.ItemSheet sheet = net.kckern.daylight.shellkit.ItemSheet.of(this, "Home")
+                .item(art, net.kckern.daylight.shellkit.CoverGlyph.of(openKind), title == null ? "" : title, "",
+                        kept == null ? "" : net.kckern.daylight.shellkit.KeptIndex.describe(kept));
+        if (openKind != null && mediaId.startsWith("c:")) sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_open, "Open", () -> {
+            net.kckern.daylight.shellkit.UiTelemetry.event("Browse", "browse.open_from_tile", new JSONObject());
+            try {
+                startActivity(new Intent().setClassName(this, BROWSE).putExtra("mode", "level").putExtra("parent", mediaId)
+                        .putExtra("kind", openKind).putExtra("title", title == null ? "" : title).putExtra("art", art == null ? "" : art));
+            } catch (RuntimeException absent) { toast("Not available in this build"); }
+        });
+        sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_play, "Play on this phone", () -> playHere(mediaId, title, "", art, false));
+        if (kept == null) sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_download, "Keep on this phone", () -> {
+            net.kckern.daylight.shellkit.UiTelemetry.event("Downloads", "keep.tap", new JSONObject());
+            openDownloads(mediaId);
+        });
+        else {
+            sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_on_phone, "On this phone", net.kckern.daylight.shellkit.KeptIndex.describe(kept), () -> {
+                net.kckern.daylight.shellkit.UiTelemetry.event("Downloads", "keep.screen", new JSONObject());
+                openDownloads(null);
+            });
+            sheet.destructive(net.kckern.daylight.shellkit.R.drawable.daylight_ic_delete, "Remove from this phone", () -> keepJob("remove", contentId));
+        }
+        sheet.show();
+        return true;
+    }
+
+    /** The kept collection holding {@code contentId} (itself or one of its tracks), or null. */
+    private JSONObject keptFor(String contentId) {
         JSONObject kept = null;
         for (JSONObject k : net.kckern.daylight.shellkit.KeptIndex.read(getFilesDir())) {
             if (contentId.equals(k.optString("contentId"))) kept = k;
             org.json.JSONArray ids = k.optJSONArray("trackIds");
             for (int i = 0; ids != null && i < ids.length(); i++) if (contentId.equals(ids.optString(i))) kept = k;
         }
-        if (kept == null) menu.getMenu().add(0, 1, 0, "Keep on this phone");
-        else menu.getMenu().add(0, 2, 0, net.kckern.daylight.shellkit.KeptIndex.describe(kept) + " ›");
-        menu.setOnMenuItemClickListener(item -> {
-            if (item.getItemId() == 3) {
-                net.kckern.daylight.shellkit.UiTelemetry.event("Browse", "browse.open_from_tile", new JSONObject());
-                try {
-                    startActivity(new Intent().setClassName(this, BROWSE).putExtra("mode", "level").putExtra("parent", mediaId)
-                            .putExtra("kind", openKind).putExtra("title", title == null ? "" : title).putExtra("art", art == null ? "" : art));
-                } catch (RuntimeException absent) { toast("Not available in this build"); }
-                return true;
-            }
-            net.kckern.daylight.shellkit.UiTelemetry.event("Downloads", item.getItemId() == 1 ? "keep.tap" : "keep.screen", new JSONObject());
-            openDownloads(item.getItemId() == 1 ? mediaId : null);
-            return true;
-        });
-        menu.show();
-        return true;
+        return kept;
     }
 
     private long freeOnPhone() {
@@ -930,32 +941,24 @@ public class PhoneHomeActivity extends Activity {
      */
     private boolean continueMenu(View anchor, JSONObject item) {
         String id = item.optString("id"), cid = item.optString("contentId"), title = item.optString("title");
-        android.widget.PopupMenu menu = new android.widget.PopupMenu(this, anchor);
-        menu.getMenu().add(0, 1, 0, "Open");
-        JSONObject kept = null;
-        for (JSONObject k : net.kckern.daylight.shellkit.KeptIndex.read(getFilesDir())) {
-            if (cid.equals(k.optString("contentId"))) kept = k;
-            org.json.JSONArray ids = k.optJSONArray("trackIds");
-            for (int i = 0; ids != null && i < ids.length(); i++) if (cid.equals(ids.optString(i))) kept = k;
-        }
-        menu.getMenu().add(0, 2, 0, kept == null ? "Keep on this phone" : net.kckern.daylight.shellkit.KeptIndex.describe(kept) + " ›");
-        menu.getMenu().add(0, 3, 0, "Mark finished");
-        menu.getMenu().add(0, 4, 0, "Remove from Continue listening");
-        final boolean isKept = kept != null;
-        menu.setOnMenuItemClickListener(m -> {
-            switch (m.getItemId()) {
-                case 1: openBookOf(cid, title, item.optString("art")); break;
-                case 2:
-                    net.kckern.daylight.shellkit.UiTelemetry.event("Downloads", isKept ? "keep.screen" : "keep.tap", new JSONObject());
-                    openDownloads(isKept ? null : id);
-                    break;
-                case 3: finishFromContinue(item, true); break;
-                case 4: hideFromContinue(item, true); break;
-                default: break;
-            }
-            return true;
+        JSONObject kept = keptFor(cid);
+        long played = item.optLong("playhead"), duration = item.optLong("duration");
+        String state = (duration > 0 ? Math.round(100.0 * played / duration) + " % · " : "") + timeLeft(Math.max(0, duration - played));
+        if (kept != null) state = net.kckern.daylight.shellkit.KeptIndex.describe(kept) + " · " + state;
+        net.kckern.daylight.shellkit.ItemSheet sheet = net.kckern.daylight.shellkit.ItemSheet.of(this, "Home")
+                .item(item.optString("art"), net.kckern.daylight.shellkit.CoverGlyph.Kind.BOOK, title, item.optString("subtitle"), state)
+                .row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_open, "Open", () -> openBookOf(cid, title, item.optString("art")));
+        if (kept == null) sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_download, "Keep on this phone", () -> {
+            net.kckern.daylight.shellkit.UiTelemetry.event("Downloads", "keep.tap", new JSONObject());
+            openDownloads(id);
         });
-        menu.show();
+        else sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_on_phone, "On this phone", net.kckern.daylight.shellkit.KeptIndex.describe(kept), () -> {
+            net.kckern.daylight.shellkit.UiTelemetry.event("Downloads", "keep.screen", new JSONObject());
+            openDownloads(null);
+        });
+        sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_check, "Mark finished", () -> finishFromContinue(item, true))
+                .destructive(net.kckern.daylight.shellkit.R.drawable.daylight_ic_remove_circle, "Remove from Continue listening", () -> hideFromContinue(item, true))
+                .show();
         return true;
     }
 
