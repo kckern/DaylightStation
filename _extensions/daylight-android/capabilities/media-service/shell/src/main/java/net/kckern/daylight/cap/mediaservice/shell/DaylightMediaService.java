@@ -64,11 +64,13 @@ public class DaylightMediaService extends MediaLibraryService {
     private MediaLibrarySession session;
     private LibraryCallback callback;
     private LongFormPolicy longFormPolicy;
-    private volatile float levelVolume = 1f, fadeVolume = 1f;
+    private volatile float levelVolume = 1f, fadeVolume = 1f, crossfadeGain = 1f;
+    private CrossfadeEngine crossfade;
     private final java.util.Map<String, Float> levels = new java.util.concurrent.ConcurrentHashMap<>();
 
     private void applyVolume() {
-        if (player != null) player.setVolume(levelVolume * fadeVolume);
+        // Loudness level x the sleep timer's fade x the crossfade's (or a skip's) ramp.
+        if (player != null) player.setVolume(levelVolume * fadeVolume * crossfadeGain);
     }
 
     /** The level for this item from its Plex gain (track levels route), kept per item. */
@@ -133,6 +135,7 @@ public class DaylightMediaService extends MediaLibraryService {
         // Audio focus and "headphones unplugged" are the player's: it pauses for a call,
         // ducks for a prompt and stops when the output goes away. The wake mode holds the
         // CPU and the network while playing with the screen off.
+        androidx.media3.datasource.DataSource.Factory source = playbackSource();
         player = new ExoPlayer.Builder(this)
                 .setAudioAttributes(new AudioAttributes.Builder()
                         .setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true)
@@ -141,8 +144,27 @@ public class DaylightMediaService extends MediaLibraryService {
                 .setSeekBackIncrementMs(CarControls.SEEK_STEP_MS)
                 .setSeekForwardIncrementMs(CarControls.SEEK_STEP_MS)
                 // Tracks kept on this phone play from the download cache, with no network.
-                .setMediaSourceFactory(new androidx.media3.exoplayer.source.DefaultMediaSourceFactory(playbackSource()))
+                .setMediaSourceFactory(new androidx.media3.exoplayer.source.DefaultMediaSourceFactory(source))
                 .build();
+
+        // Crossfade between songs (music only, this phone only): a private tail player plays
+        // the outgoing song's last seconds; this player stays the one truth. See CrossfadeEngine.
+        crossfade = new CrossfadeEngine(this, player, source, new CrossfadeEngine.Mix() {
+            @Override public float levelOf(MediaItem item) {
+                Float known = item == null ? null : levels.get(item.mediaId);
+                return known == null ? 1f : known;
+            }
+            @Override public float sleepFade() { return fadeVolume; }
+            @Override public void incomingGain(float gain) { crossfadeGain = gain; applyVolume(); }
+        }, (item, durationMs) -> { if (events != null) events.finishedByFade(item, durationMs); });
+        io.execute(() -> {
+            try {
+                org.json.JSONObject rules = new org.json.JSONObject(media.playerRules(5000));
+                if (rules.optBoolean("ok", false) && rules.has("crossfadeSec")) {
+                    CrossfadeEngine.rememberDefault(this, rules.optInt("crossfadeSec", Crossfade.DEFAULT_SEC));
+                }
+            } catch (Exception keepLast) { /* the last default stays */ }
+        });
 
         // Long items: the listener's speed (music stays 1x) and a short step back on resume.
         longFormPolicy = new LongFormPolicy(player, this::longForm, () -> {
@@ -227,10 +249,11 @@ public class DaylightMediaService extends MediaLibraryService {
                 return !(longForm() && CarControls.isTrackSkip(command)) && super.isCommandAvailable(command);
             }
 
-            @Override public void seekToNext() { if (!skip("next", true)) super.seekToNext(); }
-            @Override public void seekToNextMediaItem() { if (!skip("next-item", true)) super.seekToNextMediaItem(); }
-            @Override public void seekToPrevious() { if (!skip("previous", false)) super.seekToPrevious(); }
-            @Override public void seekToPreviousMediaItem() { if (!skip("previous-item", false)) super.seekToPreviousMediaItem(); }
+            // A music skip is a cut with a 150 ms fade-out (never a crossfade); see CrossfadeEngine.cut.
+            @Override public void seekToNext() { if (!skip("next", true)) crossfade.cut(() -> super.seekToNext(), false); }
+            @Override public void seekToNextMediaItem() { if (!skip("next-item", true)) crossfade.cut(() -> super.seekToNextMediaItem(), false); }
+            @Override public void seekToPrevious() { if (!skip("previous", false)) crossfade.cut(() -> super.seekToPrevious(), false); }
+            @Override public void seekToPreviousMediaItem() { if (!skip("previous-item", false)) crossfade.cut(() -> super.seekToPreviousMediaItem(), false); }
             @Override public void seekBack() { Log.i(TAG, "transport back-10"); super.seekBack(); }
             @Override public void seekForward() { Log.i(TAG, "transport forward-10"); super.seekForward(); }
 
@@ -518,6 +541,7 @@ public class DaylightMediaService extends MediaLibraryService {
         PlaylistWidgetState.show(this, displayedPlaylist, Phase.READY);
         updateTrackArtwork(null, null);
         clearListener();
+        if (crossfade != null) { crossfade.release(); crossfade = null; }
         if (events != null) { events.detach(); events = null; }
         if (callback != null) { callback.sleep.release(); callback = null; }
         net.kckern.daylight.shellkit.NowPlayingNote.update("local", "", "", false, android.os.SystemClock.elapsedRealtime());

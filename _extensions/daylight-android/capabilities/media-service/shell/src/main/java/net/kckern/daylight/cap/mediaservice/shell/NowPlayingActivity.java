@@ -1086,6 +1086,8 @@ public class NowPlayingActivity extends Activity {
             }
         }
         final org.json.JSONObject keptNow = kept;
+        // Crossfade between songs: this phone's player only (a screen decides its own).
+        if (!remote()) menu.getMenu().add(0, 11, 0, "Crossfade: " + crossfadeLabel(crossfadeSeconds()));
         if (can(Player.COMMAND_STOP) && any) menu.getMenu().add(0, 1, 0, remote() ? "Stop on " + targetName : "Stop");
         if (can(Player.COMMAND_CHANGE_MEDIA_ITEMS) && any) menu.getMenu().add(0, 2, 0, "Clear queue");
         menu.setOnMenuItemClickListener(item -> {
@@ -1101,6 +1103,7 @@ public class NowPlayingActivity extends Activity {
                     }
                     break;
                 case 10: DownloadsActivity.open(this); break;
+                case 11: chooseCrossfade(); break;
                 case 9: if (keptNow != null) {
                         note("download.retry.tap");
                         KeepStore.get(this).retry(keptNow.optString("contentId"), this::say);
@@ -1155,6 +1158,38 @@ public class NowPlayingActivity extends Activity {
     private static final int[] SLEEP_MINUTES = { 0, 15, 30, 45, 60, SleepTimer.END_OF_ITEM };
 
     /** Pause later: in N minutes or at the end of this item. Set in the phone's session, so it holds with the screen closed. */
+    private int crossfadeSeconds() {
+        android.content.SharedPreferences p = getSharedPreferences(CrossfadeEngine.PREFS, MODE_PRIVATE);
+        Integer chosen = p.contains(CrossfadeEngine.KEY_CHOSEN) ? p.getInt(CrossfadeEngine.KEY_CHOSEN, Crossfade.DEFAULT_SEC) : null;
+        Integer deviceDefault = p.contains(CrossfadeEngine.KEY_DEFAULT) ? p.getInt(CrossfadeEngine.KEY_DEFAULT, Crossfade.DEFAULT_SEC) : null;
+        return Crossfade.seconds(chosen, deviceDefault);
+    }
+
+    private static String crossfadeLabel(int seconds) {
+        return seconds <= 0 ? "Off" : seconds + " s";
+    }
+
+    /** Off or a length; kept on this phone and wins over the household default. Songs only, never books. */
+    private void chooseCrossfade() {
+        int now = crossfadeSeconds();
+        String[] labels = new String[Crossfade.CHOICES.length];
+        int checked = -1;
+        for (int i = 0; i < labels.length; i++) {
+            labels[i] = crossfadeLabel(Crossfade.CHOICES[i]);
+            if (Crossfade.CHOICES[i] == now) checked = i;
+        }
+        new AlertDialog.Builder(this, DaylightTheme.alert())
+                .setTitle("Crossfade between songs")
+                .setSingleChoiceItems(labels, checked, (d, which) -> {
+                    int sec = Crossfade.CHOICES[which];
+                    getSharedPreferences(CrossfadeEngine.PREFS, MODE_PRIVATE).edit().putInt(CrossfadeEngine.KEY_CHOSEN, sec).apply();
+                    note("player.crossfade", "seconds", sec);
+                    d.dismiss();
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
     private void chooseSleep() {
         String[] labels = { "Off", "15 minutes", "30 minutes", "45 minutes", "1 hour", "At the end of this" };
         new AlertDialog.Builder(this, DaylightTheme.alert())

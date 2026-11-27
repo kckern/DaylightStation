@@ -86,6 +86,11 @@ final class PayloadMedia {
         }
     }
 
+    /** The player's household rules: {ok, crossfadeSec} (media.crossfadeSec). */
+    String playerRules(long waitMs) throws Exception {
+        return port.call(new JSONObject().put("op", "playerRules").toString(), waitMs);
+    }
+
     /** The screens this phone can be a remote for: {ok, items:[{id, name}]}. */
     String screens(long waitMs) throws Exception {
         return port.call(new JSONObject().put("op", "screens").toString(), waitMs);

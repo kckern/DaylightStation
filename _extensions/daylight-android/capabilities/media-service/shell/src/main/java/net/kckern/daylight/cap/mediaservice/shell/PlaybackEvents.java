@@ -81,6 +81,15 @@ final class PlaybackEvents implements Player.Listener {
         }
     }
 
+    /**
+     * A crossfade began: the outgoing song has, for the listener, played to its end. It is
+     * reported finished (position = its length), never as cut at the fade point.
+     */
+    void finishedByFade(MediaItem item, long durationMs) {
+        if (item == null || durationMs <= 0 || durationMs == C.TIME_UNSET) return;
+        send(item, durationMs, durationMs, "ended");
+    }
+
     /** Called on the main thread; the call to the payload runs on the io executor. */
     private void send(final String state) {
         MediaItem current = player.getCurrentMediaItem();
