@@ -142,3 +142,36 @@ test('getList empty, resolveSiblings null', async () => {
   assert.deepEqual(await a.getList(), []);
   assert.equal(await a.resolveSiblings(), null);
 });
+
+// 2026-11-27: Media's Video › YouTube scope searched a source with no search,
+// so it answered nothing for every word. Search goes through Piped, and only
+// for a search scoped to YouTube.
+test('search: Piped results become playable youtube:<id> video leaves', async () => {
+  const piped = {
+    calls: [],
+    async search(text, opts) {
+      this.calls.push({ text, opts });
+      return [{ videoId: 'RHUauMcYlX0', title: 'Bluey Episodes', thumbnail: 'https://t/x.jpg', uploader: 'Bluey - Official Channel', duration: 3600 }];
+    },
+  };
+  const a = new YouTubeContentSource({ pipedAdapter: piped });
+  const { items, total } = await a.search({ text: 'bluey', take: 5, mediaType: 'video' });
+  assert.equal(total, 1);
+  assert.deepEqual(piped.calls, [{ text: 'bluey', opts: { take: 5 } }]);
+  const [item] = items;
+  assert.equal(item.id, 'youtube:RHUauMcYlX0');
+  assert.equal(item.title, 'Bluey Episodes');
+  assert.equal(item.subtitle, 'Bluey - Official Channel');
+  assert.equal(item.mediaType, 'video');
+  assert.equal(item.itemType, 'leaf');
+  assert.equal(item.duration, 3600);
+});
+
+test('search: explicit only, and nothing for another media type or without Piped', async () => {
+  const a = new YouTubeContentSource({});
+  assert.equal(a.getSearchCapabilities().explicitOnly, true);
+  assert.ok(a.getSearchCapabilities().canonical.includes('text'));
+  assert.deepEqual(await a.search({ text: 'bluey' }), { items: [], total: 0 });
+  const withPiped = new YouTubeContentSource({ pipedAdapter: { search: async () => { throw new Error('not called'); } } });
+  assert.deepEqual(await withPiped.search({ text: 'bluey', mediaType: 'audio' }), { items: [], total: 0 });
+});

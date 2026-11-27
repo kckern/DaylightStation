@@ -14,6 +14,9 @@ export const CONTENT_SEARCH_BUDGET = Object.freeze({
     readalong: 6000,
     'local-content': 6000,
     files: 5000,
+    // Piped's first search for new words takes 2-10 s; YouTube answers only a
+    // search scoped to it (explicitOnly), so its wait slows nothing else.
+    youtube: 9000,
   }),
 });
 

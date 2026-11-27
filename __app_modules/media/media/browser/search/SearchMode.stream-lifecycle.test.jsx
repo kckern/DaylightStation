@@ -132,6 +132,28 @@ describe('SearchMode streaming lifecycle', () => {
     expect(screen.queryByTestId('search-mode-empty')).toBeNull();
   });
 
+  it('an empty picked scope stays in that scope until the person taps Search everything', async () => {
+    // RED (2026-11-27): Books › Scripture settled empty and the hook streamed
+    // an unscoped search on its own; unrelated results appeared under the chip.
+    render(<Harness />);
+    await screen.findByTestId('scope-chip-family');
+    fireEvent.click(screen.getByTestId('scope-chip-family'));
+    await issueSearch('nephi');
+    act(() => {
+      MockEventSource.instances[0].simulateMessage({ event: 'results', source: 'plex', items: [], pending: [] });
+      MockEventSource.instances[0].simulateMessage({ event: 'complete' });
+    });
+
+    expect(await screen.findByTestId('search-mode-scope-empty')).toHaveTextContent('Nothing for “nephi” in Family');
+    expect(MockEventSource.instances).toHaveLength(1);
+    expect(screen.queryByTestId('search-mode-widening-notice')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('search-mode-widen'));
+    await waitFor(() => expect(MockEventSource.instances).toHaveLength(2));
+    expect(MockEventSource.instances[1].url).toContain('scope=kids');
+    expect(MockEventSource.instances[1].url).not.toContain('scope=family');
+  });
+
   it('does not tell phone users a failed widened search found nothing anywhere', async () => {
     // RED: D5's terminal wording was rendered after the widened request
     // failed, contradicting the retryable global service error.
@@ -143,6 +165,8 @@ describe('SearchMode streaming lifecycle', () => {
       MockEventSource.instances[0].simulateMessage({ event: 'results', source: 'plex', items: [], pending: [] });
       MockEventSource.instances[0].simulateMessage({ event: 'complete' });
     });
+    // A picked scope never widens on its own (2026-11-27): the person asks.
+    fireEvent.click(await screen.findByTestId('search-mode-widen'));
     await waitFor(() => expect(MockEventSource.instances).toHaveLength(2));
     act(() => MockEventSource.instances[1].simulateError());
 
@@ -163,6 +187,8 @@ describe('SearchMode streaming lifecycle', () => {
       MockEventSource.instances[0].simulateMessage({ event: 'results', source: 'plex', items: [], pending: [] });
       MockEventSource.instances[0].simulateMessage({ event: 'complete' });
     });
+    // A picked scope never widens on its own (2026-11-27): the person asks.
+    fireEvent.click(await screen.findByTestId('search-mode-widen'));
     await waitFor(() => expect(MockEventSource.instances).toHaveLength(2));
     act(() => {
       MockEventSource.instances[1].simulateMessage({ event: 'source_error', source: 'plex', error: 'offline', pending: [] });

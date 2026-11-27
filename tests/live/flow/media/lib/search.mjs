@@ -39,6 +39,11 @@ export const resultRows = (page, vp) => (isPhone(vp)
 export const resultRow = (page, vp, id) => page.getByTestId(isPhone(vp) ? `search-mode-result-${id}` : `combobox-option-${id}`);
 
 /** A result row's picture slot: the artwork, or the kind icon placeholder of an artwork-less item. */
+// A picked scope that came up empty says so ("Nothing for “words” in ‹scope›")
+// and offers one action; widening is the person's choice (2026-11-27).
+export const scopeEmptyNotice = (page, vp) => page.getByTestId(isPhone(vp) ? 'search-mode-scope-empty' : 'combobox-scope-empty');
+export const searchEverything = (page, vp) => page.getByTestId(isPhone(vp) ? 'search-mode-widen' : 'combobox-widen');
+
 export const rowPicture = (row) => row.locator('img, .media-result-thumb--icon, [data-testid="result-artwork-placeholder"]');
 
 export async function closeSearch(page, vp) {

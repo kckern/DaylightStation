@@ -1,6 +1,6 @@
 // __backend/src/1_adapters/content/readalong/resolvers/scripture.mjs
 import { lookupReference, generateReference } from 'scripture-guide';
-import { listDirs, dirExists, listYamlFiles, loadContainedYaml } from '#system/utils/FileIO.mjs';
+import { listDirs, dirExists, listYamlFiles, loadContainedYaml, fileSignature } from '#system/utils/FileIO.mjs';
 import path from 'path';
 
 /**
@@ -195,6 +195,198 @@ function buildVersionedStorageKey(verseId, volume, version) {
 }
 
 /**
+ * The text version a search reads for one volume: the requested version when
+ * this volume has it, else the manifest default, else the first directory.
+ * A version that only some volumes carry (nirv is Bible-only) must not hide
+ * the volumes that lack it.
+ * @param {string} dataPath - Base scripture data path
+ * @param {string} volume - Volume name
+ * @param {string} [version] - Requested version
+ * @param {Object} [defaults] - Per-volume manifest defaults
+ * @returns {string|null}
+ */
+function pickSearchVersion(dataPath, volume, version, defaults = {}) {
+  const candidates = [version, defaults[volume]?.text].filter(Boolean);
+  for (const slug of candidates) {
+    if (isTextDir(dataPath, volume, slug)) return slug;
+  }
+  return getFirstDir(path.join(dataPath, volume));
+}
+
+/**
+ * Fold text for book-name matching: lowercase, "&" as "and", punctuation and
+ * spaces to single hyphens (the chapter file slug form, e.g. "1-nephi").
+ * @param {string} text
+ * @returns {string}
+ */
+function slugify(text) {
+  return String(text || '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+/** Short forms people type for a book whose slug spells it out. */
+const BOOK_ALIASES = {
+  'd-and-c': 'doctrine-and-covenants',
+  'dc': 'doctrine-and-covenants',
+  'dandc': 'doctrine-and-covenants',
+  'js-h': 'joseph-smith-history',
+  'jsh': 'joseph-smith-history',
+  'js-m': 'joseph-smith-matthew',
+  'jsm': 'joseph-smith-matthew',
+  'aof': 'articles-of-faith',
+  'wom': 'words-of-mormon'
+};
+
+/**
+ * Index every chapter file of every volume, in canonical (verse id) order.
+ * File names are `<firstVerseId>-<book-slug>-<chapter>.yml`.
+ * @returns {Array<{volume, textVersion, verseId, book, chapter, file, versionDir, localId}>}
+ */
+function buildChapterIndex(dataPath, version, defaults) {
+  const index = [];
+  for (const volume of Object.keys(VOLUME_RANGES)) {
+    const textVersion = pickSearchVersion(dataPath, volume, version, defaults);
+    if (!textVersion) continue;
+    const versionDir = path.join(dataPath, volume, textVersion);
+    let files = [];
+    try { files = listYamlFiles(versionDir); } catch { continue; }
+    for (const file of files) {
+      if (file === 'manifest.yml') continue;
+      const m = file.replace(/\.ya?ml$/, '').match(/^(\d+)-(.+?)(?:-(\d+))?$/);
+      if (!m) continue;
+      const verseId = parseInt(m[1], 10);
+      if (isNaN(verseId)) continue;
+      index.push({
+        volume,
+        textVersion,
+        verseId,
+        book: m[2],
+        chapter: m[3] ? parseInt(m[3], 10) : null,
+        file,
+        versionDir,
+        localId: `scripture/${volume}/${textVersion}/${verseId}`
+      });
+    }
+  }
+  index.sort((a, b) => a.verseId - b.verseId);
+  return index;
+}
+
+/** The chapter whose range holds this verse id (last chapter starting at or before it, same volume). */
+function chapterContaining(index, verseId) {
+  const volume = getVolumeFromVerseId(verseId);
+  if (!volume) return null;
+  let found = null;
+  for (const chapter of index) {
+    if (chapter.volume !== volume) continue;
+    if (chapter.verseId > verseId) break;
+    found = chapter;
+  }
+  return found;
+}
+
+function toResult(chapter) {
+  return {
+    localId: chapter.localId,
+    title: generateReference(chapter.verseId) || chapter.file.replace(/\.ya?ml$/, ''),
+    volume: chapter.volume
+  };
+}
+
+/**
+ * Match the query against book slugs. "nephi" matches 1-nephi … 4-nephi
+ * (whole word), "mos" matches mosiah and moses (word prefix, 3+ letters),
+ * "alma 32" narrows to that chapter.
+ */
+function searchByBookName(index, text) {
+  let slug = slugify(text);
+  let chapterNo = null;
+  const withChapter = slug.match(/^(.*[a-z].*?)-(\d+)$/);
+  if (withChapter) {
+    slug = withChapter[1];
+    chapterNo = parseInt(withChapter[2], 10);
+  }
+  if (!slug || !/[a-z]/.test(slug)) return [];
+  slug = BOOK_ALIASES[slug] || slug;
+
+  const rank = (book) => {
+    if (book === slug) return 3;
+    const padded = `-${book}-`;
+    if (padded.includes(`-${slug}-`)) return 2;
+    if (slug.replace(/[^a-z]/g, '').length >= 3 && padded.includes(`-${slug}`)) return 1;
+    return 0;
+  };
+
+  const books = new Map();
+  for (const chapter of index) {
+    if (!books.has(chapter.book)) books.set(chapter.book, rank(chapter.book));
+  }
+  const best = Math.max(0, ...books.values());
+  if (!best) return [];
+  const matched = new Set([...books].filter(([, r]) => r === best).map(([b]) => b));
+
+  const chapters = index.filter(c => matched.has(c.book)
+    && (chapterNo == null || c.chapter === chapterNo));
+  if (matched.size < 2 || chapterNo != null) return chapters;
+
+  const leads = [];
+  const rest = [];
+  const led = new Set();
+  for (const c of chapters) {
+    if (led.has(c.book)) { rest.push(c); continue; }
+    led.add(c.book);
+    leads.push(c);
+  }
+  return [...leads, ...rest];
+}
+
+/**
+ * Chapter headings per version directory, kept across searches. Every search
+ * of every scope that includes readalong falls through to the headings when no
+ * book name matches, and reading (or even stat'ing) ~1,600 chapter files on
+ * the data mount costs ~0.7 s each time. One stat of the directory says whether
+ * the cache is current: an atomic rewrite renames a file into place, which
+ * changes the directory's mtime.
+ */
+const headingCache = new Map();
+
+function chapterHeadings(chapter) {
+  const dirSignature = fileSignature(chapter.versionDir);
+  let dirCache = headingCache.get(chapter.versionDir);
+  if (!dirCache || !dirSignature || dirCache.signature !== dirSignature) {
+    dirCache = { signature: dirSignature, files: new Map() };
+    if (dirSignature) headingCache.set(chapter.versionDir, dirCache);
+  }
+  const cached = dirCache.files.get(chapter.file);
+  if (cached) return cached;
+  const data = loadContainedYaml(chapter.versionDir, chapter.file.replace(/\.ya?ml$/, ''));
+  const firstVerse = Array.isArray(data) ? data[0] : data;
+  const entry = {
+    title: String(firstVerse?.headings?.title || '').toLowerCase(),
+    heading: String(firstVerse?.headings?.heading || '').toLowerCase()
+  };
+  dirCache.files.set(chapter.file, entry);
+  return entry;
+}
+
+/** Last resort: chapter heading titles that contain the query. */
+function searchHeadings(index, text, take) {
+  const queryLower = text.toLowerCase();
+  const results = [];
+  for (const chapter of index) {
+    const { title, heading } = chapterHeadings(chapter);
+    if (title.includes(queryLower) || heading.includes(queryLower)) {
+      results.push(toResult(chapter));
+      if (results.length >= take) break;
+    }
+  }
+  return results;
+}
+
+/**
  * ScriptureResolver - Resolves scripture references to normalized paths
  *
  * Flexible segment interpretation:
@@ -338,133 +530,58 @@ export const ScriptureResolver = {
   },
 
   /**
-   * Search scripture by reference text (e.g., "genesis 1", "psalm 23", "john").
-   * Returns matching chapter IDs as resolved paths ready for getItem().
+   * Search scripture by reference or book name, across every volume.
+   *
+   * - A full reference ("Genesis 1", "D&C 4", "Alma 32:21") resolves through
+   *   scripture-guide to the chapter(s) holding those verses.
+   * - A book name with or without a chapter ("Nephi", "1 Nephi", "Alma",
+   *   "Doctrine and Covenants", "Moses 1") matches the book slugs in each
+   *   volume's chapter files, whole word or word prefix. When several books
+   *   match ("Nephi" -> 1, 2, 3, 4 Nephi) each book's first chapter leads,
+   *   then the remaining chapters in canonical order.
+   * - Otherwise chapter headings are searched.
+   *
+   * A requested text version applies only to volumes that have it; any
+   * other volume falls back to its manifest default, then its first
+   * directory (see pickSearchVersion). A version never drops a volume.
+   *
    * @param {string} query - Search text
    * @param {string} dataPath - Base scripture data path
    * @param {Object} [options]
    * @param {string} [options.version] - Preferred text version (e.g., 'nirv')
    * @param {Object} [options.defaults] - Per-volume defaults from manifest
-   * @param {Object} [options.audioDefaults] - Audio alias mappings
-   * @param {string} [options.mediaPath] - Media base path
    * @param {number} [options.take=20] - Max results
    * @returns {Array<{localId: string, title: string, volume: string}>}
    */
   search(query, dataPath, options = {}) {
-    const { version, defaults = {}, audioDefaults = {}, mediaPath, take = 20 } = options;
+    const { version, defaults = {}, take = 20 } = options;
+    const text = String(query || '').trim();
+    if (!text) return [];
 
-    const results = [];
+    const index = buildChapterIndex(dataPath, version, defaults);
 
-    // 1. Try scripture-guide reference lookup (fast, indexed)
-    const ref = lookupReference(query);
-
+    // 1. A full reference (scripture-guide only answers when a chapter is given).
+    let ref = null;
+    try { ref = lookupReference(text); } catch { ref = null; }
     if (ref?.verse_ids?.length > 0) {
-      // Specific chapter(s) matched — find chapter files by verse ID
-      const seenChapters = new Set();
+      const seen = new Set();
+      const results = [];
       for (const verseId of ref.verse_ids) {
-        const volume = getVolumeFromVerseId(verseId);
-        if (!volume) continue;
-
-        const textVersion = version
-          || defaults[volume]?.text
-          || getFirstDir(path.join(dataPath, volume))
-          || 'default';
-        const versionDir = path.join(dataPath, volume, textVersion);
-        if (!dirExists(versionDir)) continue;
-
-        try {
-          const files = listYamlFiles(versionDir);
-          for (const file of files) {
-            if (file === 'manifest.yml') continue;
-            const prefix = parseInt(file.split('-')[0], 10);
-            if (isNaN(prefix)) continue;
-            if (prefix > verseId) break;
-            const chapterKey = `${volume}/${textVersion}/${prefix}`;
-            if (!seenChapters.has(chapterKey)) {
-              seenChapters.add(chapterKey);
-              const chapterRef = generateReference(prefix);
-              results.push({
-                localId: `scripture/${volume}/${textVersion}/${prefix}`,
-                title: chapterRef || file.replace('.yml', ''),
-                volume
-              });
-            }
-          }
-        } catch { /* skip */ }
+        const chapter = chapterContaining(index, Number(verseId));
+        if (!chapter || seen.has(chapter.localId)) continue;
+        seen.add(chapter.localId);
+        results.push(toResult(chapter));
         if (results.length >= take) break;
       }
-      return results.slice(0, take);
+      if (results.length > 0) return results;
     }
 
-    if (ref?.ref) {
-      // Book name matched but no verse IDs — list chapters of the book
-      const bookName = ref.ref.toLowerCase().replace(/\s+/g, '-');
-      for (const [vol] of Object.entries(VOLUME_RANGES)) {
-        const textVersion = version
-          || defaults[vol]?.text
-          || getFirstDir(path.join(dataPath, vol))
-          || 'default';
-        const versionDir = path.join(dataPath, vol, textVersion);
-        if (!dirExists(versionDir)) continue;
+    // 2. Book name, optionally followed by a chapter number.
+    const byBook = searchByBookName(index, text);
+    if (byBook.length > 0) return byBook.slice(0, take).map(toResult);
 
-        try {
-          const files = listYamlFiles(versionDir);
-          for (const file of files) {
-            if (file === 'manifest.yml') continue;
-            const namePart = file.replace(/^\d+-/, '').replace('.yml', '');
-            if (!namePart.startsWith(bookName)) continue;
-            const prefix = parseInt(file.split('-')[0], 10);
-            if (isNaN(prefix)) continue;
-            const chapterRef = generateReference(prefix);
-            results.push({
-              localId: `scripture/${vol}/${textVersion}/${prefix}`,
-              title: chapterRef || namePart,
-              volume: vol
-            });
-            if (results.length >= take) break;
-          }
-        } catch { /* skip */ }
-        if (results.length >= take) break;
-      }
-      if (results.length > 0) return results.slice(0, take);
-    }
-
-    // 2. Fallback: search YAML heading content (handles non-standard references)
-    const queryLower = query.toLowerCase();
-    for (const [vol] of Object.entries(VOLUME_RANGES)) {
-      const textVersion = version
-        || defaults[vol]?.text
-        || getFirstDir(path.join(dataPath, vol))
-        || 'default';
-      const versionDir = path.join(dataPath, vol, textVersion);
-      if (!dirExists(versionDir)) continue;
-
-      try {
-        const files = listYamlFiles(versionDir);
-        for (const file of files) {
-          if (file === 'manifest.yml') continue;
-          const filePath = file.replace('.yml', '');
-          const data = loadContainedYaml(versionDir, filePath);
-          if (!data) continue;
-          const firstVerse = Array.isArray(data) ? data[0] : data;
-          const title = firstVerse?.headings?.title?.toLowerCase() || '';
-          const heading = firstVerse?.headings?.heading?.toLowerCase() || '';
-          if (title.includes(queryLower) || heading.includes(queryLower)) {
-            const prefix = parseInt(file.split('-')[0], 10);
-            const chapterRef = isNaN(prefix) ? null : generateReference(prefix);
-            results.push({
-              localId: `scripture/${vol}/${textVersion}/${prefix || filePath}`,
-              title: chapterRef || filePath,
-              volume: vol
-            });
-            if (results.length >= take) break;
-          }
-        }
-      } catch { /* skip */ }
-      if (results.length >= take) break;
-    }
-
-    return results.slice(0, take);
+    // 3. Fallback: chapter headings (handles non-standard references).
+    return searchHeadings(index, text, take);
   },
 
   VOLUME_RANGES,

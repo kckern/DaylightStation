@@ -58,8 +58,8 @@ Validated by `IContentSource.mjs`:
 | `getCapabilities(localId)` | — | Return the list of capabilities for a specific item |
 | `getContainerType(id)` | — | Return a container type string for selection strategy inference (see Content Progress) |
 | `getStoragePath(id)` | — | Return a persistence key for watch state storage |
-| `getSearchCapabilities()` | `searchable` | Report supported search filters and query mappings |
-| `directIdPatterns` (getter) | — | `[{ pattern: RegExp, toId: (match) => 'source:id', priority? }]`: unprefixed text that is unambiguously one of this source's ids. Search looks such text up directly (via `getItem`) and leads with the hit, while the text search still runs. Plex declares `/^\d{2,}$/` (rating keys; 2-digit floor because search rejects text under 2 characters), Immich declares UUIDs. Candidates not yet declared (no adapter with an unambiguous id and get-by-id): YouTube 11-character ids |
+| `getSearchCapabilities()` | `searchable` | Report supported search filters and query mappings. `explicitOnly: true` keeps the source out of unscoped searches: it answers only a search with `source=` naming it (YouTube, which searches the outside world through Piped) |
+| `directIdPatterns` (getter) | — | `[{ pattern: RegExp, toId: (match) => 'source:id', priority? }]`: unprefixed text that is unambiguously one of this source's ids. Search looks such text up directly (via `getItem`) and leads with the hit, while the text search still runs. Plex declares `/^\d{2,}$/` (rating keys; 2-digit floor because search rejects text under 2 characters), Immich declares UUIDs. Candidates not yet declared (no adapter with an unambiguous id and get-by-id): YouTube 11-character ids. YouTube text search (`source=youtube`) goes through Piped `/search?filter=videos` and returns playable `youtube:<id>` video leaves; live streams are left out |
 
 ### How Playable Data Is Returned
 
@@ -325,6 +325,17 @@ The `scripture` resolver handles multiple input forms:
 - Volume names (`bom`, `nt`) → resolved to next unread chapter via watch history
 - Full paths (`bom/sebom/31103`) → direct lookup
 - Version-qualified paths (`kjvf/john-1`) → explicit text version, audio from defaults
+
+**Search** (`search(query, dataPath, { version, defaults, take })`) covers every volume
+(ot, nt, bom, dc, pgp). A full reference ("Genesis 1", "D&C 4", "Alma 32:21") resolves
+through `scripture-guide` to the chapter holding those verses. A book name, with or
+without a chapter ("Nephi", "1 Nephi", "Alma 32", "Doctrine and Covenants", "D&C",
+"Moses"), matches the book slugs in the chapter file names (`<firstVerseId>-<book>-<chapter>.yml`),
+whole word or a 3+ letter word prefix; when several books match, each one's first
+chapter leads. Otherwise chapter headings are searched (cached per version folder).
+A requested `version` (the Media Scripture scope sends `readalong.version=nirv`)
+applies only to volumes that have it; any other volume reads its manifest default,
+then its first folder. A version never drops a volume.
 
 **Multi-version support**: The manifest's `defaults` section maps collection sections to preferred text and audio versions. The resolver produces separate `textPath` and `audioPath`, allowing different text and audio recordings for the same content (e.g., read KJV text while listening to a dramatized NRSV recording).
 

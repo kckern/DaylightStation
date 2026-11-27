@@ -42,6 +42,7 @@ import { usePlayDestination } from "../habits/usePlayDestination.js";
 import { rankByHabits } from "../habits/mediaHabits.js";
 import { DestinationChip, useDestinationCycle } from "./DestinationChip.jsx";
 import { useReturnFromSearchDetail } from "./useReturnFromSearchDetail.js";
+import { useSearchRecents } from "./useSearchRecents.js";
 import "./Search.scss";
 
 // `destinationWrapper`: a component the chip is wrapped in — the desktop dock
@@ -52,7 +53,7 @@ export function MediaContentSearch({ inputRef: suppliedInputRef, destinationWrap
   // How the last pick was made, for the log: Enter in the box, else a tap.
   const viaRef = useRef('tap');
   const [oneShotAction, setOneShotAction] = useState(null);
-  const { scopes, currentScopeKey, currentScope } = useSearchContext();
+  const { scopes, currentScopeKey, currentScope, setScopeKey, resetScope } = useSearchContext();
   const { dispatch, dispatchLeafVerb, playContainerAsQueue } = useContentDispatch();
   const { rowLabelsFor, continueFor, screenFor } = useRowLabels();
   const { extraActions, runHousehold } = useHouseholdResultActions();
@@ -63,6 +64,31 @@ export function MediaContentSearch({ inputRef: suppliedInputRef, destinationWrap
   // The words the list on screen was ranked for: a pick is remembered
   // against them (a row opened or played is what those words meant).
   const queryRef = useRef('');
+  // The empty box offers Continue and recent searches (owner ruling
+  // 2026-11-27). Words are remembered, with their scope, only once the person
+  // acts on their results (opens or plays a row), never per keystroke.
+  const recents = useSearchRecents({ allScopeKey: scopes[0]?.key ?? null });
+  const currentScopeRef = useRef(currentScope);
+  currentScopeRef.current = currentScope;
+  const rememberWords = useCallback(() => {
+    const words = queryRef.current;
+    if (words && words.trim().length >= 2) recents.remember(words.trim(), currentScopeRef.current);
+  }, [recents]);
+  const idle = useMemo(() => ({
+    items: recents.continueItems,
+    itemsTitle: 'Continue',
+    searches: recents.searches,
+    onPickItem: (item, via) => log.info('search.recent-picked', { kind: 'continue', contentId: item?.id ?? null, via }),
+    onPickSearch: (entry, via) => {
+      log.info('search.recent-picked', { kind: 'search', scopeKey: entry.scopeKey ?? null, via });
+      const known = scopes.some((sc) => sc.key === entry.scopeKey || (sc.children || []).some((c) => c.key === entry.scopeKey));
+      if (entry.scopeKey && known) setScopeKey?.(entry.scopeKey);
+      else resetScope?.();
+    },
+    onForgetSearch: (entry) => recents.forget(entry.text),
+    onClearSearches: () => recents.clear(),
+    onShown: (counts) => log.info('search.recents-shown', counts),
+  }), [recents, scopes, setScopeKey, resetScope, log]);
   // A remembered pick holds row 1 from the first keystroke (drawn from what
   // was kept of it) in the catalog-wide scope only — a narrowed scope shows
   // only what the search returns for it.
@@ -97,6 +123,7 @@ export function MediaContentSearch({ inputRef: suppliedInputRef, destinationWrap
     if (!id) return; // clear/empty commits are no-ops for a transient picker
     log.info('select', { contentId: id, title: item?.title ?? null, type: item?.type ?? null });
     recordPick(queryRef.current, { ...item, id }, 'open');
+    rememberWords();
     // `route` is 'peek' | 'cast' | 'browse' | 'local' — without it, a selection that went
     // to the wrong surface is invisible in the logs. It records the routing
     // INTENT, not the outcome: the cast dispatch is async and unawaited, so a
@@ -108,7 +135,7 @@ export function MediaContentSearch({ inputRef: suppliedInputRef, destinationWrap
     viaRef.current = 'tap';
     log.info('dispatch', { contentId: id, route });
     return route;
-  }, [dispatch, log, recordPick]);
+  }, [dispatch, log, recordPick, rememberWords]);
 
   // Back from an info view this search opened: the box takes focus again,
   // which reopens the kept list on the row that was picked. Only while the
@@ -129,6 +156,7 @@ export function MediaContentSearch({ inputRef: suppliedInputRef, destinationWrap
     if (!id) return;
     log.info('select', { contentId: id, title: item?.title ?? null, type: item?.type ?? null, verb: 'playAll' });
     recordPick(queryRef.current, item, 'play');
+    rememberWords();
     // A playable row's own ▶: play it where the ▶ says.
     // A film nobody has chosen a screen for asks where (its ▶ read "Play on…").
     const ask = (route, what = item) => { if (route === 'ask') setOneShotAction({ kind: 'playOn', item: what }); };
@@ -151,7 +179,7 @@ export function MediaContentSearch({ inputRef: suppliedInputRef, destinationWrap
     const route = playContainerAsQueue(id, item);
     ask(route);
     log.info('dispatch', { contentId: id, route, verb: 'playAll' });
-  }, [playContainerAsQueue, dispatchLeafVerb, continueFor, log, recordPick]);
+  }, [playContainerAsQueue, dispatchLeafVerb, continueFor, log, recordPick, rememberWords]);
 
   // Trailing ⋯ on a leaf row: Play Now / Play Next / Up Next / Add to Queue
   // / Open detail.
@@ -159,7 +187,7 @@ export function MediaContentSearch({ inputRef: suppliedInputRef, destinationWrap
     const id = item?.id;
     if (!id) return;
     log.info('row_action', { contentId: id, action });
-    if (['playNow', 'playHere', 'playOn', 'detail', 'details'].includes(action)) recordPick(queryRef.current, item, action);
+    if (['playNow', 'playHere', 'playOn', 'detail', 'details'].includes(action)) { recordPick(queryRef.current, item, action); rememberWords(); }
     if (runHousehold(action, item)) return;
     if (action === 'openScreen') {
       const deviceId = screenFor(item);
@@ -178,7 +206,7 @@ export function MediaContentSearch({ inputRef: suppliedInputRef, destinationWrap
     // stay) and the info view opens; Back comes back to these results.
     push('detail', { contentId: id, from: 'search' });
     return 'close';
-  }, [push, log, dispatchLeafVerb, runHousehold, recordPick, screenFor]);
+  }, [push, log, dispatchLeafVerb, runHousehold, recordPick, screenFor, rememberWords]);
 
   return (
     <div data-testid="media-search-bar" className="media-search-bar">
@@ -211,10 +239,13 @@ export function MediaContentSearch({ inputRef: suppliedInputRef, destinationWrap
             searchParams={currentScope?.params ?? ''}
             // D5: scopes[0] is the catalog-wide ("All") scope by convention
             // (SearchProvider seeds currentScopeKey from it and resetScope()
-            // returns to it) — that's what a scoped search settling empty
-            // silently widens to. scopeKey/scopeLabel are for observability
-            // and for naming the scope in the widened-search notice.
+            // returns to it). A scope chip is the person's choice, so an empty
+            // scoped search is offered the wider search ("Search everything")
+            // rather than widened for them (2026-11-27). scopeKey/scopeLabel
+            // are for observability and for naming the scope.
             fallbackSearchParams={scopes[0]?.params ?? ''}
+            widenOnEmpty="offer"
+            idle={idle}
             scopeKey={currentScopeKey}
             scopeLabel={currentScope?.label ?? null}
             logApp="media"

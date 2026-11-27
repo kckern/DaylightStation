@@ -22,7 +22,7 @@ import { splitTopMore } from '@/lib/ui/splitTopMore.js';
 import { DS_TOKENS } from '@/lib/theme/tokens.mjs';
 import {
   Combobox, TextInput, ScrollArea, Group, Text, Avatar, Badge, Loader, Button,
-  Stack, ActionIcon, Box, useCombobox,
+  Stack, ActionIcon, Box, UnstyledButton, useCombobox,
 } from '@mantine/core';
 import {
   IconSearch, IconChevronRight, IconArrowLeft, IconFolder,
@@ -117,6 +117,16 @@ class PickerScrollAnchor extends Component {
  * @param {string} [props.scopeLabel] - human label for `scopeKey` (e.g. "Ambient"),
  *   used both in the hook's fallback log and in the D5 "Nothing in ‹label›…" notice
  *   rendered here once the hook reports `fellBackToAll`. Optional.
+ * @param {object} [props.idle] - what the EMPTY box offers instead of "Type to
+ *   search" (Media, owner ruling 2026-11-27): `{ items, itemsTitle, searches,
+ *   onPickItem(item, via), onPickSearch(entry, via), onForgetSearch(entry),
+ *   onClearSearches(), onShown({ continue, searches }) }`. `items` are ordinary
+ *   result rows (select opens, ▶ plays); `searches` are `{ key, text, tag }`
+ *   rows that refill the box. Both are rows of the keyboard model. Gone as
+ *   soon as anything is typed; with both empty the quiet placeholder stays.
+ * @param {'auto'|'offer'} [props.widenOnEmpty] - passthrough (see the hook). 'offer':
+ *   an empty picked scope reads "Nothing for “words” in ‹label›" with one keyboard
+ *   row, "Search everything", instead of widening on its own.
  * @param {boolean} [props.appResults] - passthrough: merge app-registry matches
  * @param {string} [props.logApp] - app name stamped on this combobox's log events
  * @param {string} [props.dropdownClassName] - extra class on the dropdown.
@@ -179,6 +189,8 @@ export function ContentCombobox({
   fallbackSearchParams,
   scopeKey,
   scopeLabel,
+  widenOnEmpty = 'auto',
+  idle = null,
   appResults = false,
   renderValue = null,
   allowFreeform = true,
@@ -210,9 +222,9 @@ export function ContentCombobox({
     openWithSiblings, drill, goUp, goToCrumb, paginate, paginationWindow,
     handleClose, select, commit,
     resolvedTitle, isSearching, pendingSources, sourceErrors, streamError, retrySource, truncatedAt, fellBackToAll, searchState,
-    clearSearch, searchSettled,
+    clearSearch, searchSettled, scopeEmpty, widenSearch,
   } = useContentCombobox({
-    value, onChange, searchParams, fallbackSearchParams, scopeKey, scopeLabel,
+    value, onChange, searchParams, fallbackSearchParams, scopeKey, scopeLabel, widenOnEmpty,
     appResults, selectContainers, allowFreeform, logApp, retainQueryOnEscape, retainPlayableSelection, retainQueryOnClose,
   });
 
@@ -235,6 +247,9 @@ export function ContentCombobox({
     : allItems;
   const hiddenCount = collapsing ? allItems.length - items.length : 0;
   const showAllIdx = hiddenCount > 0 ? items.length : -1;
+  // A picked scope that came up empty ('offer'): one row, "Search everything",
+  // in the keyboard model like Show all. Arrow onto it, Enter widens.
+  const widenIdx = !isBrowse && scopeEmpty && items.length === 0 ? 0 : -1;
   const expandResults = (via) => {
     const shownIds = new Set(items.map((item) => item.id));
     const firstNew = allItems.findIndex((item) => !shownIds.has(item.id));
@@ -251,7 +266,34 @@ export function ContentCombobox({
   const pagination = state.browse.pagination;
   const browseLoading = state.browse.loading;
   const highlightIdx = state.highlight.idx;
-  const highlightedId = items[highlightIdx]?.id;
+  // The empty box: Continue rows, then recent searches (one keyboard model).
+  const idleItems = idle?.items ?? [];
+  const idleSearches = idle?.searches ?? [];
+  const idleActive = !!idle && !isBrowse && isEditing && !search && (idleItems.length + idleSearches.length) > 0;
+  const idleCount = idleActive ? idleItems.length + idleSearches.length : 0;
+  const highlightedId = idleActive ? idleItems[highlightIdx]?.id : items[highlightIdx]?.id;
+  const idleShownRef = useRef(false);
+  useEffect(() => {
+    if (!idleActive) { idleShownRef.current = false; return; }
+    if (idleShownRef.current) return;
+    idleShownRef.current = true;
+    idle?.onShown?.({ continue: idleItems.length, searches: idleSearches.length });
+  }, [idleActive]); // eslint-disable-line react-hooks/exhaustive-deps
+  const pickIdle = (idx, via) => {
+    if (idx < 0 || idx >= idleCount) return false;
+    if (idx < idleItems.length) {
+      const item = idleItems[idx];
+      idle?.onPickItem?.(item, via);
+      if (isContainer(item) && !selectContainers) drill(item);
+      else select(item);
+      return true;
+    }
+    const entry = idleSearches[idx - idleItems.length];
+    idle?.onPickSearch?.(entry, via);
+    dispatch({ type: 'HIGHLIGHT', idx: -1, userNavigated: false });
+    handleInput(entry.text);
+    return true;
+  };
   const normalizedValue = normalizeValue(value);
 
   // An input accessory (Media's destination chip) sits inside the input's
@@ -443,6 +485,18 @@ export function ContentCombobox({
       expandResults('pointer');
       return;
     }
+    if (idleActive && typeof val === 'string' && val.startsWith('__recent__:')) {
+      pickIdle(idleItems.length + Number(val.slice('__recent__:'.length)), 'pointer');
+      return;
+    }
+    if (idleActive) {
+      const idx = idleItems.findIndex((r) => r.id === val);
+      if (idx >= 0) { pickIdle(idx, 'pointer'); return; }
+    }
+    if (val === '__widen__') {
+      widenSearch('pointer');
+      return;
+    }
     const item = items.find((r) => r.id === val);
     if (!item) return;
     if (isContainer(item) && !selectContainers) drill(item);
@@ -453,7 +507,7 @@ export function ContentCombobox({
   const handleKeyDown = (e) => {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
-      dispatch({ type: 'ARROW', dir: e.key === 'ArrowDown' ? 1 : -1, itemCount: items.length + (showAllIdx >= 0 ? 1 : 0) });
+      dispatch({ type: 'ARROW', dir: e.key === 'ArrowDown' ? 1 : -1, itemCount: idleActive ? idleCount : items.length + (showAllIdx >= 0 ? 1 : 0) + (widenIdx >= 0 ? 1 : 0) });
       return;
     }
     if (e.key === 'ArrowRight') {
@@ -472,6 +526,18 @@ export function ContentCombobox({
         goUp();
       }
       // otherwise let the cursor move
+      return;
+    }
+    if (e.key === 'Enter' && idleActive) {
+      e.preventDefault();
+      pickIdle(highlightIdx, 'keyboard');
+      return;
+    }
+    // With nothing else in the list, Enter on the empty scope searches
+    // everywhere whether or not the row is highlighted yet.
+    if (e.key === 'Enter' && widenIdx >= 0 && (highlightIdx === widenIdx || highlightIdx < 0)) {
+      e.preventDefault();
+      widenSearch('keyboard');
       return;
     }
     if (e.key === 'Enter' && showAllIdx >= 0 && highlightIdx === showAllIdx) {
@@ -1047,13 +1113,73 @@ export function ContentCombobox({
           <PickerScrollAnchor owner={paginationWindow} offset={pagination?.offset} viewportRef={viewportRef}>
             <ScrollArea.Autosize
               className="content-combobox-scroll"
-              mah={300}
+              // The empty box holds two short sections (Continue, recent
+              // searches): room for both without scrolling.
+              mah={idleActive ? 520 : 300}
               style={{ overflow: 'hidden' }}
               viewportRef={viewportRef}
               viewportProps={{ style: { overflowAnchor: 'none' } }}
               onScrollPositionChange={handleScrollPosition}
             >
-              {browseLoading && items.length === 0 ? (
+              {idleActive ? (
+                <div data-testid="combobox-idle">
+                  {idleItems.length > 0 && (
+                    <Text size="xs" fw={600} c="dimmed" className="content-combobox-idle-head" data-testid="combobox-idle-continue">
+                      {idle.itemsTitle ?? 'Continue'}
+                    </Text>
+                  )}
+                  {idleItems.map((item, i) => renderOption(item, i))}
+                  {idleSearches.length > 0 && (
+                    <Group justify="space-between" wrap="nowrap" className="content-combobox-idle-head" data-testid="combobox-idle-searches">
+                      <Text size="xs" fw={600} c="dimmed">Recent searches</Text>
+                      {idle.onClearSearches && (
+                        <UnstyledButton
+                          className="content-combobox-idle-clear"
+                          data-testid="combobox-recent-clear"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={(e) => { e.stopPropagation(); idle.onClearSearches(); }}
+                        >
+                          Clear
+                        </UnstyledButton>
+                      )}
+                    </Group>
+                  )}
+                  {idleSearches.map((entry, j) => {
+                    const idx = idleItems.length + j;
+                    const hl = highlightIdx === idx;
+                    return (
+                      <Combobox.Option
+                        key={`__recent__:${entry.key}`}
+                        value={`__recent__:${j}`}
+                        data-testid={`combobox-recent-${j}`}
+                        data-highlighted={hl ? 'true' : 'false'}
+                        className={`${OPTION_CLASS} content-combobox-recent${hl ? ' highlighted' : ''}`}
+                        aria-label={entry.tag ? `Search ${entry.text} in ${entry.tag}` : `Search ${entry.text}`}
+                      >
+                        <Group gap="xs" wrap="nowrap" justify="space-between">
+                          <Group gap={6} wrap="nowrap" style={{ minWidth: 0 }}>
+                            <IconSearch size={14} />
+                            <Text size="sm" truncate>{entry.text}</Text>
+                            {entry.tag && <Text size="xs" c="dimmed" truncate>· {entry.tag}</Text>}
+                          </Group>
+                          {idle.onForgetSearch && (
+                            <ActionIcon
+                              size="sm"
+                              variant="subtle"
+                              aria-label={`Forget ${entry.text}`}
+                              data-testid={`combobox-recent-forget-${j}`}
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={(e) => { e.stopPropagation(); idle.onForgetSearch(entry); }}
+                            >
+                              <IconX size={12} />
+                            </ActionIcon>
+                          )}
+                        </Group>
+                      </Combobox.Option>
+                    );
+                  })}
+                </div>
+              ) : browseLoading && items.length === 0 ? (
                 <Combobox.Empty>
                   <Group justify="center" p="md" data-testid="combobox-loading">
                     <Loader size="sm" />
@@ -1067,6 +1193,22 @@ export function ContentCombobox({
                 <Combobox.Empty>
                   <SearchSkeletonRows testId="combobox-loading" />
                 </Combobox.Empty>
+              ) : widenIdx >= 0 && !streamError ? (
+                <>
+                  <Combobox.Empty data-testid="combobox-scope-empty">
+                    Nothing for “{search}” in {scopeLabel || 'this scope'}
+                  </Combobox.Empty>
+                  <Combobox.Option
+                    value="__widen__"
+                    key="__widen__"
+                    data-testid="combobox-widen"
+                    data-highlighted={highlightIdx === widenIdx ? 'true' : 'false'}
+                    className={`${OPTION_CLASS} content-combobox-show-all${highlightIdx === widenIdx ? ' highlighted' : ''}`}
+                    aria-label={`Search everything for ${search}`}
+                  >
+                    <Text size="sm" fw={500}>Search everything</Text>
+                  </Combobox.Option>
+                </>
               ) : items.length === 0 && !streamError && !hasUnresolvedSourceFailures ? (
                 <Combobox.Empty>
                   {isBrowse

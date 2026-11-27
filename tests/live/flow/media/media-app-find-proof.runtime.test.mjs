@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { resetHouseholdAt } from './lib/household.mjs';
 import { A, A_NAME, startOutcome, ITEM, VIEWPORTS, newAppPage, gotoMedia, warmMedia, openReceiver, stopReceiver, receiverState } from './lib/receivers.mjs';
-import { isPhone, goArea, openSearch, closeSearch, resultRows, resultRow, rowPicture, searchSurface, waitForSearchSettled, whereAmI, playResultHere, openDetailMore, openRowMenuAll, openTileMenuAll } from './lib/search.mjs';
+import { isPhone, goArea, openSearch, closeSearch, resultRows, resultRow, rowPicture, searchSurface, waitForSearchSettled, whereAmI, playResultHere, openDetailMore, openRowMenuAll, openTileMenuAll, scopeEmptyNotice, searchEverything } from './lib/search.mjs';
 import { startSseServer, streamItem } from './lib/sseServer.mjs';
 import { aimAt } from './lib/aim.mjs';
 
@@ -254,8 +254,14 @@ for (const [label, vp] of Object.entries(VIEWPORTS)) {
       });
       await surface.getByTestId('scope-chip-video').click();
 
-      // AC1: nothing in Video → matches from every kind appear under the divider, kind in words on every row.
+      // AC1 (amended 2026-11-27, "A picked scope is honoured"): nothing in
+      // Video says so and offers Search everything; it never widens unasked.
+      // Asked, matches from every kind appear under the divider, kind in words on every row.
       await input.fill('widen');
+      await expect(scopeEmptyNotice(page, vp)).toContainText('Nothing for “widen” in Video', { timeout: 20000 });
+      await expect(resultRows(page, vp)).toHaveCount(0);
+      expect(sse.requests.filter((r) => r.text === 'widen' && !r.source && !r.mediaType)).toHaveLength(0);
+      await searchEverything(page, vp).click();
       const status = page.getByTestId('stream-status-line');
       await expect(status).toContainText('Not in Video', { timeout: 20000 });
       await expect(status).toContainText('From everything:');
@@ -271,6 +277,8 @@ for (const [label, vp] of Object.entries(VIEWPORTS)) {
       // AC3: nothing anywhere → told plainly, offered spelling and the nearest kind.
       await input.fill('');
       await input.fill('zzzqqq-nothing');
+      await expect(scopeEmptyNotice(page, vp)).toBeVisible({ timeout: 20000 });
+      await searchEverything(page, vp).click();
       await expect(status).toContainText('no matches', { timeout: 20000 });
       await expect(status).toContainText('Check the spelling or browse Video');
       await expect(rows).toHaveCount(0);

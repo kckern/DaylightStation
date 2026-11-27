@@ -243,3 +243,23 @@
   justify-content: center;
   color: var(--mantine-color-dimmed);
 }
+
+// The empty box (Media): section heads over Continue rows and recent searches.
+.content-combobox-idle-head {
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm) 2px;
+  text-transform: none;
+}
+
+.content-combobox-idle-clear {
+  font-size: var(--mantine-font-size-xs);
+  color: var(--mantine-color-dimmed);
+  text-decoration: underline;
+  &:hover, &:focus-visible { color: var(--mantine-color-text); }
+}
+
+.content-combobox-recent {
+  min-height: var(--ds-control-touch-target);
+  display: flex;
+  align-items: center;
+  > .mantine-Group-root { flex: 1; min-width: 0; }
+}
