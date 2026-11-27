@@ -51,7 +51,9 @@ async function setStopHere(picker, on) {
 }
 
 async function selectFirstDevice(picker) {
-  const device = picker.locator('[data-testid^="picker-device-"]').first();
+  // The first IDLE screen: a busy one asks before sending, and the picker leads
+  // with what is on now (an earlier journey may have left a screen playing).
+  const device = picker.locator('[data-testid^="picker-device-"]').filter({ hasNotText: /Playing|Paused|Starting/ }).first();
   await expect(device).toBeVisible();
   await device.click();
 }

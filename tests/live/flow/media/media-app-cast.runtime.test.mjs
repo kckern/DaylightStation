@@ -68,8 +68,10 @@ test.describe('MediaApp — P4 cast', () => {
     await page.getByRole('menuitem', { name: 'Play on…' }).click();
     await expect(page.getByTestId('dispatch-target-picker')).toBeVisible({ timeout: 5000 });
 
-    // Tap the first device: an idle target is sent to by the tap itself (NF-TAP-10).
-    const firstDevice = page.locator('[data-testid^="picker-device-"]').first();
+    // Tap the first idle device: an idle target is sent to by the tap itself
+    // (NF-TAP-10). A busy one asks first, and the picker leads with what is on
+    // now, so a screen an earlier journey left playing would come first.
+    const firstDevice = page.locator('[data-testid^="picker-device-"]').filter({ hasNotText: /Playing|Paused|Starting/ }).first();
     await expect(firstDevice).toBeVisible();
     await firstDevice.click();
 
