@@ -1161,13 +1161,15 @@ export function createDispatchIdempotencyService(config = {}) {
  * @param {Object} config.contentCatalog - Content catalog for playable resolution and playback preparation
  * @param {Object} config.mediaProgressMemory - For QueueService watch-state enrichment
  * @param {string} config.appBaseUrl - Local app URL for MPD fetch (e.g., "http://localhost:3111")
+ * @param {() => Object|null} [config.libraryKinds] - media config `play_on_demand.library_kinds`
  * @param {Object} [config.logger]
  * @returns {{ prewarmService: TranscodePrewarmService }}
  */
 export function createTranscodePrewarmService(config) {
-  const { contentIdResolver, contentCatalog, mediaProgressMemory, appBaseUrl, logger = console } = config;
+  const { contentIdResolver, contentCatalog, mediaProgressMemory, appBaseUrl, libraryKinds = null, logger = console } = config;
 
-  const queueService = new QueueService({ mediaProgressMemory, random: Math.random });
+  // libraryKinds: the same library kinds as the queue route, so a book prewarms the part it starts at.
+  const queueService = new QueueService({ mediaProgressMemory, random: Math.random, libraryKinds });
 
   // Thin status-only shim over the system HttpClient: prewarm pings care only
   // about the HTTP status; network/timeout failures map to status 0.
