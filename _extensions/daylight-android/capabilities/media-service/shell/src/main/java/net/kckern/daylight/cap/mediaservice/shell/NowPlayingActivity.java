@@ -213,6 +213,14 @@ public class NowPlayingActivity extends Activity {
     private TextView speedButton;
     private FrameLayout leftEdgeBox, rightEdgeBox, stageBox;
     private LinearLayout player, pad;
+    /** Under the stage: the seek bar, names, transport and icon row (gone while the queue is open). */
+    private LinearLayout deck;
+    /** The queue's strip: progress, the item, play/pause, next, and the queue button to close it. */
+    private LinearLayout strip;
+    private android.widget.ProgressBar stripProgress;
+    private ImageView stripCover;
+    private TextView stripTitle, stripBy;
+    private ImageButton stripPlay, stripNext, stripQueue;
     private TextView padStatus;
     private boolean padShown;
     /** D-pad presses: one at a time, in order, apart from the player's reads and commands. */
@@ -335,7 +343,11 @@ public class NowPlayingActivity extends Activity {
     @Override protected void onRestoreInstanceState(Bundle saved) {
         super.onRestoreInstanceState(saved);
         String s = saved.getString("stage", "");
-        for (Stage st : Stage.values()) if (st.name().equals(s)) stage = st;
+        Stage want = Stage.ART;
+        for (Stage st : Stage.values()) if (st.name().equals(s)) want = st;
+        // Through setStage, so the stage's views (and the queue's strip) match it after a rotation.
+        stage = Stage.ART;
+        if (want != Stage.ART) setStage(want);
     }
 
     @Override protected void onStart() {
@@ -1144,6 +1156,7 @@ public class NowPlayingActivity extends Activity {
         }
         if (stage == Stage.LYRICS) lyricsView.setPosition(position);
         renderChapters(position, known ? duration : 0, c == null ? 1f : c.getPlaybackParameters().speed);
+        renderStrip(position, known ? duration : 0);
         if (c != null && c.isPlaying()) main.postDelayed(ticker, stage == Stage.LYRICS ? 100 : 200);
         else if (c != null) main.postDelayed(ticker, 1000);
     }
@@ -1345,6 +1358,10 @@ public class NowPlayingActivity extends Activity {
         crossfade(artFrame, s == Stage.ART);
         crossfade(lyricsView, s == Stage.LYRICS);
         crossfade(queueBox, s == Stage.QUEUE);
+        // The queue has the whole stage: the deck gives way to the strip, and comes back when it closes.
+        QueueChrome chrome = QueueChrome.of(s == Stage.QUEUE);
+        deck.setVisibility(chrome.deck ? View.VISIBLE : View.GONE);
+        strip.setVisibility(chrome.strip ? View.VISIBLE : View.GONE);
         if (s == Stage.LYRICS) lyricsCover.setImageDrawable(art.getDrawable());
         crossfade(lyricsCover, s == Stage.LYRICS);
         if (s == Stage.QUEUE) {
@@ -1933,6 +1950,67 @@ public class NowPlayingActivity extends Activity {
         main.postDelayed(clearPadStatus, 4000);
     }
 
+    /**
+     * The queue's strip (Plexamp, Spotify): a thin progress line, the cover and name of what
+     * plays (a tap closes the queue), play/pause, next, and the queue button lit to close it.
+     * The queue list fills everything between the top bar and this row.
+     */
+    private LinearLayout buildStrip() {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        stripProgress = new android.widget.ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        stripProgress.setMax(1000);
+        stripProgress.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        box.addView(stripProgress, new LinearLayout.LayoutParams(-1, dp(3)));
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setMinimumHeight(dp(64));
+        stripCover = new ImageView(this);
+        stripCover.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        stripCover.setClipToOutline(true);
+        stripCover.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        row.addView(stripCover, new LinearLayout.LayoutParams(dp(44), dp(44)));
+        LinearLayout words = new LinearLayout(this);
+        words.setOrientation(LinearLayout.VERTICAL);
+        words.setPaddingRelative(dp(12), 0, dp(8), 0);
+        stripTitle = new TextView(this);
+        stripTitle.setMaxLines(1);
+        stripTitle.setEllipsize(TextUtils.TruncateAt.END);
+        words.addView(stripTitle);
+        stripBy = new TextView(this);
+        stripBy.setMaxLines(1);
+        stripBy.setEllipsize(TextUtils.TruncateAt.END);
+        words.addView(stripBy);
+        words.setOnClickListener(v -> setStage(Stage.ART));
+        words.setContentDescription("Show the player");
+        UiTelemetry.tag(words, "queue.strip-item");
+        row.addView(words, new LinearLayout.LayoutParams(0, dp(56), 1));
+        stripPlay = icon(R.drawable.daylight_np_play, "Play", 0, () -> playPause.performClick());
+        stripNext = icon(R.drawable.daylight_np_next, "Next", 0, () -> next.performClick());
+        stripQueue = icon(R.drawable.daylight_np_queue, "Hide the queue", 0, () -> setStage(Stage.ART));
+        UiTelemetry.tag(stripPlay, "queue.strip-play");
+        UiTelemetry.tag(stripNext, "queue.strip-next");
+        UiTelemetry.tag(stripQueue, "queue.strip-close");
+        for (ImageButton b : new ImageButton[] { stripPlay, stripNext, stripQueue }) row.addView(b, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        box.addView(row);
+        return box;
+    }
+
+    /** The strip's words, button and progress, from the full player's own (drawn by render and the ticker). */
+    private void renderStrip(long position, long duration) {
+        if (strip == null || strip.getVisibility() != View.VISIBLE) return;
+        QueueChrome.Line line = QueueChrome.line(title.getText(), longForm() ? albumLine.getText() : artistLine.getText());
+        if (!TextUtils.equals(stripTitle.getText(), line.title)) stripTitle.setText(line.title);
+        if (!TextUtils.equals(stripBy.getText(), line.by)) stripBy.setText(line.by);
+        boolean pauses = "Pause".contentEquals(playPause.getContentDescription());
+        stripPlay.setImageResource(pauses ? R.drawable.daylight_np_pause : R.drawable.daylight_np_play);
+        stripPlay.setContentDescription(pauses ? "Pause" : "Play");
+        enable(stripPlay, playPause.isEnabled());
+        enable(stripNext, next.isEnabled());
+        stripProgress.setProgress(QueueChrome.permille(position, duration));
+        if (stripCover.getDrawable() != art.getDrawable()) stripCover.setImageDrawable(art.getDrawable());
+    }
+
     private LinearLayout buildPad() {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
@@ -2162,6 +2240,11 @@ public class NowPlayingActivity extends Activity {
         stageBox.addView(startBox, new FrameLayout.LayoutParams(-1, -1));
         player.addView(stageBox, new LinearLayout.LayoutParams(-1, 0, 1));
 
+        // Under the stage, the player's deck (seek bar, names, transport, the icon row). The
+        // queue takes the whole stage: the deck gives way to a one-row strip (QueueChrome).
+        deck = new LinearLayout(this);
+        deck.setOrientation(LinearLayout.VERTICAL);
+        player.addView(deck, new LinearLayout.LayoutParams(-1, -2));
         // The seek bar is the track's loudness, with the times at its ends.
         LinearLayout seekRow = new LinearLayout(this);
         // The times sit level with the bars, below the scale's band when there is one.
@@ -2210,20 +2293,20 @@ public class NowPlayingActivity extends Activity {
         seekRow.addView(remaining);
         LinearLayout.LayoutParams seekLp = new LinearLayout.LayoutParams(-1, -2);
         seekLp.topMargin = dp(16);
-        player.addView(seekRow, seekLp);
+        deck.addView(seekRow, seekLp);
 
         // Artist, title, album (year): centred, as a record sleeve reads.
         artistLine = centred();
-        player.addView(artistLine);
+        deck.addView(artistLine);
         title = centred();
         title.setSingleLine(true);
         title.setEllipsize(TextUtils.TruncateAt.MARQUEE);
         title.setMarqueeRepeatLimit(-1);
         title.setSelected(true);
         title.setHorizontalFadingEdgeEnabled(true);
-        player.addView(title);
+        deck.addView(title);
         albumLine = centred();
-        player.addView(albumLine);
+        deck.addView(albumLine);
         // The artist and the album open their pages (by name: a search led by that kind).
         artistLine.setOnClickListener(v -> lookupLine(artistLine, "artists"));
         albumLine.setOnClickListener(v -> lookupLine(albumLine, "albums"));
@@ -2234,17 +2317,17 @@ public class NowPlayingActivity extends Activity {
         chapterLine.setVisibility(View.GONE);
         chapterLine.setOnClickListener(v -> { if (!chapters.isEmpty()) { note("chapters.open", "from", "line"); setStage(Stage.QUEUE); } });
         UiTelemetry.tag(chapterLine, "chapters.open");
-        player.addView(chapterLine);
+        deck.addView(chapterLine);
         qualityLine = centred();
         qualityLine.setPadding(0, dp(8), 0, 0);
-        player.addView(qualityLine);
+        deck.addView(qualityLine);
         status = centred();
         // A failed start's line is its retry (this phone only).
         status.setOnClickListener(v -> { if (failedStart != null && !remote()) retryStarting(); });
         status.setPadding(0, dp(8), 0, 0);
         status.setMaxLines(1);
         status.setAutoSizeTextTypeUniformWithConfiguration(10, 14, 1, android.util.TypedValue.COMPLEX_UNIT_SP);
-        player.addView(status);
+        deck.addView(status);
 
         // One transport row: (back 10) previous, play, next (forward 10).
         transport = new LinearLayout(this);
@@ -2273,7 +2356,7 @@ public class NowPlayingActivity extends Activity {
         transport.addView(rightEdgeBox, new LinearLayout.LayoutParams(0, dp(52), 1));
         LinearLayout.LayoutParams transportLp = new LinearLayout.LayoutParams(-1, -2);
         transportLp.topMargin = dp(16);
-        player.addView(transport, transportLp);
+        deck.addView(transport, transportLp);
 
         // One row of icons: queue, lyrics, shuffle, more, repeat, output.
         bottom = new LinearLayout(this);
@@ -2300,7 +2383,13 @@ public class NowPlayingActivity extends Activity {
         }
         LinearLayout.LayoutParams bottomLp = new LinearLayout.LayoutParams(-1, -2);
         bottomLp.topMargin = dp(12);
-        player.addView(bottom, bottomLp);
+        deck.addView(bottom, bottomLp);
+
+        strip = buildStrip();
+        strip.setVisibility(View.GONE);
+        LinearLayout.LayoutParams stripLp = new LinearLayout.LayoutParams(-1, -2);
+        stripLp.topMargin = dp(8);
+        player.addView(strip, stripLp);
 
         setContentView(root);
         applyTheme();
@@ -2464,6 +2553,17 @@ public class NowPlayingActivity extends Activity {
             b.setImageTintList(ColorStateList.valueOf(t.ink));
             b.setBackground(t.pressable(null));
         }
+        t.style(stripTitle, Type.BODY, t.ink, true);
+        t.style(stripBy, Type.LABEL, t.inkMuted, false);
+        stripCover.setBackground(t.round(t.tile, DaylightTheme.Radius.SMALL));
+        for (ImageButton b : new ImageButton[] { stripPlay, stripNext }) {
+            b.setImageTintList(ColorStateList.valueOf(t.ink));
+            b.setBackground(t.pressable(null));
+        }
+        stripQueue.setImageTintList(ColorStateList.valueOf(t.primary));
+        stripQueue.setBackground(t.pressable(null));
+        stripProgress.setProgressTintList(ColorStateList.valueOf(t.primary));
+        stripProgress.setProgressBackgroundTintList(ColorStateList.valueOf(t.trackBuffered));
         for (TextView n : new TextView[] { leftEdgeNumber, rightEdgeNumber }) {
             t.style(n, Type.CAPTION, t.ink, true);
             n.setTextSize(9);
