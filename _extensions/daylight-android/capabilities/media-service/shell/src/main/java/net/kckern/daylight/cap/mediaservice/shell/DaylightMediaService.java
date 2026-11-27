@@ -65,6 +65,8 @@ public class DaylightMediaService extends MediaLibraryService {
     private MediaLibrarySession session;
     private LibraryCallback callback;
     private LongFormPolicy longFormPolicy;
+    /** The queue in regions (QueueController): the one writer of the player's list. */
+    private QueueController queue;
     private volatile float levelVolume = 1f, fadeVolume = 1f, crossfadeGain = 1f;
     private CrossfadeEngine crossfade;
     private final java.util.Map<String, Float> levels = new java.util.concurrent.ConcurrentHashMap<>();
@@ -337,10 +339,6 @@ public class DaylightMediaService extends MediaLibraryService {
                 }
             }
 
-            @Override public void onPlaybackStateChanged(int state) {
-                if (state == Player.STATE_ENDED) continueDrivingRadio();
-            }
-
             @Override public void onPlayWhenReadyChanged(boolean playWhenReady, int reason) {
                 if (!playWhenReady) cancelRadioHandoff();
             }
@@ -389,7 +387,8 @@ public class DaylightMediaService extends MediaLibraryService {
             }
         });
 
-        Player sessionPlayer = new ForwardingPlayer(player) {
+        queue = new QueueController(this, player, queueHost(), io);
+        Player sessionPlayer = new QueuePlayer(player, queue) {
             // A chaptered book: the subtitle names the chapter (notification, lock screen, car).
             @Override public MediaMetadata getMediaMetadata() {
                 MediaMetadata base = super.getMediaMetadata();
@@ -475,6 +474,7 @@ public class DaylightMediaService extends MediaLibraryService {
         events = new PlaybackEvents(player, media, io);
         events.attach();
         current = this;
+        queue.restore();
         Log.i(TAG, "media service created");
     }
 
@@ -500,12 +500,12 @@ public class DaylightMediaService extends MediaLibraryService {
                 if (answer == null) { failed.run(); return; }
                 try {
                     List<MediaItem> items = NodeItems.tracks(answer.tracks);
-                    items.set(0, items.get(0).buildUpon().setTag(attempt).build());
+                    items.set(answer.startIndex, items.get(answer.startIndex).buildUpon().setTag(attempt).build());
                     service.shortcutOwner = attempt;
                     ExoPlayer player = service.player;
                     player.pause();
-                    player.setShuffleModeEnabled(false);
-                    player.setMediaItems(items, answer.startIndex, answer.startPositionMs > 0
+                    // A new source through the queue: what you queued stays (QueueController).
+                    service.queue.newSource(items, answer.startIndex, answer.startPositionMs > 0
                             ? answer.startPositionMs : C.TIME_UNSET);
                     player.prepare();
                     player.play();
@@ -520,45 +520,17 @@ public class DaylightMediaService extends MediaLibraryService {
         handoffGeneration++;
     }
 
-    private boolean canContinueDrivingRadio() {
-        return session != null && session.getConnectedControllers().stream().anyMatch(DrivingRadio::isCar)
-                && player.getPlayWhenReady() && player.getPlayerError() == null && playedQueue
-                && player.getPlaybackState() == Player.STATE_ENDED && radio.enabled();
-    }
-
-    private void continueDrivingRadio() {
-        if (!canContinueDrivingRadio()) return;
-        long generation = ++handoffGeneration;
-        io.execute(() -> {
-            final TrackAnswer answer;
-            try {
-                answer = radio.resolve();
-            } catch (Exception unavailable) {
-                Log.w(TAG, "Driving Radio queue unavailable");
-                return;
-            }
-            widgetUpdates.post(() -> {
-                if (generation != handoffGeneration || !canContinueDrivingRadio()) return;
-                player.setShuffleModeEnabled(false);
-                player.setMediaItems(NodeItems.tracks(answer.tracks), answer.startIndex,
-                        answer.startPositionMs > 0 ? answer.startPositionMs : C.TIME_UNSET);
-                player.prepare();
-                player.play();
-            });
-        });
-    }
-
     static void stopPlayback() {
         PlayActionService.cancelCurrentStart();
         DaylightMediaService service = current;
         if (service != null) service.stopPlayer();
     }
 
+    /** Stop keeps the queue (spec §7): it comes back paused; only Clear removes it. */
     private void stopPlayer() {
         cancelRadioHandoff();
         player.pause();
         player.stop();
-        player.clearMediaItems();
         shortcutOwner = null;
         publishPlaylistState();
     }
@@ -584,9 +556,8 @@ public class DaylightMediaService extends MediaLibraryService {
     }
 
     private boolean ownsPlaylist(PlayStart.Attempt attempt) {
-        if (shortcutOwner != attempt || player.getMediaItemCount() == 0) return false;
-        MediaItem.LocalConfiguration first = player.getMediaItemAt(0).localConfiguration;
-        return first != null && first.tag == attempt;
+        // The queue keeps the tag of the source a start put there, whatever came before it.
+        return shortcutOwner == attempt && player.getMediaItemCount() > 0 && queue.model().sourceTag() == attempt;
     }
 
     private void publishPlaylistState() {
@@ -685,6 +656,23 @@ public class DaylightMediaService extends MediaLibraryService {
         }
     }
 
+    /** What the queue borrows: the car's presence, Driving Radio, and the payload to resolve an added id. */
+    private QueueController.Host queueHost() {
+        return new QueueController.Host() {
+            @Override public boolean carConnected() {
+                return session != null && session.getConnectedControllers().stream().anyMatch(DrivingRadio::isCar);
+            }
+            @Override public boolean radioAvailable() { return radio.enabled(); }
+            @Override public List<MediaItem> radio() throws Exception { return NodeItems.tracks(radio.resolve().tracks); }
+            @Override public List<MediaItem> resolve(String mediaId) throws Exception {
+                // A track adds alone (its list's other rows stay out); a container adds whole.
+                String id = FirstTap.alone(mediaId);
+                return NodeItems.tracks(TrackAnswer.parse(media.resolve(java.util.Collections.singletonList(id),
+                        C.INDEX_UNSET, false, false, 8000)).tracks);
+            }
+        };
+    }
+
     /** Whether the media service holds the foreground state now. Read by PlayActionService, in process. */
     private static volatile boolean foreground;
 
@@ -728,6 +716,7 @@ public class DaylightMediaService extends MediaLibraryService {
         updateTrackArtwork(null, null);
         clearListener();
         if (crossfade != null) { crossfade.release(); crossfade = null; }
+        if (queue != null) queue.release();
         if (events != null) { events.detach(); events = null; }
         if (callback != null) { callback.sleep.release(); callback = null; }
         net.kckern.daylight.shellkit.NowPlayingNote.update("local", "", "", false, android.os.SystemClock.elapsedRealtime());
