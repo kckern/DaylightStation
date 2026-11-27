@@ -64,4 +64,18 @@ public class CarAnswersTest {
         assertEquals(CarAnswers.NO_ANSWER, CarAnswers.message("nope"));
         assertEquals(CarAnswers.NO_ANSWER, CarAnswers.message("{}"));
     }
+
+    @org.junit.Test public void aFailedListSaysSoAboveTheLastOne() {
+        java.util.List<CarAnswers.Entry> last = java.util.Arrays.asList(
+                new CarAnswers.Entry("garage", "Garage door", CarAnswers.RUN),
+                new CarAnswers.Entry("memo", "Voice memo", CarAnswers.VOICE));
+        java.util.List<CarAnswers.Entry> shown = CarAnswers.unreached(last);
+        org.junit.Assert.assertEquals("Couldn't reach home · retrying", shown.get(0).label);
+        org.junit.Assert.assertEquals(CarAnswers.NONE, shown.get(0).kind);
+        org.junit.Assert.assertEquals("Garage door", shown.get(1).label);
+        org.junit.Assert.assertEquals(3, shown.size());
+        org.junit.Assert.assertEquals(1, CarAnswers.unreached(null).size());
+        org.junit.Assert.assertFalse(CarAnswers.worthKeeping(CarAnswers.starting()));
+        org.junit.Assert.assertTrue(CarAnswers.worthKeeping(last));
+    }
 }

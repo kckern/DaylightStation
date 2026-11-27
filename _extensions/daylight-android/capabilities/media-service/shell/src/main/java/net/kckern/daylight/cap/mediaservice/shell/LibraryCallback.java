@@ -220,19 +220,34 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
                         }
                     }
                     List<MediaItem> nodes = NodeItems.nodes(entries);
+                    if (!entries.isEmpty()) lastPages.put(parentId + "#" + page, nodes);
                     future.set(LibraryResult.ofItemList(nodes, params));
                 } catch (BrowseAnswer.Failed refused) {
-                    future.set(LibraryResult.<ImmutableList<MediaItem>>ofError(LibraryResult.RESULT_ERROR_IO));
+                    future.set(lastOr(parentId, page, params, LibraryResult.RESULT_ERROR_IO));
                 } catch (Throwable broke) {
                     // The payload is replaceable code; whatever it throws must not take the service down.
                     Log.w(TAG, "browse failed: " + broke.getClass().getSimpleName());
-                    future.set(LibraryResult.<ImmutableList<MediaItem>>ofError(LibraryResult.RESULT_ERROR_UNKNOWN));
+                    future.set(lastOr(parentId, page, params, LibraryResult.RESULT_ERROR_UNKNOWN));
                 }
             });
         } catch (RuntimeException stopping) {
             future.set(LibraryResult.<ImmutableList<MediaItem>>ofError(LibraryResult.RESULT_ERROR_INVALID_STATE));
         }
         return future;
+    }
+
+    /**
+     * The last page each car list answered, so a page home does not answer now shows what it
+     * showed before rather than an error (audit: the car's lists failed bare).
+     */
+    private final java.util.Map<String, List<MediaItem>> lastPages = java.util.Collections.synchronizedMap(
+            new java.util.LinkedHashMap<String, List<MediaItem>>(16, 0.75f, true) {
+                @Override protected boolean removeEldestEntry(java.util.Map.Entry<String, List<MediaItem>> e) { return size() > 48; }
+            });
+
+    private LibraryResult<ImmutableList<MediaItem>> lastOr(String parentId, int page, LibraryParams params, int error) {
+        List<MediaItem> last = lastPages.get(parentId + "#" + page);
+        return last != null ? LibraryResult.ofItemList(last, params) : LibraryResult.<ImmutableList<MediaItem>>ofError(error);
     }
 
     /** One waiter at a time: when a payload attaches, browsers of the root are told to ask again. */
@@ -286,6 +301,13 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
             ids.add(item.mediaId);
             queries.add(item.requestMetadata == null ? null : item.requestMetadata.searchQuery);
         }
+        // The car's now-playing card shows the tapped item at once, not the previous one.
+        if (requested.size() == 1 && requested.get(0).mediaMetadata.title != null) {
+            main.post(() -> {
+                androidx.media3.common.Player p = session.getPlayer();
+                if (p instanceof QueuePlayer) ((QueuePlayer) p).showStarting(requested.get(0));
+            });
+        }
         if (!shuffle && FirstTap.races(ids, queries, startPositionMs)) {
             race(session, ids.get(0), order != null, requested, future);
             return future;
@@ -329,8 +351,12 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
         });
     }
 
-    private static void refused(MediaSession session, SettableFuture<?> future, Throwable e) {
+    private void refused(MediaSession session, SettableFuture<?> future, Throwable e) {
         future.setException(failure(e));
+        main.post(() -> {
+            androidx.media3.common.Player p = session.getPlayer();
+            if (p instanceof QueuePlayer) ((QueuePlayer) p).clearStarting();
+        });
         // Media3 drops a refused set without a player error: tell Now playing, which is
         // showing the tapped item as starting, so it says so now and not after 30 s.
         SessionExtras.putLong(session, Starting.EXTRA_REFUSED_AT, android.os.SystemClock.elapsedRealtime());

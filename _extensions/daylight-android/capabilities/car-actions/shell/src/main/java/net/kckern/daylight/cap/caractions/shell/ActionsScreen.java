@@ -32,8 +32,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * screen (RecordScreen). Drawing the screen, a refresh and the car connecting run nothing: only a
  * row's own click does.
  *
- * Cold start: with no payload yet, the list is one row, "Daylight is starting", and
- * the screen redraws once a payload attaches (the media service's pattern).
+ * Cold start: with no payload yet, the list is the last one kept (else one row, "Starting
+ * up…"), and the screen redraws once a payload attaches (the media service's pattern). A
+ * list that fails says "Couldn't reach home · retrying" above the last list and asks again in 5 s.
  */
 final class ActionsScreen extends Screen {
     private static final long LIST_WAIT_MS = 4000;
@@ -49,7 +50,15 @@ final class ActionsScreen extends Screen {
         t.setDaemon(true);
         return t;
     });
+    /** Runs on their own thread: a list retry never holds a tapped action (audit H1). */
+    private final ExecutorService runIo = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "Daylight-car-run");
+        t.setDaemon(true);
+        return t;
+    });
     private final Handler main = new Handler(Looper.getMainLooper());
+    /** The last list that answered (its raw answer kept in prefs, so a cold car shows it too). */
+    private List<CarAnswers.Entry> lastGood;
     private final AtomicBoolean loading = new AtomicBoolean();
     private final AtomicBoolean waiting = new AtomicBoolean();
     /** Null until the first answer. Touched on the main thread only. */
@@ -61,7 +70,7 @@ final class ActionsScreen extends Screen {
         super(carContext);
         this.service = service;
         getLifecycle().addObserver(new DefaultLifecycleObserver() {
-            @Override public void onDestroy(@NonNull LifecycleOwner owner) { io.shutdownNow(); }
+            @Override public void onDestroy(@NonNull LifecycleOwner owner) { io.shutdownNow(); runIo.shutdownNow(); }
         });
     }
 
@@ -105,29 +114,44 @@ final class ActionsScreen extends Screen {
                 List<CarAnswers.Entry> answer;
                 boolean failedList = false;
                 try {
-                    answer = CarAnswers.entries(payload.list(LIST_WAIT_MS));
+                    String raw = payload.list(LIST_WAIT_MS);
+                    answer = CarAnswers.entries(raw);
+                    if (CarAnswers.worthKeeping(answer)) {
+                        getCarContext().getSharedPreferences("daylight.car", android.content.Context.MODE_PRIVATE)
+                                .edit().putString("lastList", raw).apply();
+                    }
                 } catch (PayloadPort.NotReadyException noPayload) {
-                    answer = CarAnswers.starting();
+                    List<CarAnswers.Entry> kept = kept();
+                    answer = CarAnswers.worthKeeping(kept) ? kept : CarAnswers.starting();
                     redrawWhenReady();
                 } catch (Throwable broke) {
                     // The payload is replaceable code; whatever it throws must not take the screen down.
                     Log.w(DaylightCarAppService.TAG, "car list failed: " + broke.getClass().getSimpleName());
-                    answer = CarAnswers.starting();
+                    answer = CarAnswers.unreached(kept());
                     failedList = true;
                 }
                 final List<CarAnswers.Entry> shown = answer;
                 final boolean retrySoon = failedList;
                 main.post(() -> {
                     rows = shown;
+                    if (!retrySoon && CarAnswers.worthKeeping(shown)) lastGood = shown;
                     loading.set(false);
                     invalidate();
                     // A list that threw must not leave the car on "starting" for good: ask again shortly.
-                    if (retrySoon) main.postDelayed(() -> { rows = null; invalidate(); }, 5000);
+                    // The shown rows stay up meanwhile (no spinner over the last list).
+                    if (retrySoon) main.postDelayed(this::load, 5000);
                 });
             });
         } catch (RuntimeException stopping) {
             loading.set(false);
         }
+    }
+
+    /** The last list that answered: this run's, else the one kept from an earlier run. */
+    private List<CarAnswers.Entry> kept() {
+        if (CarAnswers.worthKeeping(lastGood)) return lastGood;
+        String raw = getCarContext().getSharedPreferences("daylight.car", android.content.Context.MODE_PRIVATE).getString("lastList", null);
+        return raw == null ? null : CarAnswers.entries(raw);
     }
 
     /** One waiter: when a payload attaches, the list is asked for again. */
@@ -185,7 +209,7 @@ final class ActionsScreen extends Screen {
         // The row takes taps again at the deadline even if the answer never comes.
         main.postDelayed(this::redraw, RUN_DEADLINE_MS);
         try {
-            io.execute(() -> {
+            runIo.execute(() -> {
                 String message;
                 try {
                     message = CarAnswers.message(payload.run(e.id, RUN_WAIT_MS));

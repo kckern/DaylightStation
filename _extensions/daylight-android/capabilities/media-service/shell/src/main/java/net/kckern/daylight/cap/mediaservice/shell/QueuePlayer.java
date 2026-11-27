@@ -47,6 +47,7 @@ class QueuePlayer extends ForwardingPlayer {
     @Override public void setMediaItems(List<MediaItem> items, boolean resetPosition) { setMediaItems(items, 0, C.TIME_UNSET); }
 
     @Override public void setMediaItems(List<MediaItem> items, int startIndex, long startPositionMs) {
+        clearStarting();
         queue.newSource(new ArrayList<>(items), startIndex == C.INDEX_UNSET ? 0 : startIndex, startPositionMs);
     }
 
@@ -101,6 +102,49 @@ class QueuePlayer extends ForwardingPlayer {
     }
 
     /** Tells every controller that shuffle or repeat changed (the real player's did not). */
+    // ── a tapped item while it resolves (audit: the car's card showed the previous item) ──
+
+    private volatile androidx.media3.common.MediaMetadata starting;
+
+    /**
+     * What the car, the notification and the lock screen show while a tapped item resolves:
+     * its own title and cover, "Starting…" under it, the old item paused. Cleared by the new
+     * source, or by {@link #clearStarting} when the start was refused. Main thread.
+     */
+    void showStarting(MediaItem tapped) {
+        if (tapped == null) return;
+        androidx.media3.common.MediaMetadata m = tapped.mediaMetadata;
+        CharSequence by = m.artist != null ? m.artist : m.albumArtist;
+        androidx.media3.common.MediaMetadata shown = m.buildUpon().setArtist(by == null ? "Starting…" : "Starting… · " + by).build();
+        starting = shown;
+        if (getPlayWhenReady()) super.pause();
+        announceMetadata();
+        // A start that neither played nor was refused within the play budget stops saying so.
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+            if (starting == shown) clearStarting();
+        }, PlayBudget.giveUpMs(true));
+    }
+
+    void clearStarting() {
+        if (starting == null) return;
+        starting = null;
+        announceMetadata();
+    }
+
+    @Override public androidx.media3.common.MediaMetadata getMediaMetadata() {
+        androidx.media3.common.MediaMetadata s = starting;
+        return s != null ? s : super.getMediaMetadata();
+    }
+
+    private void announceMetadata() {
+        androidx.media3.common.MediaMetadata now = getMediaMetadata();
+        Player.Events events = new Player.Events(new FlagSet.Builder().add(Player.EVENT_MEDIA_METADATA_CHANGED).build());
+        for (Player.Listener l : listeners) {
+            l.onMediaMetadataChanged(now);
+            l.onEvents(this, events);
+        }
+    }
+
     private void announceModes() {
         boolean shuffle = getShuffleModeEnabled();
         int repeat = getRepeatMode();

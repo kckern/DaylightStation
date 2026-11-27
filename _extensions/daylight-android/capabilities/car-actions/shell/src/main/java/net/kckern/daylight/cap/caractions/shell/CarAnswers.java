@@ -74,6 +74,33 @@ final class CarAnswers {
         return Collections.singletonList(new Entry("", STARTING, NONE));
     }
 
+    static final String UNREACHED = "Couldn't reach home · retrying";
+
+    /**
+     * A list that failed (audit: it read as "Starting up…"): "Couldn't reach home · retrying"
+     * on top, then the last list that worked, so its rows can still be tapped. With no list
+     * kept, the one line.
+     */
+    static List<Entry> unreached(List<Entry> last) {
+        List<Entry> out = new ArrayList<>();
+        out.add(new Entry("", UNREACHED, NONE));
+        if (last != null) {
+            for (Entry e : last) {
+                if (NONE.equals(e.kind)) continue;
+                if (out.size() >= MAX_ROWS) break;
+                out.add(e);
+            }
+        }
+        return out;
+    }
+
+    /** The answer kept for a list that fails later: the last one with rows to tap. */
+    static boolean worthKeeping(List<Entry> answer) {
+        if (answer == null) return false;
+        for (Entry e : answer) if (!NONE.equals(e.kind)) return true;
+        return false;
+    }
+
     /** The message of a run answer. */
     static String message(String answer) {
         try {

@@ -835,6 +835,13 @@ No title or content id is logged.
 
 ### What a car's now-playing card shows
 
+- **While a tapped item resolves**, the card shows it at once: its own title and cover,
+  "Starting… · <artist>" under it, the old item paused (`QueuePlayer.showStarting`, from
+  `LibraryCallback.onSetMediaItems`). The new queue replaces it; a refusal, or the play
+  budget running out, clears it.
+- **A browse page home does not answer** shows the last answer for that page (the last
+  48 pages are kept in memory) rather than an error.
+
 - **Text.** Title; the artist as both `artist` and the display subtitle (a car
   draws the subtitle, not the artist field), or the album when there is no artist;
   the album as the description. Cover art from the item's thumbnail.
@@ -2015,6 +2022,13 @@ entry is left out and reported in `GET /car/actions` `problems` and in the shell
 log at start; `start()` never throws for it. A value written by hand that names a
 known action the car cannot show is refused when it is written; a device file with
 any problem fails `DeviceDefaultsTest` at build time.
+
+**When the list does not come** (audit). The last list that answered is kept
+(`daylight.car` `lastList`). A cold car with the payload still starting shows it (else
+one row, "Starting up…"); a list that fails shows "Couldn't reach home · retrying" above
+the last list, whose rows still work, and asks again every 5 s without blanking it
+(`CarAnswers.unreached`). Runs go on their own thread, so a list retry never holds a
+tapped action.
 
 **A tap.** The car screen asks the payload over the `car` PayloadPort, in process:
 `{op: list}` and `{op: run, id}`. A run takes an id on the car list, and only such an
