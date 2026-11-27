@@ -483,7 +483,7 @@ targets are Media3 sessions behind one `MediaController`:
 
 | Piece | Installed (shell half) | Payload |
 |---|---|---|
-| `NowPlayingActivity` (not exported) | Laid out after Plexamp (ops:docs/superpowers/specs/2026-11-26-phone-player-parity-design.md). Top: close, the target (its icon and name, ▾ opens **Play on** with the current one checked) and, for a screen, the D-pad. The **stage** holds the cover (square, or 16:9 for a video still; swipe it left for next, right for previous, with a haptic tick), or the **lyrics** or the **queue** in its place (Back returns to the cover). Under it the **seek bar is the track's loudness** (Plex's analysis, as bars; a plain line when there is none), elapsed on the left and remaining on the right (tap: the length; remembered). Then artist, title (bold) and album (year), centred, and the audio quality ("FLAC · 24-bit · 96 kHz", "MP3 · 256 kbps · 44.1 kHz") when the backend knows it. One transport row: previous, play/pause in a disc of the cover's color, next; an item of 20 minutes or more adds back 10 / forward 10 at its ends. One icon row: queue, lyrics (enabled only when the track has lyrics), shuffle, ⋮ (Sleep timer and Crossfade on this phone, Stop, Clear queue), repeat, output (opens **Play on**). A long item (a book, a talk, a course: `MediaKind.controls`) shows speed in shuffle's place and no repeat, lyrics or crossfade. The seek bar of an item of 10 minutes or more shows a time scale while it is touched (see **The seek bar's time scale**). The page takes its colors from the cover (`CoverColor`, `DaylightTheme.withAccent`) over a soft copy of it. With a screen as the target the volume keys set the screen's volume and show the level for a moment. The status line shows only when something is wrong, or a sleep timer is set. A control is enabled only when the target's player makes its command available. It opens as a sheet rising from the bottom, and the down chevron or Back drops it. **Play on** says what each player is doing (Off, Nothing playing, the title); an off player is greyed and can't be picked. A screen with nothing on it shows **Play something on <screen>** in the stage: Continue listening and your playlists, one tap starting it there (the payload's `screen-command` `load`, i.e. `GET /api/v1/device/<id>/load?play|queue=…&deferredRetry=0`, as the web's Play on), and Browse on the screen through the D-pad. An off screen offers this phone or another screen instead. **Chapters** (a long item whose chapters the backend or the kept copy knows): a line under the album ("Chapter 4 of 12 · 9 min left in chapter", or "4/12 · The Return · 9 min left" for a named one; time left at the play speed; the line is reserved blank for any long item so nothing jumps, and a tap opens the list), ticks on the seek bar at each chapter start (the current one in the accent; numbered in the press-and-hold zoom), Next / Previous by chapter (Previous restarts the chapter when more than 3 s in), the queue's place shows **Chapters · N** for a single-file book (number, name, length; a tap goes there), the sleep timer offers **End of chapter** (pauses at that chapter's end, fading over its last minute), and the session subtitle names the chapter (notification, lock screen, Android Auto). No chapters means none of this shows | Opens it on a `media/now-playing?target=` link (a `player:` action); `track-levels`, `track-lyrics` and `track-chapters` read `GET /api/v1/track/levels/<source>/<id>?samples=N`, `GET /api/v1/track/lyrics/<source>/<id>` and `GET /api/v1/track/chapters/<source>/<id>` (chapters: without home, the ones kept with the track, then the ones seen this session) (none, or an older backend's 404, is "none": the strip is a line and the button is off) |
+| `NowPlayingActivity` (not exported) | Laid out after Plexamp (ops:docs/superpowers/specs/2026-11-26-phone-player-parity-design.md). Top: close, the target (its icon and name, ▾ opens **Play on** with the current one checked) and, for a screen, the D-pad. The **stage** holds the cover (square, or 16:9 for a video still; swipe it left for next, right for previous, with a haptic tick), or the **lyrics** or the **queue** in its place (Back returns to the cover). Under it the **seek bar is the track's loudness** (Plex's analysis, as bars; a plain line when there is none), elapsed on the left and remaining on the right (tap: the length; remembered). Then artist, title (bold) and album (year), centred, and the audio quality ("FLAC · 24-bit · 96 kHz", "MP3 · 256 kbps · 44.1 kHz") when the backend knows it. One transport row: previous, play/pause in a disc of the cover's color, next; an item of 20 minutes or more adds back 10 / forward 10 at its ends. One icon row: queue, lyrics (enabled only when the track has lyrics), shuffle, ⋮ (the item sheet: Sleep timer, Progress bar for a book with chapters, Keep on this phone or its state, Crossfade on this phone, Stop; then Clear queue and Remove from this phone), repeat, output (opens **Play on**). A long item (a book, a talk, a course: `MediaKind.controls`) shows speed in shuffle's place and no repeat, lyrics or crossfade. The seek bar of an item of 10 minutes or more shows a time scale while it is touched (see **The seek bar's time scale**). The page takes its colors from the cover (`CoverColor`, `DaylightTheme.withAccent`) over a soft copy of it. With a screen as the target the volume keys set the screen's volume and show the level for a moment. The status line shows only when something is wrong, or a sleep timer is set. A control is enabled only when the target's player makes its command available. It opens as a sheet rising from the bottom, and the down chevron or Back drops it. **Play on** (the bottom sheet described under **Lookup and browse**) says what each player is doing (Off, Nothing playing, the title); off players are folded under **Off · N** and can't be picked. A screen with nothing on it shows **Play something on <screen>** in the stage: Continue listening and your playlists, one tap starting it there (the payload's `screen-command` `load`, i.e. `GET /api/v1/device/<id>/load?play|queue=…&deferredRetry=0`, as the web's Play on), and Browse on the screen through the D-pad. An off screen offers this phone or another screen instead. **Chapters** (a long item whose chapters the backend or the kept copy knows): a line under the album (with the bar on the chapter, "Canto 7 of 33 · 2 h 46 left in book"; on the whole book "Chapter 4 of 12 · 9 min left in chapter", or "4/12 · The Return · 9 min left" for a named one; time left at the play speed; the line is reserved blank for any long item so nothing jumps, and a tap opens the list), the seek bar on the current chapter or, by choice, the whole book with chapter notches only when they are 24 dp apart (see **The seek bar's time scale**; numbered in the press-and-hold zoom), Next / Previous by chapter (Previous restarts the chapter when more than 3 s in), the queue's place shows **Chapters · N** for a single-file book (number, name, length; a tap goes there), the sleep timer offers **End of chapter** (pauses at that chapter's end, fading over its last minute), and the session subtitle names the chapter (notification, lock screen, Android Auto). No chapters means none of this shows | Opens it on a `media/now-playing?target=` link (a `player:` action); `track-levels`, `track-lyrics` and `track-chapters` read `GET /api/v1/track/levels/<source>/<id>?samples=N`, `GET /api/v1/track/lyrics/<source>/<id>` and `GET /api/v1/track/chapters/<source>/<id>` (chapters: without home, the ones kept with the track, then the ones seen this session) (none, or an older backend's 404, is "none": the strip is a line and the button is off) |
 | `RemoteControlService`, a Media3 `MediaSessionService` (not exported, session id `screen-remote`) | A second session beside `DaylightMediaService`, holding a `ScreenPlayer`. Its notification and lock-screen card drive the screen; it reports remote playback (0–100), so the phone's volume keys set the screen's volume while it is the active session | — |
 | `ScreenPlayer`, a `SimpleBasePlayer` | The screen's snapshot as a Media3 player: its queue by `queueItemId`, its position carried forward while it plays. Every call becomes one command (`ScreenCommands`); its future completes after the session is read again, so the controls settle on what the screen did | `screens`, `screen-session`, `screen-command` (`ScreenRemote`): `GET /api/v1/device/config`, `GET /api/v1/device/<id>/session`, and the transport, queue, shuffle, repeat and volume routes of `__docs/reference/media/media-app-technical.md` §4 |
 
@@ -636,8 +636,8 @@ from the phone, under 2 s from home).
   none). A tap on the cover, or on the badge, turns to the lyrics; in the lyrics a small
   cover in the corner turns back. The two cross-fade.
 - **Long items** (talks, courses, books: from a household list, or 20 minutes or
-  more) after the audiobookshelf app: the shuffle slot becomes the **speed** (0.8× to
-  3×); remaining time is counted at that speed; resuming after a pause steps back a
+  more) after the audiobookshelf app: the shuffle slot becomes the **speed** (the speed
+  sheet, 0.5× to 3×); remaining time is counted at that speed; resuming after a pause steps back a
   little (under 10 s none, under a minute 3 s, under 5 minutes 10 s, under 30 minutes
   20 s, else 30 s). The speed is kept in the phone's session (`LongFormPolicy`, prefs
   `daylight.playback`), so the notification and the car follow it: remembered per
@@ -849,9 +849,23 @@ home is a new file (lifecycle spec §3.5). Contract:
 - **Widgets.** Apex cannot be asked to pin a widget, so there the sheet shows the real steps
   (hold an empty spot on Home, Widgets, Daylight playlist, choose the playlist) instead of an
   "Add widget" button. A launcher that can pin gets the button.
-- **Home tabs.** Services, Capture, Play and Connect are pages that slide as one; swiping moves
-  both pages. Services and Capture list what is already on the home screen first, then what is
-  Available. A placement banner shows only when it needs an answer (confirm, failed, extra widget).
+- **Home sections.** A bottom navigation bar (design sweep D2, `HomeSections`): **Play,
+  Capture, Connect, Services**, each an icon and its name, Play first and the section a cold
+  start opens on; the selected one is ink on a soft indicator, the others muted. There is no
+  app header: the top bar holds the section's icon (24 dp, muted), its name and its actions
+  (Play: Search). The mini player sits directly above the bar. A flick sideways moves to the
+  neighbouring section in the bar's order. Services and Capture list what is already on the
+  home screen first, then what is Available. A placement banner shows only when it needs an
+  answer (confirm, failed, extra widget).
+- **The Play section** (D4, D5, D9): Continue listening and On this phone are flat 72 dp
+  rows (cover, title, by-line, a progress line under Continue's), no box around them;
+  "On this phone" in a by-line is muted with the offline glyph, never the accent. Your
+  playlists are tiles of just a cover and its name. A missing or loading cover is its kind's
+  glyph on the tile colour (shell-kit `CoverGlyph`: book, album, playlist, person, track),
+  here and on every Browse row and header. Covers are kept in a bounded disk cache in the
+  app's cache folder (`PlaylistArtwork`, 48 MB, least recently used first: `DiskCovers`),
+  so a cold start draws them from disk. Ordinary rows' glyphs and "›" are muted ink: the
+  accent marks only the primary action, the selected state and progress.
 
 ### Only household media plays
 
@@ -1195,6 +1209,36 @@ on its chapter list (resuming the book first when it is not the one playing). Yo
 playlists is music only. Now playing on a book, a talk or a course (long-form) has no
 shuffle, repeat, lyrics or crossfade; speed, chapters, ±30 s and sleep stay.
 
+**Artist and author pages keep a ⋮** beside the primary (today it holds "Search for
+<name>"; it is where collection-wide actions on a person go).
+
+**One item sheet** (design sweep D17, shell-kit `ItemSheet` on `BottomSheet`) is every
+long-press and ⋮ in the phone app; there is no PopupMenu. A modal bottom sheet with a scrim
+and a drag handle, closed by a swipe down, a tap on the scrim or Back. It starts with the
+item itself: its cover (or kind glyph), title, by-line and state ("Kept automatically ·
+79 MB", "71 % · 1 h 16 min left"). Then rows with a 24 dp icon and a label (a second line
+for a state), then, after a divider, the destructive rows in the error colour (Remove from
+Continue listening, Remove from this phone, Clear queue): `SheetRows` orders them. The
+verbs are the kind's (`MediaKind`). It serves the Continue long-press, the Play tab's
+tiles and On this phone rows, a detail page's ⋮, a row's ⋮ and Now playing's ⋮.
+
+**The speed sheet** (D19, `SpeedSheet`, arithmetic in `SpeedSteps`) is the one speed
+control, on Now playing's speed button and a book page's Speed: a compact card over the
+button (under it when the button is in the top half), under half the screen. The current
+value large ("1.5×"); a slider from 0.5× to 3× in 0.05 steps between − and + (0.1 each),
+with a haptic tick at each quarter; the presets 1× (with "Normal" under it), 1.25, 1.5, 1.75
+and 2 as plain text, the current one in ink with a check; for a long item the footnote
+"For this book · remembered". It applies as it moves, with no OK. The book page writes the
+same memory Now playing's session uses ("speed:" + the book's key, and the long-form
+default).
+
+**Play on** (D18, `TargetPicker` on the same sheet): This phone; then **Available**, the
+screens playing or paused first, then the idle ones, each with its device icon and what it
+is doing; a row still being checked waits in Available ("Checking…") and moves to its place
+when it answers, animated; then one collapsed **Off · N** row that opens in place to the off
+screens (dimmed, not pickable). Off starts collapsed every time; the screen in use is never
+filed under Off (`PickerGroups`).
+
 **The author page is about the author.** The header is the portrait (info's
 `thumbnail`, cached), the name, a facts line ("Italy · 1 book · 3 h": country when known ·
 book count · total length; a music artist: "Iceland · Art Pop · 9 albums") and the
@@ -1235,7 +1279,8 @@ playing track's own `albumId`/`artistId` (`parents` op over `/api/v1/info`); onl
 them does the line open the search on the name. A link
 `daylight://media/<book|album|artist|playlist>/<content id>` (or
 `daylight://media/open?kind=…&id=…`; through the link activity, with the install key)
-opens a page. Long-press on a Play tab playlist tile offers **Open** (its page).
+opens a page. Long-press on a Play tab playlist tile opens its item sheet: **Open** (its page), Play on
+this phone, Keep on this phone (or its state, and Remove from this phone).
 
 A **book** page shows how far in it is ("2 h 10 min left · 34 %", Finished, Not started:
 from the household's recent list) under its title; Speed is the book's remembered
@@ -1243,7 +1288,7 @@ long-form speed (the same key Now playing uses); Mark finished posts the web's
 mark-watched for each part. There is no Favourites row: the household's favourites list
 is empty.
 
-**Continue listening's long-press**: Open (the book's page) · Keep on this phone (or its
+**Continue listening's long-press** (the item sheet): Open (the book's page) · Keep on this phone (or its
 state) · Mark finished · Remove from Continue listening. Remove takes the card away at
 once with "Removed from Continue listening · Undo" (6 s). The hide is home's: the
 household's removed list (`POST /api/v1/media/household/continue/hide {contentId}`,
@@ -1286,10 +1331,22 @@ the words), `browse.action` (verb, kind), `browse.swipe` (kind, direction, edge)
 
 ### The seek bar's time scale
 
-The seek bar of an item of 10 minutes or more carries a time scale only while a finger is on
-it (`TimeScale`, drawn by `WaveformBar`; spec §12b). At rest there is none: chapter starts
-are small notches on the line and, on an item of 2 h or more, a faint dot marks the hours
-(every 2, 3, 6… h when an hour is under 12 dp), with no labels.
+The seek bar carries labels only while a finger is on it (`TimeScale`, drawn by
+`WaveformBar`; spec §12b). At rest (§12c) it has short, faint notches on the line by the
+length of the span shown, in one row, with no dots and no labels: 6 h or more, one each
+hour; 1 to 6 h, one each 30 min (the hours a little taller); 20 to 60 min, one each 10 min;
+under 20 min, none.
+
+**What the bar spans** (§12d, `BarScope`). An item with chapters shows **the current
+chapter** by default: the bar spans it, the times either side are the chapter's elapsed and
+remaining, and the line under the title reads "Canto 7 of 33 · 2 h 46 left in book" (the
+chapters' own word when most titles share one, else "Chapter"; time left at the play
+speed). Crossing into the next chapter moves the span on without a jump. Now playing's ⋮
+**Progress bar** switches to **Whole book** (remembered on the phone): the bar spans the
+file, a lighter band marks the current chapter, and chapter notches are drawn only when
+every two are at least 24 dp apart (none at all otherwise: 33 cantos at phone width get
+none, 6 chapters get theirs). Time notches follow the span shown, so a 10 min canto has
+none. The press-and-hold zoom works in both.
 
 - **Touched**: 2 to 4 labels at round points fade in above the bars, in words ("45 m",
   "1 h", "2 h 30"; never "1:00:00"), with one row of short ticks between the labels only.

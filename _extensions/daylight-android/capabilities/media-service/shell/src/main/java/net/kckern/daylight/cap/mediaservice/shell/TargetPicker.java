@@ -21,11 +21,12 @@ import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 
 /**
- * The one "Play on" picker (Now playing's target button, a library page's Play on…): this
- * phone first, then every screen with what it is doing, checked as the list opens ("Off",
- * "Nothing playing", the title). An off screen is greyed and cannot be picked, except the
- * one in use, which stays so it can be seen. Rows reserve their state line, so nothing
- * jumps when the answers arrive.
+ * The one "Play on" picker (Now playing's target button, a library page's Play on…), a
+ * bottom sheet (design sweep D18): this phone first, then Available (playing, then idle),
+ * each screen with what it is doing, checked as the sheet opens ("Off", "Nothing playing",
+ * the title); off screens fold under one "Off · N" row and cannot be picked, except the
+ * one in use, which stays in Available. Rows reserve their state line, so nothing jumps
+ * when the answers arrive.
  */
 final class TargetPicker {
     static final String LOCAL = "local";
