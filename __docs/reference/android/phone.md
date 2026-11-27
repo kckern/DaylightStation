@@ -2635,9 +2635,10 @@ From screenshot review of build 150 and the design sweep
   takes its title, by-line and cover from home's info (`About.title`, `byline`), never
   "Library"; the Mark finished prompt never shows an empty name.
 - **Now playing on a book, talk or course** (`TitleLines`): the title is the current
-  chapter's name (or the part's), then the book's title, then the author, the author's line
+  chapter's own name (a bare "Chapter 4" stays on the chapter line; a title some taggers
+  wrap in quotes is read without them, `Chapters.unquoted`), else the part's, then the book's title, then the author, the author's line
   moved under the book's; a line equal to another is dropped ("Paradise - Benedict Flynn
-  translation" shows once). The quality line is music's only. The status line is muted ink,
+  translation" shows once, with no blank line left for the book). The quality line is music's only. The status line is muted ink,
   with the on-this-phone glyph before "Playing from this phone"; a failure keeps the
   attention colour.
 - **Home.** Browse library, the Player rows (Now playing, Drive playlists, Driving Radio,

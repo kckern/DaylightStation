@@ -47,11 +47,18 @@ final class Chapters {
             if (c == null) return NONE;
             s[i] = c.optLong("startMs", -1);
             e[i] = c.optLong("endMs", -1);
-            t[i] = c.optString("title", "").trim();
+            t[i] = unquoted(c.optString("title", "").trim());
             if (s[i] < 0 || e[i] <= s[i] || (i > 0 && s[i] < s[i - 1])) return NONE;
         }
         if (fileMs > 0 && Math.abs(e[n - 1] - fileMs) > TOLERANCE_MS) return NONE;
         return new Chapters(s, e, t);
+    }
+
+    /** A title some taggers wrap in quotes ("\"Chapter 1\"") is read without them. */
+    static String unquoted(String t) {
+        if (t.length() >= 2 && (t.charAt(0) == '"' || t.charAt(0) == '\u201C')
+                && (t.charAt(t.length() - 1) == '"' || t.charAt(t.length() - 1) == '\u201D')) return t.substring(1, t.length() - 1).trim();
+        return t;
     }
 
     boolean isEmpty() { return starts.length == 0; }

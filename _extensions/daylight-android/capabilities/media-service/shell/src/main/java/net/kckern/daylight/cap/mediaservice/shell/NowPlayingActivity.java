@@ -1017,6 +1017,9 @@ public class NowPlayingActivity extends Activity {
         setNameLine(l.title);
         show(albumLine, l.album);
         show(artistLine, l.by);
+        // A book whose part and book share a name has no book line: no blank gap for it (the
+        // lines are fixed for the item, so nothing moves later).
+        if (book && l.album.isEmpty()) albumLine.setVisibility(View.GONE);
     }
 
     /** The title, set only when it changed (a reset restarts the marquee). */
@@ -1471,7 +1474,8 @@ public class NowPlayingActivity extends Activity {
             chapterLine.setContentDescription(line + ". Opens the chapters");
         }
         chapterLine.setVisibility(View.VISIBLE);
-        String nowChapter = chapters.titles[chapters.indexAt(position)];
+        // The title line takes a chapter's own name; a bare number ("Chapter 4") is already the chapter line's.
+        String nowChapter = chapters.nameOf(chapters.indexAt(position));
         if (!nowChapter.equals(chapterName)) { chapterName = nowChapter; renderNames(); }
         // The mini player's second line on every screen: the chapter, while this book plays.
         NowPlayingNote.detail(LOCAL, chapters.subtitle(position));
