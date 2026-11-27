@@ -107,7 +107,10 @@ export function createPlaybackQueueRouter({ contentIdResolver, contentCatalog, m
           contentIdResolver,
           contentCatalog,
           audioListConfig: () => configService?.getHouseholdAppConfig?.(null, 'media')?.play_on_demand,
-          queueService: new QueueService({ mediaProgressMemory, random: Math.random }),
+          queueService: new QueueService({
+            mediaProgressMemory, random: Math.random,
+            libraryKinds: () => configService?.getHouseholdAppConfig?.(null, 'media')?.play_on_demand?.library_kinds,
+          }),
           sequenceStore: resolvedSequenceStore,
           random: Math.random,
           logger: sequenceLogger,

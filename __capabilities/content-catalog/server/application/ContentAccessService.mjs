@@ -124,10 +124,14 @@ export class ContentAccessService {
     const playables = await this.catalog.resolvePlayables(resolved, finalId);
     if (playables === null) return { kind: 'unsupported', source };
     const items = await this.#orderQueue(playables, source, finalId, shuffle);
+    // An ordered work (a book) keeps its order and names its start; carried by id so
+    // the audio projection and the presentation (limit, surround) can keep it.
+    const startId = Number.isInteger(items?.startIndex) ? items[items.startIndex]?.id ?? null : null;
     return {
       kind: 'found', source, finalId, audio: playables.audio || null,
       thumbnail: playables.thumbnail || null,
       items: profile === 'audio-only' ? await this.#projectAudio(items) : items,
+      ...(startId ? { startId } : {}),
     };
   }
 
