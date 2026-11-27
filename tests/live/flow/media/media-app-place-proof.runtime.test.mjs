@@ -148,7 +148,10 @@ test('[PLACE.3a/AC1][PLACE.3a/AC2][PLACE.3a/AC3] Play on… is offered on items 
   await openDetailMore(page);
   await expect(page.getByTestId('detail-add-on')).toBeVisible();
   await page.keyboard.press('Escape');
-  await expect(page.getByTestId('detail-view').getByRole('button', { name: 'Play on…', exact: true }).first()).toBeVisible();
+  // Play on… on the info view: its own button, or PLAY itself when ▶ would ask where
+  // ("Play on…", or "Resume on… · 30:00" for an unfinished item; ItemActionRow never
+  // asks the same question twice).
+  await expect(page.getByTestId('detail-view').getByRole('button', { name: /^(Play|Resume) on…/ }).first()).toBeVisible();
   await gotoMedia(page);
   await expect(page.getByTestId('home-row-recent')).toBeVisible({ timeout: 60000 });
   await openTileMenuAll(page, `home-tile-recent-${ITEM.ARRIVAL}`); // Add on… is behind the tile menu's More (k)

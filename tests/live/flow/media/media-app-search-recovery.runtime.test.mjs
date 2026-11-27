@@ -56,7 +56,7 @@ for (const [device, viewport] of [
         await page.getByTestId(/^(?:stream-global-retry|search-mode-stream-retry)$/).click();
         const result = device === 'phone'
           ? page.getByTestId('search-mode-results').getByText('Disclosure Day', { exact: true })
-          : page.getByRole('option').filter({ hasText: 'Disclosure Day' }).filter({ hasText: 'Movie' });
+          : page.getByRole('option').filter({ hasText: 'Disclosure Day' }).filter({ hasText: 'Film' });
         await expect(result).toBeVisible({ timeout: 15000 });
         await expect(page.getByText("Couldn't load search results.")).not.toBeVisible();
         await expect(input).toHaveValue('Disclosure Day');
