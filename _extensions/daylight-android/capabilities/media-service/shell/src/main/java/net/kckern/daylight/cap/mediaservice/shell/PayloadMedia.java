@@ -165,7 +165,11 @@ final class PayloadMedia {
 
     /** keep with a mode: preview (nothing saved), keep, refresh (an existing keep, never revived). */
     String keepMode(String mediaId, String mode, long waitMs) throws Exception {
-        return port.call(new JSONObject().put("op", "keep").put("id", mediaId).put("mode", mode).toString(), waitMs);
+        // A keep id may carry the one-track mark (KeepChoices): asked as its track, scoped to it.
+        java.util.List<String> only = KeepChoices.onlyOf(mediaId);
+        JSONObject r = new JSONObject().put("op", "keep").put("id", KeepChoices.baseId(mediaId)).put("mode", mode);
+        if (!only.isEmpty()) r.put("only", new JSONArray(only));
+        return port.call(r.toString(), waitMs);
     }
 
     /**

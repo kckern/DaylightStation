@@ -1817,6 +1817,11 @@ public final class BrowseActivity extends Activity {
                 case ADD_TO_QUEUE: sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_queue_add, "Add to queue", () -> enqueue(id, false, name)); break;
                 case GO_TO_ALBUM: sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_album, "Go to album", () -> goToParent(id, "album")); break;
                 case GO_TO_ARTIST: sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_person, "Go to artist", () -> goToParent(id, "artist")); break;
+                // One music track, or its album (2026-11-27: Keep on a track kept its whole album).
+                case KEEP_TRACK: sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_download, KeepChoices.words(KeepChoices.TRACK),
+                        () -> { action("keep_track"); KeepFlow.start(this, KeepChoices.trackKeepId(id), name); }); break;
+                case KEEP_ALBUM: sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_album, KeepChoices.words(KeepChoices.ALBUM),
+                        () -> { action("keep_album"); KeepFlow.start(this, id, "album".equals(MediaKind.normal(kind)) ? title : ""); }); break;
                 case PLAY_FROM_HERE: sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_play, "Play from here", () -> play(id, false, name, sub, cover)); break;
                 case MARK_FINISHED_UP_TO_HERE: sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_check, "Mark finished up to here", () -> {
                     List<String> upTo = new ArrayList<>();

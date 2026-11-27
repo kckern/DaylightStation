@@ -407,6 +407,20 @@ final class KeepStore {
         }
     }
 
+    /** On mobile data with keeps held to Wi-Fi: the keep sheet offers mobile data this time (KeepChoices). */
+    @android.annotation.SuppressLint("MissingPermission")
+    boolean mobileHeld() {
+        try {
+            ConnectivityManager cm = (ConnectivityManager) app.getSystemService(Context.CONNECTIVITY_SERVICE);
+            Network n = cm.getActiveNetwork();
+            NetworkCapabilities caps = n == null ? null : cm.getNetworkCapabilities(n);
+            boolean connected = caps != null && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+            return connected && KeepChoices.offerMobileOnce(cm.isActiveNetworkMetered(), onCellular || prefs.getBoolean("cellularOnce", false));
+        } catch (RuntimeException unknown) {
+            return false;
+        }
+    }
+
     // ── room ─────────────────────────────────────────────────────────────────
 
     long freeBytes() {
@@ -592,7 +606,7 @@ final class KeepStore {
         start(k);
         return "Keeping " + Json.first(k.optString("title"), "this") + " on this phone · "
                 + (sized[1] > 0 ? KeepRules.needWords(need, (int) sized[1]) : KeptIndex.size(Math.max(1, need)))
-                + (onCellular ? "" : " · on Wi-Fi") + (k.optBoolean("cut") ? " · only the first 5000 tracks" : "");
+                + (onCellular || prefs.getBoolean("cellularOnce", false) ? "" : " · on Wi-Fi") + (k.optBoolean("cut") ? " · only the first 5000 tracks" : "");
     }
 
     private void start(JSONObject k) {

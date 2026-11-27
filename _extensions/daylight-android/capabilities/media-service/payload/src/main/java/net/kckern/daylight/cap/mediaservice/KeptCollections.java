@@ -70,6 +70,22 @@ final class KeptCollections {
     }
 
     /**
+     * A manual keep, of the whole collection ({@code only} null or empty) or of these tracks
+     * only ("Keep this track"): never removed by the automatic rules, and a later whole keep
+     * widens it (the record is written again without {@code only}).
+     */
+    synchronized void saveManual(String contentId, String title, String art, JSONArray tracks, long now, String kind,
+                                 List<String> only) throws Exception {
+        save(contentId, title, art, tracks, now, kind, null);
+        if (only == null || only.isEmpty()) return;
+        File f = new File(dir, fileName(contentId));
+        JSONObject o = get(contentId);
+        if (o == null) return;
+        o.put("only", new JSONArray(only));
+        write(f, o.toString());
+    }
+
+    /**
      * Kept as a unit of a group (an artist's album, an author's book; spec §3.11): its own
      * collection, carrying the group's id. Kept by hand before (not automatically), it stays
      * kept on its own as well ({@code alone}); kept automatically before, it is now a manual

@@ -72,7 +72,10 @@ public class MediaKindTest {
     @Test public void rowMenusFollowTheKind() {
         assertEquals(Arrays.asList(RowAction.PLAY_FROM_HERE, RowAction.MARK_FINISHED_UP_TO_HERE), MediaKind.rowMenu("book"));
         assertFalse(MediaKind.rowMenu("book").contains(RowAction.PLAY_NEXT));
-        assertEquals(Arrays.asList(RowAction.PLAY_NEXT, RowAction.ADD_TO_QUEUE, RowAction.GO_TO_ALBUM, RowAction.GO_TO_ARTIST), MediaKind.rowMenu("album"));
+        assertEquals(Arrays.asList(RowAction.PLAY_NEXT, RowAction.ADD_TO_QUEUE, RowAction.GO_TO_ALBUM, RowAction.GO_TO_ARTIST,
+                RowAction.KEEP_TRACK, RowAction.KEEP_ALBUM), MediaKind.rowMenu("album"));
+        assertTrue(MediaKind.searchRowMenu("track").contains(RowAction.KEEP_TRACK));
+        assertFalse(MediaKind.rowMenu("book").contains(RowAction.KEEP_TRACK));
         assertTrue(MediaKind.rowMenu("author").isEmpty());
         assertTrue(MediaKind.searchRowMenu("part").isEmpty());
         assertTrue(MediaKind.searchRowMenu("lecture").isEmpty());

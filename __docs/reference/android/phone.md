@@ -1621,6 +1621,19 @@ person asks** (Remove, Remove finished, Remove all, Cancel, a kept list's own re
 uninstalling). No failure, update, rollback, full disk, missing card, server answer or
 lowered limit deletes kept audio.
 
+**What Keep keeps** (`KeepChoices`). A music track offers **Keep this track** and **Keep
+the album** (from Now playing's ⋮ through **Keep on this phone**, which opens a keep sheet,
+and directly in a track row's sheet on an album or playlist page and in search; playing
+from a household list, the second choice is **Keep the playlist**). A book, a talk or a
+course is always kept whole, and a page's own Keep keeps its album, book or list. One
+track is a manual keep scoped to that track: the payload's `keep` op takes `only` for a
+manual keep too (`KeptCollections.saveManual` writes `only` without `auto`), a refresh
+keeps the scope, a later one-track keep adds to it, and **Keep the album** widens it to the
+whole (2026-11-27: Keep on one track kept its whole two-track album). On mobile data with
+keeps held to Wi-Fi, the keep sheet says so in its header and offers **Download now on
+mobile data (this time)** (the same once-flag as Use mobile data once), beside keeping it
+for Wi-Fi; any other Keep shows the same two choices first.
+
 **States.** Each kept item has one state, the same words on every surface (the Play tab,
 On this phone, Now playing's ⋮, the notification, the web through the inbox report). They
 come from shell-kit's `KeptIndex` (`files/kept-index.json`), written by `KeepStore`:

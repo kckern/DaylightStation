@@ -25,7 +25,7 @@ final class MediaKind {
 
     enum Tap { PLAY_FROM_HERE, OPEN, NONE }
 
-    enum RowAction { PLAY_NEXT, ADD_TO_QUEUE, GO_TO_ALBUM, GO_TO_ARTIST, PLAY_FROM_HERE, MARK_FINISHED_UP_TO_HERE, MARK_WATCHED, MARK_UNWATCHED }
+    enum RowAction { PLAY_NEXT, ADD_TO_QUEUE, GO_TO_ALBUM, GO_TO_ARTIST, KEEP_TRACK, KEEP_ALBUM, PLAY_FROM_HERE, MARK_FINISHED_UP_TO_HERE, MARK_WATCHED, MARK_UNWATCHED }
 
     static final int MAX_SECONDARY = 4;
 
@@ -130,7 +130,8 @@ final class MediaKind {
     static List<RowAction> rowMenu(String pageKind) {
         switch (normal(pageKind)) {
             case "album": case "playlist":
-                return Arrays.asList(RowAction.PLAY_NEXT, RowAction.ADD_TO_QUEUE, RowAction.GO_TO_ALBUM, RowAction.GO_TO_ARTIST);
+                return Arrays.asList(RowAction.PLAY_NEXT, RowAction.ADD_TO_QUEUE, RowAction.GO_TO_ALBUM, RowAction.GO_TO_ARTIST,
+                        RowAction.KEEP_TRACK, RowAction.KEEP_ALBUM);
             case "book":
                 return Arrays.asList(RowAction.PLAY_FROM_HERE, RowAction.MARK_FINISHED_UP_TO_HERE);
             case "series":
@@ -142,7 +143,8 @@ final class MediaKind {
 
     /** A search row's ⋮: music tracks get the music menu; a book part or a lecture none (never Play next). */
     static List<RowAction> searchRowMenu(String rowKind) {
-        return "track".equals(normal(rowKind)) ? Arrays.asList(RowAction.PLAY_NEXT, RowAction.ADD_TO_QUEUE, RowAction.GO_TO_ALBUM, RowAction.GO_TO_ARTIST)
+        return "track".equals(normal(rowKind)) ? Arrays.asList(RowAction.PLAY_NEXT, RowAction.ADD_TO_QUEUE, RowAction.GO_TO_ALBUM, RowAction.GO_TO_ARTIST,
+                RowAction.KEEP_TRACK, RowAction.KEEP_ALBUM)
                 : Collections.emptyList();
     }
 

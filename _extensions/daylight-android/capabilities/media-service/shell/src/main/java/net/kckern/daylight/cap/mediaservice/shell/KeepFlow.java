@@ -64,14 +64,83 @@ final class KeepFlow {
      * notification, never only a toast.
      */
     static void start(Activity a, String mediaId, String title) {
-        if (hintOnce(a, () -> start(a, mediaId, title))) return;
-        if (askNotificationsOnce(a, () -> start(a, mediaId, title))) return;
+        start(a, mediaId, title, false);
+    }
+
+    /**
+     * Keep, choosing what first when there is a choice (KeepChoices): a music track offers
+     * "Keep this track" then "Keep the album" (or "Keep the playlist" when it plays from one);
+     * a book is kept whole. On mobile data with keeps held to Wi-Fi the same sheet offers
+     * "Download now on mobile data (this time)". {@code listId}: the household list the track
+     * plays from ("" for none).
+     */
+    static void choose(Activity a, String trackMediaId, String trackTitle, String albumTitle, String kind,
+                       String listId, String cover) {
+        java.util.List<String> choices = KeepChoices.of(kind, true);
+        boolean mobile = KeepStore.get(a).mobileHeld() && KeepChoices.offerMobileOnce(true, false);
+        if (!KeepChoices.asks(choices, mobile)) { start(a, trackMediaId, albumTitle); return; }
+        boolean music = choices.contains(KeepChoices.TRACK);
+        net.kckern.daylight.shellkit.ItemSheet sheet = net.kckern.daylight.shellkit.ItemSheet.of(a, "Downloads")
+                .item(cover, music ? net.kckern.daylight.shellkit.CoverGlyph.Kind.TRACK : net.kckern.daylight.shellkit.CoverGlyph.Kind.BOOK,
+                        music ? trackTitle : albumTitle, music ? albumTitle : "", mobile ? "On mobile data · keeps wait for Wi-Fi" : "");
+        Runnable first = null;
+        for (String c : choices) {
+            Runnable keep;
+            String words = KeepChoices.words(c);
+            if (KeepChoices.TRACK.equals(c)) keep = () -> pick(a, "track", () -> start(a, KeepChoices.trackKeepId(trackMediaId), trackTitle, true));
+            else if (KeepChoices.ALBUM.equals(c) && listId != null && !listId.isEmpty()) {
+                words = KeepChoices.words(KeepChoices.LIST);
+                keep = () -> pick(a, "list", () -> start(a, "c:" + listId, albumTitle, true));
+            } else keep = () -> pick(a, c, () -> start(a, trackMediaId, albumTitle, true));
+            if (first == null) first = keep;
+            sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_download, words, keep);
+        }
+        if (mobile) {
+            final Runnable keepFirst = first;
+            sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_on_phone, "Download now on mobile data (this time)",
+                    music ? "Keeps this track now" : "Keeps it now, not on Wi-Fi", () -> {
+                        KeepStore.get(a).useMobileDataOnce();
+                        keepFirst.run();
+                    });
+        }
+        sheet.show();
+    }
+
+    private static void pick(Activity a, String choice, Runnable then) {
+        try { UiTelemetry.event("Downloads", "keep.choice", new JSONObject().put("choice", choice)); } catch (Exception ignored) { }
+        then.run();
+    }
+
+    /** @param asked the keep sheet was already shown (its mobile-data choice made or passed) */
+    static void start(Activity a, String mediaId, String title, boolean asked) {
+        if (!asked && mobileOnce(a, mediaId, title)) return;
+        if (hintOnce(a, () -> start(a, mediaId, title, true))) return;
+        if (askNotificationsOnce(a, () -> start(a, mediaId, title, true))) return;
         UiTelemetry.event("Downloads", "keep.tap", new JSONObject());
         KeepStore store = KeepStore.get(a);
         KeepStore.Attempt attempt = store.begin(mediaId, title);
         KeepBar.show(a, attempt);
         java.lang.ref.WeakReference<Activity> screen = new java.lang.ref.WeakReference<>(a);
         store.preview(mediaId, p -> decide(screen.get(), store, mediaId, attempt.title, p));
+    }
+
+    /**
+     * On mobile data with keeps held to Wi-Fi: the keep sheet itself says so and offers this
+     * time on mobile data, beside keeping it for Wi-Fi (it was a setting few found).
+     */
+    private static boolean mobileOnce(Activity a, String mediaId, String title) {
+        if (a == null || a.isFinishing() || !KeepStore.get(a).mobileHeld()) return false;
+        net.kckern.daylight.shellkit.ItemSheet.of(a, "Downloads")
+                .item("", net.kckern.daylight.shellkit.CoverGlyph.Kind.TRACK, title.isEmpty() ? "Keep on this phone" : title,
+                        "On mobile data · keeps wait for Wi-Fi", "")
+                .row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_download, "Keep when on Wi-Fi",
+                        () -> pick(a, "wifi", () -> start(a, mediaId, title, true)))
+                .row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_on_phone, "Download now on mobile data (this time)", () -> {
+                    KeepStore.get(a).useMobileDataOnce();
+                    pick(a, "mobile_once", () -> start(a, mediaId, title, true));
+                })
+                .show();
+        return true;
     }
 
     /** The preview's answer: asked on the screen if it is still open, else decided without it. */

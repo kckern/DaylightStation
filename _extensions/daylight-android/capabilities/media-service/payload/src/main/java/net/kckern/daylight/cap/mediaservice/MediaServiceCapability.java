@@ -747,8 +747,23 @@ public final class MediaServiceCapability implements Capability {
             return new Outcome(200, keepAnswer(cid, existing.optString("title"), existing.optString("art", null),
                     existing.optJSONArray("tracks"), false, existing.optString("kind")).put("manual", true));
         }
+        // A manual keep may be scoped too: "Keep this track" ({only:[track id]}, 2026-11-27).
+        // It adds to what an earlier scoped keep holds; a whole keep (no only) widens it to all.
+        List<String> manualOnly = auto ? java.util.Collections.<String>emptyList() : strings(request.optJSONArray("only"));
+        if (!manualOnly.isEmpty() && "keep".equals(mode) && existing != null) {
+            List<String> had = KeptCollections.only(existing);
+            if (had.isEmpty()) {
+                // Already kept whole: nothing narrower to do.
+                return new Outcome(200, keepAnswer(cid, existing.optString("title"), existing.optString("art", null),
+                        existing.optJSONArray("tracks"), false, existing.optString("kind")));
+            }
+            java.util.LinkedHashSet<String> union = new java.util.LinkedHashSet<>(had);
+            union.addAll(manualOnly);
+            manualOnly = new ArrayList<>(union);
+        }
         List<String> scope = auto ? strings(request.optJSONArray("only"))
-                : "refresh".equals(mode) && KeptCollections.auto(existing) ? KeptCollections.only(existing) : null;
+                : !manualOnly.isEmpty() ? manualOnly
+                : "refresh".equals(mode) && !KeptCollections.only(existing).isEmpty() ? KeptCollections.only(existing) : null;
         // The whole list, not a player's 500-track window: a kept playlist is all of it.
         // A keep right after its preview takes the list the preview resolved (audit H13: resolved
         // twice). Only a plain manual keep of the same id within ten minutes; auto, refresh and
@@ -801,7 +816,8 @@ public final class MediaServiceCapability implements Capability {
                 listType = Json.first(Json.str(l, "type"), Json.str(l, "itemType"));
             }
             kind = kindOf(longParts, albums.size(), listType);
-            if ("preview".equals(mode)) previewMemo.put(raw, new Resolved(cid, title, art, tracks, cut, kind), clock.getAsLong());
+            // A scoped preview is never the memo a whole keep of the same id would take.
+            if ("preview".equals(mode) && scope == null) previewMemo.put(raw, new Resolved(cid, title, art, tracks, cut, kind), clock.getAsLong());
         }
         long now = clock.getAsLong();
         String groupId = auto ? "" : Json.str(request, "group");
@@ -809,7 +825,8 @@ public final class MediaServiceCapability implements Capability {
             // One unit of a kept artist or author (spec §3.11): its own collection, in the group.
             kept().saveUnit(cid, title, art, tracks, now, kind, groupId);
         } else if ("keep".equals(mode)) {
-            kept().save(cid, title, art, tracks, now, kind, auto ? scope : null);
+            if (auto) kept().save(cid, title, art, tracks, now, kind, scope);
+            else kept().saveManual(cid, title, art, tracks, now, kind, scope);
             if (auto && KeptCollections.auto(existing)) {
                 // The window moved on (or a book's one part became the whole book): what it no
                 // longer holds is released like a re-sync's removal, so its audio may go.

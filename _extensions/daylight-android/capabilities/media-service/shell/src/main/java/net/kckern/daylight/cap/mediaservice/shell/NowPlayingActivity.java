@@ -1979,7 +1979,12 @@ public class NowPlayingActivity extends Activity {
         String id = list.contains(":") ? "c:" + list : "p:" + item.mediaId;
         note("download.keep.tap", "fromList", !list.isEmpty());
         CharSequence named = item.mediaMetadata.albumTitle != null ? item.mediaMetadata.albumTitle : item.mediaMetadata.title;
-        KeepFlow.start(this, id, named == null ? "" : named.toString());
+        if (longForm()) { KeepFlow.start(this, id, named == null ? "" : named.toString()); return; }
+        // Music: this track, or its album (or the playlist it plays from), and mobile data this time when held to Wi-Fi.
+        CharSequence track = item.mediaMetadata.title;
+        Uri cover = item.mediaMetadata.artworkUri;
+        KeepFlow.choose(this, "p:" + item.mediaId, track == null ? "" : track.toString(), named == null ? "" : named.toString(),
+                "track", list.contains(":") ? list : "", cover == null ? "" : cover.toString());
     }
 
 
