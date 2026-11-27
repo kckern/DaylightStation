@@ -32,7 +32,9 @@ final class BookLeft {
         for (String id : ids) {
             JSONObject p = progress == null ? null : progress.optJSONObject(id);
             long known = lengths == null || lengths.get(id) == null ? 0 : Math.max(0, lengths.get(id));
-            long d = p != null && p.optLong("duration") > 0 ? p.optLong("duration") : known;
+            // The part's own length first (the same one the author's row adds up), its place's
+            // recorded length only when the row has none: the two can differ by seconds.
+            long d = known > 0 ? known : p != null ? Math.max(0, p.optLong("duration")) : 0;
             total += d;
             if (p == null) { allDone = false; continue; }
             any = true;

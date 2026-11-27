@@ -940,7 +940,8 @@ public final class BrowseActivity extends Activity {
 
         if (neighbours.pages()) headerBox.addView(neighbourLine());
 
-        String summary = about == null ? "" : about.optString("summary", "");
+        // An album's about is read for its artist and year only: its review would arrive late and push the tracks down.
+        String summary = about == null || "album".equals(MediaKind.normal(kind)) ? "" : about.optString("summary", "");
         if (!summary.isEmpty()) headerBox.addView(summaryView(summary));
         else if (loading) headerBox.addView(summaryPlaceholder());
 

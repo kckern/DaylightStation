@@ -34,4 +34,13 @@ public class BookLeftTest {
         assertFalse(BookLeft.of(ids, null, new JSONObject()).started);
         assertTrue(BookLeft.of(ids, null, new JSONObject().put("p1", new JSONObject().put("playhead", 990).put("duration", 1000))).finished);
     }
+
+    /** The row's length wins over the place's recorded one, as the author's row counts (they differed by a minute). */
+    @Test public void thePartsOwnLengthIsTheOneCounted() throws Exception {
+        Map<String, Long> len = new HashMap<>();
+        len.put("p1", 1800L);
+        JSONObject progress = new JSONObject().put("p1", new JSONObject().put("playhead", 600).put("duration", 1870));
+        assertEquals(1200, BookLeft.of(Arrays.asList("p1"), len, progress).leftSec);
+        assertEquals(1270, BookLeft.of(Arrays.asList("p1"), null, progress).leftSec);
+    }
 }
