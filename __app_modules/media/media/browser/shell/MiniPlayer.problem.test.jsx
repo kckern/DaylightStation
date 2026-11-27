@@ -47,6 +47,15 @@ describe('MiniPlayer problem sign', () => {
     controller.disposeRecovery();
   });
 
+  it('a video held after its stream failed on a readable file reads "stopped loading", not "waiting for the file"', () => {
+    const controller = createLocalSessionController({ clientId: 'c1' });
+    controller.queue.playNow({ contentId: 'plex:1', format: 'video', title: 'Arrival', duration: 600 });
+    render(<MantineProvider><LocalSessionContext.Provider value={{ controller }}><MiniPlayer /></LocalSessionContext.Provider></MantineProvider>);
+    act(() => { controller.onPlayerHeld({ reason: 'media-error-unplayable' }); });
+    expect(screen.getByTestId('mini-problem')).toHaveAccessibleName('Playback problem: Arrival stopped loading');
+    controller.disposeRecovery();
+  });
+
   it('shows a problem sign naming the item after a skip and clears when playback recovers', () => {
     const controller = createLocalSessionController({
       clientId: 'c1',

@@ -171,6 +171,17 @@ export function describeBusy(entry) {
   return { phrase: snap.state === 'paused' ? `paused on ${title}` : `playing ${title}` };
 }
 
+/**
+ * RELY.5a: a held video is waiting for its FILE only when the hold came from a
+ * refused source (`source-unavailable`, or its gave-up at the wait cap). A hold
+ * after the stall ladder or an unplayable stream ("media-error-unplayable",
+ * "early-eof", …) is on a file the backend called readable: nobody is
+ * repairing anything, so it must not say so.
+ */
+export function heldForFileRepair(reason) {
+  return !reason || /^source-unavailable/.test(String(reason));
+}
+
 /** Why a press never reached the screen: "The TV did not turn on". */
 export function notSentReason(d, kind) {
   const noun = deviceKindNoun(kind);

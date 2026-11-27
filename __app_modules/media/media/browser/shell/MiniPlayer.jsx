@@ -28,6 +28,7 @@ import { ClientIdentityContext } from "../identity/ClientIdentityProvider.jsx";
 import { displayDeviceName } from "../fleet/deviceDisplay.js";
 import { presentTitle } from "../browse/tilePresentation.js";
 import { handleStateLabel } from "./stateCopy.js";
+import { heldForFileRepair } from "../cast/castCopy.js";
 import "./NowPlaying.scss";
 import "./SessionControls.scss";
 
@@ -44,7 +45,11 @@ function useLocalProblem(controller) {
 
 function problemLabel(problem) {
   const title = problem.item?.title ?? 'An item';
-  if (problem.kind === 'waiting') return `Playback problem: waiting for the file of ${title}`;
+  if (problem.kind === 'waiting') {
+    return heldForFileRepair(problem.reason)
+      ? `Playback problem: waiting for the file of ${title}`
+      : `Playback problem: ${title} stopped loading`;
+  }
   if (problem.kind === 'library-unavailable') return `Playback problem: library unavailable, ${title} is waiting`;
   return problem.kind === 'skipped'
     ? `Playback problem: ${title} was skipped${problem.replacement?.title ? `, now ${problem.replacement.title}` : ''}`
