@@ -2784,7 +2784,9 @@ export class PlexAdapter {
         // Album / artist context (canonical music fields + relative hierarchy)
         album: item.parent || null,
         parentTitle: item.parent || null,
-        artist: item.grandparent || null,
+        // The track's performer first, as getItem's metadata does (originalTitle ||
+        // grandparentTitle), so a search row and the player name the same artist.
+        artist: item.original || item.grandparent || null,
         albumArtist: item.grandparent || null,
         grandparentTitle: item.grandparent || null
       }
