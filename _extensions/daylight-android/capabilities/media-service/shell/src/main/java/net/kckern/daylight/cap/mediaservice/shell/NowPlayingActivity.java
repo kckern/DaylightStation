@@ -847,35 +847,39 @@ public class NowPlayingActivity extends Activity {
         String key = (uri == null ? "" : uri.toString()) + "|" + hasItem + "|" + target;
         if (key.equals(shownArtwork)) return;
         shownArtwork = key;
-        placeholder(hasItem ? R.drawable.daylight_np_note : targetIcon(target));
+        String url = uri == null ? "" : uri.toString();
+        // A cover a list or the Play tab just showed is in memory: it draws in this frame (a
+        // smaller copy first when that is all there is), and the full size replaces it.
+        Bitmap seen = url.isEmpty() ? null : PlaylistArtwork.cachedAny(url, 900);
+        if (seen != null) showArtwork(seen);
+        else placeholder(hasItem ? R.drawable.daylight_np_note : targetIcon(target));
         if (uri == null) { setAccent(CoverColor.NONE, null); return; }
-        String url = uri.toString();
+        if (seen != null && PlaylistArtwork.cached(url, 900) == seen) return;
         artIo.execute(() -> {
             Bitmap bitmap = PlaylistArtwork.load(url, 900);
-            int accent = CoverColor.NONE;
-            Bitmap soft = null;
-            if (bitmap != null) {
-                Bitmap small = Bitmap.createScaledBitmap(bitmap, 32, 32, true);
-                int[] px = new int[32 * 32];
-                small.getPixels(px, 0, 32, 0, 0, 32, 32);
-                accent = CoverColor.of(px);
-                // A tiny copy drawn large and filtered is a blur on every Android version.
-                soft = Bitmap.createScaledBitmap(bitmap, 12, 12, true);
-            }
-            int a = accent;
-            Bitmap s = soft;
             main.post(() -> {
                 if (!key.equals(shownArtwork) || bitmap == null) return;
-                art.setImageTintList(null);
-                art.setPadding(0, 0, 0, 0);
-                // The box is square from the first draw and stays so (no jump when a picture
-                // arrives): a square cover fills it; a video's wide still sits letterboxed in it.
-                boolean wide = bitmap.getWidth() > bitmap.getHeight() * 1.2f;
-                art.setScaleType(wide ? ImageView.ScaleType.FIT_CENTER : ImageView.ScaleType.CENTER_CROP);
-                art.setImageBitmap(bitmap);
-                setAccent(a, s);
+                showArtwork(bitmap);
             });
         });
+    }
+
+    /** The cover in the box, its color on the page and its soft copy behind. Main thread. */
+    private void showArtwork(Bitmap bitmap) {
+        Bitmap small = Bitmap.createScaledBitmap(bitmap, 32, 32, true);
+        int[] px = new int[32 * 32];
+        small.getPixels(px, 0, 32, 0, 0, 32, 32);
+        int accent = CoverColor.of(px);
+        // A tiny copy drawn large and filtered is a blur on every Android version.
+        Bitmap soft = Bitmap.createScaledBitmap(bitmap, 12, 12, true);
+        art.setImageTintList(null);
+        art.setPadding(0, 0, 0, 0);
+        // The box is square from the first draw and stays so (no jump when a picture
+        // arrives): a square cover fills it; a video's wide still sits letterboxed in it.
+        boolean wide = bitmap.getWidth() > bitmap.getHeight() * 1.2f;
+        art.setScaleType(wide ? ImageView.ScaleType.FIT_CENTER : ImageView.ScaleType.CENTER_CROP);
+        art.setImageBitmap(bitmap);
+        setAccent(accent, soft);
     }
 
     private void placeholder(int icon) {
@@ -1175,7 +1179,9 @@ public class NowPlayingActivity extends Activity {
             cover.setPadding(dp(12), dp(12), dp(12), dp(12));
         }
         row.addView(cover, new LinearLayout.LayoutParams(dp(48), dp(48)));
-        if (art != null && !art.isEmpty() && io != null) io.execute(() -> {
+        Bitmap seenCover = art == null || art.isEmpty() ? null : PlaylistArtwork.cached(art, 144);
+        if (seenCover != null) cover.setImageBitmap(seenCover);
+        else if (art != null && !art.isEmpty() && io != null) io.execute(() -> {
             Bitmap b = net.kckern.daylight.shellkit.PlaylistArtwork.load(art, 144);
             if (b != null) main.post(() -> cover.setImageBitmap(b));
         });

@@ -44,6 +44,8 @@ public class PhotoCaptureActivity extends Activity {
     private String owner;
     private String sessionKey;
     private final CaptureScopeWait bindingWait = new CaptureScopeWait();
+    /** The line shown while the account is checked: "Starting Daylight…" during a cold start. */
+    private TextView checkingLine;
     private final DraftDiscard confirmation = new DraftDiscard();
     private AlertDialog discardDialog;
     private CaptureDraftStore.Draft draft;
@@ -129,7 +131,7 @@ public class PhotoCaptureActivity extends Activity {
             showAuthorizedDraft();
         } else {
             render();
-            bindingWait.await(this, owner, this::showAuthorizedDraft, this::bindingUnavailable);
+            bindingWait.await(this, owner, this::showAuthorizedDraft, this::bindingUnavailable, checkingLine);
         }
     }
 
@@ -154,7 +156,7 @@ public class PhotoCaptureActivity extends Activity {
             render();
             return;
         }
-        say(CaptureScopeWait.UNAVAILABLE);
+        say(bindingWait.why());
         finish();
     }
 
@@ -393,7 +395,9 @@ public class PhotoCaptureActivity extends Activity {
         if (!CaptureScope.currentIs(owner)) {
             setTitle("Photo");
             TextView checking = new TextView(this);
-            checking.setText(CaptureScopeWait.CHECKING);
+            checking.setText(net.kckern.daylight.api.PayloadPort.named(MemoFiles.PORT).ready()
+                    ? CaptureScopeWait.CHECKING : net.kckern.daylight.shellkit.PayloadReady.STARTING);
+            checkingLine = checking;
             setContentView(checking);
             return;
         }

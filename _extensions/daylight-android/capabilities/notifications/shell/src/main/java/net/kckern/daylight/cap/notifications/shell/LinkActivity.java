@@ -4,11 +4,18 @@ import android.app.Activity;
 import android.content.Intent;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.Gravity;
+import android.view.View;
+import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import net.kckern.daylight.api.PayloadPort;
-import net.kckern.daylight.shellkit.ShellStart;
+import net.kckern.daylight.shellkit.DaylightTheme;
 import net.kckern.daylight.shellkit.LauncherCaptureShortcut;
+import net.kckern.daylight.shellkit.PayloadReady;
+import net.kckern.daylight.shellkit.ShellStart;
 
 /**
  * Receives a link (daylight://, or an https link of the household site), hands it to
@@ -21,20 +28,30 @@ import net.kckern.daylight.shellkit.LauncherCaptureShortcut;
  * answer (see LinkAnswer).
  *
  * Cold start: Android may create this activity in a process with no payload. It is
- * visible, so it may start the shell service; it then waits on the "links" port for
- * the payload to attach. Fallback when none does in time: a message, and the service
- * is left starting so the next tap works.
+ * visible, so it may start the shell service. It keeps the link and waits for the port
+ * to attach for as long as the loader gives a payload to start (PayloadReady), showing a
+ * small "Starting Daylight… · <what was tapped>" card with Cancel, and runs the link the
+ * moment the payload is there. Warm, nothing is shown before the answer. Only when the
+ * loader gave up, or the whole start deadline passed, does it say so.
  */
 public class LinkActivity extends Activity {
     private static final String TAG = "Daylight-Link";
-    private static final long WAIT_FOR_PAYLOAD_MS = 8000;
+    /** A warm tap answers before this; only a tap still waiting after it shows the card. */
+    private static final long CARD_AFTER_MS = 300;
     // Port dispatch and its posted front effect keep the order Android delivered the taps.
     private static final java.util.concurrent.ExecutorService LINKS =
             java.util.concurrent.Executors.newSingleThreadExecutor(r -> new Thread(r, "Daylight-link"));
 
+    private volatile boolean cancelled;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        if (savedInstanceState != null) {
+            // Recreated (a rotation): the first instance's wait still holds the link and runs it once.
+            finish();
+            return;
+        }
         Intent intent = getIntent();
         final String link = intent == null ? null : LinkRequest.accept(intent.getAction(), intent.getDataString());
         if (link == null) {
@@ -43,20 +60,30 @@ public class LinkActivity extends Activity {
             return;
         }
         ShellStart.ensure(this);
-        // A tap with the app cold waits for the payload, with nothing on screen. Say so after a beat,
-        // so the owner knows the tap registered and does not tap again.
+        final boolean capture = LauncherCaptureShortcut.isCaptureLink(link);
+        final String port = capture ? LauncherCaptureShortcut.PORT : PayloadPort.LINKS;
         final android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
-        final Runnable starting = () -> Toast.makeText(getApplicationContext(), "Starting Daylight…", Toast.LENGTH_SHORT).show();
-        main.postDelayed(starting, 700);
+        final Runnable card = () -> { if (!isFinishing()) showStarting(LinkLabel.of(link)); };
+        if (!PayloadReady.now(port).ready()) main.postDelayed(card, CARD_AFTER_MS);
         LINKS.execute(() -> {
             LinkAnswer answer;
+            long began = android.os.SystemClock.elapsedRealtime();
             try {
-                if (LauncherCaptureShortcut.isCaptureLink(link)) {
+                PayloadReady.Answer ready = PayloadReady.await(port);
+                if (cancelled) {
+                    Log.i(TAG, "link cancelled while Daylight started");
+                    answer = LinkAnswer.of("{\"ok\":true,\"effect\":\"none\"}");
+                } else if (ready.state == PayloadReady.State.FAILED) {
+                    Log.w(TAG, "the payload did not start: " + ready.reason);
+                    answer = LinkAnswer.failedToStart();
+                } else if (!ready.ready()) {
+                    answer = LinkAnswer.notReady();
+                } else if (capture) {
                     String id = LauncherCaptureShortcut.authorizedId(this, link);
                     answer = id == null ? LinkAnswer.of("{\"ok\":false,\"message\":\"Add this shortcut again from your launcher.\"}")
-                            : LinkAnswer.of(PayloadPort.named(LauncherCaptureShortcut.PORT).call(id, WAIT_FOR_PAYLOAD_MS));
+                            : LinkAnswer.of(PayloadPort.named(port).call(id, 1000));
                 } else {
-                    answer = LinkAnswer.of(PayloadPort.named(PayloadPort.LINKS).call(LinkRequest.body(link), WAIT_FOR_PAYLOAD_MS));
+                    answer = LinkAnswer.of(PayloadPort.named(port).call(LinkRequest.body(link), 1000));
                 }
             } catch (PayloadPort.NotReadyException noPayload) {
                 answer = LinkAnswer.notReady();
@@ -65,13 +92,45 @@ public class LinkActivity extends Activity {
                 Log.w(TAG, "the payload failed on a link: " + failed.getClass().getSimpleName());
                 answer = LinkAnswer.of("{\"ok\":false}");
             }
+            long waited = android.os.SystemClock.elapsedRealtime() - began;
+            if (waited > CARD_AFTER_MS) Log.i(TAG, "link ran after a " + waited + " ms wait for the payload");
             final LinkAnswer result = answer;
-            runOnUiThread(() -> {
-                main.removeCallbacks(starting);
+            main.post(() -> {
+                main.removeCallbacks(card);
                 perform(result);
-                finish();
+                if (!isFinishing()) finish();
             });
         });
+    }
+
+    /** The card along the bottom: what was tapped, that it is kept, and Cancel. */
+    private void showStarting(String what) {
+        DaylightTheme t = DaylightTheme.of(this);
+        int pad = Math.round(16 * getResources().getDisplayMetrics().density);
+        FrameLayout root = new FrameLayout(this);
+        LinearLayout box = new LinearLayout(this);
+        box.setGravity(Gravity.CENTER_VERTICAL);
+        box.setPadding(pad, pad, pad / 2, pad);
+        box.setBackground(t.round(t.surfaceVariant, DaylightTheme.Radius.LARGE));
+        box.setElevation(pad / 2f);
+        TextView words = t.text(this, PayloadReady.STARTING + " · " + what, DaylightTheme.Type.BODY, t.ink, false);
+        words.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        box.addView(words, new LinearLayout.LayoutParams(0, -2, 1));
+        TextView cancel = t.text(this, "Cancel", DaylightTheme.Type.LABEL, t.primary, true);
+        cancel.setPadding(pad, pad / 2, pad / 2, pad / 2);
+        cancel.setBackground(t.pressable(null));
+        cancel.setOnClickListener(v -> { cancelled = true; finish(); });
+        box.addView(cancel);
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM);
+        lp.setMargins(pad, pad, pad, pad * 2);
+        root.addView(box, lp);
+        setContentView(root);
+    }
+
+    /** Back while the card shows is Cancel: the link is not run. */
+    @Override public void onBackPressed() {
+        cancelled = true;
+        super.onBackPressed();
     }
 
     private void perform(LinkAnswer answer) {

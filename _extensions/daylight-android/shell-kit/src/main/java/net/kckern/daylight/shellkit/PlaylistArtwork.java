@@ -12,7 +12,10 @@ import java.util.Set;
 /**
  * Bounded decoding for HTTPS media artwork already vetted by the payload. Covers of
  * collections kept on this phone are also saved in a folder ({@link #useKept}), read
- * before the network, so a downloaded book or album shows its cover offline.
+ * before the network, so a downloaded book or album shows its cover offline. Every
+ * decoded cover is held in one process-wide memory cache (by URL and size, see
+ * CoverCache): {@link #cached} answers on the main thread, so a cover one screen showed
+ * draws on the next in the same frame instead of starting blank and popping in.
  */
 public final class PlaylistArtwork {
     private static final int MAX_BYTES = 4 * 1024 * 1024;
@@ -23,22 +26,111 @@ public final class PlaylistArtwork {
     /** Where kept covers live (files/kept-art). Every screen that shows covers sets it. */
     public static void useKept(File dir) { keptDir = dir; }
 
+    /**
+     * The cover at {@code thumbnail}, at most {@code maxSide} pixels on its long side: from
+     * memory, then the kept folder, then the network. Off the main thread. A cover that
+     * failed is not fetched again until its backoff passes (offline, a dead link): the
+     * caller gets null at once instead of a 4 s connect per cover on every draw.
+     */
     public static Bitmap load(String thumbnail, int maxSide) {
         if (thumbnail == null || !thumbnail.startsWith("https://")) return null;
+        Bitmap hit = cached(thumbnail, maxSide);
+        if (hit != null) return hit;
         byte[] encoded = keptBytes(thumbnail);
-        if (encoded == null) encoded = fetch(thumbnail);
-        return encoded == null ? null : decode(encoded, maxSide);
+        if (encoded == null) {
+            long now = System.currentTimeMillis();
+            long[] f = FAILED.get(thumbnail);
+            if (!CoverCache.mayTry(f, now)) return null;
+            encoded = fetch(thumbnail);
+            if (encoded == null) {
+                FAILED.put(thumbnail, CoverCache.failedAgain(f, now));
+                return null;
+            }
+            FAILED.remove(thumbnail);
+        }
+        Bitmap b = decode(encoded, maxSide);
+        if (b != null) remember(thumbnail, maxSide, b);
+        return b;
+    }
+
+    /**
+     * The cover already decoded in this process for {@code url} at {@code maxSide} or larger,
+     * or null. No disk and no network: a screen calls this on the main thread before posting
+     * work, so a cover seen on one screen draws on the next in the same frame.
+     */
+    public static Bitmap cached(String url, int maxSide) {
+        if (url == null || url.isEmpty()) return null;
+        android.util.LruCache<String, Bitmap> memory = memory();
+        if (memory == null) return null;
+        Integer size = CoverCache.pick(sizesOf(url), maxSide, false);
+        Bitmap b = size == null ? null : memory.get(CoverCache.key(url, size));
+        if (b == null && size != null) forget(url, size);
+        return b;
+    }
+
+    /**
+     * Any decoded copy of {@code url}, the largest there is, even one smaller than wanted: a
+     * screen draws it at once and replaces it when the full size is decoded (Now playing,
+     * opened on a cover the list just showed).
+     */
+    public static Bitmap cachedAny(String url, int maxSide) {
+        Bitmap exact = cached(url, maxSide);
+        if (exact != null || url == null || url.isEmpty()) return exact;
+        android.util.LruCache<String, Bitmap> memory = memory();
+        Integer size = memory == null ? null : CoverCache.pick(sizesOf(url), maxSide, true);
+        return size == null ? null : memory.get(CoverCache.key(url, size));
+    }
+
+    // ── the process-wide memory cache ───────────────────────────────────────
+
+    private static volatile android.util.LruCache<String, Bitmap> memory;
+    /** The sizes decoded per URL, so a lookup finds a larger copy than asked for. */
+    private static final java.util.Map<String, java.util.Set<Integer>> SIZES = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private static android.util.LruCache<String, Bitmap> memory() {
+        android.util.LruCache<String, Bitmap> m = memory;
+        if (m != null) return m;
+        synchronized (PlaylistArtwork.class) {
+            if (memory == null) {
+                memory = new android.util.LruCache<String, Bitmap>(CoverCache.budgetBytes(Runtime.getRuntime().maxMemory())) {
+                    @Override protected int sizeOf(String key, Bitmap value) { return Math.max(1, value.getAllocationByteCount()); }
+                    @Override protected void entryRemoved(boolean evicted, String key, Bitmap old, Bitmap now) {
+                        if (now == null) {
+                            String[] parts = CoverCache.split(key);
+                            if (parts != null) forget(parts[0], Integer.parseInt(parts[1]));
+                        }
+                    }
+                };
+            }
+            return memory;
+        }
+    }
+
+    private static java.util.Set<Integer> sizesOf(String url) {
+        java.util.Set<Integer> s = SIZES.get(url);
+        return s == null ? java.util.Collections.emptySet() : s;
+    }
+
+    private static void remember(String url, int maxSide, Bitmap b) {
+        android.util.LruCache<String, Bitmap> m = memory();
+        if (m == null) return;
+        int size = CoverCache.bucket(maxSide);
+        SIZES.computeIfAbsent(url, u -> java.util.concurrent.ConcurrentHashMap.newKeySet()).add(size);
+        m.put(CoverCache.key(url, size), b);
+    }
+
+    private static void forget(String url, int size) {
+        java.util.Set<Integer> s = SIZES.get(url);
+        if (s == null) return;
+        s.remove(size);
+        if (s.isEmpty()) SIZES.remove(url, s);
     }
 
     /** Covers that failed: the next try waits a minute, doubling to a day, so a dead link is not fetched forever. */
     private static final java.util.Map<String, long[]> FAILED = new java.util.concurrent.ConcurrentHashMap<>();
-    static final long RETRY_MIN_MS = 60_000L, RETRY_MAX_MS = 86_400_000L;
 
     /** When a cover that failed {@code failures} times (last at {@code at}) may be tried again. */
-    static long nextTry(int failures, long at) {
-        long wait = RETRY_MIN_MS << Math.min(20, Math.max(0, failures - 1));
-        return at + Math.min(RETRY_MAX_MS, wait);
-    }
+    static long nextTry(int failures, long at) { return CoverCache.nextTry(failures, at); }
 
     /**
      * Saves the cover at {@code thumbnail} for offline use (https only, following https
@@ -52,10 +144,10 @@ public final class PlaylistArtwork {
         if (target.isFile()) return true;
         long now = System.currentTimeMillis();
         long[] f = FAILED.get(thumbnail);
-        if (f != null && now < nextTry((int) f[0], Math.min(f[1], now))) return false;
+        if (!CoverCache.mayTry(f, now)) return false;
         byte[] encoded = fetchFollowing(thumbnail, 3);
         if (encoded == null) {
-            FAILED.put(thumbnail, new long[] { f == null ? 1 : f[0] + 1, now });
+            FAILED.put(thumbnail, CoverCache.failedAgain(f, now));
             return false;
         }
         FAILED.remove(thumbnail);

@@ -47,7 +47,8 @@ import java.util.concurrent.Executors;
 public class PhoneHomeActivity extends Activity {
     private static final String NOW_PLAYING = "net.kckern.daylight.cap.mediaservice.shell.NowPlayingActivity";
     private final net.kckern.daylight.shellkit.TapGuard playGuard = new net.kckern.daylight.shellkit.TapGuard();
-    private final ExecutorService worker = Executors.newSingleThreadExecutor();
+    // Bookmarks, actions, Continue and the screens list are asked at once, not one behind another.
+    private final ExecutorService worker = Executors.newFixedThreadPool(4);
     private JSONArray pages = new JSONArray();
     private JSONArray configuredActions = new JSONArray();
     private LinearLayout column;
@@ -66,9 +67,12 @@ public class PhoneHomeActivity extends Activity {
     private LinearLayout playlistRow;
     private TextView playlistStatus;
     private boolean observingPlacement;
-    private boolean loading = true;
+    /** The Services (bookmarks) and Capture (actions) answers: until each comes only its tab says it is loading. */
+    private boolean pagesLoaded, actionsLoaded;
+    private String pagesError, actionsError;
+    /** A wait for the payload to attach, after which the failed loads run again on their own. */
+    private boolean retryArmed;
     private boolean launcherPicker;
-    private String loadError;
     private DaylightTheme t;
 
     @Override protected void attachBaseContext(android.content.Context base) {
@@ -103,7 +107,7 @@ public class PhoneHomeActivity extends Activity {
         NowPlayingNote.listen(nowChanged);
         observingNow = true;
         drawNowStrip();
-        if (keptBox != null) fillKept();   // a collection kept from Now playing shows on return
+        if (keptBox != null) fillKept();   // a collection kept from Now playing shows on return (in place)
         if (continueBox != null && continueBox.getParent() != null) {
             // Redrawn from the last answer: the offline marks follow the network now.
             fillContinue(continueBox, getSharedPreferences("daylight.home", MODE_PRIVATE).getString("continue", ""));
@@ -135,24 +139,31 @@ public class PhoneHomeActivity extends Activity {
     private interface Reply { void accept(JSONObject reply); }
 
     private void call(String port, String body, Reply success) {
-        call(port, body, success, message -> {
-            if (loading) { loading = false; loadError = message; draw(); }
-            else toast(message);
-        });
+        call(port, body, success, this::toast);
     }
 
+    /**
+     * Asks the payload on {@code port}. A cold start is waited for as long as the loader
+     * gives a payload to start (PayloadReady), never dropped after a shorter timer; the
+     * failure words are "Starting Daylight…" while it still starts, or the loader's own.
+     */
     private void call(String port, String body, Reply success, java.util.function.Consumer<String> failure) {
         // The service is on demand: Android stops it after a while in the background, so a screen
         // left open can come back to no payload. Start it again before asking.
         ShellStart.ensure(this);
         worker.execute(() -> {
             try {
-                JSONObject result = new JSONObject(PayloadPort.named(port).call(body, 12000));
+                net.kckern.daylight.shellkit.PayloadReady.Answer ready = net.kckern.daylight.shellkit.PayloadReady.await(port);
+                if (!ready.ready()) {
+                    runOnUiThread(() -> { if (!isDestroyed() && !isFinishing()) failure.accept(ready.words()); });
+                    return;
+                }
+                JSONObject result = new JSONObject(PayloadPort.named(port).call(body, 1000));
                 runOnUiThread(() -> { if (!isDestroyed() && !isFinishing()) success.accept(result); });
             } catch (Exception e) {
                 runOnUiThread(() -> {
                     if (isDestroyed() || isFinishing()) return;
-                    String message = e instanceof PayloadPort.NotReadyException ? "Daylight is still starting." : e.getMessage();
+                    String message = e instanceof PayloadPort.NotReadyException ? net.kckern.daylight.shellkit.PayloadReady.STARTING : e.getMessage();
                     failure.accept(message == null ? "Could not complete the action." : message);
                 });
             }
@@ -168,19 +179,48 @@ public class PhoneHomeActivity extends Activity {
         return result;
     }
 
+    /**
+     * Asks for the bookmarks (Services) and the actions (Capture), both at once. The tabs, Play
+     * and Connect are drawn before either answers; only the tab whose answer it is redraws.
+     * A load that could not run (Daylight still starting) runs again on its own the moment
+     * the payload attaches: there is no Try again to press.
+     */
     private void refresh() {
-        loading = true;
-        loadError = null;
+        if (!pagesLoaded) pagesError = null;
+        if (!actionsLoaded) actionsError = null;
         call("phone-bookmarks", request("list").toString(), result -> {
             pages = result.optJSONArray("items");
             if (pages == null) pages = new JSONArray();
-            call("phone-pin-action", "", actions -> {
-                configuredActions = actions.optJSONArray("items");
-                if (configuredActions == null) configuredActions = new JSONArray();
-                loading = false;
-                draw();
+            pagesLoaded = true;
+            pagesError = null;
+            answered(0);
+        }, message -> { pagesError = message; answered(0); retryWhenAttached("phone-bookmarks"); });
+        call("phone-pin-action", "", actions -> {
+            configuredActions = actions.optJSONArray("items");
+            if (configuredActions == null) configuredActions = new JSONArray();
+            actionsLoaded = true;
+            actionsError = null;
+            answered(1);
+        }, message -> { actionsError = message; answered(1); retryWhenAttached("phone-pin-action"); });
+    }
+
+    /** An answer for tab {@code which} came: that tab is redrawn when it is the one showing. */
+    private void answered(int which) {
+        if (launcherPicker) { rebuildPage(); return; }
+        if (playlistScreen == null && tab == which) rebuildPage();
+    }
+
+    /** Waits (off the main thread) for the payload's port, then loads again. One wait at a time. */
+    private void retryWhenAttached(String port) {
+        if (retryArmed) return;
+        retryArmed = true;
+        new Thread(() -> {
+            boolean attached = PayloadPort.named(port).awaitReady(10 * 60_000L);
+            runOnUiThread(() -> {
+                retryArmed = false;
+                if (attached && !isDestroyed() && !isFinishing() && (!pagesLoaded || !actionsLoaded)) refresh();
             });
-        });
+        }, "Daylight-home-retry").start();
     }
 
     private static final String[] TABS = {"Services", "Capture", "Play", "Connect"};
@@ -201,7 +241,7 @@ public class PhoneHomeActivity extends Activity {
     }
 
     private boolean tabsShown() {
-        return !launcherPicker && !loading && loadError == null && playlistScreen == null;
+        return !launcherPicker && playlistScreen == null;
     }
 
     @Override public boolean dispatchTouchEvent(android.view.MotionEvent event) {
@@ -418,20 +458,21 @@ public class PhoneHomeActivity extends Activity {
 
     private void loadNowArt(String url) {
         nowArtUrl = url;
+        android.graphics.Bitmap hit = url.isEmpty() ? null : net.kckern.daylight.shellkit.PlaylistArtwork.cached(url, 160);
+        if (hit != null) {
+            // Seen before (the card that was tapped, Now playing): cover and tint in this frame.
+            nowCover.setImageBitmap(hit);
+            nowAccent = accentOf(hit);
+            paintNowStrip();
+            return;
+        }
         nowCover.setImageDrawable(null);
         nowAccent = net.kckern.daylight.shellkit.CoverColor.NONE;
         paintNowStrip();
         if (url.isEmpty()) return;
         artworkWorker.execute(() -> {
             android.graphics.Bitmap b = net.kckern.daylight.shellkit.PlaylistArtwork.load(url, 160);
-            int accent = net.kckern.daylight.shellkit.CoverColor.NONE;
-            if (b != null) {
-                android.graphics.Bitmap small = android.graphics.Bitmap.createScaledBitmap(b, 32, 32, true);
-                int[] px = new int[32 * 32];
-                small.getPixels(px, 0, 32, 0, 0, 32, 32);
-                accent = net.kckern.daylight.shellkit.CoverColor.of(px);
-            }
-            int a = accent;
+            int a = b == null ? net.kckern.daylight.shellkit.CoverColor.NONE : accentOf(b);
             runOnUiThread(() -> {
                 if (isDestroyed() || !url.equals(nowArtUrl) || nowCover == null) return;
                 nowCover.setImageBitmap(b);
@@ -439,6 +480,13 @@ public class PhoneHomeActivity extends Activity {
                 paintNowStrip();
             });
         });
+    }
+
+    private static int accentOf(android.graphics.Bitmap b) {
+        android.graphics.Bitmap small = android.graphics.Bitmap.createScaledBitmap(b, 32, 32, true);
+        int[] px = new int[32 * 32];
+        small.getPixels(px, 0, 32, 0, 0, 32, 32);
+        return net.kckern.daylight.shellkit.CoverColor.of(px);
     }
 
     /** The progress line, carried forward between the player's reports. */
@@ -464,10 +512,17 @@ public class PhoneHomeActivity extends Activity {
         column.setOrientation(LinearLayout.VERTICAL);
         column.setPadding(dp(16), dp(8), dp(16), dp(16));
         scroll.addView(column);
-        if (loading) { column.addView(label("Loading services…", Type.BODY, t.ink)); return scroll; }
-        if (loadError != null) {
-            column.addView(label(loadError, Type.BODY, t.ink));
-            row("Try again", "Try again", "open", "›", this::refresh);
+        // Services and Capture wait for their own answer; Play and Connect draw from this phone at once.
+        boolean needsPages = launcherPicker || tab == 0, needsActions = launcherPicker || tab == 1;
+        if ((needsPages && !pagesLoaded) || (needsActions && !actionsLoaded)) {
+            String error = needsPages && !pagesLoaded ? pagesError : actionsError;
+            String what = launcherPicker ? "shortcuts" : tab == 0 ? "services" : "capture shortcuts";
+            column.addView(label(error != null ? error : "Loading " + what + "…", Type.BODY, t.ink));
+            if (error != null && !error.equals(net.kckern.daylight.shellkit.PayloadReady.STARTING)) {
+                row("Try again", "Try again", "open", "›", this::refresh);
+            } else if (error != null) {
+                column.addView(label("They show here as soon as Daylight is running.", Type.LABEL, t.inkMuted));
+            }
             return scroll;
         }
         if (!launcherPicker) {
@@ -630,95 +685,147 @@ public class PhoneHomeActivity extends Activity {
         keptBox = new LinearLayout(this);
         keptBox.setOrientation(LinearLayout.VERTICAL);
         column.addView(keptBox);
+        keptHead = null;
+        keptShown = null;
         fillKept();
     }
 
+    /** The parts of "On this phone" a refresh updates in place. */
+    private LinearLayout keptHead, keptCards;
+    private TextView keptRoom, keptOver;
+    private net.kckern.daylight.shellkit.KeyedRows<JSONObject> keptRows;
+    /** What the section shows now (the index and the room line): the same again redraws nothing. */
+    private String keptShown;
+
+    /**
+     * Refreshes "On this phone" in place: the heading and room line keep their views, cards
+     * are kept by content id and only their words, progress and Retry change, and an index
+     * equal to the one shown touches nothing. A press on a card survives the refresh.
+     */
     private void fillKept() {
         timer.removeCallbacks(keptTick);
         if (keptBox == null || keptBox.getParent() == null || isFinishing()) return;
         java.util.List<JSONObject> index = net.kckern.daylight.shellkit.KeptIndex.read(getFilesDir());
-        keptBox.removeAllViews();
-        if (index.isEmpty()) return;
-        TextView heading = label("On this phone", Type.TITLE, t.ink);
-        heading.setPadding(0, dp(10), 0, dp(2));
-        keptBox.addView(heading);
         long cap = net.kckern.daylight.shellkit.KeptIndex.capMb(getFilesDir());
         long used = net.kckern.daylight.shellkit.KeptIndex.usedBytes(index);
         long free = freeOnPhone();
         // "1.2 GB kept · 4 GB limit · 15 GB free on phone": room visible before it is a problem.
-        keptBox.addView(label(net.kckern.daylight.shellkit.KeptIndex.roomLine(used, cap, free), Type.LABEL, t.inkMuted));
+        String room = net.kckern.daylight.shellkit.KeptIndex.roomLine(used, cap, free);
         String over = net.kckern.daylight.shellkit.KeptIndex.overLine(
                 net.kckern.daylight.shellkit.KeptIndex.effectiveLimitBytes(cap, free, used), used);
-        if (!over.isEmpty()) keptBox.addView(label(over, Type.LABEL, t.attention));
-        boolean busy = false;
         net.kckern.daylight.shellkit.KeptIndex.largestFirst(index);
-        int shown = 0;
+        boolean busy = false;
+        java.util.List<JSONObject> first = new ArrayList<>();
         for (JSONObject k : index) {
-            if (shown++ >= 3) continue;   // the rest on On this phone
-            String state = k.optString("state");
-            boolean whole = net.kckern.daylight.shellkit.KeptIndex.READY.equals(state)
-                    || (state.isEmpty() && k.optInt("total") > 0 && k.optInt("done") >= k.optInt("total"));
-            if (net.kckern.daylight.shellkit.KeptIndex.DOWNLOADING.equals(state)) busy = true;
-            keptBox.addView(keptCard(k, whole));
+            if (net.kckern.daylight.shellkit.KeptIndex.DOWNLOADING.equals(k.optString("state"))) busy = true;
+            if (first.size() < 3) first.add(k);   // the rest on On this phone
         }
-        TextView manage = label("Manage downloads ›", Type.LABEL, t.primary);
-        manage.setPadding(dp(4), dp(10), dp(4), dp(6));
-        manage.setContentDescription("Manage downloads: everything kept on this phone");
-        net.kckern.daylight.shellkit.UiTelemetry.tag(manage, "play.kept.manage");
-        manage.setOnClickListener(v -> openDownloads(null));
-        keptBox.addView(manage);
-        // Moving: redrawn every 3 s; waiting: every 30 s (a network or room may come).
+        // Moving: refreshed every 3 s; waiting: every 30 s (a network or room may come).
         if (busy) timer.postDelayed(keptTick, 3000);
         else if (!index.isEmpty()) timer.postDelayed(keptTick, 30_000);
+        String shown = first + "|" + room + "|" + over + "|" + index.isEmpty();
+        if (shown.equals(keptShown)) return;
+        keptShown = shown;
+        if (index.isEmpty()) {
+            keptBox.removeAllViews();
+            keptHead = null;
+            return;
+        }
+        if (keptHead == null) {
+            keptBox.removeAllViews();
+            keptHead = new LinearLayout(this);
+            keptHead.setOrientation(LinearLayout.VERTICAL);
+            TextView heading = label("On this phone", Type.TITLE, t.ink);
+            heading.setPadding(0, dp(10), 0, dp(2));
+            keptHead.addView(heading);
+            keptRoom = label("", Type.LABEL, t.inkMuted);
+            keptHead.addView(keptRoom);
+            keptOver = label("", Type.LABEL, t.attention);
+            keptHead.addView(keptOver);
+            keptBox.addView(keptHead);
+            keptCards = new LinearLayout(this);
+            keptCards.setOrientation(LinearLayout.VERTICAL);
+            keptBox.addView(keptCards);
+            keptRows = new net.kckern.daylight.shellkit.KeyedRows<>(keptCards, new net.kckern.daylight.shellkit.KeyedRows.Rows<JSONObject>() {
+                @Override public String key(JSONObject k) { return k.optString("contentId"); }
+                @Override public String signature(JSONObject k) { return k.toString(); }
+                @Override public View create(JSONObject k) { return keptCard(k); }
+                @Override public View update(View card, JSONObject k) { bindKeptCard(card, k); return card; }
+            });
+            TextView manage = label("Manage downloads ›", Type.LABEL, t.primary);
+            manage.setPadding(dp(4), dp(10), dp(4), dp(6));
+            manage.setContentDescription("Manage downloads: everything kept on this phone");
+            net.kckern.daylight.shellkit.UiTelemetry.tag(manage, "play.kept.manage");
+            manage.setOnClickListener(v -> openDownloads(null));
+            keptBox.addView(manage);
+        }
+        keptRoom.setText(room);
+        keptOver.setText(over);
+        keptOver.setVisibility(over.isEmpty() ? View.GONE : View.VISIBLE);
+        keptRows.show(first);
     }
 
-    private View keptCard(JSONObject k, boolean whole) {
-        String title = k.optString("title"), line = net.kckern.daylight.shellkit.KeptIndex.describe(k);
+    /** A kept card's views, so a refresh changes its words and buttons without a new view. */
+    private static final class KeptCard {
+        ImageView cover;
+        TextView name, sub, retry;
+    }
+
+    private View keptCard(JSONObject k) {
+        KeptCard h = new KeptCard();
         LinearLayout card = new LinearLayout(this);
         card.setGravity(Gravity.CENTER_VERTICAL);
         card.setPadding(dp(8), dp(8), dp(12), dp(8));
         card.setBackground(t.pressable(t.round(t.surface, Radius.SMALL)));
-        ImageView cover = new ImageView(this);
-        cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        cover.setClipToOutline(true);
-        cover.setBackground(t.round(t.tile, Radius.SMALL));
-        card.addView(cover, new LinearLayout.LayoutParams(dp(56), dp(56)));
-        loadCover(cover, k.optString("art"));
+        h.cover = new ImageView(this);
+        h.cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        h.cover.setClipToOutline(true);
+        h.cover.setBackground(t.round(t.tile, Radius.SMALL));
+        card.addView(h.cover, new LinearLayout.LayoutParams(dp(56), dp(56)));
         LinearLayout words = new LinearLayout(this);
         words.setOrientation(LinearLayout.VERTICAL);
         words.setPadding(dp(12), 0, 0, 0);
-        TextView name = t.text(this, title, Type.BODY, t.ink, true);
-        name.setMaxLines(2);
-        name.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        words.addView(name);
-        TextView sub = label(line, Type.LABEL, t.inkMuted);
-        sub.setMaxLines(1);
-        sub.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        words.addView(sub);
+        h.name = t.text(this, "", Type.BODY, t.ink, true);
+        h.name.setMaxLines(2);
+        h.name.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        words.addView(h.name);
+        h.sub = label("", Type.LABEL, t.inkMuted);
+        h.sub.setMaxLines(1);
+        h.sub.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        words.addView(h.sub);
         card.addView(words, new LinearLayout.LayoutParams(0, -2, 1));
-        String cid = k.optString("contentId");
-        String state = k.optString("state");
-        boolean playable = k.optInt("total") > 0;
-        if (net.kckern.daylight.shellkit.KeptIndex.retryable(k)) {
-            TextView retry = label("Retry", Type.LABEL, t.primary);
-            retry.setPadding(dp(12), dp(10), dp(4), dp(10));
-            retry.setContentDescription("Retry " + title);
-            net.kckern.daylight.shellkit.UiTelemetry.tag(retry, "play.kept.retry");
-            retry.setOnClickListener(v -> { keepJob("retry", cid); toast("Trying again"); });
-            card.addView(retry);
-        }
-        card.setContentDescription(title + ". " + line);
+        h.retry = label("Retry", Type.LABEL, t.primary);
+        h.retry.setPadding(dp(12), dp(10), dp(4), dp(10));
+        net.kckern.daylight.shellkit.UiTelemetry.tag(h.retry, "play.kept.retry");
+        card.addView(h.retry);
         net.kckern.daylight.shellkit.UiTelemetry.tag(card, "play.kept");
-        String id = "c:" + cid;
-        // A part-kept collection plays too: online it streams the rest; offline, what is here.
-        if (playable) card.setOnClickListener(v -> playHere(id, title, "", k.optString("art")));
-        else card.setOnClickListener(v -> toast(line));
         // Long-press: On this phone (state, Pause, Retry, Remove, room).
         card.setOnLongClickListener(v -> { openDownloads(null); return true; });
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.topMargin = dp(6);
         card.setLayoutParams(lp);
+        card.setTag(h);
+        bindKeptCard(card, k);
         return card;
+    }
+
+    /** Puts one kept collection's words, cover, Retry and tap on its card (new or refreshed). */
+    private void bindKeptCard(View card, JSONObject k) {
+        KeptCard h = (KeptCard) card.getTag();
+        String title = k.optString("title"), line = net.kckern.daylight.shellkit.KeptIndex.describe(k);
+        String cid = k.optString("contentId");
+        h.name.setText(title);
+        h.sub.setText(line);
+        loadCover(h.cover, k.optString("art"));
+        boolean retryable = net.kckern.daylight.shellkit.KeptIndex.retryable(k);
+        h.retry.setVisibility(retryable ? View.VISIBLE : View.GONE);
+        h.retry.setContentDescription("Retry " + title);
+        h.retry.setOnClickListener(v -> { keepJob("retry", cid); toast("Trying again"); });
+        card.setContentDescription(title + ". " + line);
+        String id = "c:" + cid;
+        // A part-kept collection plays too: online it streams the rest; offline, what is here.
+        if (k.optInt("total") > 0) card.setOnClickListener(v -> playHere(id, title, "", k.optString("art")));
+        else card.setOnClickListener(v -> toast(line));
     }
 
     /**
@@ -977,11 +1084,19 @@ public class PhoneHomeActivity extends Activity {
         buttonRow = null;
     }
 
+    /** A cover seen before (here or on another screen) draws in this frame; others load off the main thread. */
     private void loadCover(ImageView into, String url) {
-        if (url == null || url.isEmpty()) return;
+        if (url == null) url = "";
+        if (url.equals(into.getTag())) return;
+        into.setTag(url);
+        into.setImageDrawable(null);
+        if (url.isEmpty()) return;
+        android.graphics.Bitmap hit = net.kckern.daylight.shellkit.PlaylistArtwork.cached(url, 360);
+        if (hit != null) { into.setImageBitmap(hit); return; }
+        final String wanted = url;
         artworkWorker.execute(() -> {
-            android.graphics.Bitmap b = net.kckern.daylight.shellkit.PlaylistArtwork.load(url, 360);
-            if (b != null) runOnUiThread(() -> { if (!isDestroyed()) into.setImageBitmap(b); });
+            android.graphics.Bitmap b = net.kckern.daylight.shellkit.PlaylistArtwork.load(wanted, 360);
+            if (b != null) runOnUiThread(() -> { if (!isDestroyed() && wanted.equals(into.getTag())) into.setImageBitmap(b); });
         });
     }
 

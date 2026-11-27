@@ -467,16 +467,23 @@ public final class MediaServiceCapability implements Capability {
         } catch (IllegalArgumentException refused) {
             return failure(400, "bad_request");
         } catch (MediaApi.Refused answered) {
-            return answered.status == 404 ? failure(404, "not_found") : failure(502, "backend_refused");
+            Outcome o = answered.status == 404 ? failure(404, "not_found") : failure(502, "backend_refused");
+            return withReason(o, FailureReason.of(answered));
         } catch (IllegalStateException notConfigured) {
             return failure(503, "not_configured");
         } catch (Exception unreachable) {
-            return failure(502, "unreachable");
+            return withReason(failure(502, "unreachable"), FailureReason.of(unreachable));
         }
     }
 
     private static Outcome failure(int status, String code) {
         return new Outcome(status, Replies.err(code));
+    }
+
+    /** A failed answer that also says why home did not answer (FailureReason), for the phone's words. */
+    private static Outcome withReason(Outcome o, String reason) {
+        try { o.body.put("reason", reason); } catch (Exception never) { }
+        return o;
     }
 
     private static Router.Response respond(Outcome o) { return Router.Response.json(o.status, o.body); }
@@ -1106,6 +1113,7 @@ public final class MediaServiceCapability implements Capability {
         final String text = BrowseTree.searchText(raw instanceof String ? (String) raw : "");
         if (text.isEmpty()) return new Outcome(200, Replies.ok().put("groups", new JSONArray()).put("offline", false));
         JSONObject body;
+        String reason = null;
         try {
             JSONObject found = api.search(text, 60);
             body = Lookup.groups(found, backend, 5);
@@ -1120,8 +1128,11 @@ public final class MediaServiceCapability implements Capability {
         } catch (Exception unreachable) {
             health.failed(clock.getAsLong());
             body = Lookup.offline(kept().list(), text);
+            // Why home did not answer: the phone says "Home isn't answering", not "Offline", for a slow home.
+            reason = FailureReason.of(unreachable);
         }
         JSONObject out = Replies.ok();
+        if (reason != null) out.put("reason", reason);
         for (java.util.Iterator<String> k = body.keys(); k.hasNext(); ) { String key = k.next(); out.put(key, body.get(key)); }
         return new Outcome(200, out);
     }
@@ -1136,7 +1147,7 @@ public final class MediaServiceCapability implements Capability {
             health.failed(clock.getAsLong());
             JSONArray items = new JSONArray();
             for (MediaNode n : BrowseTree.keptNodes(kept().list(), 200, null)) items.put(n.toJson().put("kind", "kept"));
-            return new Outcome(200, Replies.ok().put("items", items).put("offline", true));
+            return new Outcome(200, Replies.ok().put("items", items).put("offline", true).put("reason", FailureReason.of(unreachable)));
         }
     }
 

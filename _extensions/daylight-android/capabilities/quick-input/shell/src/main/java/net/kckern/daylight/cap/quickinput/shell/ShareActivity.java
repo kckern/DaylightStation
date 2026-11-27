@@ -41,6 +41,7 @@ import java.util.concurrent.Executors;
  */
 public class ShareActivity extends Activity {
     /** How long a cold start may take before the payload answers. */
+    /** Once the payload is up, how long its account binding and answer may take. */
     static final long READY_WAIT_MS = 8000;
 
     private final ExecutorService worker = Executors.newSingleThreadExecutor(task -> {
@@ -135,8 +136,24 @@ public class ShareActivity extends Activity {
         getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
     }
 
-    /** Waits for the payload (a cold start loads it), then asks where shares may go. */
+    /**
+     * Waits for the payload (a cold start loads it, as long as the loader gives it), then for
+     * its account binding, then asks where shares may go. "Starting Daylight…" shows meanwhile.
+     */
     private void loadTargets() {
+        if (!net.kckern.daylight.shellkit.PayloadReady.now(MemoFiles.PORT).ready()) {
+            main.post(() -> { if (!isFinishing()) status.setText(net.kckern.daylight.shellkit.PayloadReady.STARTING); });
+        }
+        net.kckern.daylight.shellkit.PayloadReady.Answer up = net.kckern.daylight.shellkit.PayloadReady.await(MemoFiles.PORT);
+        if (!up.ready()) {
+            main.post(() -> {
+                if (isFinishing() || isDestroyed()) return;
+                status.setText(up.state == net.kckern.daylight.shellkit.PayloadReady.State.FAILED ? up.words()
+                        : "Daylight is still starting. Share again in a moment.");
+                addClose();
+            });
+            return;
+        }
         long until = System.currentTimeMillis() + READY_WAIT_MS;
         String owner = null;
         while (owner == null && System.currentTimeMillis() < until) {

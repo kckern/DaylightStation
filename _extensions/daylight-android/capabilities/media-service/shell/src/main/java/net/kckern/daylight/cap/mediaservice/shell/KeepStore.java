@@ -97,15 +97,28 @@ final class KeepStore {
     final String location;
     private final SharedPreferences prefs;
     private final PayloadMedia media = new PayloadMedia();
+    /**
+     * Two executors, one per purpose. {@code io} asks home (preview, keep, retry, the sync, the
+     * self-check), so it can wait 30 s on one call; {@code local} keeps the On this phone index
+     * and runs Remove, Pause and Resume, and never waits on the network, so those answer at
+     * once whatever home is doing.
+     */
     private final ExecutorService io = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "Daylight-keep");
         t.setDaemon(true);
         return t;
     });
+    private final ExecutorService local = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "Daylight-keep-local");
+        t.setDaemon(true);
+        return t;
+    });
+    /** Held while downloads are added or a removal deletes them, so a sync never puts back what a Remove took away. */
+    private final Object downloadsLock = new Object();
     private final Handler main = new Handler(Looper.getMainLooper());
-    private final Runnable refreshNow = () -> io.execute(this::refreshOnce);
+    private final Runnable refreshNow = () -> local.execute(this::refreshOnce);
     /** Bytes per collection when they last moved, against the uptime clock (never the wall clock). */
-    private final Map<String, long[]> moved = new HashMap<>();
+    private final Map<String, long[]> moved = new java.util.concurrent.ConcurrentHashMap<>();
     private volatile long capMb = 4096;
     private volatile boolean onCellular, removeFinished;
     private volatile long removeFinishedAfterMs = KeepRules.DAY_MS;
@@ -174,8 +187,8 @@ final class KeepStore {
         if (KeepRules.SD_MISSING.equals(location)) manager.pauseDownloads();
         manager.addListener(new DownloadManager.Listener() {
             @Override public void onDownloadChanged(DownloadManager m, Download d, Exception e) {
-                if (d.state == Download.STATE_FAILED) io.execute(() -> failed(d.request.id, e));
-                if (d.state == Download.STATE_COMPLETED) io.execute(() -> completed(d.request.id));
+                if (d.state == Download.STATE_FAILED) local.execute(() -> failed(d.request.id, e));
+                if (d.state == Download.STATE_COMPLETED) local.execute(() -> completed(d.request.id));
                 refreshSoon();
             }
             @Override public void onDownloadRemoved(DownloadManager m, Download d) {
@@ -304,9 +317,7 @@ final class KeepStore {
                 applyRules();
                 JSONObject r = new JSONObject(media.keepMode(mediaId, "preview", 30_000));
                 if (!r.optBoolean("ok", false)) {
-                    String error = r.optString("error", "");
-                    out = new JSONObject().put("ok", false).put("away", !"not_found".equals(error) && !"bad_request".equals(error))
-                            .put("words", "not_found".equals(error) ? "This can't be kept: home does not have it" : "Waiting for home");
+                    out = notPreviewed(r.optString("error", ""), net.kckern.daylight.shellkit.FailureWords.reasonOf(r));
                 } else {
                     JSONArray tracks = r.optJSONArray("tracks");
                     int n = tracks == null ? 0 : tracks.length();
@@ -322,14 +333,43 @@ final class KeepStore {
                             .put("ask", need > 0 && KeepRules.askFirst(need, limit, free));
                 }
             } catch (Exception e) {
-                out = new JSONObject();
-                try { out.put("ok", false).put("away", true).put("words", "Waiting for home"); } catch (Exception ignored) { }
+                // No answer at all: Daylight still starting, or the call failed on the way.
+                out = notPreviewed("unreachable", e instanceof net.kckern.daylight.api.PayloadPort.NotReadyException ? "starting" : "");
             }
             prefs.edit().remove("checking." + mediaId).apply();
             refreshSoon();
             JSONObject answer = out;
             main.post(() -> done.accept(answer));
         });
+    }
+
+    /**
+     * A preview home did not answer, by cause: not found and refused are said and stop there;
+     * offline, a home not answering and a start still running keep it waiting for home
+     * ("away": KeepFlow then keeps it, and it is fetched when home answers).
+     */
+    private JSONObject notPreviewed(String error, String reason) {
+        net.kckern.daylight.shellkit.FailureWords.Cause cause = "bad_request".equals(error) || "not_found".equals(error)
+                ? net.kckern.daylight.shellkit.FailureWords.Cause.NOT_FOUND
+                : net.kckern.daylight.shellkit.FailureWords.cause(reason, net.kckern.daylight.shellkit.FailureWords.networkValidated(app));
+        String words;
+        boolean away = false;
+        switch (cause) {
+            case NOT_FOUND: words = "This can't be kept: home does not have it"; break;
+            case REFUSED: words = "This can't be kept: home refused this phone"; break;
+            default: words = waitingWords(cause); away = true;
+        }
+        try { return new JSONObject().put("ok", false).put("away", away).put("words", words).put("cause", cause.name()); }
+        catch (Exception never) { return new JSONObject(); }
+    }
+
+    /** What a keep waiting for home says, by why home did not answer. */
+    static String waitingWords(net.kckern.daylight.shellkit.FailureWords.Cause cause) {
+        switch (cause) {
+            case OFFLINE: return "Offline: it will be kept when home answers";
+            case STARTING: return "Daylight is still starting: it will be kept when home answers";
+            default: return "Home isn't answering: it will be kept when it does";
+        }
     }
 
     /**
@@ -346,12 +386,12 @@ final class KeepStore {
                 try { reply = new JSONObject(media.keepMode(mediaId, "keep", 30_000)); }
                 catch (Exception noAnswer) { reply = new JSONObject().put("ok", false).put("error", "unreachable"); }
                 if (!reply.optBoolean("ok", false)) {
-                    String error = reply.optString("error", "");
-                    if (error.equals("not_found") || error.equals("bad_request")) line = "This can't be kept: home does not have it";
+                    JSONObject not = notPreviewed(reply.optString("error", ""), net.kckern.daylight.shellkit.FailureWords.reasonOf(reply));
+                    if (!not.optBoolean("away")) line = not.optString("words");
                     else {
                         addPending(mediaId);
                         KeepJob.scheduleRetry(app);
-                        line = "Waiting for home: it will be kept when home answers";
+                        line = not.optString("words");
                     }
                 } else {
                     event("keep.received", new JSONObject().put("tracks", count(reply)));
@@ -396,14 +436,19 @@ final class KeepStore {
     private void start(JSONObject k) {
         JSONArray tracks = k.optJSONArray("tracks");
         int n = tracks == null ? 0 : tracks.length();
-        prefs.edit().putLong("startedAt." + k.optString("contentId"), System.currentTimeMillis()).apply();
-        // In play order: a partly kept book plays from its start.
-        for (int i = 0; i < n; i++) {
-            JSONObject t = tracks.optJSONObject(i);
-            if (t == null) continue;
-            String key = keyFor(t.optString("id"));
-            Download d = download(key);
-            if (d == null || d.state == Download.STATE_FAILED) add(request(key, t.optString("url")));
+        String cid = k.optString("contentId");
+        synchronized (downloadsLock) {
+            // Removed while its size was checked (Remove runs on its own executor): not started.
+            if (prefs.getBoolean("removing." + cid, false)) return;
+            prefs.edit().putLong("startedAt." + cid, System.currentTimeMillis()).apply();
+            // In play order: a partly kept book plays from its start.
+            for (int i = 0; i < n; i++) {
+                JSONObject t = tracks.optJSONObject(i);
+                if (t == null) continue;
+                String key = keyFor(t.optString("id"));
+                Download d = download(key);
+                if (d == null || d.state == Download.STATE_FAILED) add(request(key, t.optString("url")));
+            }
         }
         keepCovers(k);
     }
@@ -414,7 +459,7 @@ final class KeepStore {
     void remove(String contentId, String reason, Consumer<String> done) {
         prefs.edit().putBoolean("removing." + contentId, true).apply();
         refreshSoon();
-        io.execute(() -> {
+        local.execute(() -> {
             String line = removeNow(contentId, reason) ? "Removed from this phone" : "Could not remove it";
             refreshSoon();
             say(done, line);
@@ -428,6 +473,7 @@ final class KeepStore {
             long freed = 0;
             JSONObject reply = new JSONObject(media.unkeep(contentId, WAIT_MS));
             JSONArray orphaned = reply.optJSONArray("orphaned");
+            synchronized (downloadsLock) {
             Map<String, Download> all = downloads();
             for (int i = 0; orphaned != null && i < orphaned.length(); i++) {
                 String id = orphaned.getString(i);
@@ -440,6 +486,7 @@ final class KeepStore {
                 prefs.edit().remove("key." + id).remove("ver." + id).apply();
             }
             clearItem(contentId);
+            }
             event("keep.removed", new JSONObject().put("reason", reason).put("tracks", orphaned == null ? 0 : orphaned.length()).put("bytes", freed));
             return true;
         } catch (Exception failed) {
@@ -471,7 +518,7 @@ final class KeepStore {
 
     /** Remove all (confirmed on screen, with the total). */
     void removeAll(String reason, Consumer<String> done) {
-        io.execute(() -> {
+        local.execute(() -> {
             int n = 0;
             for (JSONObject k : keptItemsOrEmpty()) if (removeNow(k.optString("contentId"), reason)) n++;
             refreshSoon();
@@ -491,7 +538,7 @@ final class KeepStore {
 
     /** Cancel (the notification): stops keeping what is not ready yet. */
     void cancelUnfinished(Consumer<String> done) {
-        io.execute(() -> {
+        local.execute(() -> {
             int n = 0;
             for (JSONObject e : KeptIndex.read(app.getFilesDir())) {
                 if (e.optInt("total") == 0) continue;
@@ -506,13 +553,13 @@ final class KeepStore {
 
     void pause(String contentId) {
         prefs.edit().putBoolean("paused." + contentId, true).apply();
-        io.execute(() -> { for (String key : keysOf(contentId)) stop(key, STOP_PAUSED); refreshSoon(); });
+        local.execute(() -> { for (String key : keysOf(contentId)) stop(key, STOP_PAUSED); refreshSoon(); });
     }
 
     void resume(String contentId) {
         prefs.edit().remove("paused." + contentId).apply();
         main.post(manager::resumeDownloads);
-        io.execute(() -> { for (String key : keysOf(contentId)) stop(key, Download.STOP_REASON_NONE); refreshSoon(); });
+        local.execute(() -> { for (String key : keysOf(contentId)) stop(key, Download.STOP_REASON_NONE); refreshSoon(); });
     }
 
     void resumeAll() {
@@ -598,7 +645,7 @@ final class KeepStore {
         String key = keyFor(contentId);
         prefs.edit().putBoolean("damaged." + key, true).remove("verified." + key).apply();
         event("keep.damaged", null);
-        io.execute(() -> {
+        local.execute(() -> {
             String url = urlOf(key);
             if (url != null && networkAllowsNow()) fetchAgain(key, url, KeepRules.INCOMPLETE);
             else KeepJob.scheduleRetry(app);
@@ -764,10 +811,15 @@ final class KeepStore {
         }
         clean.apply();
         int fetched = 0;
-        for (Map.Entry<String, String> w : wanted.entrySet()) {
-            if (all.containsKey(w.getKey()) || w.getValue().isEmpty()) continue;
-            add(request(w.getKey(), w.getValue()));
-            fetched++;
+        synchronized (downloadsLock) {
+            for (Map.Entry<String, String> w : wanted.entrySet()) {
+                if (all.containsKey(w.getKey()) || w.getValue().isEmpty()) continue;
+                // Removed (on the local executor) since this sync read the list: not fetched again.
+                String cid = collectionOf.get(w.getKey());
+                if (cid != null && (!prefs.getBoolean("admitted." + cid, false) || prefs.getBoolean("removing." + cid, false))) continue;
+                add(request(w.getKey(), w.getValue()));
+                fetched++;
+            }
         }
         if (fetched > 0) Log.i(TAG, "keep: fetching " + fetched + " kept tracks");
         if (!retryDue.isEmpty() && networkAllowsNow()) {
@@ -1180,8 +1232,12 @@ final class KeepStore {
             // process going away resumes it by itself (a minute after, on any network).
             if (!allReady(index)) KeepJob.scheduleRetry(app);
             net.kckern.daylight.shellkit.PlaylistArtwork.keepOnly(covers);
-            if (networkAllowsNow()) for (String c : covers) net.kckern.daylight.shellkit.PlaylistArtwork.keep(c);
-            try { media.keepsReport(report, WAIT_MS); } catch (Exception later) { /* the next refresh */ }
+            // Saving covers and telling the web go to the network executor: the index never waits on them.
+            boolean fetchCovers = networkAllowsNow();
+            io.execute(() -> {
+                if (fetchCovers) for (String c : covers) net.kckern.daylight.shellkit.PlaylistArtwork.keep(c);
+                try { media.keepsReport(report, WAIT_MS); } catch (Exception later) { /* the next refresh */ }
+            });
         } catch (Exception unavailable) {
             Log.i(TAG, "kept index not refreshed: " + unavailable.getClass().getSimpleName());
         }

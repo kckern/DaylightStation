@@ -4,36 +4,79 @@ import android.app.Activity;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.widget.TextView;
 
+import net.kckern.daylight.api.PayloadPort;
+import net.kckern.daylight.api.PayloadStart;
+import net.kckern.daylight.shellkit.PayloadReady;
 import net.kckern.daylight.shellkit.ShellStart;
 
-/** A recreated screen can wait for the payload to verify its account before showing a draft. */
+/**
+ * A recreated screen (after Android stopped the app, a camera's return) waits for the
+ * payload to verify its account before showing a draft. While Daylight itself starts it
+ * says "Starting Daylight…" and waits as long as the loader gives a payload to start; once
+ * the payload is up, the account has a few seconds to be confirmed. Only then, or when the
+ * loader gave up, is the capture called unavailable, with words that say which.
+ */
 final class CaptureScopeWait {
     static final String CHECKING = "Checking capture setup…";
     static final String UNAVAILABLE = "Could not verify this capture’s account. Reopen the shortcut after Daylight starts.";
 
-    private static final long WAIT_MS = 5_000;
+    /** Once the payload runs, how long its account binding may take to appear. */
+    static final long BINDING_MS = 5_000;
+
+    enum Step { READY, UNAVAILABLE, FAILED, WAIT_STARTING, WAIT_CHECKING }
+
     private final Handler main = new Handler(Looper.getMainLooper());
+    private String why = UNAVAILABLE;
+
+    /**
+     * The next step. {@code current}: the account the payload binds now (null for none);
+     * {@code payloadUp} the payload's port is attached; {@code failure} the loader's; times
+     * on the uptime clock, {@code upAt} when the payload was first seen up (0: not yet).
+     */
+    static Step step(String owner, String current, boolean payloadUp, String failure, long now, long began, long upAt) {
+        if (owner != null && owner.equals(current)) return Step.READY;
+        if (current != null) return Step.UNAVAILABLE;          // bound to another account
+        if (!payloadUp) {
+            if (failure != null) return Step.FAILED;
+            return now - began < PayloadStart.WAIT_MS ? Step.WAIT_STARTING : Step.UNAVAILABLE;
+        }
+        return now - Math.max(began, upAt) < BINDING_MS ? Step.WAIT_CHECKING : Step.UNAVAILABLE;
+    }
+
+    /** The words for the last unavailable answer. */
+    String why() { return why; }
 
     void await(Activity screen, String owner, Runnable ready, Runnable unavailable) {
+        await(screen, owner, ready, unavailable, null);
+    }
+
+    /** @param status a line that shows "Starting Daylight…" or "Checking capture setup…" while it waits */
+    void await(Activity screen, String owner, Runnable ready, Runnable unavailable, TextView status) {
         cancel();
-        long deadline = SystemClock.elapsedRealtime() + WAIT_MS;
+        long began = SystemClock.elapsedRealtime();
         main.post(new Runnable() {
             private boolean startAttempted;
+            private long upAt;
 
             @Override public void run() {
                 if (screen.isFinishing() || screen.isDestroyed()) return;
-                String current = CaptureScope.current();
-                if (owner.equals(current)) {
-                    ready.run();
-                } else if (current != null || SystemClock.elapsedRealtime() >= deadline) {
-                    unavailable.run();
-                } else {
-                    if (!startAttempted && screen.hasWindowFocus()) {
-                        startAttempted = true;
-                        ShellStart.ensure(screen);
-                    }
-                    main.postDelayed(this, 100);
+                long now = SystemClock.elapsedRealtime();
+                boolean up = PayloadPort.named(MemoFiles.PORT).ready();
+                if (up && upAt == 0) upAt = now;
+                Step s = step(owner, CaptureScope.current(), up, PayloadStart.failure(), now, began, upAt);
+                switch (s) {
+                    case READY: ready.run(); return;
+                    case FAILED: why = PayloadReady.FAILED_WORDS; unavailable.run(); return;
+                    case UNAVAILABLE: why = UNAVAILABLE; unavailable.run(); return;
+                    default:
+                        if (status != null) status.setText(s == Step.WAIT_STARTING ? PayloadReady.STARTING : CHECKING);
+                        if (!startAttempted && screen.hasWindowFocus()) {
+                            startAttempted = true;
+                            ShellStart.ensure(screen);
+                        }
+                        main.postDelayed(this, 100);
                 }
             }
         });

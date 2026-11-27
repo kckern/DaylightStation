@@ -307,11 +307,18 @@ does with a household URL in a push.
 ### Cold start
 
 Android can create the link activity in a process with no payload loaded. The
-activity is visible, so it is allowed to start the shell service. It then waits up
-to eight seconds on the `links` port for the payload to attach. If none does, it
-shows "Daylight is still starting. Try again in a moment." and leaves the service
-starting. A request that was handed to the payload is never sent twice. Unproven
-on a phone: how long a cold payload takes, so whether eight seconds is enough.
+activity is visible, so it is allowed to start the shell service. It keeps the link
+and waits on the port (`links`, or `launcher-capture` for a capture shortcut) for as
+long as the shell's loader gives a payload to start (shell-kit `PayloadReady`, see
+"Waiting for Daylight to start" below), and runs the link the moment the payload
+attaches. A tap still waiting after 300 ms shows a small card along the bottom,
+"Starting Daylight… · Lights off" (what was tapped, from `LinkLabel`), with
+**Cancel**; Back cancels too, and a cancelled link is never sent. Warm, nothing is
+shown before the answer. Only when the loader gave up does it say "Daylight could not
+start. Close it and open it again.", and only when the whole start deadline passed
+with no payload, "Daylight is still starting. Try again in a moment." A request that
+was handed to the payload is never sent twice; a link activity recreated by a
+rotation does not run the link a second time.
 
 When a link opens a page and no window is up, the URL is kept for up to a minute
 and the window the link activity then brings forward loads it in place of the
@@ -457,7 +464,7 @@ natively and answers "Could not start playback"; it plays in the web view.
 |---|---|---|---|
 | `DaylightMediaService`, a Media3 `MediaLibraryService` | The ExoPlayer, the session, audio focus, "headphones unplugged", the media notification and the foreground state (type `mediaPlayback`) | What a browse level holds, which stream a media id resolves to, when progress is reported | Starts the shell service, which loads the payload. A browse of the root waits up to 4 s and then answers one tab, "Daylight is starting", with nothing under it; browsers of the root are told to ask again when a payload attaches (within two minutes). A play request fails. Nothing crashes and nothing runs on the main thread |
 | `PlayActivity` (not exported, no window) | Builds a media controller, sets one media id, plays, and stays up until playback started, failed or 8 s passed | Starts it, on a keyed `media` link | Not reached: the link activity already waited for the payload |
-| `PlayActionService` (not exported, foreground service of type `mediaPlayback`) | Started by a widget button or a tile with one action id. Enters the foreground at once with a "Starting playback" notice, asks the payload for the action's media id, plays it through a media controller, and lets go once the media service holds the foreground state | Answers `action` with the media id of a configured or pinned media action, or 404 | Starts the shell service and waits up to 8 s; with no payload it says "Could not start playback" |
+| `PlayActionService` (not exported, foreground service of type `mediaPlayback`) | Started by a widget button or a tile with one action id. Enters the foreground at once with a "Starting playback" notice, asks the payload for the action's media id, plays it through a media controller, and lets go once the media service holds the foreground state | Answers `action` with the media id of a configured or pinned media action, or 404 | Starts the shell service and waits up to 8 s (not yet the shared readiness wait: its own 15 s give-up would cut it); with no payload it says "Could not start playback" |
 
 The installed service asks the payload through the `media` `PayloadPort`, in
 process, as JSON: `browse`, `resolve`, `event`, and, from the play service,
@@ -982,6 +989,72 @@ out of reach the last answer is served, however old; a level never loaded fails
 only when it is an https URL on the backend; anything else is left out, in the
 payload and again in the installed service.
 
+### Waiting for Daylight to start
+
+The phone's service starts on demand, so a tap may come while the payload is still
+loading. The shell's loader (`PayloadLoader`) gives one payload's `start()` 20 s
+(`PayloadStart.START_DEADLINE_MS`, in shell-api, read by both sides) and notes in
+`PayloadStart` when no payload could be started. Every installed screen that needs the
+payload waits through shell-kit `PayloadReady`:
+
+- **Ready**: the port is attached (PayloadPort's own signal, so it answers the moment
+  the payload attaches).
+- **Still starting**: the wait (`PayloadStart.WAIT_MS`, the deadline plus 5 s) ran out
+  with no failure: "Starting Daylight…".
+- **Failed**: the loader gave up (its reason goes to the log): "Daylight could not
+  start. Close it and open it again."
+
+Used by the link activity (above); the phone home (the tabs, Play and Connect draw at
+once from the phone; only Services and Capture say "Loading…" or "Starting Daylight…";
+the bookmarks and actions are asked at the same time, and a load that could not run is
+asked again on its own when the payload attaches, with no Try again to press); the
+capture screens recreated after Android stopped the app (voice, text, photo: "Starting
+Daylight…" while it starts, then up to 5 s for the account binding); Capture status;
+and Share to Daylight. The one-tap play service and the invisible `PlayActivity` keep
+their own budgets (8 s, 15 s): they belong to the play path, which is being reworked.
+
+### When home does not answer: four lines
+
+A slow home is not "offline". The payload says why a call to home failed (`reason`
+on its answer: `timeout`, `home-error`, `unreachable`, `not-found`, `refused`;
+media-service `FailureReason`), on failed answers and on the offline answers of
+search and the library. The shell adds whether Android reports a validated network
+and picks the words (shell-kit `FailureWords`):
+
+| Cause | Line |
+|---|---|
+| No validated network | "Offline · showing what's on this phone" |
+| Timeout, 5xx, home unreachable on a working network | "Home isn't answering" (with Retry; what was shown stays under it) |
+| 404 | "Not found at home" |
+| 401 / 403 | "Home refused this phone" |
+
+Browse uses them for a level, the library, search ("Home isn't answering · searching
+what's on this phone"), More and a book's progress line; Keep's preview and keep say
+"Offline: it will be kept when home answers", "Home isn't answering: it will be kept
+when it does", "This can't be kept: home does not have it" or "… home refused this
+phone". An offline answer is never written into Browse's cache of home's answers.
+
+### Covers, lists and threads
+
+- **One cover cache.** Every cover decoded in the process goes into one memory cache
+  (shell-kit `PlaylistArtwork`, an `LruCache` of an eighth of the app's memory, at most
+  32 MB, keyed by URL and size step: `CoverCache`). Browse rows, the home's cards,
+  tiles and mini player, On this phone and Now playing look it up on the main thread
+  before posting work, so a cover one screen showed draws on the next in the same frame
+  (Now playing draws a smaller copy at once and swaps in its full size). A cover that
+  failed to load waits its backoff (a minute, doubling to a day) before it is fetched
+  again, so offline does not cost a 4 s connect per cover on every draw.
+- **Lists update in place.** On this phone (the Play tab's section and the Downloads
+  screen) and a Browse level keep their rows by content id (shell-kit `KeyedRows`): an
+  answer equal to what shows touches nothing, a changed row has its words, progress and
+  buttons updated in its own view, and only rows that came or went are added or removed.
+  A press in progress, the covers and the A–Z strip survive the refresh.
+- **One thread per purpose.** Browse searches on their own thread (a search typed past
+  while it waited is skipped), screen commands and the Play on list on another, levels
+  and progress on a third. Keep's index, Remove, Pause and Resume run on a local thread
+  that never waits on the network; previews, keeps, retries, the sync and saving covers
+  run on the network one. A Remove made while a sync runs is not undone by it.
+
 ### Lookup and browse
 
 Lookup, not discovery (ops:docs/superpowers/specs/2026-11-26-phone-lookup-and-browse.md):
@@ -992,12 +1065,14 @@ One screen, `BrowseActivity` (not exported), in three modes:
   last key), grouped Books · Albums · Artists · Playlists · Tracks, five each with "N
   more". Books are albums in a library whose name holds "book", "stor" or "speech". The
   last ten searches show under an empty box (kept on the phone; Clear recent searches).
-  No home: "Searching this phone", the kept collections whose title holds every word.
+  No home: the kept collections whose title holds every word, under "Offline · searching
+  what's on this phone" or "Home isn't answering · searching what's on this phone".
 - **Library** (Play tab → Browse library): every audio Plex library, then the household's
   list sources (Plex's audio playlists as **Playlists**, programs, watchlists, custom
-  lists). Offline: what is kept, "Showing what's on this phone".
+  lists). Offline: what is kept, "Offline · showing what's on this phone" (or "Home
+  isn't answering · …").
 - **A level** (a library, an artist, an album, a book, a playlist): rows of a fixed
-  64 dp height, the last answer drawn at once from the phone and replaced in place, fixed
+  64 dp height, the last answer drawn at once from the phone and updated in place row by row, fixed
   placeholders the first time; a long level ends in **More**, which appends the next
   50 in place. A collection has a header: cover, name, Play (a book: Resume), Shuffle,
   Play on… (Now playing's picker, `TargetPicker`: this phone first, each screen's state, off ones greyed; a screen gets the screen's load, as the web's Play on) and Keep (the
@@ -1081,7 +1156,8 @@ removed.
   more), the shell reads each missing track's size (a HEAD, only on an allowed network) and
   shows "1.2 GB · 13.8 GB left · on Wi-Fi". Above a quarter of the limit or of the free
   space, one confirmation; over the limit, "Needs 1.2 GB more room" with Manage space; with
-  home out of reach, the keep waits ("Waiting for home") and is made when home answers.
+  home out of reach, the keep waits ("Offline: it will be kept when home answers", or "Home
+  isn't answering: it will be kept when it does") and is made when home answers.
   A waiting keep is held on the phone by the media id it was asked with (`c:<list>`, or
   `p:<track>` for Now playing's album keep) and shown, and removed, by its content id
   (`KeepRules.pendingContentId`); Remove drops it even when home does not answer.
@@ -1761,7 +1837,9 @@ provider's scene following the real fetch.
 - **Share destinations** are the text destinations whose id is `share` or starts
   with `share-`, in slot order. The first one is the big button. The screen asks the
   payload for them (port op `share-targets`, ids and labels only) once the payload
-  has started. A cold start waits up to 8 s for it (`READY_WAIT_MS`).
+  has started. A cold start shows "Starting Daylight…" and waits as long as the loader
+  gives the payload (`PayloadReady`), then up to 8 s for the account and the answer
+  (`READY_WAIT_MS`).
 - **No destination** ("Sharing has no destination on this phone") or **not set up**
   ("Daylight is not set up on this phone yet"): nothing is queued.
 - **Text over the intake's 16 KB** keeps its start, where the link is.
@@ -2112,6 +2190,11 @@ components.
   decisions are in pure classes that are tested (`LinkRequest`, `LinkAnswer`,
   `TileFace`, `WidgetButtons`, `ButtonFace`); the Android calls around them are
   not: the widget host, the chooser's list, what Android answers for a widget id.
+- `KeyedRows` moving real views, `PlaylistArtwork`'s `LruCache`, `FailureWords`'
+  network check and the screens that use them (`BrowseActivity`, `DownloadsActivity`,
+  `PhoneHomeActivity`, the link activity's card). Their decisions are in `RowDiff`,
+  `CoverCache`, `FailureWords.cause`, `PayloadReady`, `LinkLabel`,
+  `CaptureScopeWait.step` and media-service `FailureReason`, which are tested.
 - `AndroidSurfaces` and `AndroidWidgetSink` against a real launcher. On the JVM
   they are started over a context with no shortcut service and no widget host,
   which shows only that they do nothing and do not throw there.

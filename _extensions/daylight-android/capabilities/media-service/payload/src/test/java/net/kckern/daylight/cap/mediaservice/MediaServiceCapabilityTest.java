@@ -101,6 +101,21 @@ public class MediaServiceCapabilityTest {
         assertEquals("unreachable", r.getString("error"));
     }
 
+    @Test public void aFailedBrowseSaysWhyHomeDidNotAnswer() throws Exception {
+        api.down = true;
+        assertEquals("unreachable", browse("recent", 0, 50).getString("reason"));
+    }
+
+    @Test public void anOfflineSearchAndLibrarySayWhyAlongsideWhatIsKept() throws Exception {
+        api.down = true;
+        MediaServiceCapability.Outcome found = cap.call(new JSONObject().put("op", "lookup").put("query", "abbey"));
+        assertTrue(found.body.getBoolean("offline"));
+        assertEquals("unreachable", found.body.getString("reason"));
+        MediaServiceCapability.Outcome library = cap.call(new JSONObject().put("op", "library"));
+        assertTrue(library.body.getBoolean("offline"));
+        assertEquals("unreachable", library.body.getString("reason"));
+    }
+
     @Test public void anIdThatIsNotOneOfTheTreesIsRefused() throws Exception {
         assertEquals(400, browse("https://evil.example/", 0, 50).getInt("_status"));
         assertEquals(400, browse("p:plex:11", 0, 50).getInt("_status"));

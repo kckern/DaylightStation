@@ -76,6 +76,10 @@ public class RecordActivity extends Activity {
     private boolean waitingForMic;
     private boolean beginOnResume;
     private boolean resumed;
+    /** Set while a recreated screen waits for Daylight to confirm its account. */
+    private Bundle deferredState;
+    private TextView checkingLine;
+    private final CaptureScopeWait bindingWait = new CaptureScopeWait();
     private boolean requested;
     private boolean seenRecording;
     private boolean sending;
@@ -99,11 +103,27 @@ public class RecordActivity extends Activity {
         setFinishOnTouchOutside(false);
         if (Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false);
         owner = getIntent().getStringExtra(CaptureScope.EXTRA);
+        if (savedInstanceState != null && CaptureScope.valid(owner) && CaptureScope.current() == null) {
+            // Recreated after Android stopped the app: the recording is on disk; wait for Daylight
+            // to start and confirm the account (onResume), then open it.
+            deferredState = savedInstanceState;
+            checkingLine = new TextView(this);
+            checkingLine.setText(net.kckern.daylight.shellkit.PayloadReady.STARTING);
+            int pad = Math.round(24 * getResources().getDisplayMetrics().density);
+            checkingLine.setPadding(pad, pad, pad, pad);
+            setContentView(checkingLine);
+            return;
+        }
         if (!CaptureScope.currentIs(owner)) {
             say(CaptureScopeWait.UNAVAILABLE);
             finish();
             return;
         }
+        begin(savedInstanceState);
+    }
+
+    /** The screen proper, once the capture's account is confirmed. */
+    private void begin(Bundle savedInstanceState) {
         store = new CaptureDraftStore(getFilesDir(), owner);
         registerReceiver(screenOff, new IntentFilter(Intent.ACTION_SCREEN_OFF));
         receiverRegistered = true;
@@ -118,6 +138,7 @@ public class RecordActivity extends Activity {
 
     @Override protected void onSaveInstanceState(Bundle state) {
         super.onSaveInstanceState(state);
+        if (deferredState != null) { state.putAll(deferredState); return; }
         state.putBoolean("asking", asking);
         state.putBoolean("mic", waitingForMic);
         state.putBoolean("begin", beginOnResume);
@@ -182,7 +203,21 @@ public class RecordActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume();
-        if (isFinishing() || closeIfOwnerChanged()) return;
+        if (isFinishing()) return;
+        if (deferredState != null) {
+            bindingWait.await(this, owner, () -> {
+                Bundle restored = deferredState;
+                deferredState = null;
+                begin(restored);
+                if (!isFinishing()) onResumeReady();
+            }, () -> { say(bindingWait.why()); finish(); }, checkingLine);
+            return;
+        }
+        if (closeIfOwnerChanged()) return;
+        onResumeReady();
+    }
+
+    private void onResumeReady() {
         resumed = true;
         if (beginOnResume) {
             beginOnResume = false;
@@ -192,6 +227,7 @@ public class RecordActivity extends Activity {
     }
 
     @Override protected void onPause() {
+        bindingWait.cancel();
         resumed = false;
         if (!asking) pauseCapture();
         stopPlayback();

@@ -64,7 +64,13 @@ public final class BrowseActivity extends Activity {
     private static final long WAIT_MS = 12_000;
 
     private final Handler main = new Handler(Looper.getMainLooper());
+    // One executor per purpose: a 45 s screen command or a slow level never holds up a search.
+    /** Levels, More, a book's progress and Mark finished. */
     private final ExecutorService io = Executors.newSingleThreadExecutor();
+    /** Searches: a queued search the person has typed past is skipped, not run. */
+    private final ExecutorService searchIo = Executors.newSingleThreadExecutor();
+    /** Screens: the Play on list and the screen commands. */
+    private final ExecutorService screenIo = Executors.newSingleThreadExecutor();
     private final ExecutorService covers = Executors.newFixedThreadPool(2);
     private final PayloadMedia media = new PayloadMedia();
     private DaylightTheme t;
@@ -76,7 +82,9 @@ public final class BrowseActivity extends Activity {
     private TextView progressLine;
     private LinearLayout azStrip;
     private ScrollView scroller;
-    private int generation;
+    private volatile int generation;
+    /** The level's rows, kept by id: a refreshed answer updates them in place (no blink, no lost press). */
+    private net.kckern.daylight.shellkit.KeyedRows<JSONObject> keyed;
     private ListenableFuture<MediaController> pending;
     private MediaController controller;
     private final net.kckern.daylight.shellkit.TapGuard playGuard = new net.kckern.daylight.shellkit.TapGuard();
@@ -138,6 +146,13 @@ public final class BrowseActivity extends Activity {
         results = new LinearLayout(this);
         results.setOrientation(LinearLayout.VERTICAL);
         column.addView(results);
+        keyed = new net.kckern.daylight.shellkit.KeyedRows<>(results, new net.kckern.daylight.shellkit.KeyedRows.Rows<JSONObject>() {
+            @Override public String key(JSONObject n) { return n.optString("id"); }
+            @Override public String signature(JSONObject n) { return n.toString(); }
+            @Override public View create(JSONObject n) { return row(n, null); }
+            // A changed row is drawn again; an unchanged one is not touched.
+            @Override public View update(View old, JSONObject n) { return row(n, null); }
+        });
         UiTelemetry.event("Browse", "browse.view", new JSONObject(java.util.Map.of("kind", "level".equals(mode) ? kind : mode)));
         Log.i(TAG, "browse open " + mode + " " + kind);
 
@@ -153,6 +168,8 @@ public final class BrowseActivity extends Activity {
     @Override protected void onDestroy() {
         super.onDestroy();
         io.shutdownNow();
+        searchIo.shutdownNow();
+        screenIo.shutdownNow();
         covers.shutdownNow();
         if (pending != null) MediaController.releaseFuture(pending);
         else if (controller != null) controller.release();
@@ -200,7 +217,7 @@ public final class BrowseActivity extends Activity {
 
     private void showRecent() {
         generation++;
-        results.removeAllViews();
+        clearResults();
         JSONArray recent = recent();
         status.setText(recent.length() == 0 ? "Search the household's books, music and playlists." : "Recent searches");
         for (int i = 0; i < recent.length(); i++) {
@@ -224,19 +241,39 @@ public final class BrowseActivity extends Activity {
         if (q.isEmpty()) { showRecent(); return; }
         final int mine = ++generation;
         status.setText("Searching…");
-        io.execute(() -> {
+        searchIo.execute(() -> {
+            // Typed past while it waited in the queue: this search is not asked at all.
+            if (mine != generation) return;
             JSONObject answer;
+            String reason = "";
             try { answer = new JSONObject(media.lookup(q, WAIT_MS)); }
-            catch (Exception failed) { answer = null; Log.w(TAG, "search failed: " + failed.getClass().getSimpleName()); }
+            catch (Exception failed) { answer = null; reason = reasonOf(failed); Log.w(TAG, "search failed: " + failed.getClass().getSimpleName()); }
             JSONObject a = answer;
-            main.post(() -> { if (mine == generation && !isFinishing()) showResults(q, a); });
+            String why = reason;
+            main.post(() -> { if (mine == generation && !isFinishing()) showResults(q, a, why); });
         });
     }
 
-    private void showResults(String q, JSONObject answer) {
+    /** The cause of a failed or offline answer: what the payload said went wrong, and this phone's network. */
+    private net.kckern.daylight.shellkit.FailureWords.Cause causeOf(JSONObject answer, String reason) {
+        String r = answer != null ? net.kckern.daylight.shellkit.FailureWords.reasonOf(answer) : reason;
+        return net.kckern.daylight.shellkit.FailureWords.cause(r, net.kckern.daylight.shellkit.FailureWords.networkValidated(this));
+    }
+
+    /** "starting" while the payload is not up yet; otherwise none (the payload's answer says why). */
+    private static String reasonOf(Exception failed) {
+        return failed instanceof net.kckern.daylight.api.PayloadPort.NotReadyException ? "starting" : "";
+    }
+
+    private void clearResults() {
         results.removeAllViews();
+        keyed.reset();
+    }
+
+    private void showResults(String q, JSONObject answer, String reason) {
+        clearResults();
         if (answer == null || !answer.optBoolean("ok", false)) {
-            status.setText("Search isn't answering right now.");
+            status.setText(net.kckern.daylight.shellkit.FailureWords.line(causeOf(answer, reason)));
             results.addView(link("Retry", "search.retry", () -> runSearch(q)));
             return;
         }
@@ -247,11 +284,14 @@ public final class BrowseActivity extends Activity {
         for (int g = 0; groups != null && g < groups.length(); g++) count += groups.optJSONObject(g).optJSONArray("items").length();
         try { UiTelemetry.event("Browse", "search.query", new JSONObject().put("length", q.length()).put("results", count).put("offline", offline)); }
         catch (Exception ignored) { }
+        // Offline answers are what is kept on this phone; the line says why home did not answer.
+        String away = offline ? net.kckern.daylight.shellkit.FailureWords.head(causeOf(answer, "")) + " · searching what's on this phone" : "";
         if (count == 0) {
-            status.setText(offline ? "Searching this phone · nothing kept matches \"" + q + "\"." : "Nothing called \"" + q + "\". Try fewer words.");
+            status.setText(offline ? away + " · nothing kept matches \"" + q + "\"." : "Nothing called \"" + q + "\". Try fewer words.");
+            if (offline) results.addView(link("Retry", "search.retry", () -> runSearch(q)));
             return;
         }
-        status.setText(offline ? "Searching this phone" : "");
+        status.setText(away);
         // The group asked for (Now playing's album or artist line) comes first.
         List<JSONObject> ordered = new ArrayList<>();
         for (int g = 0; groups != null && g < groups.length(); g++) {
@@ -301,60 +341,84 @@ public final class BrowseActivity extends Activity {
             }
             return;
         }
-        try { draw(new JSONArray(cached), false, false); } catch (Exception ignored) { }
+        try { draw(new JSONArray(cached), null, false); } catch (Exception ignored) { }
     }
 
     private void load(int page) {
         final int mine = ++generation;
         io.execute(() -> {
             JSONObject answer;
+            String reason = "";
             try {
                 answer = new JSONObject(MODE_LIBRARY.equals(mode) ? media.library(WAIT_MS) : media.browse(browseId(kind, parent), page, 50, WAIT_MS));
             } catch (Exception failed) {
                 answer = null;
+                reason = reasonOf(failed);
                 Log.w(TAG, "browse failed: " + failed.getClass().getSimpleName());
             }
             JSONObject a = answer;
-            main.post(() -> { if (mine == generation && !isFinishing()) answered(a); });
+            String why = reason;
+            main.post(() -> { if (mine == generation && !isFinishing()) answered(a, why); });
         });
     }
 
-    private void answered(JSONObject answer) {
+    private void answered(JSONObject answer, String reason) {
         if (answer == null || !answer.optBoolean("ok", false)) {
-            // Offline is a filter, not an error: the last answer stays on show, and with none
-            // the page says this needs a connection and leads to what is on this phone.
-            if (!rows.isEmpty()) { status.setText("Offline · showing the last answer"); return; }
-            results.removeAllViews();
-            status.setText("This needs a connection: it isn't kept on this phone.");
+            // Why home did not answer, in its own words (offline, not answering, not found,
+            // refused). The last answer stays on show under it; with none, the page leads to
+            // what is on this phone.
+            net.kckern.daylight.shellkit.FailureWords.Cause cause = causeOf(answer, reason);
+            boolean retry = net.kckern.daylight.shellkit.FailureWords.retryable(cause)
+                    || cause == net.kckern.daylight.shellkit.FailureWords.Cause.STARTING;
+            if (!rows.isEmpty()) {
+                status.setText(net.kckern.daylight.shellkit.FailureWords.head(cause) + " · showing the last answer" + (retry ? " · Retry" : ""));
+                if (retry) status.setOnClickListener(v -> { status.setOnClickListener(null); load(0); });
+                return;
+            }
+            clearResults();
+            status.setText(cause == net.kckern.daylight.shellkit.FailureWords.Cause.OFFLINE
+                    ? "Offline: this isn't kept on this phone." : net.kckern.daylight.shellkit.FailureWords.line(cause));
             LinearLayout ways = new LinearLayout(this);
             ways.addView(button("On this phone", "browse.offline_kept", () -> DownloadsActivity.open(this)));
-            ways.addView(button("Retry", "browse.retry", () -> load(0)));
+            if (retry) ways.addView(button("Retry", "browse.retry", () -> load(0)));
             results.addView(ways);
             return;
         }
         JSONArray items = answer.optJSONArray("items");
         boolean offline = answer.optBoolean("offline");
-        prefs().edit().putString(cacheKey(), items == null ? "[]" : items.toString()).apply();
-        draw(items == null ? new JSONArray() : items, offline, false);
+        // Only home's own answer is remembered: an offline one (what is kept) never replaces it.
+        if (!offline) prefs().edit().putString(cacheKey(), items == null ? "[]" : items.toString()).apply();
+        status.setOnClickListener(null);
+        draw(items == null ? new JSONArray() : items, offline ? causeOf(answer, "") : null, false);
     }
 
-    private void draw(JSONArray items, boolean offline, boolean append) {
-        if (!append) { results.removeAllViews(); rows.clear(); }
-        status.setText(offline ? "Showing what's on this phone" : "");
+    /**
+     * The level's rows. Rows are kept by id: an answer equal to what shows changes nothing,
+     * and a changed one updates only its own rows (the A–Z strip and a press in progress stay).
+     * {@code away}: why this is what is kept on the phone (null for home's own answer).
+     */
+    private void draw(JSONArray items, net.kckern.daylight.shellkit.FailureWords.Cause away, boolean append) {
+        boolean offline = away != null;
+        status.setText(offline ? net.kckern.daylight.shellkit.FailureWords.head(away) + " · showing what's on this phone" : "");
         if (items.length() == 0 && !append) {
-            status.setText(offline ? "Offline · nothing is kept on this phone yet."
+            clearResults();
+            rows.clear();
+            rowViews.clear();
+            status.setText(offline ? net.kckern.daylight.shellkit.FailureWords.head(away) + " · nothing is kept on this phone yet."
                     : MODE_LIBRARY.equals(mode) ? "Nothing here yet." : "This is empty.");
+            drawStrip();
             return;
         }
-        if (!append) rowViews.clear();
+        // Placeholders or a failure's buttons go; rows already drawn stay where they are.
+        if (keyed.isEmpty()) results.removeAllViews();
+        if (!append) rows.clear();
         for (int i = 0; i < items.length(); i++) {
             JSONObject n = items.optJSONObject(i);
-            if (n == null) continue;
-            rows.add(n);
-            View v = row(n, null);
-            rowViews.add(v);
-            results.addView(v);
+            if (n != null) rows.add(n);
         }
+        if (!keyed.show(rows) && !append) return;   // the same answer: nothing is redrawn
+        rowViews.clear();
+        rowViews.addAll(keyed.views());
         drawStrip();
         if (progressLine != null) loadProgress();
     }
@@ -414,16 +478,36 @@ public final class BrowseActivity extends Activity {
         final List<String> ids = trackIds();
         if (ids.isEmpty()) return;
         io.execute(() -> {
-            JSONObject p;
-            try { p = new JSONObject(media.progress(ids, WAIT_MS)).optJSONObject("progress"); } catch (Exception e) { p = null; }
-            JSONObject got = p;
-            main.post(() -> { if (!isFinishing() && progressLine != null) progressLine.setText(progressWords(ids, got)); });
+            JSONObject p = null, reply = null;
+            String reason = "";
+            try { reply = new JSONObject(media.progress(ids, WAIT_MS)); p = reply.optJSONObject("progress"); }
+            catch (Exception e) { reason = reasonOf(e); }
+            JSONObject got = p, said = reply;
+            String why = reason;
+            main.post(() -> {
+                if (isFinishing() || progressLine == null) return;
+                progressLine.setText(progressWords(ids, got, progressUnavailable(causeOf(said, why))));
+            });
         });
     }
 
     /** "2 h 10 min left · 34 %", "Finished", or "Not started" from the parts' progress (seconds). */
     static String progressWords(List<String> ids, JSONObject progress) {
-        if (progress == null) return "Progress isn't available offline";
+        return progressWords(ids, progress, "Progress isn't available offline");
+    }
+
+    /** The progress line when home gave none, by why. */
+    static String progressUnavailable(net.kckern.daylight.shellkit.FailureWords.Cause cause) {
+        switch (cause) {
+            case OFFLINE: return "Progress isn't available offline";
+            case STARTING: return "Progress shows once Daylight has started";
+            default: return "Progress: " + net.kckern.daylight.shellkit.FailureWords.line(cause);
+        }
+    }
+
+    /** @param unavailable the line when there is no progress answer (why home did not answer) */
+    static String progressWords(List<String> ids, JSONObject progress, String unavailable) {
+        if (progress == null) return unavailable;
         long played = 0, total = 0;
         boolean any = false, allDone = true;
         for (String id : ids) {
@@ -622,7 +706,7 @@ public final class BrowseActivity extends Activity {
             row.addView(more, new LinearLayout.LayoutParams(dp(44), dp(48)));
         }
         row.setOnClickListener(v -> {
-            if (id.startsWith("m:")) { results.removeView(row); loadMore(id); }
+            if (id.startsWith("m:")) { loadMore(n); }
             else if (browsable) {
                 String k = rowKind.isEmpty() ? childKind(kind, id) : rowKind;
                 UiTelemetry.tag(row, "browse.open");
@@ -652,17 +736,29 @@ public final class BrowseActivity extends Activity {
         }
     }
 
-    /** A long level's next page, appended in place of its More row. */
-    private void loadMore(String moreId) {
+    /** A long level's next page, appended in place of its More row (which comes back when home did not answer). */
+    private void loadMore(JSONObject more) {
+        final String moreId = more.optString("id");
+        // By id: the row's own object may be an earlier answer's copy of the one in the list.
+        rows.removeIf(r -> moreId.equals(r.optString("id")));
+        keyed.show(rows);
         final int mine = generation;
         io.execute(() -> {
             JSONObject answer;
-            try { answer = new JSONObject(media.browse(moreId, 0, 50, WAIT_MS)); } catch (Exception e) { answer = null; }
+            String reason = "";
+            try { answer = new JSONObject(media.browse(moreId, 0, 50, WAIT_MS)); } catch (Exception e) { answer = null; reason = reasonOf(e); }
             JSONObject a = answer;
+            String why = reason;
             main.post(() -> {
                 if (mine != generation || isFinishing()) return;
-                if (a == null || !a.optBoolean("ok")) { Toast.makeText(this, "Can't reach home", Toast.LENGTH_SHORT).show(); return; }
-                draw(a.optJSONArray("items") == null ? new JSONArray() : a.optJSONArray("items"), a.optBoolean("offline"), true);
+                if (a == null || !a.optBoolean("ok")) {
+                    Toast.makeText(this, net.kckern.daylight.shellkit.FailureWords.line(causeOf(a, why)), Toast.LENGTH_SHORT).show();
+                    rows.add(more);
+                    keyed.show(rows);
+                    return;
+                }
+                draw(a.optJSONArray("items") == null ? new JSONArray() : a.optJSONArray("items"),
+                        a.optBoolean("offline") ? causeOf(a, "") : null, true);
             });
         });
     }
@@ -753,7 +849,7 @@ public final class BrowseActivity extends Activity {
      */
     private void playOn(String mediaId, String name) {
         action("play_on");
-        io.execute(() -> {
+        screenIo.execute(() -> {
             List<TargetPicker.Target> targets = new ArrayList<>();
             targets.add(new TargetPicker.Target(TargetPicker.LOCAL, "This phone", ""));
             String problem = "";
@@ -767,7 +863,7 @@ public final class BrowseActivity extends Activity {
             String note = problem;
             main.post(() -> {
                 if (isFinishing()) return;
-                TargetPicker.show(this, t, targets, "", note, media, io, main, (id, label) -> {
+                TargetPicker.show(this, t, targets, "", note, media, screenIo, main, (id, label) -> {
                     if (TargetPicker.LOCAL.equals(id)) play(mediaId, false, name, subtitle, art);
                     else startOn(id, label, mediaId, name);
                 });
@@ -779,7 +875,7 @@ public final class BrowseActivity extends Activity {
         String contentId = mediaId.startsWith("c:") ? mediaId.substring(2) : mediaId.startsWith("p:") ? mediaId.substring(2).split("\\|")[0] : mediaId;
         boolean list = mediaId.startsWith("c:");
         Toast.makeText(this, "Starting " + name + " on " + screenName + "…", Toast.LENGTH_SHORT).show();
-        io.execute(() -> {
+        screenIo.execute(() -> {
             String line;
             try {
                 JSONObject reply = new JSONObject(media.screenCommand(new JSONObject().put("op", "screen-command").put("device", device)
@@ -800,11 +896,16 @@ public final class BrowseActivity extends Activity {
         catch (Exception ignored) { }
     }
 
+    /** A cover seen before (here or on another screen) draws in this frame; others load off the main thread. */
     private void loadCover(ImageView into, String url, int px) {
-        if (url == null || url.isEmpty()) return;
+        into.setTag(url);
+        if (url == null || url.isEmpty()) { into.setImageDrawable(null); return; }
+        Bitmap hit = net.kckern.daylight.shellkit.PlaylistArtwork.cached(url, px);
+        if (hit != null) { into.setImageBitmap(hit); return; }
         covers.execute(() -> {
             Bitmap b = net.kckern.daylight.shellkit.PlaylistArtwork.load(url, px);
-            if (b != null) main.post(() -> { if (!isDestroyed()) into.setImageBitmap(b); });
+            // The view may show another row's cover by now (rows update in place).
+            if (b != null) main.post(() -> { if (!isDestroyed() && url.equals(into.getTag())) into.setImageBitmap(b); });
         });
     }
 
