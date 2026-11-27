@@ -1045,6 +1045,7 @@ public class NowPlayingActivity extends Activity {
             lyricsBadge.setVisibility(View.GONE);
             // The chapter line is reserved only for a long item, as the playing frame does (music has none).
             if (chapterLine != null) { chapterLine.setText(""); chapterLine.setVisibility(begun.longForm && !remote() ? View.INVISIBLE : View.GONE); }
+            if (rail != null) rail.setVisibility(begun.longForm && !remote() ? View.INVISIBLE : View.GONE);
             wave.setVisibility(View.VISIBLE);
             wave.setSamples(null);
             wave.setMarks(null, -1, 0);
@@ -1189,6 +1190,7 @@ public class NowPlayingActivity extends Activity {
         lyricsBadge.setVisibility(View.GONE);
         boolean longItem = e.durationMs >= FirstTap.LONG_MS;
         if (chapterLine != null && chapters.isEmpty()) chapterLine.setVisibility(longItem && !remote() ? View.INVISIBLE : View.GONE);
+        if (rail != null && chapters.isEmpty()) rail.setVisibility(longItem && !remote() ? View.INVISIBLE : View.GONE);
         wave.setVisibility(View.VISIBLE);
         art.setAlpha(live ? 1f : 0.6f);
         renderArtwork(e.artworkUrl.isEmpty() ? null : Uri.parse(e.artworkUrl), true);
@@ -1613,10 +1615,34 @@ public class NowPlayingActivity extends Activity {
         return true;
     }
 
+    private ChapterRailView rail;
+
+    /** A tap on the chapter rail: that chapter's start, with a tick (the view gave it). */
+    private void railTo(int chapter) {
+        MediaController c = controller;
+        if (c == null || chapter < 0 || chapter >= chapters.count() || !can(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)) return;
+        note("player.chapter-rail", "to", chapter, "of", chapters.count());
+        c.seekTo(chapters.starts[chapter]);
+        clock.reset();
+        tickPosition();
+    }
+
+    /** The rail keeps its place for any long item on this phone (nothing jumps), drawn only in chapter mode. */
+    private void railFor(boolean chapterMode, int at) {
+        if (rail == null) return;
+        if (chapterMode && !chapters.isEmpty() && !remote()) {
+            rail.setState(chapters.count(), at);
+            rail.setVisibility(View.VISIBLE);
+        } else {
+            rail.setVisibility(longForm() && !remote() ? View.INVISIBLE : View.GONE);
+        }
+    }
+
     /** The chapter line and the seek bar's ticks; the line is reserved for any long item so nothing jumps. */
     private void renderChapters(long position, long durationMs, float speed) {
         if (chapterLine == null) return;
         if (chapters.isEmpty() || remote()) {
+            railFor(false, -1);
             if (!chapterName.isEmpty()) { chapterName = ""; renderNames(); }
             chapterLine.setText("");
             chapterLine.setVisibility(longForm() && !remote() ? View.INVISIBLE : View.GONE);
@@ -1644,6 +1670,7 @@ public class NowPlayingActivity extends Activity {
         // The mini player's second line on every screen: the chapter, while this book plays.
         NowPlayingNote.detail(LOCAL, chapters.subtitle(position));
         int at = chapters.indexAt(position);
+        railFor(span.chapterMode, at);
         float[] notches = BarScope.notches(chapters.marks(durationMs), wave.getWidth() - wave.getPaddingLeft() - wave.getPaddingRight(),
                 getResources().getDisplayMetrics().density, mode);
         wave.setMarks(notches, notches.length == 0 ? -1 : at - 1, theme.inkMuted);
@@ -2487,6 +2514,17 @@ public class NowPlayingActivity extends Activity {
         LinearLayout.LayoutParams seekLp = new LinearLayout.LayoutParams(-1, -2);
         seekLp.topMargin = dp(16);
         deck.addView(seekRow, seekLp);
+        // Under a chapter-scoped bar, one segment per chapter (ChapterRail); a tap goes there.
+        rail = new ChapterRailView(this);
+        rail.setTag(R.id.daylight_np_own_drag, Boolean.TRUE);
+        rail.setPadding(dp(8), 0, dp(8), 0);
+        rail.setVisibility(View.GONE);
+        rail.setListener(this::railTo);
+        UiTelemetry.tag(rail, "chapters.rail");
+        LinearLayout.LayoutParams railLp = new LinearLayout.LayoutParams(-1, dp(24));
+        railLp.leftMargin = dp(44);
+        railLp.rightMargin = dp(44);
+        deck.addView(rail, railLp);
 
         // Artist, title, album (year): centred, as a record sleeve reads.
         artistLine = centred();
@@ -2734,6 +2772,7 @@ public class NowPlayingActivity extends Activity {
         t.style(title, Type.HEADLINE, t.ink, true);
         t.style(albumLine, Type.BODY, t.inkMuted, false);
         if (chapterLine != null) t.style(chapterLine, Type.LABEL, t.ink, false);
+        if (rail != null) rail.setColors(t.ink, t.primary);
         t.style(qualityLine, Type.CAPTION, t.inkMuted, false);
         qualityLine.setLetterSpacing(0.04f);
         // Status lines are muted (rule 4: the accent is not a text colour); a failure keeps attention.
