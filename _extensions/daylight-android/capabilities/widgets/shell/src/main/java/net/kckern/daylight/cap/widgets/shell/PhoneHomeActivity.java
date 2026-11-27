@@ -1419,17 +1419,28 @@ public class PhoneHomeActivity extends Activity {
     private void loadRemotes(LinearLayout into, Intent remote) {
         android.content.SharedPreferences cache = getSharedPreferences("daylight.home", MODE_PRIVATE);
         String last = cache.getString("screens", "");
-        fillRemotes(into, remote, last);
+        // Never a bare heading (audit): with nothing kept yet it says it is looking.
+        if (last.isEmpty()) {
+            into.removeAllViews();
+            into.addView(label("Looking for screens…", Type.LABEL, t.inkMuted));
+        } else {
+            fillRemotes(into, remote, last);
+        }
         call("media", "{\"op\":\"screens\"}", reply -> {
             org.json.JSONArray items = reply.optJSONArray("items");
             String now = items == null ? "[]" : items.toString();
-            if (now.equals(last) || into.getParent() == null) return;
+            if (into.getParent() == null) return;
+            if (now.equals(last) && !last.isEmpty()) return;
             cache.edit().putString("screens", now).apply();
             fillRemotes(into, remote, now);
         }, failure -> {
-            if (last.isEmpty() && into.getParent() != null) {
+            if (into.getParent() == null) return;
+            if (last.isEmpty()) {
                 into.removeAllViews();
                 into.addView(label("Screens are listed when home can be reached.", Type.LABEL, t.inkMuted));
+            } else {
+                // The last list stays, and says it is the last one.
+                into.addView(label("Couldn't reach home · showing the last list", Type.LABEL, t.inkMuted), 0);
             }
         });
     }
@@ -1443,6 +1454,7 @@ public class PhoneHomeActivity extends Activity {
         LinearLayout savedRow = buttonRow;
         column = into;
         buttonRow = null;
+        int shown = 0;
         try {
             for (int i = 0; i < items.length(); i++) {
                 JSONObject sc = items.optJSONObject(i);
@@ -1450,6 +1462,7 @@ public class PhoneHomeActivity extends Activity {
                 String id = sc.optString("id"), name = sc.optString("name", id);
                 // A speaker or headset has no screen to move around: no remote for it.
                 if (id.isEmpty() || "speaker".equals(sc.optString("type"))) continue;
+                shown++;
                 flatRow(name, "Arrows, OK and Back", "remote", "›", () -> startActivity(new Intent(remote)
                         .putExtra("target", id).putExtra("targetName", name).putExtra("pad", true)
                         .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP)));
@@ -1458,6 +1471,7 @@ public class PhoneHomeActivity extends Activity {
             column = saved;
             buttonRow = savedRow;
         }
+        if (shown == 0) into.addView(label("No screens to control", Type.LABEL, t.inkMuted));
     }
 
     private void returnCaptureShortcut(JSONObject action) {
@@ -1554,8 +1568,13 @@ public class PhoneHomeActivity extends Activity {
     }
 
     /** The Drive list: the playlists on the car's Drive tab, and a button to add more. */
+    /** The home's own root while Drive playlists covers it: Back puts it back as it was. */
+    private View homeRoot;
+
     private void showMediaChoices() {
         if (playlistScreen != null) return;
+        android.view.ViewGroup frame = findViewById(android.R.id.content);
+        homeRoot = frame != null && frame.getChildCount() > 0 ? frame.getChildAt(0) : null;
         playlistRow = null;
         playlistScreen = new LinearLayout(this);
         playlistScreen.setOrientation(LinearLayout.VERTICAL);
@@ -1605,6 +1624,9 @@ public class PhoneHomeActivity extends Activity {
             shown++;
             String where = net.kckern.daylight.shellkit.PlaylistUse.describe(radio.snapshot(), playlist.id, weekdays);
             addPlaylist(playlist.id, playlist.title, where);
+            // A tile with no cover on disk fetches it (audit: it kept its placeholder for good).
+            if (PlaylistWidgetArtwork.read(this, "c:" + playlist.id) == null) PlaylistPicker.cacheCover(this, playlist.id, playlist.art,
+                    () -> { if (!isDestroyed() && playlistGrid != null) drawStagedPlaylists(); });
         }
         playlistStatus.setVisibility(shown == 0 ? View.VISIBLE : View.GONE);
         playlistStatus.setText("Nothing on Drive yet. Tap + Add to choose playlists for the car's Drive tab.");
@@ -1677,7 +1699,16 @@ public class PhoneHomeActivity extends Activity {
         playlistGrid = null;
         playlistRow = null;
         playlistStatus = null;
-        draw();
+        // The home as it was (audit: Back rebuilt the whole home); only its page is redrawn,
+        // since the Drive list may have changed what the Play tab shows.
+        View root = homeRoot;
+        homeRoot = null;
+        if (root != null && root.getParent() == null) {
+            setContentView(root);
+            rebuildPage();
+        } else {
+            draw();
+        }
         slideIn(column, -1);
     }
 

@@ -1537,16 +1537,34 @@ public final class MediaServiceCapability implements Capability {
         if (text.isEmpty()) return new Outcome(200, Replies.ok().put("groups", new JSONArray()).put("offline", false));
         JSONObject body;
         String reason = null;
+        JSONObject remembered = lookups.get(text, clock.getAsLong());
+        if (remembered != null) {
+            // The same search a moment ago (typing back over a word, Back to the results): no new round trip.
+            JSONObject out = Replies.ok();
+            for (java.util.Iterator<String> k = remembered.keys(); k.hasNext(); ) { String key = k.next(); out.put(key, remembered.get(key)); }
+            return new Outcome(200, out);
+        }
         try {
             JSONObject found = api.search(text, 60);
             LibraryKinds kinds = kinds();
             body = Lookup.groups(found, backend, 5, kinds);
             health.answered();
-            // An author found by name shows their books too (at most two authors, eight books each).
-            for (String[] a : Lookup.authors(found, 2, kinds)) {
-                try { Lookup.prependBooks(body, Lookup.booksOf(api.list(a[0], 8, 0), a[1], backend, 8)); }
-                catch (Exception oneAuthor) { /* the author row still leads to them */ }
+            // An author found by name shows their books too (at most two authors, eight books
+            // each), the authors asked at once rather than one after the other (audit).
+            List<String[]> authors = Lookup.authors(found, 2, kinds);
+            List<java.util.concurrent.CompletableFuture<JSONObject>> books = new ArrayList<>();
+            for (String[] a : authors) {
+                books.add(java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                    try { return api.list(a[0], 8, 0); } catch (Exception oneAuthor) { return null; }
+                }));
             }
+            for (int i = 0; i < authors.size(); i++) {
+                try {
+                    JSONObject listed = books.get(i).get(8, java.util.concurrent.TimeUnit.SECONDS);
+                    if (listed != null) Lookup.prependBooks(body, Lookup.booksOf(listed, authors.get(i)[1], backend, 8));
+                } catch (Exception oneAuthor) { /* the author row still leads to them */ }
+            }
+            lookups.put(text, body, clock.getAsLong());
         } catch (IllegalArgumentException bad) {
             throw bad;
         } catch (Exception unreachable) {
@@ -1560,6 +1578,27 @@ public final class MediaServiceCapability implements Capability {
         for (java.util.Iterator<String> k = body.keys(); k.hasNext(); ) { String key = k.next(); out.put(key, body.get(key)); }
         return new Outcome(200, out);
     }
+
+    /** Home's answers to the last searches, for a minute (audit: no lookup cache). */
+    static final class LookupMemo {
+        static final long FRESH_MS = 60_000;
+        private final java.util.LinkedHashMap<String, Object[]> byText = new java.util.LinkedHashMap<>(16, 0.75f, true);
+
+        synchronized void put(String text, JSONObject body, long now) {
+            byText.put(text, new Object[] { body, now });
+            while (byText.size() > 20) byText.remove(byText.keySet().iterator().next());
+        }
+
+        synchronized JSONObject get(String text, long now) {
+            Object[] e = byText.get(text);
+            if (e == null) return null;
+            long at = (Long) e[1];
+            if (now - at > FRESH_MS || now < at) { byText.remove(text); return null; }
+            return (JSONObject) e[0];
+        }
+    }
+
+    private final LookupMemo lookups = new LookupMemo();
 
     private volatile LibraryKinds kinds;
     private volatile long kindsAt;
@@ -1876,6 +1915,18 @@ public final class MediaServiceCapability implements Capability {
         }
     }
 
+    /** {title, art} of a kept collection this media id is (or is in), or null. */
+    private String[] knownFace(String mediaId) {
+        try {
+            String cid = MediaId.parse(mediaId).contentId;
+            JSONObject k = cid == null ? null : kept().get(cid);
+            if (k == null || k.optString("title").isEmpty()) return null;
+            return new String[] { k.optString("title"), k.optString("art", "") };
+        } catch (Exception unknown) {
+            return null;
+        }
+    }
+
     private Launcher launcher() {
         if (launcher == null) {
             final Object context = core.shell().context();
@@ -1893,6 +1944,10 @@ public final class MediaServiceCapability implements Capability {
                     Intent now = new Intent().setClassName(c, NOW_PLAYING_ACTIVITY).putExtra("target", "local")
                             .putExtra("starting.id", mediaId).putExtra("starting.play", true)
                             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                    // What this phone already knows of it (a kept collection's title and cover), so
+                    // the first frame names it rather than "Starting…" alone (audit: id-only links).
+                    String[] face = knownFace(mediaId);
+                    if (face != null) now.putExtra("starting.title", face[0]).putExtra("starting.art", face[1]);
                     if (shellPlaysFromNowPlaying(c)) c.startActivity(now);
                     else c.startActivity(new Intent().setClassName(c, PLAY_ACTIVITY).putExtra("id", mediaId)
                             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));

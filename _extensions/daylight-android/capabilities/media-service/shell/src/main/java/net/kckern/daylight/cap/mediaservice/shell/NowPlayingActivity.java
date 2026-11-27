@@ -546,7 +546,10 @@ public class NowPlayingActivity extends Activity {
                         @Override public void onExtrasChanged(MediaController c, Bundle extras) {
                             if (c != controller) return;
                             long refusedAt = extras.getLong(Starting.EXTRA_REFUSED_AT, -1);
-                            if (starting != null && refusedAt >= starting.askedAt) starting.fail();
+                            if (starting != null && refusedAt >= starting.askedAt) {
+                                starting.fail(extras.getString(Starting.EXTRA_REFUSED_WHY, ""),
+                                        net.kckern.daylight.shellkit.FailureWords.networkValidated(NowPlayingActivity.this));
+                            }
                             remoteStatus = extras.getString(RemoteControlService.EXTRA_STATUS, "");
                             remoteReach = extras.getString(RemoteControlService.EXTRA_REACH, "");
                             render();

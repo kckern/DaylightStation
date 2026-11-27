@@ -132,6 +132,11 @@ public final class BrowseActivity extends Activity {
         c.startActivity(i);
     }
 
+    @Override protected void onSaveInstanceState(Bundle out) {
+        super.onSaveInstanceState(out);
+        if (field != null) out.putString("typed", field.getText().toString());
+    }
+
     @Override protected void onCreate(Bundle saved) {
         super.onCreate(saved);
         net.kckern.daylight.shellkit.ShellStart.ensure(this);
@@ -164,7 +169,9 @@ public final class BrowseActivity extends Activity {
         LinearLayout page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
         page.setBackgroundColor(t.background);
-        if (MODE_SEARCH.equals(mode)) page.addView(searchField(nz(in.getStringExtra("query"))));
+        // A rotation keeps what was typed (audit: the text was lost).
+        String typed = saved != null && saved.containsKey("typed") ? nz(saved.getString("typed")) : nz(in.getStringExtra("query"));
+        if (MODE_SEARCH.equals(mode)) page.addView(searchField(typed));
         scroller = new ScrollView(this);
         column = new LinearLayout(this);
         column.setOrientation(LinearLayout.VERTICAL);
@@ -191,7 +198,7 @@ public final class BrowseActivity extends Activity {
         Log.i(TAG, "browse open " + mode + " " + kind);
 
         if (MODE_SEARCH.equals(mode)) {
-            String q = nz(in.getStringExtra("query"));
+            String q = typed;
             if (q.isEmpty()) showRecent(); else runSearch(q);
         } else {
             startLevel();
@@ -432,6 +439,20 @@ public final class BrowseActivity extends Activity {
         return failed instanceof net.kckern.daylight.api.PayloadPort.NotReadyException ? "starting" : "";
     }
 
+    private boolean waitingUp;
+
+    /** Once, when the payload attaches: {@code then} on the main thread, if this page is still open. */
+    private void whenUp(Runnable then) {
+        if (waitingUp) return;
+        waitingUp = true;
+        Thread w = new Thread(() -> {
+            boolean up = media.awaitReady(10 * 60_000L);
+            main.post(() -> { waitingUp = false; if (up && !isFinishing() && !isDestroyed()) then.run(); });
+        }, "Daylight-browse-wait");
+        w.setDaemon(true);
+        w.start();
+    }
+
     private void clearResults() {
         results.removeAllViews();
         keyed.reset();
@@ -441,8 +462,14 @@ public final class BrowseActivity extends Activity {
         clearResults();
         searchGroups.clear();
         if (answer == null || !answer.optBoolean("ok", false)) {
-            status.setText(net.kckern.daylight.shellkit.FailureWords.line(causeOf(answer, reason)));
+            net.kckern.daylight.shellkit.FailureWords.Cause cause = causeOf(answer, reason);
+            status.setText(net.kckern.daylight.shellkit.FailureWords.line(cause));
             results.addView(link("Retry", "search.retry", () -> runSearch(q)));
+            // Typed while the app was starting up (or its code was being replaced): searched
+            // again by itself the moment it is up, not left for a second tap (audit).
+            if (cause == net.kckern.daylight.shellkit.FailureWords.Cause.STARTING) whenUp(() -> {
+                if (field != null && q.equals(field.getText().toString())) runSearch(q);
+            });
             return;
         }
         rememberSearch(q);
@@ -559,6 +586,7 @@ public final class BrowseActivity extends Activity {
             net.kckern.daylight.shellkit.FailureWords.Cause cause = causeOf(answer, reason);
             boolean retry = net.kckern.daylight.shellkit.FailureWords.retryable(cause)
                     || cause == net.kckern.daylight.shellkit.FailureWords.Cause.STARTING;
+            if (cause == net.kckern.daylight.shellkit.FailureWords.Cause.STARTING) whenUp(() -> load(0));
             if (!rows.isEmpty()) {
                 status.setText(net.kckern.daylight.shellkit.FailureWords.head(cause) + " · showing the last answer" + (retry ? " · Retry" : ""));
                 if (retry) status.setOnClickListener(v -> { status.setOnClickListener(null); load(0); });
@@ -1470,7 +1498,7 @@ public final class BrowseActivity extends Activity {
         mine.addListener(() -> {
             if (isDestroyed() || mine != pending) { playGuard.done(); return; }
             try { controller = mine.get(); then.accept(controller); }
-            catch (Exception failed) { Toast.makeText(this, "Could not start playback", Toast.LENGTH_SHORT).show(); }
+            catch (Exception failed) { Toast.makeText(this, "This phone's player didn't answer. Try again", Toast.LENGTH_SHORT).show(); }
             finally { playGuard.done(); }
         }, main::post);
     }
@@ -1515,10 +1543,12 @@ public final class BrowseActivity extends Activity {
         if (QueueVerbs.enqueue(this, mediaId, next, name)) return;
         withController(c -> {
             MediaItem item = new MediaItem.Builder().setMediaId(mediaId).build();
-            if (c.getMediaItemCount() == 0) { c.setMediaItem(item); c.prepare(); }
+            boolean empty = c.getMediaItemCount() == 0;
+            if (empty) { c.setMediaItem(item); c.prepare(); c.play(); }
             else if (next) c.addMediaItem(c.getCurrentMediaItemIndex() + 1, item);
             else c.addMediaItem(item);
-            Toast.makeText(this, (next ? "Plays next: " : "Added to the queue: ") + name, Toast.LENGTH_SHORT).show();
+            // Nothing queued: it plays now, and says so (audit: it said "Plays next" and sat idle).
+            Toast.makeText(this, (empty ? "Playing: " : next ? "Plays next: " : "Added to the queue: ") + name, Toast.LENGTH_SHORT).show();
         });
     }
 

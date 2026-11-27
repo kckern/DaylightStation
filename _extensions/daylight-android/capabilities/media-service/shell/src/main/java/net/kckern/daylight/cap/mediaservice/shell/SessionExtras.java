@@ -19,6 +19,12 @@ final class SessionExtras {
         publish(session);
     }
 
+    static synchronized void putLongAndString(MediaSession session, String key, long value, String key2, String value2) {
+        current.putLong(key, value);
+        current.putString(key2, value2);
+        publish(session);
+    }
+
     static synchronized void remove(MediaSession session, String key) {
         current.remove(key);
         publish(session);

@@ -68,7 +68,10 @@ final class PlaylistPicker {
      * gets its picture fetched once, then the widgets are redrawn. Quiet when there is no
      * https address or the fetch fails: the widget keeps its placeholder.
      */
-    static void cacheCover(android.content.Context context, String contentId, String art) {
+    static void cacheCover(android.content.Context context, String contentId, String art) { cacheCover(context, contentId, art, null); }
+
+    /** @param saved run on the main thread once the cover is on disk (a screen showing the tile redraws it) */
+    static void cacheCover(android.content.Context context, String contentId, String art, Runnable saved) {
         if (contentId == null || contentId.isEmpty() || art == null || !art.startsWith("https://")) return;
         android.content.Context app = context.getApplicationContext();
         IMAGES.execute(() -> {
@@ -76,6 +79,7 @@ final class PlaylistPicker {
             if (bitmap == null) return;
             PlaylistWidgetArtwork.save(app, "c:" + contentId, bitmap);
             PlaylistWidgetState.redraw(app);
+            if (saved != null) new android.os.Handler(android.os.Looper.getMainLooper()).post(saved);
         });
     }
 

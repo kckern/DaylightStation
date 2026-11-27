@@ -1269,6 +1269,22 @@ phone". An offline answer is never written into Browse's cache of home's answers
   reports of the last 30 minutes, `HeardHere`) over home's rows, so Back from Now playing
   shows the time just heard, and a book whose last part this phone heard to its end is left
   out at once.
+- **Smaller in-between states** (the audit's Low list):
+  - Search keeps what was typed across a rotation.
+  - The payload asks an author's books for both authors found at once, and answers the
+    same search from its last answer for a minute (`LookupMemo`).
+  - Play next or Add to queue with nothing queued plays it at once and says "Playing: …".
+  - Back from Drive playlists puts the home back as it was (its page redrawn, not the
+    whole home), and a Drive tile with no cover on disk fetches it and redraws.
+  - Connect never shows a bare heading: "Looking for screens…" with nothing kept, "No
+    screens to control" for an answer with none, "Couldn't reach home · showing the last
+    list" over a kept list.
+  - A refused start names its cause on Now playing ("Couldn't start Paradise Lost: home
+    isn't answering · tap to try again"; the payload's code travels in
+    `Starting.EXTRA_REFUSED_WHY`).
+  - A media link to a kept collection opens Now playing with its title and cover.
+  - A Browse load or search that met "Starting up…" runs again by itself once the
+    payload attaches.
 - **Services and Capture from the last answer.** A cold start draws the home's Services
   and Capture tabs from the last answers kept on the phone (`daylight.home` `pages`,
   `actions`) instead of "Loading…"; this run's answers replace them when the payload is up.

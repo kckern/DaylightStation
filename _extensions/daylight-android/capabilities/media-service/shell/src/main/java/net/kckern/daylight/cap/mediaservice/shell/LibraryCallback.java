@@ -359,7 +359,11 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
         });
         // Media3 drops a refused set without a player error: tell Now playing, which is
         // showing the tapped item as starting, so it says so now and not after 30 s.
-        SessionExtras.putLong(session, Starting.EXTRA_REFUSED_AT, android.os.SystemClock.elapsedRealtime());
+        // With the payload's code (unreachable, backend_refused, not_found...), so the line says why.
+        String code = e instanceof BrowseAnswer.Failed && e.getMessage() != null ? e.getMessage().trim()
+                : e instanceof net.kckern.daylight.api.PayloadPort.NotReadyException ? "starting" : "";
+        SessionExtras.putLongAndString(session, Starting.EXTRA_REFUSED_AT, android.os.SystemClock.elapsedRealtime(),
+                Starting.EXTRA_REFUSED_WHY, code);
     }
 
     /**

@@ -31,4 +31,12 @@ public class StartingTest {
         assertEquals("Couldn't start Morning", s.failedLine(""));
         assertFalse(s.retryable(Starting.GIVE_UP_MS));
     }
+
+    @org.junit.Test public void aRefusedStartSaysWhy() {
+        org.junit.Assert.assertEquals("home isn't answering", Starting.whyWords("unreachable", true));
+        org.junit.Assert.assertEquals("offline", Starting.whyWords("unreachable", false));
+        org.junit.Assert.assertEquals("home does not have it", Starting.whyWords("not_found", true));
+        org.junit.Assert.assertEquals("home refused this phone", Starting.whyWords("backend_refused", true));
+        org.junit.Assert.assertEquals("", Starting.whyWords("", true));
+    }
 }

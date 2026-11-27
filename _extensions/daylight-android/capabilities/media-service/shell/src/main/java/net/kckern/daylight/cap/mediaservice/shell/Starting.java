@@ -30,6 +30,8 @@ final class Starting {
     static final String EXTRA_TARGET_NAME = "targetName";
     /** Session extra (elapsedRealtime ms): the player refused the last play request (LibraryCallback). */
     static final String EXTRA_REFUSED_AT = "start.refusedAt";
+    /** The payload's code for that refusal ("unreachable", "backend_refused", "not_found", "starting", ""). */
+    static final String EXTRA_REFUSED_WHY = "start.refusedWhy";
     private static final String SAVED = "starting.saved.";
 
     /** After this, the line says it is taking longer. */
@@ -117,6 +119,24 @@ final class Starting {
     /** The player reported an error, or refused the request, before it had the item. */
     void fail() { failed = true; }
 
+    /** Why it was refused, as the line says it ("" when not known). */
+    private String why = "";
+
+    /** Refused, with the payload's code and whether Android has a working network (audit: one line for every cause). */
+    void fail(String code, boolean online) {
+        failed = true;
+        why = whyWords(code, online);
+    }
+
+    static String whyWords(String code, boolean online) {
+        String c = code == null ? "" : code;
+        if (c.contains("starting")) return "still starting up";
+        if (c.contains("not_found") || c.contains("bad_request")) return "home does not have it";
+        if (c.contains("refused") || c.contains("forbidden")) return "home refused this phone";
+        if (c.contains("unreachable") || c.contains("timeout")) return online ? "home isn't answering" : "offline";
+        return "";
+    }
+
     Phase phase(long now) {
         if (failed || now - askedAt >= giveUpMs) return Phase.FAILED;
         return now - askedAt >= SLOW_MS ? Phase.SLOW : Phase.STARTING;
@@ -131,8 +151,9 @@ final class Starting {
     /** The line shown under the real state once starting failed (tappable to retry on this phone). */
     String failedLine(String where) {
         String what = title.isEmpty() ? "it" : title;
-        if (!where.isEmpty()) return where + " didn't start " + what;
-        return mediaId.isEmpty() ? "Couldn't start " + what : "Couldn't start " + what + " · tap to try again";
+        if (!where.isEmpty()) return where + " didn't start " + what + (why.isEmpty() ? "" : ": " + why);
+        String head = "Couldn't start " + what + (why.isEmpty() ? "" : ": " + why);
+        return mediaId.isEmpty() ? head : head + " · tap to try again";
     }
 
     /** True when a retry is possible (this phone, failed, and the id is known). */
