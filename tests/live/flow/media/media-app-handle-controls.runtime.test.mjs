@@ -229,13 +229,15 @@ test('RELY.4b/STEER.1b — a pause from this Remote leaves a note on the screen;
   // so act on the newest note (the replace) — within its 10 s window.
   await expect(note.getByTestId('remote-note-label').first()).toHaveText(/^Replaced by .+/, { timeout: 15000 });
   await note.getByTestId('remote-note-put-back').first().click();
+  // The confirmation is a brief local row (LOCAL_LINGER_MS, 2.5 s) recorded on
+  // the ack: read it first; the screen's own restore can take longer than that.
+  await expect(page.getByTestId('dispatch-tray')).toContainText(`Put back what was playing on ${A_NAME}`, { timeout: 15000 });
   await expect.poll(async () => {
     const snap = await receiverState(request, A);
     return snap?.currentItem?.contentId === DISCLOSURE
       && Math.abs((snap?.position ?? 0) - pausedAt) <= 10
       && snap?.queue?.items?.map((it) => it.contentId).join(',') === before.queue.items.map((it) => it.contentId).join(',');
   }, { timeout: 60000 }).toBe(true);
-  await expect(page.getByTestId('dispatch-tray')).toContainText(`Put back what was playing on ${A_NAME}`, { timeout: 15000 });
 
   await stopReceiver(request, A);
   await context.close();
@@ -557,12 +559,15 @@ test('PLACE.4a — several screens: labelled, aim names both, same-room drift wa
     await expect(np.getByTestId('now-playing-title')).toHaveAttribute('data-content-id', EP_KEEPY, { timeout: 30000 });
 
     // Keep similar playing at the end of the queue, then Stop after this one wins first.
+    // Press them once Keepy Uppy plays: while it loads the Player swaps its
+    // renderer (a second queue-track-changed ~170 ms after the first), and a
+    // press whose mousedown and mouseup straddle that swap never clicks.
+    await expect.poll(() => media.evaluate((n) => !n.paused && n.currentTime > 0.5), { timeout: 60000 }).toBe(true);
     const choice = np.getByTestId('queue-end-choice');
     await choice.getByTestId('queue-end-similar').click();
     await expect(choice.getByTestId('queue-end-similar')).toHaveAttribute('data-checked', 'true');
     await np.getByTestId('stop-after-current').click();
     await expect(np.getByTestId('stop-after-current')).toHaveAttribute('aria-pressed', 'true');
-    await expect.poll(() => media.evaluate((n) => !n.paused && n.currentTime > 0.5), { timeout: 60000 }).toBe(true);
     await seekNearEnd(page, np);
     await expect(choice.getByTestId('queue-end-status')).toHaveText('Stopped after that one, as asked', { timeout: 120000 });
     await expect(np.getByTestId('stop-after-current')).toHaveAttribute('aria-pressed', 'false');

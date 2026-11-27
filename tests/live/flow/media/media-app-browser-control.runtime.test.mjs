@@ -83,6 +83,9 @@ test('[HOUSE.4a] stable browser identities route a queue command through the act
   await target.getByRole('textbox', { name: 'Device name' }).fill(tabletName);
   await target.getByRole('textbox', { name: 'Room' }).fill('Kitchen');
   await target.getByRole('button', { name: 'Save device name' }).click();
+  // Saving is two writes (the name, then the room); the dialog closes only once
+  // both are done. Reloading sooner aborts the room write.
+  await expect(target.getByRole('button', { name: 'Save device name' })).toBeHidden({ timeout: 15000 });
   await target.reload();
   await expect(target.getByRole('textbox', { name: 'Search media…' })).toBeVisible({ timeout: 30000 });
   expect(await profileId(target)).toBe(targetStableId);
