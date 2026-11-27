@@ -672,7 +672,7 @@ $amber-ink: $on-accent;
   // resizes when the destination's name changes, the ▾ list opens, or a scope
   // chip is chosen. The destination slot inside it is fixed too (Search.scss),
   // so the text field keeps one width as well.
-  --media-search-box: 22rem;
+  --media-search-box: 24rem;
   .media-search-input-wrap {
     flex: 0 0 var(--media-search-box);
     width: var(--media-search-box);
@@ -683,7 +683,7 @@ $amber-ink: $on-accent;
   // label read "Browser ac5…" and the scope chips were clipped mid-chip.
   @media (min-width: 1100px) {
     max-width: 920px;
-    --media-search-box: 27.5rem;
+    --media-search-box: 30rem;
   }
 
   @media (min-width: 1400px) {

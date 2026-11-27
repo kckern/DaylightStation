@@ -43,7 +43,7 @@ async function showAllRows(page) {
   if (await more.isVisible().catch(() => false)) await more.click();
 }
 
-for (const [label, vp] of [['laptop', VIEWPORTS.laptop], ['phone', VIEWPORTS.phone]]) {
+for (const [label, vp] of [['laptop', VIEWPORTS.laptop], ['tablet', VIEWPORTS.tablet], ['phone', VIEWPORTS.phone]]) {
   test(`[dest-list] ${label}: Alt+↓ opens the list; a pick is sticky, Esc keeps the choice, nothing is woken`, async ({ page }) => {
     await page.setViewportSize(vp);
     const sent = await recordDeviceCommands(page);
@@ -132,6 +132,14 @@ for (const [label, vp] of [['laptop', VIEWPORTS.laptop], ['phone', VIEWPORTS.pho
       || (await scope.getAttribute('aria-expanded')) === 'true', { message: 'the scope chip should read as chosen' }).toBe(true);
     expect(Math.abs(await width() - longWidth), 'box width with a scope chosen').toBeLessThanOrEqual(1);
     expect(Math.abs(await field() - longField), 'text field width with a scope chosen').toBeLessThanOrEqual(1);
+
+    // The box's middle is the text field, never the chip: a click there types.
+    if (!isPhone(vp)) {
+      const before = await chipText(page, vp);
+      await input.click();
+      await expect(input).toBeFocused();
+      expect(await chipText(page, vp), 'a click in the middle of the box must not change where ▶ plays').toBe(before);
+    }
 
     // Opening the list does not move it either.
     await surfaceToggle(page, vp).click();

@@ -371,9 +371,13 @@
   &[aria-expanded="true"] { background: chalk(0.08); color: var(--media-text); }
 }
 
-// Tablet widths: the dock's search box is narrower, so the slot is too.
+// Narrower docks: the slot narrows with the box, so the box's middle is
+// always the text field (a click there types, never changes where ▶ plays).
+@media (max-width: 1399px) {
+  .media-search-input-wrap .media-destination-group { --media-dest-slot: 12rem; }
+}
 @media (max-width: 1099px) {
-  .media-search-input-wrap .media-destination-group { --media-dest-slot: 10rem; }
+  .media-search-input-wrap .media-destination-group { --media-dest-slot: 9rem; }
 }
 
 // Phone search surface: the chip rides the input's row as its own 44 px

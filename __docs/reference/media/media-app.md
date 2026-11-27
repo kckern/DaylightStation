@@ -584,15 +584,17 @@ the ▾ is a 44 px target everywhere. Logged as `dest.list-opened {current, scre
 ranked list; This device is last).
 
 **The box keeps one width.** The chip and its ▾ share one fixed slot per
-breakpoint (14rem on wide screens, 10rem under 1100 px, 8rem on the
+breakpoint (14rem from 1400 px, 12rem from 1100 px, 9rem below, 8rem on the
 phone's search row), so a long name ellipsises (the tooltip and accessible
 name carry it whole) and the text field never changes width with the name
 shown. The loader and the clear control share one fixed slot after it
 (ContentCombobox `.content-combobox-right-control`), so the chip never shifts
 when one replaces the other. The dock's search box has a fixed width per
-breakpoint (`--media-search-box`: 22rem, 27.5rem from 1100 px, 37.5rem from
+breakpoint (`--media-search-box`: 24rem, 30rem from 1100 px, 37.5rem from
 1400 px); the scope chips beside it give way (scroll sideways) when they need
-more room, never the box.
+more room, never the box. The
+chip slot is always under half the box, so a click in the middle of the box
+lands in the text field.
 
 **A tap is a look.** Tapping a search row, a start-page tile, a browse row or
 a Played earlier row opens the item: a playable item's detail page (poster,
