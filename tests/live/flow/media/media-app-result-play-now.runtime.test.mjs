@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { expectStarted } from './lib/receivers.mjs';
 import { markFirstUseDone } from './lib/firstUse.mjs';
 import { aimAt, aimHere } from './lib/aim.mjs';
-import { playResult } from './lib/search.mjs';
+import { playResult, openRowMenuAll } from './lib/search.mjs';
 
 test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 
@@ -94,7 +94,8 @@ async function resultActionIdentity(page, id) {
     { id: `result-action-add-${id}`, text: 'Add to Queue', enabled: true },
     { id: `result-action-detail-${id}`, text: 'Open detail', enabled: true },
   ];
-  await page.getByTestId(`result-more-${id}`).click();
+  // Four verbs lead the menu; Play First and Open detail are behind its More (k).
+  await openRowMenuAll(page, id);
   const menu = page.getByTestId(`result-more-menu-${id}`);
   await expect(menu).toBeVisible();
   const actual = await Promise.all(expected.map(async ({ id: actionId }) => {

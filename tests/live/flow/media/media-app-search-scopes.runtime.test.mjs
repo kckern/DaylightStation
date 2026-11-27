@@ -1,3 +1,4 @@
+import { openRowMenuAll } from './lib/search.mjs';
 import { test, expect } from '@playwright/test';
 import { markFirstUseDone } from './lib/firstUse.mjs';
 import { aimAt, aimHere } from './lib/aim.mjs';
@@ -73,7 +74,8 @@ function scopeChip(page, isPhone, key) {
 async function actionSnapshot(page, id) {
   const more = page.getByTestId(`result-more-${id}`);
   await expect(more).toBeVisible();
-  await more.click();
+  // Four verbs lead the menu; Play First and Open detail are behind its More (k).
+  await openRowMenuAll(page, id);
   const menu = page.getByTestId(`result-more-menu-${id}`);
   await expect(menu).toBeVisible();
   const ids = ['playNow', 'playNext', 'upNext', 'add', 'detail'];
