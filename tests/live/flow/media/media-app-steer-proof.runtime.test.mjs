@@ -514,10 +514,15 @@ test('(STEER.3a/AC3, transport) after a press on another screen\'s transport con
       pos: q('[data-testid="np-seek"]')?.getAttribute('aria-valuenow'),
     });
   });
-  const reflects = async (name, press) => {
+  // The 2 s run from the press itself: a control the Remote holds disabled
+  // while the previous press settles (Next loading the next item) cannot be
+  // pressed yet, and Playwright's wait for it to enable is not the screen's
+  // reaction time.
+  const reflects = async (name, button) => {
+    await expect(button).toBeEnabled({ timeout: 15000 });
     const before = await signature();
     const t0 = Date.now();
-    await press();
+    await button.click();
     let changed = false;
     while (Date.now() - t0 < 2000) {
       if ((await signature()) !== before) { changed = true; break; }
@@ -525,11 +530,11 @@ test('(STEER.3a/AC3, transport) after a press on another screen\'s transport con
     }
     expect(changed, `${name}: nothing changed (and nothing said "pending") within 2 s`).toBe(true);
   };
-  await reflects('Pause', () => panel.getByTestId('np-toggle').click());
-  await reflects('Play', () => panel.getByTestId('np-toggle').click());
-  await reflects('Forward 10 seconds', () => panel.getByTestId('np-ffw').click());
-  await reflects('Next', () => panel.getByTestId('np-next').click());
-  await reflects('Stop', () => panel.getByTestId('np-stop').click());
+  await reflects('Pause', panel.getByTestId('np-toggle'));
+  await reflects('Play', panel.getByTestId('np-toggle'));
+  await reflects('Forward 10 seconds', panel.getByTestId('np-ffw'));
+  await reflects('Next', panel.getByTestId('np-next'));
+  await reflects('Stop', panel.getByTestId('np-stop'));
   await stopReceiver(request, A);
   await context.close();
   await receiver.context.close();
