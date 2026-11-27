@@ -1186,12 +1186,16 @@ public final class BrowseActivity extends Activity {
         String artist = about == null ? "" : about.optString("byline", "");
         boolean book = "book".equals(kind);
         if (!("album".equals(MediaKind.normal(kind)) || book) || artistId.isEmpty() || artist.isEmpty()) return;
-        // It looks like a link (2026-11-27): the artist in ink with a "›", the year after it muted.
+        // It looks like a link (2026-11-27): the artist in ink, the year after it muted, and the "›"
+        // at the end of the line ("Rush · 2007 ›"), never between the name and its year.
         String said = line.getText().toString();
         android.text.SpannableStringBuilder b = new android.text.SpannableStringBuilder();
-        b.append(artist).append(" ›");
+        b.append(artist);
         b.setSpan(new android.text.style.ForegroundColorSpan(t.ink), 0, b.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         if (said.startsWith(artist)) b.append(said.substring(artist.length()));
+        int arrow = b.length();
+        b.append(" ›");
+        b.setSpan(new android.text.style.ForegroundColorSpan(t.ink), arrow, b.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         line.setText(b);
         line.setBackground(t.pressable(null));
         line.setMinHeight(dp(32));
