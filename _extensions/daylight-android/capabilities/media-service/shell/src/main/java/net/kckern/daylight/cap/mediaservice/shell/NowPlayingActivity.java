@@ -184,6 +184,12 @@ public class NowPlayingActivity extends Activity {
     private ImageView backdrop;
     private View backdropFade;
     private TextView targetLabel, title, artistLine, albumLine, qualityLine, status, elapsed, remaining, queueHeading;
+    /** The playing item's metadata the name lines were drawn from; null when nothing plays. */
+    private MediaMetadata namesMeta;
+    /** The current chapter's title, the long-form title line ("" without chapters). */
+    private String chapterName = "";
+    /** Whether the by-line sits under the album line (a book) rather than above the title. */
+    private boolean byLineBelow;
     /** "Chapter 4 of 12 · 9 min left in chapter" for a chaptered book; reserved (blank) for other long items. */
     private TextView chapterLine;
     /** The current item's chapters (none for music, or a book without any). */
@@ -848,15 +854,17 @@ public class NowPlayingActivity extends Activity {
         // This phone with nothing loaded: a place to start something, as a screen's start panel is.
         boolean idleHere = !remote() && c != null && c.isConnected() && !hasItem;
         if (hasItem) lastDrawn = NowPlayingNotes.entry(target, targetName, c);
-        title.setText(hasItem && !TextUtils.isEmpty(name) ? name
-                : idleScreen ? "Play something on " + targetName
-                : offScreen ? targetName + " is off" : "Nothing playing");
         showStart(idleScreen ? "idle" : offScreen ? "off" : idleHere ? "here" : "");
         title.setTextColor(hasItem ? theme.ink : theme.inkMuted);
-        // A screen's player names the screen as the artist; that is the top bar's job.
-        CharSequence by = remote() ? null : meta.artist;
-        show(artistLine, hasItem ? by : null);
-        show(albumLine, hasItem ? albumLine(meta) : null);
+        if (hasItem) {
+            namesMeta = meta;
+            renderNames();
+        } else {
+            namesMeta = null;
+            setNameLine(idleScreen ? "Play something on " + targetName : offScreen ? targetName + " is off" : "Nothing playing");
+            show(artistLine, null);
+            show(albumLine, null);
+        }
 
         String line;
         if (!volumeLine.isEmpty()) line = volumeLine;
@@ -867,8 +875,14 @@ public class NowPlayingActivity extends Activity {
         statusIsSleep = false;
         if (line.isEmpty() && !remote()) { line = SleepTimer.describeNow(); statusIsSleep = !line.isEmpty(); }
         // A kept track says where it plays from (the spec's offline mark).
-        if (line.isEmpty() && !remote() && hasItem) line = fromPhone(c.getCurrentMediaItem()) ? KeepLabels.playingFromPhone(this, c.getCurrentMediaItem().mediaId) : "";
-        status.setText(line);
+        boolean offlineMark = false;
+        if (line.isEmpty() && !remote() && hasItem && fromPhone(c.getCurrentMediaItem())) {
+            line = KeepLabels.playingFromPhone(this, c.getCurrentMediaItem().mediaId);
+            offlineMark = true;
+        }
+        boolean failure = failedStart != null || (!remote() && c != null && c.getPlayerError() != null);
+        status.setTextColor(failure ? theme.attention : theme.inkMuted);
+        status.setText(offlineMark ? withPhoneGlyph(line) : line);
         // One line, always reserved; a long message shrinks to fit rather than adding a line.
         status.setVisibility(line.isEmpty() ? View.INVISIBLE : View.VISIBLE);
         status.setContentDescription(line);
@@ -984,6 +998,63 @@ public class NowPlayingActivity extends Activity {
         v.setVisibility(TextUtils.isEmpty(text) ? View.INVISIBLE : View.VISIBLE);
     }
 
+    /**
+     * The name lines (TitleLines): music as a sleeve (artist, title, album (year)); a book, talk
+     * or course as a book (chapter or part, then the book, then the author, the author's line
+     * moved under the book's). A line equal to another is dropped.
+     */
+    private void renderNames() {
+        MediaMetadata meta = namesMeta;
+        if (meta == null) return;
+        boolean book = longForm();
+        CharSequence name = meta.title != null ? meta.title : meta.displayTitle;
+        Integer y = meta.releaseYear != null ? meta.releaseYear : meta.recordingYear;
+        // A screen's player names the screen as the artist; that is the top bar's job.
+        String by = remote() || meta.artist == null ? "" : meta.artist.toString();
+        TitleLines l = TitleLines.of(book, book ? chapterName : "", name == null ? "" : name.toString(),
+                meta.albumTitle == null ? "" : meta.albumTitle.toString(), by, y == null ? 0 : y);
+        placeByLine(book);
+        setNameLine(l.title);
+        show(albumLine, l.album);
+        show(artistLine, l.by);
+    }
+
+    /** The title, set only when it changed (a reset restarts the marquee). */
+    private void setNameLine(CharSequence text) {
+        if (!TextUtils.equals(title.getText(), text)) title.setText(text);
+    }
+
+    /** Music: the artist above the title; a book: the author under the book's title. */
+    private void placeByLine(boolean book) {
+        if (byLineBelow == book) return;
+        byLineBelow = book;
+        ViewGroup box = (ViewGroup) artistLine.getParent();
+        if (box == null) return;
+        box.removeView(artistLine);
+        int at = book ? box.indexOfChild(albumLine) + 1 : box.indexOfChild(title);
+        box.addView(artistLine, at);
+    }
+
+    /**
+     * "Playing from this phone" with the on-this-phone glyph before it, in the line's own muted
+     * colour (an image span, so the line stays centred and shrinks to fit as before).
+     */
+    private CharSequence withPhoneGlyph(String line) {
+        android.graphics.drawable.Drawable d = getDrawable(net.kckern.daylight.shellkit.R.drawable.daylight_ic_on_phone).mutate();
+        int size = Math.round(status.getTextSize() * 1.1f);
+        d.setBounds(0, 0, size, size);
+        d.setTint(theme.inkMuted);
+        android.text.SpannableStringBuilder b = new android.text.SpannableStringBuilder("\u00A0 ").append(line);
+        b.setSpan(new android.text.style.ImageSpan(d, android.os.Build.VERSION.SDK_INT >= 29 ? android.text.style.DynamicDrawableSpan.ALIGN_CENTER : android.text.style.DynamicDrawableSpan.ALIGN_BASELINE), 0, 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        return b;
+    }
+
+    /** The quality line is music's: a book, talk or course has none (and keeps no space for it). */
+    private void showQuality() {
+        if (longForm()) { qualityLine.setText(""); qualityLine.setVisibility(View.GONE); return; }
+        show(qualityLine, quality);
+    }
+
     /** "All Eyez On Me (1996)", the album alone, or the year alone. */
     private static String albumLine(MediaMetadata meta) {
         String album = meta.albumTitle == null ? "" : meta.albumTitle.toString();
@@ -1084,7 +1155,7 @@ public class NowPlayingActivity extends Activity {
         detailWant = id;
         wave.setSamples(null);
         quality = "";
-        show(qualityLine, null);
+        showQuality();
         lyrics = TrackDetail.Lyrics.NONE;
         lyricsLoading = !id.isEmpty();
         if (lyricsLoading && stage == Stage.LYRICS) lyricsView.setLoading("Loading lyrics…");
@@ -1103,7 +1174,7 @@ public class NowPlayingActivity extends Activity {
                 if (!forId.equals(detailFor)) return;
                 wave.setSamples(TrackDetail.samples(levels));
                 quality = TrackDetail.quality(levels);
-                show(qualityLine, quality);
+                showQuality();
                 Log.i(TAG, "now playing detail: waveform in " + (SystemClock.elapsedRealtime() - started) + " ms");
             });
         });
@@ -1379,6 +1450,7 @@ public class NowPlayingActivity extends Activity {
     private void renderChapters(long position, long durationMs, float speed) {
         if (chapterLine == null) return;
         if (chapters.isEmpty() || remote()) {
+            if (!chapterName.isEmpty()) { chapterName = ""; renderNames(); }
             chapterLine.setText("");
             chapterLine.setVisibility(longForm() && !remote() ? View.INVISIBLE : View.GONE);
             wave.setMarks(null, -1, 0);
@@ -1399,6 +1471,8 @@ public class NowPlayingActivity extends Activity {
             chapterLine.setContentDescription(line + ". Opens the chapters");
         }
         chapterLine.setVisibility(View.VISIBLE);
+        String nowChapter = chapters.titles[chapters.indexAt(position)];
+        if (!nowChapter.equals(chapterName)) { chapterName = nowChapter; renderNames(); }
         // The mini player's second line on every screen: the chapter, while this book plays.
         NowPlayingNote.detail(LOCAL, chapters.subtitle(position));
         int at = chapters.indexAt(position);
@@ -2409,7 +2483,8 @@ public class NowPlayingActivity extends Activity {
         if (chapterLine != null) t.style(chapterLine, Type.LABEL, t.ink, false);
         t.style(qualityLine, Type.CAPTION, t.inkMuted, false);
         qualityLine.setLetterSpacing(0.04f);
-        t.style(status, Type.LABEL, t.attention, false);
+        // Status lines are muted (rule 4: the accent is not a text colour); a failure keeps attention.
+        t.style(status, Type.LABEL, t.inkMuted, false);
         // The big button: a disc of the cover's color, the glyph readable on it.
         int disc = ThemeColors.mix(t.background, t.primary, t.dark ? 0.55 : 0.85);
         playPause.setBackground(DaylightTheme.round(disc, dp(42)));
