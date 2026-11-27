@@ -804,8 +804,12 @@ public final class BrowseActivity extends Activity {
             // None yet, or a finished one whose controller has gone: releasing the future releases that controller.
             if (pending != null) MediaController.releaseFuture(pending);
             controller = null;
-            SessionToken token = new SessionToken(this, new ComponentName(this, DaylightMediaService.class));
-            pending = new MediaController.Builder(this, token).buildAsync();
+            // The application's context: a play's tap often finishes this page (Now playing opens with
+            // CLEAR_TOP), and Android drops a finished activity's bindings itself; releasing a controller
+            // bound to it afterwards unbinds twice and crashed the app ("Service not registered").
+            android.content.Context app = getApplicationContext();
+            SessionToken token = new SessionToken(app, new ComponentName(app, DaylightMediaService.class));
+            pending = new MediaController.Builder(app, token).buildAsync();
         }
         final ListenableFuture<MediaController> mine = pending;
         mine.addListener(() -> {

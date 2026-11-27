@@ -621,7 +621,8 @@ of your queued items, so queued music never plays inside a book. Spec:
 - **Saved and restored.** Every change (and the place every 10 s while playing) is
   written to `files/queue/state.json`: every region, the source's label, id and order,
   shuffle, repeat and the place. When the media service starts it comes back paused at
-  the place; it never plays by itself. **Stop** (the notification's ×, the sleep timer,
+  the place; it never plays by itself. Opening the app starts the media service when a saved
+  queue exists (`ShellStart.wakeSavedQueue`), so the mini player shows it at once. **Stop** (the notification's ×, the sleep timer,
   Now playing's Stop) keeps the queue; only Clear removes it.
 - **Offline.** An item that is neither on this phone nor reachable is skipped with a line
   ("Skipped 2 that need a connection"), never in a loop; with nothing left that plays,
