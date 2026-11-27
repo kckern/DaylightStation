@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { headerFacts, parentOf, ancestorsOf, soleSeasonOf, pathFor, contentIdFromPath, headerArt, sectionsFor } from './browseHeaderModel.js';
+import { headerFacts, parentOf, ancestorsOf, soleSeasonOf, pathFor, contentIdFromPath, headerArt, sectionsFor, watchState, watchedSubtitle, unwatchedCount } from './browseHeaderModel.js';
 
 const SHOW = {
   id: 'plex:59493', type: 'show', title: 'Bluey (2018)',
@@ -114,5 +114,24 @@ describe('sectionsFor (person pages by kind)', () => {
     expect(sectionsFor({ ...AUTHOR, metadata: { ...AUTHOR.metadata, librarySectionTitle: 'Music' } }, [book('a')])[0].label).toBe('Albums');
     expect(sectionsFor(SHOW, [book('a')])).toBeNull();
     expect(sectionsFor(AUTHOR, [])).toBeNull();
+  });
+});
+
+describe('watch marks (jellyfin study rec 11)', () => {
+  const ep = (id, watchProgress, duration = 600) => ({ id, type: 'episode', itemType: 'leaf', watchProgress, duration });
+  it('a row is watched at 90 %, partial with the time left before', () => {
+    expect(watchState(ep('a', 95))).toEqual({ kind: 'watched' });
+    expect(watchState(ep('b', 50))).toEqual({ kind: 'partial', leftSeconds: 300 });
+    expect(watchState(ep('c', 0))).toBeNull();
+    expect(watchState({ itemType: 'container', watchProgress: 100 })).toBeNull();
+    expect(watchedSubtitle('Episode · 10 min', { kind: 'watched' })).toBe('Watched · Episode · 10 min');
+    expect(watchedSubtitle('Episode · 10 min', { kind: 'partial', leftSeconds: 300 })).toBe('Episode · 10 min · 5 min left');
+  });
+  it('a season counts the episodes not yet watched, on a complete list only', () => {
+    const rows = [ep('a', 95), ep('b', 50), ep('c', 0)];
+    expect(unwatchedCount(rows, 3)).toBe(2);
+    expect(unwatchedCount(rows, 10)).toBeNull();
+    expect(headerFacts(SEASON, { unwatched: 2 })).toEqual(['Season', '52 episodes', '2 unwatched']);
+    expect(headerFacts(SEASON, { unwatched: 0 })).toContain('All watched');
   });
 });

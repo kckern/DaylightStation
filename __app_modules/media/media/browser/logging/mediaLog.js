@@ -200,6 +200,7 @@ export const mediaLog = {
   browseSummaryExpanded:  info('browse.summary-expanded'),
   browsePrefetched:       debug('browse.prefetched'),
   browseCrumbOpened:      info('browse.crumb-opened'),
+  playFromStart:          info('play.from-start'),
   remoteProblemReported:  warn('remote-problem.reported'),
   screenHandleShown:      info('screen-handle.shown'),
   screenHandleHidden:     debug('screen-handle.hidden'),

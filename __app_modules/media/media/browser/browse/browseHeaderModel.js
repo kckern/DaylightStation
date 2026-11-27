@@ -46,7 +46,7 @@ export function headerKind(item) {
  * the item does not carry its own count (Plex artists); `durationSeconds` is
  * a book's length when it is one file.
  */
-export function headerFacts(item, { itemCount = null, durationSeconds = null } = {}) {
+export function headerFacts(item, { itemCount = null, durationSeconds = null, unwatched = null } = {}) {
   if (!item) return [];
   const m = item.metadata ?? {};
   const type = typeOf(item);
@@ -68,6 +68,7 @@ export function headerFacts(item, { itemCount = null, durationSeconds = null } =
   } else {
     facts.push(count(m.childCount || itemCount, 'item'));
   }
+  if ((type === 'show' || type === 'season') && Number.isFinite(unwatched)) facts.push(unwatched > 0 ? `${unwatched} unwatched` : 'All watched');
   return facts.filter(Boolean);
 }
 
@@ -164,4 +165,35 @@ export function sectionsFor(container, items) {
     .flatMap(([, rows]) => rows);
   if (rest.length) known.push({ key: 'other', label: 'More from this ' + (book ? 'author' : 'artist'), items: rest });
   return known;
+}
+
+/**
+ * Watch state of a listed leaf (jellyfin study rec 11, owner-approved
+ * 2026-11-27): `watched` at 90 % or a watched mark, `partial` with the time
+ * left, else null. `watchProgress` on list rows is a percentage.
+ */
+export function watchState(row) {
+  if (!row || row.itemType === 'container') return null;
+  const pct = Number(row.watchProgress ?? row.metadata?.watchProgress);
+  if (row.watched === true || (Number.isFinite(pct) && pct >= 90)) return { kind: 'watched' };
+  const duration = Number(row.duration ?? row.metadata?.duration);
+  if (Number.isFinite(pct) && pct > 0 && Number.isFinite(duration) && duration > 0) {
+    return { kind: 'partial', leftSeconds: Math.round(duration * (1 - pct / 100)) };
+  }
+  return null;
+}
+
+/** "Watched · Episode · 12 min", "Episode · 12 min · 9 min left". */
+export function watchedSubtitle(base, state) {
+  if (!state) return base;
+  if (state.kind === 'watched') return base ? `Watched · ${base}` : 'Watched';
+  const left = formatDuration(state.leftSeconds);
+  return left ? [base, `${left} left`].filter(Boolean).join(' · ') : base;
+}
+
+/** How many listed episodes are not yet watched, on a complete list of leaves; null otherwise. */
+export function unwatchedCount(items, total) {
+  if (!Array.isArray(items) || !items.length || items.length !== total) return null;
+  if (!items.every((row) => String(row.type ?? row.metadata?.type) === 'episode')) return null;
+  return items.filter((row) => watchState(row)?.kind !== 'watched').length;
 }

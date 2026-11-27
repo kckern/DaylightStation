@@ -17,17 +17,17 @@ import mediaLog from "../logging/mediaLog.js";
 const BROWSE_TEST_IDS = Object.freeze({
   row: 'browse-dispatch-actions', play: 'browse-dispatch-play', playHere: 'browse-dispatch-play-here',
   playOn: 'browse-dispatch-play-on', more: 'browse-dispatch-more', moreMenu: 'browse-dispatch-more-menu',
-  menu: { shuffle: 'browse-dispatch-shuffle', add: 'browse-dispatch-queue' },
+  menu: { shuffle: 'browse-dispatch-shuffle', add: 'browse-dispatch-queue', fromStart: 'browse-dispatch-from-start' },
 });
 
 const ROUND_KINDS = new Set(['Author', 'Artist']);
 const SQUARE_KINDS = new Set(['Album', 'Book', 'Collection', 'Playlist']);
 
 export function BrowseHeader({
-  item, contentId, itemCount = null, durationSeconds = null, onOpenParent, onPrefetchParent = null, playRef = null,
+  item, contentId, itemCount = null, durationSeconds = null, unwatched = null, onOpenParent, onPrefetchParent = null, playRef = null,
 }) {
   const phone = useMediaQuery('(max-width: 480px)') ?? false;
-  const facts = headerFacts(item, { itemCount, durationSeconds });
+  const facts = headerFacts(item, { itemCount, durationSeconds, unwatched });
   const kind = headerKind(item);
   const art = headerArt(item);
   const parent = parentOf(item);

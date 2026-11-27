@@ -51,7 +51,7 @@ import { usePlayDestination } from "../habits/usePlayDestination.js";
 import { useContentInfo } from "./useContentInfo.js";
 import { BrowseHeader } from "./BrowseHeader.jsx";
 import { prefetchBrowse } from "./prefetchBrowse.js";
-import { ancestorsOf, contentIdFromPath, pathFor, sectionsFor, soleSeasonOf } from "./browseHeaderModel.js";
+import { ancestorsOf, contentIdFromPath, pathFor, sectionsFor, soleSeasonOf, unwatchedCount, watchState, watchedSubtitle } from "./browseHeaderModel.js";
 import { TopMoreList } from '@/lib/ui/TopMore.jsx';
 
 // A person page shows this many of each kind before "More (k)".
@@ -310,7 +310,8 @@ export function BrowseView({
                 <ResultRow
                   item={{ ...row, id }}
                   title={sourceRootPresentation(row).title}
-                  subtitle={(isSourceRow ? null : rowExtrasFor({ ...row, id }).playingOn?.onLine) ?? sourceRootPresentation(row).subtitle}
+                  subtitle={(isSourceRow ? null : rowExtrasFor({ ...row, id }).playingOn?.onLine)
+                    ?? watchedSubtitle(sourceRootPresentation(row).subtitle, watchState(row))}
                   thumbnail={row.thumbnail}
                   leading={row.thumbnail ? null : sourceIconFor(row)}
                   testId={`browse-open-${id}`}
@@ -379,6 +380,7 @@ export function BrowseView({
           contentId={containerId}
           itemCount={total || null}
           durationSeconds={durationSeconds}
+          unwatched={unwatchedCount(items, total)}
           onOpenParent={openParent}
           onPrefetchParent={(parent) => prefetchBrowse(parent.contentId, { modifiers })}
           playRef={headerPlayRef}

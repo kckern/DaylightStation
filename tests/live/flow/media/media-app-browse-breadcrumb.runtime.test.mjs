@@ -74,8 +74,12 @@ test.describe('MediaApp — browse lifecycle', () => {
     // ("Play on…") rather than guessing this device.
     await expect(page.getByTestId('browse-dispatch-play')).toHaveText(/Play on…/);
     await expect(page.getByTestId('browse-dispatch-play')).toBeVisible();
+    // The header follows the info view's row 1 (2026-11-27): Shuffle and Add
+    // to Queue live in More ⋯, never as a row of long text buttons.
+    await page.getByTestId('browse-dispatch-more').click();
     await expect(page.getByTestId('browse-dispatch-shuffle')).toBeVisible();
     await expect(page.getByTestId('browse-dispatch-queue')).toBeVisible();
+    await page.keyboard.press('Escape');
 
     const seasons = page.locator('.browse-list .media-result-title');
     await expect(seasons).toHaveText(['Season 1', 'Season 2']);

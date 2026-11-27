@@ -34,7 +34,25 @@ export const MENU_LABELS = Object.freeze({
   hide: 'Remove from household list',
   moveHeading: 'Move this playback to',
   moveHere: 'This device',
+  fromStart: 'From the start',
 });
+
+/** "42:10" / "1:02:03" for a playhead in seconds. */
+function clock(seconds) {
+  const t = Math.max(0, Math.floor(seconds));
+  const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), sec = t % 60;
+  const pad = (n) => String(n).padStart(2, '0');
+  return h ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`;
+}
+
+/**
+ * PLAY names the resume point (jellyfin study rec 10, owner-approved
+ * 2026-11-27): "Play on Office Screen" → "Resume on Office Screen · 42:10".
+ */
+export function resumeLabel(sentence, seconds) {
+  const words = String(sentence).replace(/^Play\b/, 'Resume');
+  return Number.isFinite(seconds) && seconds > 0 ? `${words} · ${clock(seconds)}` : words;
+}
 
 /** The kinds the table knows: a playable leaf, a collection, or a still to show. */
 export function menuItemKind({ collection = false, show = false } = {}) {
@@ -53,7 +71,7 @@ const SURFACES = Object.freeze({
   // Play here and Play on…, so More holds everything else — the queue verbs
   // (named for the screen they go to; this replaces the old caption line),
   // Show briefly on…, Quality…, then the household verbs.
-  detail: ['shuffleOn', 'playNext', 'playFirst', 'add', 'addOn', '|', 'showBriefly', '|', 'quality', '|', 'keep', '|', 'favourite', 'watched', 'unwatched'],
+  detail: ['fromStart', 'shuffleOn', 'playNext', 'playFirst', 'add', 'addOn', '|', 'showBriefly', '|', 'quality', '|', 'keep', '|', 'favourite', 'watched', 'unwatched'],
 });
 
 /**
@@ -70,13 +88,14 @@ const SURFACES = Object.freeze({
  * @param {boolean} [p.removable] shown in a household list
  * @param {boolean} [p.quality] the item takes quality overrides
  * @param {boolean} [p.household] offer the household verbs at all (favourite, watched, hide)
+ * @param {boolean} [p.resumable] PLAY resumes a saved spot: More offers From the start
  * @param {Array<{kind:string,label:string}>} [p.keep] Keep on Phone entries for this item
  *   (cast/phoneKeeps.js keepEntries: keep / cancel / remove, one per phone install)
  * @returns {Array<{ kind: string, label: string, hold?: string }|{ divider: true }>}
  */
 export function itemMenuEntries({
   surface, kind = 'leaf', where = {}, playingOn = null, continueLabel = null,
-  favourite = false, watched = null, removable = false, quality = false, household = true, keep = [],
+  favourite = false, watched = null, removable = false, quality = false, household = true, keep = [], resumable = false,
 }) {
   const order = SURFACES[surface];
   if (!order) throw new Error(`itemMenuEntries: unknown surface ${surface}`);
@@ -85,6 +104,7 @@ export function itemMenuEntries({
   const collection = kind === 'collection';
   const entry = {
     continue: continueLabel ? { kind: 'continue', label: continueLabel } : null,
+    fromStart: resumable ? { kind: 'fromStart', label: MENU_LABELS.fromStart } : null,
     openScreen: playingOn?.name ? { kind: 'openScreen', label: MENU_LABELS.openScreen(playingOn.name) } : null,
     playNow: { kind: 'playNow', label: elsewhere && where.sentence ? where.sentence : MENU_LABELS.playNow },
     playHere: elsewhere ? { kind: 'playHere', label: MENU_LABELS.playHere } : null,

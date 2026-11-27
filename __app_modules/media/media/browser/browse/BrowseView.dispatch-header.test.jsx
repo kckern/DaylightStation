@@ -178,6 +178,17 @@ describe('BrowseView — container dispatch header (Task 15)', () => {
     expect(section).toHaveTextContent('Books (2)');
     expect(screen.getByTestId('browse-header-facts')).toHaveTextContent('Author · 2 books');
   });
+  it('rows say Watched or the time left, and a season header counts what is unwatched', () => {
+    pageInfo = { title: 'Season 1', type: 'season', metadata: { type: 'season', leafCount: 2 } };
+    browseState = { items: [
+      { id: 'plex:1', title: 'One', type: 'episode', itemType: 'leaf', watchProgress: 100, duration: 600 },
+      { id: 'plex:2', title: 'Two', type: 'episode', itemType: 'leaf', watchProgress: 50, duration: 600 },
+    ], total: 2, loading: false, error: null };
+    renderBrowse({ containerItem: null, path: 'plex/59494' });
+    expect(screen.getByTestId('browse-row-plex:1')).toHaveTextContent('Watched');
+    expect(screen.getByTestId('browse-row-plex:2')).toHaveTextContent('5 min left');
+    expect(screen.getByTestId('browse-header-facts')).toHaveTextContent('1 unwatched');
+  });
   it('arriving at a container page puts focus on its PLAY', async () => {
     renderBrowse({ containerItem });
     await waitFor(() => expect(screen.getByTestId('browse-dispatch-play')).toHaveFocus());

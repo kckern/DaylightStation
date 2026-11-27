@@ -62,6 +62,26 @@ beforeEach(() => {
   devicesOverride = null;
 });
 
+describe('DetailView PLAY names the resume point (owner-approved 2026-11-27)', () => {
+  it('reads Resume … · 26:00 when there is a saved spot; From the start in More plays from 0', async () => {
+    contentState.info = { title: 'Arrival', type: 'movie', duration: 6000 };
+    apiMock.mockImplementation((url) => Promise.resolve(String(url).includes('carry-on')
+      ? { items: [{ contentId: 'plex:55854', playhead: 1560, duration: 6000, finished: false }] }
+      : { items: [] }));
+    render(<MantineProvider><DetailView contentId="plex:55854" /></MantineProvider>);
+    await waitFor(() => expect(screen.getByTestId('detail-play-now')).toHaveTextContent('Resume here · 26:00'));
+    pickMore('detail-from-start');
+    expect(dispatchLeafVerb).toHaveBeenCalledWith('playNow', 'plex:55854', expect.objectContaining({ id: 'plex:55854' }), { startAt: 0 });
+  });
+  it('without a saved spot PLAY says Play and More has no From the start', () => {
+    contentState.info = { title: 'Arrival', type: 'movie', duration: 6000 };
+    render(<MantineProvider><DetailView contentId="plex:55854" /></MantineProvider>);
+    expect(screen.getByTestId('detail-play-now')).toHaveTextContent('Play here');
+    openMore();
+    expect(screen.queryByTestId('detail-from-start')).toBeNull();
+  });
+});
+
 describe('DetailView parent chip (browse headers 2026-11-27)', () => {
   it('a book track shows its author as a linked chip; one tap opens the author page', () => {
     contentState.info = {

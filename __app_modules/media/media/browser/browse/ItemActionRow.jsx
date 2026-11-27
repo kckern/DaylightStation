@@ -3,13 +3,15 @@
 // and an info page offer the same four controls with the same labels.
 import React, { useState } from 'react';
 import { Text, Button, Group, Menu } from '@mantine/core';
-import { IconPlayerPlayFilled, IconPlayerTrackNext, IconRowInsertTop, IconPlaylistAdd, IconCast, IconRotate, IconDots, IconArrowsShuffle, IconPlaylist, IconPhoto, IconAdjustments, IconHeart, IconHeartFilled, IconEye, IconEyeOff } from '@tabler/icons-react';
+import { IconPlayerSkipBack, IconPlayerPlayFilled, IconPlayerTrackNext, IconRowInsertTop, IconPlaylistAdd, IconCast, IconRotate, IconDots, IconArrowsShuffle, IconPlaylist, IconPhoto, IconAdjustments, IconHeart, IconHeartFilled, IconEye, IconEyeOff } from '@tabler/icons-react';
 import { ActionMenu } from '@/lib/ui/ActionMenu.jsx';
 import { useContentDispatch } from "../search/useContentDispatch.js";
 import { ItemDestinationPicker } from "../actions/ItemDestinationPicker.jsx";
 import { useItemVerbs } from "../household/useItemVerbs.jsx";
 import { useFavourites } from "../household/useHousehold.js";
-import { itemMenuEntries, menuItemKind, MENU_LABELS } from "../actions/itemMenuTable.js";
+import { itemMenuEntries, menuItemKind, MENU_LABELS, resumeLabel } from "../actions/itemMenuTable.js";
+import { resumePlan } from "../household/householdModel.js";
+import { useCollectionContinue } from "../household/collectionContinue.js";
 import { usePlaybackQuality } from "../quality/PlaybackQualityProvider.jsx";
 import { supportsQualityOverrides } from "../quality/PlaybackQualityButtons.jsx";
 import { useStartingOn } from "../cast/useStartingOn.js";
@@ -22,12 +24,12 @@ import { usePhoneKeeps } from "../cast/usePhoneKeeps.jsx";
 // More ⋯ entries keep the test ids their buttons had before the owner's
 // 2026-11-26 ruling moved them here.
 const MORE_TEST_ID = {
-  shuffle: 'detail-shuffle', playNext: 'detail-play-next', playFirst: 'detail-up-next', add: 'detail-add',
+  fromStart: 'detail-from-start', shuffle: 'detail-shuffle', playNext: 'detail-play-next', playFirst: 'detail-up-next', add: 'detail-add',
   addOn: 'detail-add-on', showBrieflyOn: 'detail-show-briefly', quality: 'detail-quality',
   favourite: 'detail-favourite', unfavourite: 'detail-favourite', watched: 'detail-watched', unwatched: 'detail-unwatched',
 };
 const MORE_ICON = {
-  shuffle: IconArrowsShuffle, playNext: IconPlayerTrackNext, playFirst: IconRowInsertTop, add: IconPlaylistAdd,
+  fromStart: IconPlayerSkipBack, shuffle: IconArrowsShuffle, playNext: IconPlayerTrackNext, playFirst: IconRowInsertTop, add: IconPlaylistAdd,
   addOn: IconPlaylist, showBrieflyOn: IconPhoto, quality: IconAdjustments,
   favourite: IconHeart, unfavourite: IconHeartFilled, watched: IconEye, unwatched: IconEyeOff,
 };
@@ -140,6 +142,23 @@ export function ItemActionRow({
   const whereName = elsewhere ? labelsFor(item).short : null;
   const keep = phoneKeeps.forItem(item);
   const favourite = favourites.has(contentId);
+  // PLAY names the resume point (owner-approved 2026-11-27): a leaf with a
+  // saved spot reads "Resume on X · 42:10"; a show under way reads
+  // "Continue S3E7 on X". From the start moves to More.
+  const { continueFor } = useCollectionContinue();
+  const cont = collection && !on ? continueFor(item) : null;
+  const plan = !collection && !on ? resumePlan(entry) : { kind: 'start' };
+  const resumeAt = plan.kind === 'continue' ? plan.spot.playhead : null;
+  const resumable = !!cont || plan.kind !== 'start';
+  const sentence = labelsFor(item).sentence;
+  const playLabel = on ? `Start over on ${on.name}`
+    : cont ? `${cont.label}${elsewhere ? ` on ${whereName}` : where.source === 'ask' ? ' on…' : ' here'}`
+      : resumable ? resumeLabel(sentence, resumeAt) : sentence;
+  const playContinue = () => {
+    const episode = { id: cont.contentId, title: cont.title, type: 'episode', itemType: 'leaf' };
+    mediaLog.collectionContinued({ collectionId: contentId, contentId: cont.contentId, label: cont.label });
+    if (dispatchLeafVerb('playNow', cont.contentId, episode) === 'ask') setOneShot({ kind: 'playOn', item: episode });
+  };
   return (
     <>
       <Group className="detail-actions detail-row-one" gap="sm" data-testid={ids.row}>
@@ -154,11 +173,12 @@ export function ItemActionRow({
           onClick={() => {
             stopPreview();
             if (on) { startOverOn(on, contentId); return; }
+            if (cont) { playContinue(); return; }
             const route = collection ? playWhole() : run('playNow', item, { entry });
             if (route === 'ask') setOneShot({ kind: 'playOn', item });
           }}
         >
-          {on ? `Start over on ${on.name}` : labelsFor(item).sentence}
+          {playLabel}
         </Button>
         {/* Play here whenever ▶ goes to a screen: the aim's, or the one the
             item is already on (where PLAY is Start over). */}
@@ -185,6 +205,7 @@ export function ItemActionRow({
             favourite,
             quality: !!quality && supportsQualityOverrides(item),
             keep: keep.entries,
+            resumable,
           })}
           qualitySummary={qualitySummary(quality, item)}
           playNextHold={playNextHold}
@@ -194,6 +215,12 @@ export function ItemActionRow({
             if (kind === 'favourite' || kind === 'unfavourite' || kind === 'watched' || kind === 'unwatched') { run(kind, item); return; }
             stopPreview();
             if (kind === 'addOn' || kind === 'showBrieflyOn') { setOneShot({ kind, item }); return; }
+            if (kind === 'fromStart') {
+              mediaLog.playFromStart({ contentId, surface });
+              const route = collection ? playWhole() : dispatchLeafVerb('playNow', contentId, item, { startAt: 0 });
+              if (route === 'ask') setOneShot({ kind: 'playOn', item });
+              return;
+            }
             if (kind === 'playNextFront') { mediaLog.playNextFrontChosen({ surface }); dispatchLeafVerb('playFirst', contentId, item); return; }
             if (collection && kind === 'shuffle') { if (playWhole(true) === 'ask') setOneShot({ kind: 'playOn', item }); return; }
             if (collection && kind === 'add' && addContainerToQueue) { addContainerToQueue(contentId, item); return; }
