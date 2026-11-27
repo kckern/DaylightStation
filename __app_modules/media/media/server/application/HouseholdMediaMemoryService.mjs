@@ -11,6 +11,12 @@
  *   favourites  RQ-FIND-14  household items and collections
  *   removal     RQ-FIND-15  hide from recent / carry on / suggestions, undoable
  *   marks       RQ-FIND-13  watched / unwatched (MarkContentWatched)
+ *   continue    lookup §13  Continue listening: long audio really heard (listened
+ *                           time ≥ continue.minListenedMin), one row per book or
+ *                           series, legacy entries reviewed (keep / clear). The
+ *                           phone's Continue and carry on's long audio (the web's
+ *                           Continue) are this one answer. Rules in
+ *                           domain/continueListening.mjs.
  *
  * Pure list rules live in #domains/media/householdMediaList.mjs; this service
  * gathers progress records, the household lists, live screen state and item
@@ -31,6 +37,16 @@ import {
   finishedEpisodeCandidates,
 } from "../domain/householdMediaList.mjs";
 import { openSpotsOf, isSpotFinished, compareTimestamps } from "../../../../../__capabilities/playback/server/spot-history.mjs";
+import {
+  continueSettings,
+  continueCandidates,
+  isLongFormAudio,
+  collapsesIntoParent,
+  judgeContinueGroup,
+  reviewDecision,
+} from "../domain/continueListening.mjs";
+import { libraryKindMap, libraryKindOf } from "../../../../../__capabilities/content-catalog/server/queue-policy.mjs";
+import { ValidationError } from '#domains/core/errors/index.mjs';
 
 const DEFAULT_DESCRIBE_TIMEOUT_MS = 4000;
 const DEFAULT_DESCRIBE_TTL_MS = 5 * 60 * 1000;
@@ -52,6 +68,9 @@ const RECENT_LEDGER_DAYS = 14;
 const DAY_MS = 24 * 60 * 60 * 1000;
 // Songs are replayed, not resumed: a half-played track is not "carry on".
 const NOT_RESUMABLE_TYPES = new Set(['track']);
+// Continue listening: unfinished records looked at per answer (newest first).
+// Each costs a catalog lookup on a cold cache, a book's part list one more.
+const CONTINUE_SCAN = 60;
 
 function clampLimit(value, fallback, max = 200) {
   const n = Number.parseInt(value, 10);
@@ -64,6 +83,13 @@ function listItemsOf(list) {
   if (Array.isArray(list?.children)) return list.children;
   if (Array.isArray(list?.items)) return list.items;
   return [];
+}
+
+/** A parent id as a content id ("123" beside "plex:456" → "plex:123"). */
+function qualifyId(id, contentId) {
+  if (id === undefined || id === null || id === '') return null;
+  const value = String(id);
+  return value.includes(':') ? value : `${String(contentId).split(':')[0]}:${value}`;
 }
 
 function localIdOf(id) {
@@ -86,6 +112,10 @@ export class HouseholdMediaMemoryService {
   #playLedger;
   #describeTtlMs;
   #requestDeadlineMs;
+  #continueConfig;
+  #libraryKinds;
+  /** @type {Map<string, {at:number, value:Array|null}>} a book's parts, by book id */
+  #partsCache = new Map();
   /** @type {Map<string, {at:number, ttl:number, value:Object|null}>} */
   #describeCache = new Map();
   // Who wants to hear that the household list changed (suggestions cache).
@@ -123,6 +153,10 @@ export class HouseholdMediaMemoryService {
     playLedger = null,
     // Overall budget for one recent()/carryOn() call's catalog lookups.
     carryOnDeadlineMs = DEFAULT_REQUEST_DEADLINE_MS,
+    // () => household media config `continue` ({minListenedMin, unplayedDays}).
+    continueConfig = () => null,
+    // () => household media config `play_on_demand.library_kinds` (books / talks / music).
+    libraryKinds = () => null,
   }) {
     if (typeof progressMemory?.listAllProgress !== 'function') throw new TypeError('HouseholdMediaMemoryService requires progressMemory.listAllProgress');
     if (!listsStore) throw new TypeError('HouseholdMediaMemoryService requires listsStore');
@@ -140,6 +174,8 @@ export class HouseholdMediaMemoryService {
     this.#runtime = runtime;
     this.#playLedger = playLedger;
     this.#requestDeadlineMs = carryOnDeadlineMs;
+    this.#continueConfig = typeof continueConfig === 'function' ? continueConfig : () => null;
+    this.#libraryKinds = typeof libraryKinds === 'function' ? libraryKinds : () => null;
   }
 
   /** Whether watched/unwatched marks are wired (the router answers 501 if not). */
@@ -201,12 +237,22 @@ export class HouseholdMediaMemoryService {
     // the newest few times the limit are described; songs filtered out of
     // those leave room without a second pass.
     const { items, nowOn } = buildCarryOn(records, { removed, nowPlaying: live.list, limit: max * 3 });
+    // Long audio (books, talks) is Continue listening's answer, the same one the
+    // phone reads: listened, one row per book. It is left out of the plain list.
+    const kinds = this.#kinds();
     const unfinished = (await this.#withDisplay(items, budget))
       .filter((item) => !NOT_RESUMABLE_TYPES.has(item.type))
+      .filter((item) => !isLongFormAudio(item, this.#kindOf(item, kinds)))
       .map((item) => ({ item, at: item.spots?.[0]?.lastPlayed ?? item.lastPlayed }));
+    const playing = new Set((live.list || []).map((np) => np.contentId));
+    const decisions = await this.#loadDecisions(householdId);
+    const listening = (await this.#continueRows(records, removed, decisions, budget))
+      .rows
+      .filter((row) => !playing.has(row.playContentId))
+      .map((row) => ({ item: this.#asCarryOnEntry(row), at: row.lastPlayed }));
     const nextEpisodes = (await this.#nextEpisodes(records, removed, live.list, Math.min(max, NEXT_EPISODE_OFFERS), budget))
       .map((item) => ({ item, at: item.afterPlayedAt }));
-    const merged = [...unfinished, ...nextEpisodes]
+    const merged = [...unfinished, ...listening, ...nextEpisodes]
       .sort((a, b) => compareTimestamps(b.at, a.at))
       .slice(0, max)
       .map(({ item }) => item);
@@ -216,6 +262,71 @@ export class HouseholdMediaMemoryService {
       nowPlayingKnown: live.known,
       degraded: budget.degraded,
     };
+  }
+
+  /**
+   * Continue listening (lookup spec §13): long audio really heard, one row per
+   * book or series, newest first. Undecided legacy rows are included (flagged
+   * `legacy`) so nothing disappears before a person decides; `reviewCount` says
+   * how many there are.
+   * @returns {Promise<{items: Object[], reviewCount: number, minListenedMin: number, degraded: boolean}>}
+   */
+  async continueListening({ householdId, limit } = {}) {
+    const max = clampLimit(limit, 20);
+    const budget = this.#budget();
+    const [records, removed, decisions] = await Promise.all([
+      this.#records(),
+      this.#listsStore.loadRemoved(householdId),
+      this.#loadDecisions(householdId),
+    ]);
+    const { rows, minListenedMin } = await this.#continueRows(records, removed, decisions, budget);
+    return {
+      items: rows.slice(0, max),
+      reviewCount: rows.filter((row) => row.legacy).length,
+      minListenedMin,
+      degraded: budget.degraded,
+    };
+  }
+
+  /** The undecided legacy rows: progress from before listened time was measured. */
+  async continueReview({ householdId } = {}) {
+    const budget = this.#budget();
+    const [records, removed, decisions] = await Promise.all([
+      this.#records(),
+      this.#listsStore.loadRemoved(householdId),
+      this.#loadDecisions(householdId),
+    ]);
+    const { rows } = await this.#continueRows(records, removed, decisions, budget);
+    return { items: rows.filter((row) => row.legacy), degraded: budget.degraded };
+  }
+
+  /**
+   * Decide legacy rows: `keep` makes the row a normal Continue entry, `clear`
+   * takes it out (until it is heard for the threshold again). `all` decides
+   * every undecided legacy row at once.
+   * @param {{householdId?: string, contentId?: string, all?: boolean, decision: 'keep'|'clear'}} input
+   * @returns {Promise<{decided: string[], decision: string}>}
+   */
+  async decideContinueReview({ householdId, contentId = null, all = false, decision } = {}) {
+    const at = this.#nowTimestamp();
+    const entry = reviewDecision(decision, at);
+    if (!entry) throw new ValidationError('decision must be keep or clear', { code: 'INVALID_DECISION', field: 'decision' });
+    let ids;
+    if (all) {
+      ids = (await this.continueReview({ householdId })).items.map((row) => row.contentId);
+    } else {
+      const id = typeof contentId === 'string' ? contentId.trim() : '';
+      if (!id) throw new ValidationError('contentId is required', { code: 'MISSING_ID', field: 'contentId' });
+      ids = [id];
+    }
+    if (ids.length) {
+      const decisions = await this.#loadDecisions(householdId);
+      for (const id of ids) decisions[id] = entry;
+      await this.#listsStore.saveContinueDecisions(decisions, householdId);
+    }
+    this.#logger.info?.('media.continue.review_decided', { householdId: householdId ?? null, decision, count: ids.length, all: !!all });
+    for (const id of ids) this.#emitListChanged({ householdId: householdId ?? null, reason: `review-${decision}`, id });
+    return { decided: ids, decision };
   }
 
   /**
@@ -327,6 +438,8 @@ export class HouseholdMediaMemoryService {
       completedAt: progress.completedAt,
       spots: progress.spots,
       lastDevice: progress.lastDevice,
+      listenedSec: progress.listenedSec,
+      listenLegacy: progress.listenLegacy === true,
     }));
   }
 
@@ -444,6 +557,123 @@ export class HouseholdMediaMemoryService {
       // The season's own number ("Season 2" may be titled anything): lets a
       // collection row say "Continue S2E7" (FIND.8b/AC2).
       parentIndex: meta.parentIndex ?? null,
+      // The library the item comes from: its kind (books / talks / music) decides
+      // whether it is Continue listening's (play_on_demand.library_kinds).
+      librarySectionID: meta.librarySectionID ?? null,
+      librarySectionTitle: meta.librarySectionTitle ?? null,
+    };
+  }
+
+  #kinds() {
+    let config = null;
+    try { config = this.#libraryKinds(); } catch { config = null; }
+    return libraryKindMap(config);
+  }
+
+  #kindOf(display, kinds) {
+    return libraryKindOf({ metadata: {
+      librarySectionID: display?.librarySectionID ?? null,
+      librarySectionTitle: display?.librarySectionTitle ?? null,
+    } }, kinds);
+  }
+
+  async #loadDecisions(householdId) {
+    if (typeof this.#listsStore.loadContinueDecisions !== 'function') return {};
+    try {
+      return { ...((await this.#listsStore.loadContinueDecisions(householdId)) || {}) };
+    } catch (error) {
+      this.#logger.warn?.('media.continue.decisions_read_failed', { error: error.message });
+      return {};
+    }
+  }
+
+  /**
+   * Every Continue listening row (qualified and undecided legacy), newest first.
+   * Reads progress fresh each call, so a finish or a hide shows at once.
+   */
+  async #continueRows(records, removed, decisions, budget) {
+    let config = null;
+    try { config = this.#continueConfig(); } catch { config = null; }
+    const settings = continueSettings(config);
+    const kinds = this.#kinds();
+    const candidates = continueCandidates(records, {
+      removed, nowEpoch: this.#clock.now(), unplayedDays: settings.unplayedDays,
+    }).slice(0, CONTINUE_SCAN);
+    const displays = await Promise.all(candidates.map((c) => this.#describe(c.contentId, budget)));
+    const seen = new Set();
+    const rows = [];
+    for (let i = 0; i < candidates.length; i++) {
+      const current = candidates[i];
+      const display = displays[i];
+      if (!display) continue;
+      const kind = this.#kindOf(display, kinds);
+      if (!isLongFormAudio({ type: display.type, duration: current.duration }, kind)) continue;
+      const parentId = collapsesIntoParent(kind) ? qualifyId(display.parentId, current.contentId) : null;
+      const groupId = parentId || current.contentId;
+      // The newest unfinished part speaks for its book; older ones are folded in.
+      if (seen.has(groupId)) continue;
+      seen.add(groupId);
+      const parts = parentId ? await this.#partsOf(parentId, budget) : null;
+      const parent = parentId ? await this.#describe(parentId, budget) : null;
+      const ids = new Set([groupId, current.contentId, ...(parts || []).map((p) => p.id)]);
+      const judged = judgeContinueGroup({
+        groupId,
+        current,
+        display,
+        parent,
+        parts,
+        groupRecords: records.filter((r) => ids.has(r.contentId)),
+        removed,
+        decisions,
+        minListenedSec: settings.minListenedMin * 60,
+        kind,
+      });
+      if (judged.row) rows.push(judged.row);
+    }
+    return { rows, minListenedMin: settings.minListenedMin };
+  }
+
+  /** A book's parts in order ({id, title, duration s}), cached like display fields. */
+  async #partsOf(bookId, budget) {
+    const cached = this.#partsCache.get(bookId);
+    if (cached && this.#clock.now() - cached.at < this.#describeTtlMs) return cached.value;
+    if (this.#expired(budget)) { budget.degraded = true; return null; }
+    const source = bookId.split(':')[0];
+    const resolution = this.#catalog?.resolveSource?.(source, bookId);
+    if (!resolution || typeof this.#catalog.getList !== 'function') return null;
+    await this.#acquire();
+    try {
+      const items = listItemsOf(await this.#withTimeout(this.#catalog.getList(resolution, localIdOf(bookId)), budget));
+      const value = items
+        .filter((item) => item?.id)
+        .map((item) => ({ id: String(item.id), title: item.title ?? null, duration: Number(item.duration ?? item.metadata?.duration) || 0 }));
+      this.#partsCache.set(bookId, { at: this.#clock.now(), value });
+      return value;
+    } catch (error) {
+      if (budget) budget.degraded = true;
+      this.#logger.warn?.('media.continue.parts_failed', { bookId, error: error.message });
+      return null;
+    } finally {
+      this.#release();
+    }
+  }
+
+  /** A Continue listening row as a carry-on entry (the web's Continue). */
+  #asCarryOnEntry(row) {
+    const percent = row.duration > 0 ? Math.round((row.playhead / row.duration) * 100) : 0;
+    return {
+      ...row,
+      reason: 'unfinished',
+      namespaceId: null,
+      percent,
+      finished: false,
+      completedAt: null,
+      playedOn: null,
+      spots: [],
+      parentTitle: row.partTitle ?? null,
+      grandparentTitle: row.byline ?? null,
+      parentId: null,
+      grandparentId: null,
     };
   }
 

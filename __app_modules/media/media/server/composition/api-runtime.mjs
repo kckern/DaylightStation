@@ -31,6 +31,10 @@ export async function createMediaApiRuntime({ configService, mediaProgressMemory
       nowTimestamp: nowTs24,
       runtime: new ProgressWriteRuntime(),
       playLedger,
+      // Continue listening (lookup spec §13): the threshold and the library kinds
+      // that make an item a book or a talk, read per answer so a reload applies.
+      continueConfig: () => configService.getHouseholdAppConfig?.(null, 'media')?.continue ?? null,
+      libraryKinds: () => configService.getHouseholdAppConfig?.(null, 'media')?.play_on_demand?.library_kinds ?? null,
       logger: rootLogger.child({ module: 'household-media-memory' }),
     });
   }
