@@ -902,6 +902,95 @@ describe('ContentCombobox (hook wiring)', () => {
     });
   });
 
+  // Owner ruling 2026-11-27: the EMPTY box shows Continue and recent searches
+  // instead of "Type to search", as rows of the keyboard model.
+  describe('idle (empty box) recents', () => {
+    const cont = [
+      { id: 'plex:1', title: 'Consolation of Philosophy', source: 'plex', type: 'track', itemType: 'leaf' },
+      { id: 'plex:2', title: 'Arrival', source: 'plex', type: 'movie', itemType: 'leaf' },
+    ];
+    const searches = [
+      { key: 'nephi', text: 'nephi', scopeKey: 'books-scripture', tag: 'Scripture' },
+      { key: 'bluey', text: 'bluey', scopeKey: 'all', tag: null },
+    ];
+    const makeIdle = (extra = {}) => ({
+      items: cont, itemsTitle: 'Continue', searches,
+      onPickItem: vi.fn(), onPickSearch: vi.fn(), onForgetSearch: vi.fn(), onClearSearches: vi.fn(), onShown: vi.fn(),
+      ...extra,
+    });
+    const emptyBox = (highlight = { idx: -1, userNavigated: false }) => makeHook({
+      state: { ...initialState(''), mode: Modes.SEARCH, search: '', results: [], highlight },
+    });
+
+    it('shows Continue rows and recent searches (word + scope tag), not "Type to search", and logs once', () => {
+      currentHook = emptyBox();
+      const idle = makeIdle();
+      renderCombobox({ idle });
+      expect(screen.getByTestId('combobox-idle-continue')).toHaveTextContent('Continue');
+      expect(screen.getByTestId('combobox-option-plex:1')).toBeInTheDocument();
+      expect(screen.getByTestId('combobox-recent-0')).toHaveTextContent('nephi');
+      expect(screen.getByTestId('combobox-recent-0')).toHaveTextContent('· Scripture');
+      expect(screen.getByTestId('combobox-recent-1')).not.toHaveTextContent('·');
+      expect(screen.queryByText('Type to search...')).toBeNull();
+      expect(idle.onShown).toHaveBeenCalledTimes(1);
+      expect(idle.onShown).toHaveBeenCalledWith({ continue: 2, searches: 2 });
+    });
+
+    it('ArrowDown walks Continue then searches as one list', () => {
+      currentHook = emptyBox();
+      renderCombobox({ idle: makeIdle() });
+      fireEvent.keyDown(screen.getByRole('textbox'), { key: 'ArrowDown' });
+      expect(currentHook.dispatch).toHaveBeenCalledWith({ type: 'ARROW', dir: 1, itemCount: 4 });
+    });
+
+    it('Enter on a Continue row opens it like any result', () => {
+      currentHook = emptyBox({ idx: 1, userNavigated: true });
+      const idle = makeIdle();
+      renderCombobox({ idle, selectContainers: true });
+      fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+      expect(idle.onPickItem).toHaveBeenCalledWith(cont[1], 'keyboard');
+      expect(currentHook.select).toHaveBeenCalledWith(cont[1]);
+      expect(currentHook.commit).not.toHaveBeenCalled();
+    });
+
+    it('Enter on a recent search refills the box and hands the scope back', () => {
+      currentHook = emptyBox({ idx: 2, userNavigated: true });
+      const idle = makeIdle();
+      renderCombobox({ idle });
+      expect(screen.getByTestId('combobox-recent-0')).toHaveAttribute('data-highlighted', 'true');
+      fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+      expect(idle.onPickSearch).toHaveBeenCalledWith(searches[0], 'keyboard');
+      expect(currentHook.handleInput).toHaveBeenCalledWith('nephi');
+    });
+
+    it('a click picks a search; × forgets it; Clear forgets all — neither × nor Clear picks', () => {
+      currentHook = emptyBox();
+      const idle = makeIdle();
+      renderCombobox({ idle });
+      fireEvent.click(screen.getByTestId('combobox-recent-forget-1'));
+      expect(idle.onForgetSearch).toHaveBeenCalledWith(searches[1]);
+      fireEvent.click(screen.getByTestId('combobox-recent-clear'));
+      expect(idle.onClearSearches).toHaveBeenCalled();
+      expect(idle.onPickSearch).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByTestId('combobox-recent-1'));
+      expect(idle.onPickSearch).toHaveBeenCalledWith(searches[1], 'pointer');
+      expect(currentHook.handleInput).toHaveBeenCalledWith('bluey');
+    });
+
+    it('is replaced as soon as anything is typed', () => {
+      currentHook = makeHook({ state: { ...initialState(''), mode: Modes.SEARCH, search: 'n', results: [] } });
+      renderCombobox({ idle: makeIdle() });
+      expect(screen.queryByTestId('combobox-idle')).toBeNull();
+    });
+
+    it('with both sections empty the quiet placeholder stays', () => {
+      currentHook = emptyBox();
+      renderCombobox({ idle: makeIdle({ items: [], searches: [] }) });
+      expect(screen.queryByTestId('combobox-idle')).toBeNull();
+      expect(screen.getByText('Type to search...')).toBeInTheDocument();
+    });
+  });
+
   it('D5: no notice when fellBackToAll is false, even with zero results', () => {
     currentHook = makeHook({
       state: { ...initialState(''), mode: Modes.SEARCH, search: 'nomatch', results: [] },

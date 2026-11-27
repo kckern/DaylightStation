@@ -112,6 +112,7 @@ import { CastTargetProvider } from "../cast/CastTargetProvider.jsx";
 import { FleetContext } from "../fleet/FleetProvider.jsx";
 import { SearchMode } from "./SearchMode.jsx";
 import { habitsStore as seedHabits } from "../habits/mediaHabits.js";
+import { rememberSearch, recentSearches, resetRecentSearchesCache } from "./recentSearches.js";
 
 // These tests describe a browser that has chosen to watch here: with nothing
 // chosen, a film's ▶ asks where (Play on…) instead — see habits/playDestination.js.
@@ -140,7 +141,7 @@ beforeEach(() => {
   dispatchLeafVerbMock.mockReset();
   playContainerAsQueueMock.mockReset();
   navPush.mockReset();
-  localStorage.clear(); seedHabits().recordScreen('video', []);
+  localStorage.clear(); resetRecentSearchesCache(); seedHabits().recordScreen('video', []);
   comboState = { search: null, results: [] };
   comboExtra = {};
   fleetDevices = [];
@@ -380,6 +381,53 @@ describe('SearchMode', () => {
     fireEvent.click(chip());
     expect(chip()).toHaveTextContent('▶ This device');
     expect(screen.getByTestId('search-mode')).toBeInTheDocument();
+  });
+
+  // Owner ruling 2026-11-27: the empty box shows recent searches (and
+  // Continue), and words are remembered only when acted on.
+  describe('recent searches in the empty box', () => {
+    it('lists them with their scope tag; a tap reruns the words in that scope; × and Clear forget', async () => {
+      rememberSearch({ text: 'bluey', scopeKey: 'all', scopeLabel: 'All' }, 1);
+      rememberSearch({ text: 'rain', scopeKey: 'ambient', scopeLabel: 'Ambient' }, 2);
+      comboState = { search: '', results: [] };
+      render(<Harness />);
+      const first = await screen.findByTestId('search-mode-recent-0');
+      expect(first).toHaveTextContent('rain');
+      expect(first).toHaveTextContent('· Ambient');
+      expect(screen.getByTestId('search-mode-recent-1')).toHaveTextContent('bluey');
+      expect(screen.queryByTestId('search-mode-hint')).toBeNull();
+
+      fireEvent.click(first);
+      expect(handleInputSpy).toHaveBeenCalledWith('rain');
+      await waitFor(() => expect(screen.getByTestId('scope-chip-ambient')).toHaveAttribute('aria-pressed', 'true'));
+
+      fireEvent.click(screen.getByTestId('search-mode-recent-forget-1'));
+      expect(recentSearches().map((e) => e.text)).toEqual(['rain']);
+      fireEvent.click(screen.getByTestId('search-mode-recent-clear'));
+      expect(recentSearches()).toEqual([]);
+      await waitFor(() => expect(screen.queryByTestId('search-mode-recents')).toBeNull());
+      expect(screen.getByTestId('search-mode-hint')).toBeInTheDocument();
+    });
+
+    it('ArrowDown from the box goes into the list', async () => {
+      rememberSearch({ text: 'rain', scopeKey: 'ambient', scopeLabel: 'Ambient' }, 1);
+      comboState = { search: '', results: [] };
+      render(<Harness />);
+      await screen.findByTestId('search-mode-recent-0');
+      fireEvent.keyDown(screen.getByTestId('search-mode-input'), { key: 'ArrowDown' });
+      expect(document.activeElement).toBe(screen.getByTestId('search-mode-recent-0'));
+    });
+
+    it('remembers the words with their scope only when a result is acted on', async () => {
+      comboState = { search: 'bluey', results: [{ id: 'plex:685088', title: 'Bluey', type: 'episode', thumbnail: null }] };
+      dispatchMock.mockReturnValue('local');
+      render(<Harness />);
+      await screen.findByTestId('search-mode-result-plex:685088');
+      fireEvent.click(await screen.findByTestId('scope-chip-ambient'));
+      expect(recentSearches()).toEqual([]);
+      fireEvent.click(screen.getByTestId('search-mode-result-plex:685088'));
+      expect(recentSearches().map((e) => [e.text, e.scopeKey, e.scopeLabel])).toEqual([['bluey', 'ambient', 'Ambient']]);
+    });
   });
 
   // ── Fix round (Important 2): the D5 widening notice. The hook widened

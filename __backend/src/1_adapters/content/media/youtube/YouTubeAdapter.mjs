@@ -4,6 +4,9 @@ import { HttpClient } from '#system/services/HttpClient.mjs';
 
 const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 const PIPED_TIMEOUT_MS = 5000;
+// A new search is slower than a stream lookup (measured 2-10 s cold); stays
+// under the youtube source budget (ContentRuntimePolicy, 9 s).
+const PIPED_SEARCH_TIMEOUT_MS = 8500;
 const CIRCUIT_BREAK_THRESHOLD = 3;
 const CIRCUIT_BREAK_DURATION_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -100,7 +103,7 @@ export class YouTubeAdapter {
       try {
         const res = await this.#httpClient.get(
           `${this.#host}/search?q=${encodeURIComponent(q)}&filter=videos`,
-          { timeout: PIPED_TIMEOUT_MS }
+          { timeout: PIPED_SEARCH_TIMEOUT_MS }
         );
         data = res.data;
         this.#consecutiveFailures = 0;

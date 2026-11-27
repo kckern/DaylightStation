@@ -644,14 +644,13 @@ export class ReadalongAdapter {
           take
         });
 
-        // Resolve each match to a full PlayableItem
-        for (const match of matches) {
-          try {
-            const item = await this.getItem(match.localId);
-            if (item) items.push(item);
-          } catch { /* skip failed items */ }
-          if (items.length >= take) break;
-        }
+        // Resolve each match to a full PlayableItem, all at once: each one
+        // reads its chapter and looks for its audio, and on a cold data mount
+        // twenty of those in a row passed the 6 s search timeout (2026-11-27).
+        const resolved = await Promise.all(matches.slice(0, take).map(async (match) => {
+          try { return await this.getItem(match.localId); } catch { return null; /* skip failed items */ }
+        }));
+        for (const item of resolved) if (item) items.push(item);
       }
     }
 

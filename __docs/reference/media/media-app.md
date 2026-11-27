@@ -1271,6 +1271,21 @@ line. A source that errored is still retried in the scope first. Logs:
 The combobox's `widenOnEmpty: 'offer'` does this; the music picker behind a
 slideshow keeps `'auto'` (a scope the app chose, widened on its own).
 
+The empty box (owner ruling 2026-11-27): focused and empty, the dock list and
+the phone sheet show **Continue** (up to 4 unfinished items, most recently
+played first, from the same `household/carry-on` read Home uses, shown from its
+cache with no spinner) and **Recent searches** (the last 5 distinct words, each
+with its scope tag, "nephi · Scripture"). Continue rows are ordinary result rows
+(select opens the info view, ▶ plays to the destination). A recent search
+refills the box and reruns it in its scope; × forgets one, Clear forgets all.
+Words are remembered (localStorage `media-app.recent-searches`, cap 20, one per
+words case-insensitively, newest scope wins) only when a result was opened or
+played. Both are rows of the keyboard model (↓ in, Enter picks); typing
+replaces them; with both empty the quiet placeholder stays. Code:
+`search/recentSearches.js`, `search/useSearchRecents.js`, the combobox `idle`
+prop. Logs: `search.recents-shown {continue, searches}`,
+`search.recent-picked {kind}`.
+
 At tablet-up widths the dock shows the persistent search bar (with inline
 scope chips), the aim line and the house indicator. On a laptop the aim label,
 chips and field get room to read in full (no clipped chip or truncated name).
