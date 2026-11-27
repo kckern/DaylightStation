@@ -636,6 +636,15 @@ export class PlexAdapter {
         items = this._filterPlaylistsByLibraryName(items, libraryNameFilter);
       }
 
+      // A container's children (an album's tracks, a season's episodes) do not name
+      // their library; the container does. Carry it to each child, so the queue can
+      // tell a book's parts (play_on_demand.library_kinds) from an album's songs.
+      if (container.librarySectionID != null || container.librarySectionTitle) {
+        items = items.map(item => (item.librarySectionID == null && !item.librarySectionTitle
+          ? { ...item, librarySectionID: container.librarySectionID ?? null, librarySectionTitle: container.librarySectionTitle ?? null }
+          : item));
+      }
+
       return this._toContainerItems(items);
     } catch (err) {
       this.logger.error?.('plex.getList.exception', {
