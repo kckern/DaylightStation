@@ -70,6 +70,7 @@ export const mediaLog = {
   playbackProblem:        warn('playback.problem'),
   playbackDuplicateSkipped: info('playback.duplicate-skipped'),
   playbackNoticeReplaced: info('playback.notice-replaced'),
+  unwatchedCountsFailed:  warn('browse.unwatched-counts-failed'),
   playbackRecovered:      info('playback.recovered'),
   searchIssued:           debug('search.issued'),
   searchResultChunk:      debug('search.result-chunk'),

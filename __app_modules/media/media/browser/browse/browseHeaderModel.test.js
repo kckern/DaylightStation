@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { headerFacts, parentOf, ancestorsOf, soleSeasonOf, pathFor, contentIdFromPath, headerArt, sectionsFor, watchState, watchedSubtitle, unwatchedCount } from './browseHeaderModel.js';
+import { headerFacts, parentOf, ancestorsOf, soleSeasonOf, pathFor, contentIdFromPath, headerArt, sectionsFor, watchState, watchedSubtitle, unwatchedCount, episodeSubtitle, headerSummary, onlyChildIsSelf } from './browseHeaderModel.js';
 
 const SHOW = {
   id: 'plex:59493', type: 'show', title: 'Bluey (2018)',
@@ -133,5 +133,27 @@ describe('watch marks (jellyfin study rec 11)', () => {
     expect(unwatchedCount(rows, 10)).toBeNull();
     expect(headerFacts(SEASON, { unwatched: 2 })).toEqual(['Season', '52 episodes', '2 unwatched']);
     expect(headerFacts(SEASON, { unwatched: 0 })).toContain('All watched');
+  });
+});
+
+describe('show and book pages (2026-11-27 follow-ups)', () => {
+  it('an episode row reads E3 · 12 min · 9 min left, never the library name', () => {
+    expect(episodeSubtitle({ itemIndex: 3, duration: 720, watchProgress: 25, metadata: { librarySectionTitle: 'Church Series' } })).toBe('E3 · 12 min · 9 min left');
+    expect(episodeSubtitle({ itemIndex: 2, duration: 720, watchProgress: 100 })).toBe('E2 · 12 min · Watched');
+    // a barely started episode does not repeat its length as "left"
+    expect(episodeSubtitle({ itemIndex: 1, duration: 720, watchProgress: 2 })).toBe('E1 · 12 min');
+  });
+  it('a show with no summary borrows its first season\'s', () => {
+    expect(headerSummary({ type: 'show', metadata: { summary: '' } }, [{ type: 'season', summary: 'Season text.' }])).toBe('Season text.');
+    expect(headerSummary({ type: 'show', metadata: { summary: 'Own.' } }, [{ type: 'season', summary: 'x' }])).toBe('Own.');
+    expect(headerSummary({ type: 'show', metadata: {} }, [{ type: 'season' }])).toBeNull();
+    expect(headerSummary({ type: 'album', metadata: {} }, [{ type: 'season', summary: 'x' }])).toBeNull();
+  });
+  it('a one-file book lists nothing under its header', () => {
+    const book = { type: 'album', title: 'Is God a Mathematician?' };
+    expect(onlyChildIsSelf(book, [{ title: 'Is God a Mathematician?' }], 1)).toBe(true);
+    expect(onlyChildIsSelf(book, [{ title: 'Chapter 1' }], 1)).toBe(false);
+    expect(onlyChildIsSelf(book, [{ title: 'Is God a Mathematician?' }, { title: 'x' }], 2)).toBe(false);
+    expect(onlyChildIsSelf({ type: 'show', title: 'A' }, [{ title: 'A' }], 1)).toBe(false);
   });
 });

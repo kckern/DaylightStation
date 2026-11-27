@@ -51,7 +51,8 @@ import { usePlayDestination } from "../habits/usePlayDestination.js";
 import { useContentInfo } from "./useContentInfo.js";
 import { BrowseHeader } from "./BrowseHeader.jsx";
 import { prefetchBrowse } from "./prefetchBrowse.js";
-import { ancestorsOf, contentIdFromPath, pathFor, sectionsFor, soleSeasonOf, unwatchedCount, watchState, watchedSubtitle } from "./browseHeaderModel.js";
+import { ancestorsOf, contentIdFromPath, episodeSubtitle, headerSummary, isEpisodePage, onlyChildIsSelf, pathFor, sectionsFor, soleSeasonOf, unwatchedCount, watchState, watchedSubtitle } from "./browseHeaderModel.js";
+import { useUnwatchedCount, unwatchedLine } from "./unwatchedCounts.js";
 import { TopMoreList } from '@/lib/ui/TopMore.jsx';
 
 // A person page shows this many of each kind before "More (k)".
@@ -60,6 +61,15 @@ import { sourceLabel } from "../../../../../__capabilities/content-catalog/brows
 import mediaLog from "../logging/mediaLog.js";
 
 const LISTABLE_TYPES = new Set(['season', 'collection']);
+
+/**
+ * A row's subtitle, plus "3 unwatched" / "All watched" on a show or season
+ * row (household progress, `unwatchedCounts.js`).
+ */
+function RowSubtitle({ row, base }) {
+  const line = unwatchedLine(useUnwatchedCount(row));
+  return <>{[base, line].filter(Boolean).join(' · ')}</>;
+}
 
 /**
  * List rows do not carry their library; the page does. A row under an
@@ -195,6 +205,14 @@ export function BrowseView({
   // A person or artist page lists its items by kind ("Books (14)").
   const sections = useMemo(() => sectionsFor(headerItem, items), [headerItem, items]);
   const headerPlayRef = useRef(null);
+  // The header's unwatched count: from the listed episodes when the list is
+  // complete, else the server's count for the page (long seasons, shows).
+  const headerUnwatched = useUnwatchedCount(headerItem);
+  // A show or season page lists episodes as "E3 · 12 min · 9 min left".
+  const episodeRows = isEpisodePage(headerItem);
+  // A one-file book: its single track is the book itself, so no list.
+  const hideSelfList = onlyChildIsSelf(headerItem, items, total);
+  const summaryText = headerSummary(headerItem, rawItems, soleSeason?.forPath === path && soleSeason.row ? [soleSeason.row] : []);
 
   // Breadcrumbs: the trail the person took, else (a page opened by its
   // address) the content's own parents.
@@ -208,7 +226,7 @@ export function BrowseView({
     const seasonId = season ? (season.id ?? season.itemId) : null;
     if (!seasonId) return;
     mediaLog.browseSoleSeason({ contentId: containerId, seasonId });
-    setSoleSeason({ forPath: path, path: pathFor(seasonId) });
+    setSoleSeason({ forPath: path, path: pathFor(seasonId), row: season });
   }, [soleSeasonPath, loading, error, headerItem, rawItems, total, containerId, path]);
 
   useLayoutEffect(() => {
@@ -321,7 +339,9 @@ export function BrowseView({
                   item={{ ...row, id }}
                   title={sourceRootPresentation(row).title}
                   subtitle={(isSourceRow ? null : rowExtrasFor({ ...row, id }).playingOn?.onLine)
-                    ?? watchedSubtitle(sourceRootPresentation(inLibraryOf(row, headerItem)).subtitle, watchState(row))}
+                    ?? <RowSubtitle row={{ ...row, id }} base={episodeRows && String(row.type ?? row.metadata?.type) === 'episode'
+                      ? episodeSubtitle(row)
+                      : watchedSubtitle(sourceRootPresentation(inLibraryOf(row, headerItem)).subtitle, watchState(row))} />}
                   thumbnail={row.thumbnail}
                   leading={row.thumbnail ? null : sourceIconFor(row)}
                   testId={`browse-open-${id}`}
@@ -390,10 +410,11 @@ export function BrowseView({
           contentId={containerId}
           itemCount={total || null}
           durationSeconds={durationSeconds}
-          unwatched={unwatchedCount(items, total)}
+          unwatched={unwatchedCount(items, total) ?? headerUnwatched?.unwatched ?? null}
           onOpenParent={openParent}
           onPrefetchParent={(parent) => prefetchBrowse(parent.contentId, { modifiers })}
           playRef={headerPlayRef}
+          summary={summaryText}
         />
       )}
 
@@ -407,7 +428,7 @@ export function BrowseView({
         <Text c="dimmed" data-testid="browse-empty" className="browse-empty">Nothing here yet.</Text>
       )}
 
-      {!loading && !error && (sections
+      {!loading && !error && !hideSelfList && (sections
         ? sections.map((section) => (
           <section key={section.key} aria-label={section.label} data-testid={`browse-section-${section.key}`}>
             <Text component="h2" className="browse-section-title">{section.label} ({section.items.length})</Text>

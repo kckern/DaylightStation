@@ -186,6 +186,18 @@ export function createContentRouter(options = {}) {
    * - take, skip: Pagination
    * - {adapter}.{key}: Adapter-specific keys (e.g., immich.location)
    */
+  /**
+   * GET /api/v1/content/query/unwatched?ids=plex:1,plex:2
+   * How many leaves under each show/season the household has not finished:
+   * `{ counts: { 'plex:1': { unwatched, total } } }`. At most 40 ids.
+   */
+  router.get('/query/unwatched', asyncHandler(async (req, res) => {
+    if (!contentQueryService?.unwatchedCounts) return res.status(501).json({ error: 'Unwatched counts not configured' });
+    const ids = String(req.query.ids ?? '').split(',').map((id) => id.trim()).filter(Boolean);
+    if (!ids.length) return res.status(400).json({ error: 'ids is required' });
+    res.json({ counts: await contentQueryService.unwatchedCounts(ids) });
+  }));
+
   router.get('/query/search', asyncHandler(async (req, res) => {
     const requestStart = performance.now();
 

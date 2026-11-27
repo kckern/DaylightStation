@@ -24,14 +24,14 @@ const ROUND_KINDS = new Set(['Author', 'Artist']);
 const SQUARE_KINDS = new Set(['Album', 'Book', 'Collection', 'Playlist']);
 
 export function BrowseHeader({
-  item, contentId, itemCount = null, durationSeconds = null, unwatched = null, onOpenParent, onPrefetchParent = null, playRef = null,
+  item, contentId, itemCount = null, durationSeconds = null, unwatched = null, onOpenParent, onPrefetchParent = null, playRef = null, summary: summaryOverride,
 }) {
   const phone = useMediaQuery('(max-width: 480px)') ?? false;
   const facts = headerFacts(item, { itemCount, durationSeconds, unwatched });
   const kind = headerKind(item);
   const art = headerArt(item);
   const parent = parentOf(item);
-  const summary = item?.description || item?.metadata?.summary || null;
+  const summary = summaryOverride !== undefined ? summaryOverride : (item?.description || item?.metadata?.summary || null);
   useEffect(() => {
     if (!contentId) return;
     mediaLog.browseHeaderShown({ contentId, kind, hasArt: !!art, hasSummary: !!summary, hasParent: !!parent });

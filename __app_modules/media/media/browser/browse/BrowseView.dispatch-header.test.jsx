@@ -24,6 +24,11 @@ const listPaths = [];
 let browseState = { items: [], total: 0, loading: false, error: null };
 const loadMore = vi.fn();
 let pageInfo = null;
+let unwatchedById = {};
+vi.mock("./unwatchedCounts.js", async (importOriginal) => {
+  const real = await importOriginal();
+  return { ...real, useUnwatchedCount: (item) => unwatchedById[item?.id] ?? null };
+});
 vi.mock("./useContentInfo.js", () => ({ useContentInfo: () => ({ info: pageInfo, loading: false, error: null, reload: () => {} }) }));
 vi.mock("./useListBrowse.js", () => ({
   useListBrowse: (path) => { listPaths.push(path); return { ...browseState, loadMore }; },
@@ -110,6 +115,7 @@ beforeEach(() => {
   dispatchLeafVerbMock.mockClear();
   navBack = 'Devices';
   pageInfo = null;
+  unwatchedById = {};
   fleetDevices = [];
   localStorage.clear(); seedHabits().recordScreen('video', []);
 });
@@ -191,11 +197,53 @@ describe('BrowseView — container dispatch header (Task 15)', () => {
   });
   it('a book\'s track is named an Audiobook from the page\'s library, never Track or Song', () => {
     pageInfo = { title: 'Is God a Mathematician?', type: 'album', metadata: { type: 'album', librarySectionTitle: 'Audiobooks' } };
-    browseState = { items: [{ id: 'plex:505134', title: 'Is God a Mathematician?', type: 'track', itemType: 'leaf', duration: 32681 }], total: 1, loading: false, error: null };
+    browseState = { items: [{ id: 'plex:505134', title: 'Part 1', type: 'track', itemType: 'leaf', duration: 32681 }, { id: 'plex:505135', title: 'Part 2', type: 'track', itemType: 'leaf' }], total: 2, loading: false, error: null };
     renderBrowse({ containerItem: null, path: 'plex/505133' });
     const row = screen.getByTestId('browse-row-plex:505134');
     expect(row).toHaveTextContent('Audiobook · 9 hr 5 min');
     expect(row).not.toHaveTextContent(/Track|Song/);
+  });
+  it('a show page lists episodes as "E3 · 12 min · 9 min left", without the library name', () => {
+    pageInfo = { title: 'Bibleman', type: 'show', metadata: { type: 'show', librarySectionTitle: 'Church Series' } };
+    browseState = { items: [{ id: 'plex:9', title: 'Clobbering', type: 'episode', itemType: 'leaf', itemIndex: 3, duration: 720, watchProgress: 25 }], total: 2, loading: false, error: null };
+    renderBrowse({ containerItem: null, path: 'plex/457029' });
+    const row = screen.getByTestId('browse-row-plex:9');
+    expect(row).toHaveTextContent('E3 · 12 min · 9 min left');
+    expect(row).not.toHaveTextContent('Church Series');
+  });
+  it('a show with no summary shows its first season\'s', () => {
+    pageInfo = { title: 'Bluey', type: 'show', metadata: { type: 'show', summary: '' } };
+    browseState = { items: [
+      { id: 'plex:1', title: 'Season 1', type: 'season', itemType: 'container', summary: 'Season one text.' },
+      { id: 'plex:2', title: 'Season 2', type: 'season', itemType: 'container' },
+    ], total: 2, loading: false, error: null };
+    renderBrowse({ containerItem: null, path: 'plex/59493' });
+    expect(screen.getByTestId('browse-header-summary')).toHaveTextContent('Season one text.');
+  });
+  it('a one-file book shows no list of itself under its header', () => {
+    pageInfo = { title: 'Is God a Mathematician?', type: 'album', metadata: { type: 'album', librarySectionTitle: 'Audiobooks' } };
+    browseState = { items: [{ id: 'plex:505134', title: 'Is God a Mathematician?', type: 'track', itemType: 'leaf', duration: 32681 }], total: 1, loading: false, error: null };
+    renderBrowse({ containerItem: null, path: 'plex/505133' });
+    expect(screen.getByTestId('browse-header-title')).toHaveTextContent('Is God a Mathematician?');
+    expect(screen.queryByTestId('browse-row-plex:505134')).toBeNull();
+  });
+  it('a season row on a show page says how many episodes are unwatched', () => {
+    pageInfo = { title: 'Bluey', type: 'show', metadata: { type: 'show' } };
+    unwatchedById = { 'plex:1': { unwatched: 8, total: 52 }, 'plex:2': { unwatched: 0, total: 52 } };
+    browseState = { items: [
+      { id: 'plex:1', title: 'Season 1', type: 'season', itemType: 'container' },
+      { id: 'plex:2', title: 'Season 2', type: 'season', itemType: 'container' },
+    ], total: 2, loading: false, error: null };
+    renderBrowse({ containerItem: null, path: 'plex/59493' });
+    expect(screen.getByTestId('browse-row-plex:1')).toHaveTextContent('8 unwatched');
+    expect(screen.getByTestId('browse-row-plex:2')).toHaveTextContent('All watched');
+  });
+  it('a long season header takes its unwatched count from the server', () => {
+    pageInfo = { title: 'Season 1', type: 'season', metadata: { type: 'season', leafCount: 52 } };
+    unwatchedById = { 'plex:59494': { unwatched: 7, total: 52 } };
+    browseState = { items: [{ id: 'plex:1', title: 'One', type: 'episode', itemType: 'leaf' }], total: 52, loading: false, error: null };
+    renderBrowse({ containerItem: null, path: 'plex/59494' });
+    expect(screen.getByTestId('browse-header-facts')).toHaveTextContent('52 episodes · 7 unwatched');
   });
   it('arriving at a container page puts focus on its PLAY', async () => {
     renderBrowse({ containerItem });

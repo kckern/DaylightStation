@@ -865,6 +865,19 @@ whether the aim, learning or a one-off choice decided it), `habit.pick-recorded`
   page and info into the shared resource cache (`browse/prefetchBrowse.js`,
   GET only, once per 30 s per page); opening it then paints without a skeleton.
 
+- **Watch marks.** Show and season tiles carry a badge with the number of
+  unwatched episodes (✓ when all are watched; a finished film's tile gets ✓);
+  show and season rows add "8 unwatched" / "All watched". The counts are the
+  household's own progress (90 % = watched), not the media server's:
+  `GET /api/v1/content/query/unwatched?ids=…` (`ContentQueryService.unwatchedCounts`,
+  ≤ 40 ids, kept a minute), batched on the page by `browse/unwatchedCounts.js`.
+- **Episode rows on a show or season page** read "E3 · 12 min · 9 min left" /
+  "E3 · 12 min · Watched" — no library name.
+- **A show without a summary** shows its first season's, when that has one.
+- **A one-file book** (its single track is the book itself) shows only its
+  header, no list of itself.
+- **Width**: Browse runs to 1280px on a wide screen, with its rows in two
+  columns from 1200px; header text keeps a ~760px measure.
 - **Kinds are named by library** (`content-catalog/browser/lib/kindLabel.js`,
   shared by the search rows, result subtitles and the headers): an audiobook
   library's track is an **Audiobook**, its album a **Book**, its artist an

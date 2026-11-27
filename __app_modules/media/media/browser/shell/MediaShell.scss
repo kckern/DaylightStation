@@ -204,12 +204,29 @@ $amber-ink: $on-accent;
 
 // Bound content width on very wide viewports: lists become unreadable ribbons
 // past ~900px. (Now Playing and Detail carry their own tighter caps.)
-.browse-view,
 .fleet-view,
 .peek-panel {
   max-width: 900px;
   margin: 0;
   width: 100%;
+}
+// Browse uses the Mac's width (owner review 2026-11-27: the right ~45% sat
+// empty): the page runs to 1280px, and from 1200px its rows fall into two
+// columns so no row becomes a ribbon. Header text keeps its ~760px measure.
+.browse-view {
+  max-width: 1280px;
+  margin: 0;
+  width: 100%;
+
+  @media (min-width: 1200px) {
+    .browse-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      column-gap: var(--mantine-spacing-xl);
+      align-items: start;
+    }
+    .browse-list > .ds-top-more-row { grid-column: 1 / -1; }
+  }
 }
 // Device cards are a grid, so the Devices view gets a wider cap than lists.
 .fleet-view { max-width: 1200px; }

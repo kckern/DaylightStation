@@ -184,3 +184,49 @@ export function unwatchedCount(items, total) {
   if (!items.every((row) => String(row.type ?? row.metadata?.type) === 'episode')) return null;
   return items.filter((row) => watchState(row)?.kind !== 'watched').length;
 }
+
+/**
+ * An episode row on a show or season page (2026-11-27): the library name is
+ * noise there, so "E3 · 12 min · 9 min left" / "E3 · 12 min · Watched".
+ */
+export function episodeSubtitle(row) {
+  const index = Number(row?.itemIndex ?? row?.index ?? row?.metadata?.itemIndex);
+  const parts = [Number.isFinite(index) && index > 0 ? `E${index}` : null];
+  const duration = Number(row?.duration ?? row?.metadata?.duration);
+  parts.push(formatDuration(duration));
+  const state = watchState(row);
+  if (state?.kind === 'watched') parts.push('Watched');
+  else if (state?.kind === 'partial' && (!Number.isFinite(duration) || state.leftSeconds < duration - 60)) {
+    const left = formatDuration(state.leftSeconds);
+    if (left) parts.push(`${left} left`);
+  }
+  return parts.filter(Boolean).join(' · ');
+}
+
+/** True for a show or season page, where episode rows drop the library name. */
+export function isEpisodePage(item) {
+  return ['show', 'season'].includes(typeOf(item));
+}
+
+/**
+ * The header's summary: the item's own, else (a show) the first listed
+ * season's (2026-11-27: shows often carry none). Null when nothing has one.
+ */
+export function headerSummary(item, rows = [], extra = []) {
+  const own = item?.description || item?.metadata?.summary || item?.summary;
+  if (own) return own;
+  if (typeOf(item) !== 'show') return null;
+  const season = [...extra, ...(rows ?? [])].find((row) => typeOf(row) === 'season' && (row.summary || row.metadata?.summary));
+  return season ? (season.summary || season.metadata.summary) : null;
+}
+
+/**
+ * A container whose only child is itself (a one-file audiobook: the album
+ * and its single track share the title) needs no list under its header.
+ */
+export function onlyChildIsSelf(item, items, total) {
+  if (!item || !Array.isArray(items) || items.length !== 1 || total !== 1) return false;
+  if (!['album', 'collection', 'playlist'].includes(typeOf(item))) return false;
+  const norm = (s) => String(s ?? '').trim().toLowerCase();
+  return norm(items[0].title) === norm(item.title);
+}
