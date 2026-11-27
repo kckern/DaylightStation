@@ -128,7 +128,7 @@ public class PlayActionService extends Service {
         attempt = requested;
         if (!requested.title.isEmpty()) enterForeground(requested.title);
         // The mini player switches to it at once (named when the action's answer names it, below).
-        NowPlayingNotes.starting(new String[] { requested.title, "", "" });
+        NowPlayingNotes.starting(requested.playlist, new String[] { requested.title, "", "" });
         PlaylistWidgetState.show(this, requested.playlist, Phase.STARTING);
         ShellStart.ensure(this);
         Thread ask = new Thread(() -> {
@@ -151,7 +151,7 @@ public class PlayActionService extends Service {
                 if (!title.isEmpty() && requested.title.isEmpty()) {
                     requested.title = title;
                     enterForeground(title);
-                    if (!requested.played()) NowPlayingNotes.starting(new String[] { title, "", "" });
+                    if (!requested.played()) NowPlayingNotes.starting(id, new String[] { title, "", "" });
                 }
                 if (id == null) fail(requested); else connect(requested, id);
             });

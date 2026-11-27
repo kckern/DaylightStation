@@ -97,4 +97,24 @@ public class NowPlayingNoteTest {
         org.junit.Assert.assertFalse(NowPlayingNote.forTarget("local").starting);
         assertEquals("plex:200", NowPlayingNote.forTarget("local").mediaId);
     }
+
+    @Test public void aStartWithThePlayingTitleButAnotherIdWritesTheNote() {
+        NowPlayingNote.report(chapter("plex:100", 1_000));
+        NowPlayingNote.starting("local", "This phone", "Chapter 1", "", "", 2_000, "c:plex:200");
+        org.junit.Assert.assertTrue("another book's Chapter 1 is a new start", NowPlayingNote.forTarget("local").starting);
+        // The old book's report is held; the new one's lands.
+        NowPlayingNote.report(chapter("plex:100", 2_500));
+        org.junit.Assert.assertTrue(NowPlayingNote.forTarget("local").starting);
+        NowPlayingNote.report(chapter("plex:200", 3_000));
+        assertEquals("plex:200", NowPlayingNote.forTarget("local").mediaId);
+    }
+
+    @Test public void aStartOfTheItemAlreadyPlayingWritesNoNote() {
+        NowPlayingNote.report(chapter("plex:100", 1_000));
+        NowPlayingNote.starting("local", "This phone", "Chapter 1", "", "", 2_000, "p:plex:100|plex:9");
+        org.junit.Assert.assertFalse(NowPlayingNote.forTarget("local").starting);
+        // With no id for the start, the title still says it is the same item.
+        NowPlayingNote.starting("local", "This phone", "Chapter 1", "", "", 2_000);
+        org.junit.Assert.assertFalse(NowPlayingNote.forTarget("local").starting);
+    }
 }

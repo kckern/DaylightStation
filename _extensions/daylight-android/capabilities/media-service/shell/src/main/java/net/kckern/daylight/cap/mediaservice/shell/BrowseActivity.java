@@ -1941,7 +1941,7 @@ public final class BrowseActivity extends Activity {
             boolean empty = c.getMediaItemCount() == 0;
             if (empty) {
                 // It plays now: the mini player shows it at once, not "Nothing" until it lands.
-                NowPlayingNotes.starting(new String[] { name == null ? "" : name, "", "" });
+                NowPlayingNotes.starting(mediaId, new String[] { name == null ? "" : name, "", "" });
                 c.setMediaItem(item); c.prepare(); c.play();
             }
             else if (next) c.addMediaItem(c.getCurrentMediaItemIndex() + 1, item);

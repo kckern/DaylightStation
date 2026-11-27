@@ -125,4 +125,17 @@ public class StartingTest {
         assertNull(Starting.previousAt(false, null, note("", true)));
         assertNull(Starting.previousAt(false, null, note("", false)));
     }
+
+    @Test public void theIntentsPreviousExtraIsRead() {
+        // Starting.from(Intent) reads its extras into Starting.of (Android's Intent is not available to JVM tests).
+        Starting s = Starting.of("local", 1_000, "c:plex:50", "Mix", "", "", false, false, "p:plex:9");
+        assertEquals("plex:9", s.previous);
+        assertFalse(s.landed("plex:9", "", false, true, true, true));
+        Starting none = Starting.of("local", 1_000, "c:plex:50", "Mix", "", "", false, false, "");
+        assertEquals("", none.previous);
+        Starting absent = Starting.of("local", 1_000, "c:plex:50", "Mix", "", "", false, false, null);
+        assertNull("no extra: not known", absent.previous);
+        assertNull("nothing to show", Starting.of("local", 0, null, "  ", null, null, false, false, null));
+        assertTrue(Starting.of("local", 0, "c:plex:1", "Book", "", "", true, true, null).longForm);
+    }
 }

@@ -40,11 +40,11 @@ final class NowPlayingNotes {
      * A start on this phone from a path with no Now playing over it (a widget or a tile, the
      * car, Play next on an empty queue): the mini player shows the tapped item at once,
      * "Starting…", never the previous one (NowPlayingNote.starting holds the player's reports
-     * of it). {@code face} is title, by-line and cover, or null when only the tap is known.
+     * of it). {@code mediaId} is the tapped id ("" when not known yet); {@code face} is title, by-line and cover, or null when only the tap is known.
      */
-    static void starting(String[] face) {
+    static void starting(String mediaId, String[] face) {
         String[] f = face == null ? new String[] { "", "", "" } : face;
-        NowPlayingNote.starting("local", "This phone", f[0], f[1], f[2], SystemClock.elapsedRealtime());
+        NowPlayingNote.starting("local", "This phone", f[0], f[1], f[2], SystemClock.elapsedRealtime(), mediaId);
     }
 
     /** What a play request shows of itself (title, artist or album artist, cover); null when it has no title. */

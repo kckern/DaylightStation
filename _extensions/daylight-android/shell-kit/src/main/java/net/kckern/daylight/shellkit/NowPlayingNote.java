@@ -118,10 +118,21 @@ public final class NowPlayingNote {
      * the mini player shows it with "Starting…". The service's first report replaces it.
      */
     public static void starting(String target, String targetName, String title, String artist, String artworkUrl, long now) {
+        starting(target, targetName, title, artist, artworkUrl, now, "");
+    }
+
+    /**
+     * As above, with the tapped media id ("c:plex:2", "p:plex:2|plex:1", "plex:2"; "" when not
+     * known): the item is told from what the player reports by that id, by title only without
+     * one, so another book's "Chapter 1" is a new start.
+     */
+    public static void starting(String target, String targetName, String title, String artist, String artworkUrl, long now,
+                                String mediaId) {
         Entry before = "local".equals(target) ? local : remote;
         String t = title == null || title.trim().isEmpty() ? STARTING_TITLE : title.trim();
         // A player already reporting this item is newer than the tap.
-        if (before != null && !before.starting && before.title.equalsIgnoreCase(t)) return;
+        Entry tapped = new Entry(target, targetName, t, "", "", false, false, 0, -1, now, null, false, "", contentId(mediaId));
+        if (before != null && !before.starting && sameItem(tapped, before)) return;
         if (before != null && !before.starting) startedOver.put(target, before);
         else if (before == null) startedOver.put(target, NOTHING);
         report(new Entry(target, targetName, t, artist, artworkUrl, false, false, 0, -1, now, null, true, ""));
@@ -145,6 +156,15 @@ public final class NowPlayingNote {
         if (before == null || !before.starting || next == null || next.starting || over == null) return false;
         if (next.reportedAt - before.reportedAt > MiniPlayerState.STARTING_MS) return false;
         return next.title.isEmpty() || sameItem(next, over);
+    }
+
+    /** A media id's own content id: "plex:2" for "c:plex:2", "p:plex:2|plex:1" and "plex:2". */
+    static String contentId(String mediaId) {
+        if (mediaId == null) return "";
+        String id = mediaId.trim();
+        int bar = id.indexOf('|');
+        if (bar >= 0) id = id.substring(0, bar);
+        return id.length() > 2 && id.charAt(1) == ':' && (id.charAt(0) == 'c' || id.charAt(0) == 'p') ? id.substring(2) : id;
     }
 
     /** The same item: by content id when both are known, else by title; never the empty entry. */

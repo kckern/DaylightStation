@@ -150,16 +150,24 @@ final class Starting {
     /** The starting item an intent carries for {@code target}, or null when it carries none. */
     static Starting from(Intent intent, String target, long now) {
         if (intent == null) return null;
-        String title = intent.getStringExtra(EXTRA_TITLE);
-        boolean play = intent.getBooleanExtra(EXTRA_PLAY, false);
+        return of(target, now, intent.getStringExtra(EXTRA_ID), intent.getStringExtra(EXTRA_TITLE),
+                intent.getStringExtra(EXTRA_SUBTITLE), intent.getStringExtra(EXTRA_ART),
+                intent.getBooleanExtra(EXTRA_PLAY, false), intent.getBooleanExtra(EXTRA_LONG, false),
+                intent.hasExtra(EXTRA_PREVIOUS) ? intent.getStringExtra(EXTRA_PREVIOUS) : null);
+    }
+
+    /**
+     * The starting item from an intent's extras ({@code previous} null when the intent has no
+     * EXTRA_PREVIOUS), or null when it carries none. Pure.
+     */
+    static Starting of(String target, long now, String id, String title, String subtitle, String art,
+                       boolean play, boolean longForm, String previous) {
         // A start Now playing makes itself may come with only an id (a media link); any
         // start with an id is shown starting, never as whatever played before it.
-        String id = intent.getStringExtra(EXTRA_ID);
         if ((title == null || title.trim().isEmpty()) && !play && (id == null || id.trim().isEmpty())) return null;
-        Starting s = new Starting(target, intent.getStringExtra(EXTRA_ID), title == null ? "" : title.trim(),
-                intent.getStringExtra(EXTRA_SUBTITLE), intent.getStringExtra(EXTRA_ART), now);
-        s.longForm = intent.getBooleanExtra(EXTRA_LONG, false);
-        if (intent.hasExtra(EXTRA_PREVIOUS)) s.previousAtTap(intent.getStringExtra(EXTRA_PREVIOUS));
+        Starting s = new Starting(target, id, title == null ? "" : title.trim(), subtitle, art, now);
+        s.longForm = longForm;
+        if (previous != null) s.previousAtTap(previous);
         return s;
     }
 

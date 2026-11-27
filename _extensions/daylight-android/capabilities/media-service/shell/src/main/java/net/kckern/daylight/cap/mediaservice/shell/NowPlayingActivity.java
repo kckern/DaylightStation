@@ -390,7 +390,8 @@ public class NowPlayingActivity extends Activity {
     @Override public void finish() {
         // Closed while the tapped item still starts: the mini player below shows it, "Starting…".
         if (starting != null) {
-            NowPlayingNote.starting(starting.target, targetName, starting.title, starting.subtitle, starting.art, SystemClock.elapsedRealtime());
+            NowPlayingNote.starting(starting.target, targetName, starting.title, starting.subtitle, starting.art, SystemClock.elapsedRealtime(),
+                    starting.mediaId);
         }
         super.finish();
         overridePendingTransition(R.anim.daylight_np_hold, R.anim.daylight_np_fall);
@@ -833,7 +834,7 @@ public class NowPlayingActivity extends Activity {
         Starting s = Starting.from(intent, target, SystemClock.elapsedRealtime());
         if (s == null) return;
         // The mini player switches to the tapped item at once too, never the previous one (NowPlayingNote holds it).
-        NowPlayingNote.starting(s.target, targetName, s.title, s.subtitle, s.art, s.askedAt);
+        NowPlayingNote.starting(s.target, targetName, s.title, s.subtitle, s.art, s.askedAt, s.mediaId);
         boolean play = intent.getBooleanExtra(Starting.EXTRA_PLAY, false);
         boolean shuffle = intent.getBooleanExtra(Starting.EXTRA_SHUFFLE, false);
         frame = null;
