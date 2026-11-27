@@ -26,6 +26,10 @@ final class ProgressReporter {
         final boolean naturalEnd;
         /** When this position was heard on the phone (epoch ms); 0 when not known. */
         long observedAt;
+        /** The playback speed (home counts listened time at it); 1 is not sent. */
+        double rate = 1.0;
+        /** This player's run, so home pairs consecutive reports of one session; "" is not sent. */
+        String sessionId = "";
 
         Report(String contentId, String title, String listId, long seconds, double percent, boolean naturalEnd) {
             this.contentId = contentId;
@@ -54,6 +58,8 @@ final class ProgressReporter {
             // When it was heard, not when it arrives: a report sent late (kept while offline)
             // must not move the place back past a newer one from another player.
             if (observedAt > 0) body.put("observedAt", observedAt);
+            if (rate > 0 && Math.abs(rate - 1.0) > 0.001) body.put("rate", Math.round(rate * 100) / 100.0);
+            if (!sessionId.isEmpty()) body.put("sessionId", sessionId);
             return body;
         }
     }

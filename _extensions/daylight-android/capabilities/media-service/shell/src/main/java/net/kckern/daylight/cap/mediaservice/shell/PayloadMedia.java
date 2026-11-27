@@ -112,9 +112,15 @@ final class PayloadMedia {
      * @return whether a payload took it
      */
     boolean event(String id, String title, String listId, long positionMs, long durationMs, String state) {
+        return event(id, title, listId, positionMs, durationMs, state, 1f);
+    }
+
+    /** @param rate the playback speed (1 for normal), sent with the report so home counts listened time at it */
+    boolean event(String id, String title, String listId, long positionMs, long durationMs, String state, float rate) {
         try {
             port.call(new JSONObject().put("op", "event").put("id", id).put("title", title).put("listId", listId)
-                    .put("positionMs", positionMs).put("durationMs", durationMs).put("state", state).toString(), 0);
+                    .put("positionMs", positionMs).put("durationMs", durationMs).put("state", state)
+                    .put("rate", (double) rate).toString(), 0);
             return true;
         } catch (Throwable dropped) {
             return false;

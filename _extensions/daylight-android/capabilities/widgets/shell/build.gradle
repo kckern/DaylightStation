@@ -6,4 +6,6 @@ android {
 
 dependencies {
     implementation project(':shell-kit')
+    // Real org.json for JVM tests; android.jar ships stubs that return defaults.
+    testImplementation 'org.json:json:20231013'
 }

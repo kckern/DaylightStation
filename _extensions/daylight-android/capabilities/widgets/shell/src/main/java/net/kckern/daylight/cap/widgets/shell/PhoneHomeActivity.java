@@ -108,8 +108,9 @@ public class PhoneHomeActivity extends Activity {
         if (mini != null) mini.start();
         if (keptBox != null) fillKept();   // a collection kept from Now playing shows on return (in place)
         if (continueBox != null && continueBox.getParent() != null) {
-            // Redrawn from the last answer: the offline marks follow the network now.
-            fillContinue(continueBox, getSharedPreferences("daylight.home", MODE_PRIVATE).getString("continue", ""));
+            // Redrawn from the last answer (the offline marks follow the network now), then asked
+            // again: a book marked finished or hidden elsewhere leaves at once, not minutes later.
+            loadContinue(continueBox);
         }
         if (!launcherPicker) {
             observingPlacement = true;
@@ -920,8 +921,10 @@ public class PhoneHomeActivity extends Activity {
         call("media", body, reply -> {
             org.json.JSONArray items = reply.optJSONArray("items");
             String now = items == null ? "[]" : items.toString();
-            if (now.equals(last) || into.getParent() == null) return;
-            cache.edit().putString("continue", now).apply();
+            int review = Math.max(0, reply.optInt("reviewCount", 0));
+            boolean reviewChanged = review != cache.getInt("continueReview", 0);
+            if ((now.equals(last) && !reviewChanged) || into.getParent() == null) return;
+            cache.edit().putString("continue", now).putInt("continueReview", review).apply();
             fillContinue(into, now);
         }, failure -> { /* nothing to continue is not an error; the last answer stays */ });
     }
@@ -935,6 +938,11 @@ public class PhoneHomeActivity extends Activity {
         TextView heading = label("Continue listening", Type.TITLE, t.ink);
         heading.setPadding(0, dp(10), 0, dp(4));
         into.addView(heading);
+        // Older entries (from before listened time was counted) are not guessed: a one-time
+        // row offers to review them; once opened it does not come back (§13).
+        android.content.SharedPreferences cache = getSharedPreferences("daylight.home", MODE_PRIVATE);
+        int review = cache.getInt("continueReview", 0);
+        if (review > 0 && !cache.getBoolean("continueReviewOpened", false)) into.addView(reviewRow(review));
         for (int i = 0; i < items.length(); i++) {
             JSONObject item = items.optJSONObject(i);
             if (item != null) into.addView(continueCard(item));
@@ -962,12 +970,12 @@ public class PhoneHomeActivity extends Activity {
         name.setMaxLines(2);
         name.setEllipsize(android.text.TextUtils.TruncateAt.END);
         words.addView(name);
-        String left = timeLeft(Math.max(0, duration - played));
+        String left = ContinueRow.progress(item);
         // Kept on this phone: marked, and the only cards that play with no network.
         boolean here = net.kckern.daylight.shellkit.KeptIndex.onPhone(
                 net.kckern.daylight.shellkit.KeptIndex.read(getFilesDir()), item.optString("contentId"));
         boolean reachable = here || online();
-        String said = !reachable ? "Needs a connection" : (here ? "On this phone · " : "") + (sub.isEmpty() || sub.equals(title) ? left : sub + " · " + left);
+        String said = !reachable ? "Needs a connection" : (here ? "On this phone · " : "") + ContinueRow.line(item);
         // "On this phone" is a fact, not an action: muted, with the offline glyph (accent is for primary, selected, progress).
         TextView line = label(said, Type.LABEL, t.inkMuted);
         if (here) {
@@ -1020,11 +1028,14 @@ public class PhoneHomeActivity extends Activity {
         String id = item.optString("id"), cid = item.optString("contentId"), title = item.optString("title");
         JSONObject kept = keptFor(cid);
         long played = item.optLong("playhead"), duration = item.optLong("duration");
-        String state = (duration > 0 ? Math.round(100.0 * played / duration) + " % · " : "") + timeLeft(Math.max(0, duration - played));
+        String state = ContinueRow.progress(item);
         if (kept != null) state = net.kckern.daylight.shellkit.KeptIndex.describe(kept) + " · " + state;
         net.kckern.daylight.shellkit.ItemSheet sheet = net.kckern.daylight.shellkit.ItemSheet.of(this, "Home")
                 .item(item.optString("art"), net.kckern.daylight.shellkit.CoverGlyph.Kind.BOOK, title, item.optString("subtitle"), state)
-                .row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_open, "Open", () -> openBookOf(cid, title, item.optString("art")));
+                .row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_open, "Open", () -> {
+                    if (ContinueRow.grouped(item)) openPage(cid, "book", title, item.optString("art"));
+                    else openBookOf(cid, title, item.optString("art"));
+                });
         if (kept == null) sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_download, "Keep on this phone", () -> {
             net.kckern.daylight.shellkit.UiTelemetry.event("Downloads", "keep.tap", new JSONObject());
             openDownloads(id);
@@ -1037,6 +1048,14 @@ public class PhoneHomeActivity extends Activity {
                 .destructive(net.kckern.daylight.shellkit.R.drawable.daylight_ic_remove_circle, "Remove from Continue listening", () -> hideFromContinue(item, true))
                 .show();
         return true;
+    }
+
+    /** A book's page by its own id (a Continue row is the book, §13). */
+    private void openPage(String contentId, String kind, String title, String art) {
+        try {
+            startActivity(new Intent().setClassName(this, BROWSE).putExtra("mode", "level").putExtra("parent", "c:" + contentId)
+                    .putExtra("kind", kind).putExtra("title", title).putExtra("art", art == null ? "" : art));
+        } catch (RuntimeException absent) { toast("Not available in this build"); }
     }
 
     /** Open: the page of the book a Continue card's part belongs to (its info's album). */
@@ -1102,7 +1121,7 @@ public class PhoneHomeActivity extends Activity {
             body = new JSONObject().put("op", "book-finished").put("contentId", cid).put("finished", finished);
             // Undo puts the card's place back (home's "not finished" would start the part over).
             if (!finished) body.put("restoreSeconds", item.optLong("playhead")).put("durationSeconds", item.optLong("duration"))
-                    .put("title", item.optString("title"));
+                    .put("title", item.optString("title")).put("playContentId", item.optString("playContentId", cid));
         }
         catch (Exception impossible) { return; }
         call("media", body.toString(), reply -> {
@@ -1113,6 +1132,118 @@ public class PhoneHomeActivity extends Activity {
             if (finished) withoutCard(item, false);
         });
         if (finished) snack("Marked finished", () -> finishFromContinue(item, false));
+    }
+
+    /** "Review 3 older items": the one-time row at the top of Continue (§13). */
+    private View reviewRow(int count) {
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setMinimumHeight(dp(56));
+        row.setPadding(0, dp(4), 0, dp(4));
+        row.setBackground(t.pressable(null));
+        ImageView icon = new ImageView(this);
+        icon.setImageResource(net.kckern.daylight.shellkit.R.drawable.daylight_ic_tune);
+        icon.setImageTintList(android.content.res.ColorStateList.valueOf(t.inkMuted));
+        row.addView(icon, new LinearLayout.LayoutParams(dp(24), dp(24)));
+        LinearLayout words = new LinearLayout(this);
+        words.setOrientation(LinearLayout.VERTICAL);
+        words.setPadding(dp(16), 0, 0, 0);
+        words.addView(t.text(this, ContinueRow.reviewLabel(count), Type.BODY, t.ink, true));
+        words.addView(label("From before listening time was counted: keep or clear them", Type.LABEL, t.inkMuted));
+        row.addView(words, new LinearLayout.LayoutParams(0, -2, 1));
+        row.addView(PlaylistPicker.glyph(this, "›", 20, t.inkMuted));
+        row.setContentDescription(ContinueRow.reviewLabel(count) + ". Keep or clear each");
+        net.kckern.daylight.shellkit.UiTelemetry.tag(row, "continue.review");
+        row.setOnClickListener(v -> openReview());
+        return row;
+    }
+
+    /**
+     * The review sheet: each older entry with Keep and Clear, and Clear all. Opening it is the
+     * one time the row is offered; undecided entries stay in Continue as they are.
+     */
+    private void openReview() {
+        getSharedPreferences("daylight.home", MODE_PRIVATE).edit().putBoolean("continueReviewOpened", true).apply();
+        net.kckern.daylight.shellkit.UiTelemetry.event("Home", "continue.review_open", new JSONObject());
+        net.kckern.daylight.shellkit.BottomSheet sheet = new net.kckern.daylight.shellkit.BottomSheet(this);
+        LinearLayout body = sheet.body();
+        TextView heading = t.text(this, "Older items in Continue listening", Type.TITLE, t.ink, true);
+        body.addView(heading);
+        TextView why = label("These were listed before listening time was counted. Keep the ones you are listening to.", Type.LABEL, t.inkMuted);
+        why.setPadding(0, dp(4), 0, dp(8));
+        body.addView(why);
+        LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        body.addView(list);
+        list.addView(label("Loading…", Type.LABEL, t.inkMuted));
+        sheet.onDismiss(() -> { if (continueBox != null) loadContinue(continueBox); });
+        sheet.show();
+        call("media", request("continue-review").toString(), reply -> {
+            list.removeAllViews();
+            org.json.JSONArray items = reply.optJSONArray("items");
+            if (items == null || items.length() == 0) { list.addView(label("Nothing to review.", Type.LABEL, t.inkMuted)); return; }
+            for (int i = 0; i < items.length(); i++) {
+                JSONObject item = items.optJSONObject(i);
+                if (item != null) list.addView(reviewItem(item, list));
+            }
+            TextView all = t.text(this, "Clear all", Type.LABEL, t.danger, true);
+            all.setGravity(Gravity.CENTER_VERTICAL);
+            all.setMinHeight(dp(48));
+            all.setBackground(t.pressable(null));
+            all.setOnClickListener(v -> decide(null, "clear", () -> { list.removeAllViews(); list.addView(label("Cleared.", Type.LABEL, t.inkMuted)); }));
+            net.kckern.daylight.shellkit.UiTelemetry.tag(all, "continue.review_clear_all");
+            body.addView(all);
+        }, failure -> { list.removeAllViews(); list.addView(label("Can't reach home: " + failure, Type.LABEL, t.inkMuted)); });
+    }
+
+    private View reviewItem(JSONObject item, LinearLayout list) {
+        String cid = item.optString("contentId"), title = item.optString("title");
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setMinimumHeight(dp(64));
+        ImageView cover = new ImageView(this);
+        cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        net.kckern.daylight.shellkit.CoverGlyph.behind(cover, t, net.kckern.daylight.shellkit.CoverGlyph.Kind.BOOK, dp(44), t.radius(Radius.SMALL));
+        row.addView(cover, new LinearLayout.LayoutParams(dp(44), dp(44)));
+        loadCover(cover, item.optString("art"));
+        LinearLayout words = new LinearLayout(this);
+        words.setOrientation(LinearLayout.VERTICAL);
+        words.setPadding(dp(12), 0, dp(4), 0);
+        TextView name = t.text(this, title, Type.BODY, t.ink, true);
+        name.setMaxLines(1);
+        name.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        words.addView(name);
+        TextView line = label(ContinueRow.line(item), Type.LABEL, t.inkMuted);
+        line.setMaxLines(1);
+        line.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        words.addView(line);
+        row.addView(words, new LinearLayout.LayoutParams(0, -2, 1));
+        TextView keep = t.text(this, "Keep", Type.LABEL, t.ink, true);
+        TextView clear = t.text(this, "Clear", Type.LABEL, t.ink, true);
+        for (TextView b : new TextView[] { keep, clear }) {
+            b.setGravity(Gravity.CENTER);
+            b.setMinHeight(dp(48));
+            b.setMinWidth(dp(56));
+            b.setBackground(t.pressable(null));
+            row.addView(b);
+        }
+        keep.setContentDescription("Keep " + title + " in Continue listening");
+        clear.setContentDescription("Clear " + title + " from Continue listening");
+        keep.setOnClickListener(v -> decide(cid, "keep", () -> list.removeView(row)));
+        clear.setOnClickListener(v -> decide(cid, "clear", () -> { list.removeView(row); withoutCard(item, true); }));
+        return row;
+    }
+
+    /** One decision (or Clear all, contentId null) sent home; {@code done} runs when home took it. */
+    private void decide(String contentId, String decision, Runnable done) {
+        JSONObject body;
+        try {
+            body = new JSONObject().put("op", "continue-decide").put("decision", decision);
+            if (contentId == null) body.put("all", true); else body.put("contentId", contentId);
+            net.kckern.daylight.shellkit.UiTelemetry.event("Home", "continue.review_decide",
+                    new JSONObject().put("decision", decision).put("all", contentId == null));
+        } catch (Exception impossible) { return; }
+        call("media", body.toString(), reply -> done.run(), failure -> toast("Can't reach home: " + failure));
     }
 
     /** "2 h 31 min left", "18 min left", "Under a minute left". */

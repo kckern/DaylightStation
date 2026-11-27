@@ -122,6 +122,23 @@ final class BackendMediaApi implements MediaApi {
         if (!r.ok()) throw new Refused("continue hide", r.status);
     }
 
+    @Override public JSONObject continueListening(int limit) throws Exception {
+        return get("continue", "/api/v1/media/household/continue?limit=" + Math.max(1, Math.min(50, limit)));
+    }
+
+    @Override public JSONObject continueReview() throws Exception {
+        return get("continue review", "/api/v1/media/household/continue/review");
+    }
+
+    @Override public JSONObject decideContinueReview(String contentId, boolean all, String decision) throws Exception {
+        if (!"keep".equals(decision) && !"clear".equals(decision)) throw new IllegalArgumentException("decision");
+        JSONObject body = new JSONObject().put("decision", decision);
+        if (all) body.put("all", true); else body.put("contentId", ContentId.checked(contentId));
+        Http.Reply r = http.postJson(backend.url("/api/v1/media/household/continue/review"), body.toString());
+        if (!r.ok()) throw new Refused("continue review", r.status);
+        try { return new JSONObject(r.body); } catch (Exception notJson) { return new JSONObject(); }
+    }
+
     private JSONObject get(String route, String path) throws Exception {
         Http.Reply r = http.get(backend.url(path));
         if (!r.ok()) throw new Refused(route, r.status);
