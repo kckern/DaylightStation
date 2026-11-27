@@ -209,6 +209,22 @@ describe('DispatchProgressTray outcomes', () => {
     expect(screen.getByTestId('dispatch-retry-w1')).toBeInTheDocument();
   });
 
+  it('RELY.5a: a video held after its stream failed on a readable file says it stopped loading, not "being repaired"', () => {
+    outcomes.set('w3', record({ attemptId: 'w3', dispatchId: 'w3', targetId: 'local', deviceId: 'local', distance: 'here', kind: 'playback', phase: 'waiting', reason: 'media-error-unplayable', item: { contentId: 'plex:1', title: 'Arrival' }, title: 'Arrival', command: { kind: 'retry', item: { contentId: 'plex:1', title: 'Arrival' } } }));
+    render(<MantineProvider><DispatchProgressTray /></MantineProvider>);
+    const row = screen.getByTestId('dispatch-row-w3');
+    expect(row).toHaveTextContent('Arrival stopped loading');
+    expect(row).not.toHaveTextContent('being repaired');
+    expect(screen.getByTestId('dispatch-skip-w3')).toBeInTheDocument();
+    expect(screen.getByTestId('dispatch-retry-w3')).toBeInTheDocument();
+  });
+
+  it('RELY.5a: a refused file still held at the wait cap keeps the repair copy', () => {
+    outcomes.set('w4', record({ attemptId: 'w4', dispatchId: 'w4', targetId: 'local', deviceId: 'local', distance: 'here', kind: 'playback', phase: 'waiting', reason: 'source-unavailable-gave-up', item: { contentId: 'plex:1', title: 'Arrival' }, title: 'Arrival', command: { kind: 'retry', item: { contentId: 'plex:1', title: 'Arrival' } } }));
+    render(<MantineProvider><DispatchProgressTray /></MantineProvider>);
+    expect(screen.getByTestId('dispatch-row-w4')).toHaveTextContent('Waiting for Arrival — the file is being repaired');
+  });
+
   it('a remote screen\'s held video names that screen, never "this device"', () => {
     outcomes.set('w2', record({ attemptId: 'w2', dispatchId: 'w2', targetId: 'livingroom-tv', targetName: 'Living Room TV', deviceId: 'livingroom-tv', distance: 'direct', kind: 'playback', phase: 'waiting', reason: 'source-unavailable', item: { contentId: 'plex:1', title: 'Arrival' }, title: 'Arrival', command: { kind: 'playNow', item: { contentId: 'plex:1' } } }));
     render(<MantineProvider><DispatchProgressTray /></MantineProvider>);

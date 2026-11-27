@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { markFirstUseDone } from './lib/firstUse.mjs';
 
 // In P2 the default canvas view is HomeView. These tests click the MiniPlayer
 // title (available when a current item exists) to navigate to NowPlayingView,
@@ -7,7 +8,10 @@ import { test, expect } from '@playwright/test';
 // no "Idle" text -- we assert that via Home view instead.
 
 test.describe('MediaApp — P1 foundation', () => {
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ page, context }) => {
+    // A fresh browser opens the first-use naming card, a real overlay that
+    // takes the pointer from the Start fresh dialog beneath it: answer it.
+    await markFirstUseDone(context);
     await page.goto('/media');
     await page.evaluate(() => {
       localStorage.removeItem('media-app.session');
@@ -51,7 +55,7 @@ test.describe('MediaApp — P1 foundation', () => {
 
     await page.getByTestId('settings-menu-trigger').click();
     await page.getByTestId('settings-reset-session').click();
-    await page.getByTestId('confirm-ok').click();
+    await page.getByRole('dialog', { name: 'Start fresh on this device?' }).getByRole('button', { name: 'Start fresh', exact: true }).click();
     // After reset there is no session, so the handle is gone again (no item, no queue).
     await expect(page.getByTestId('media-mini-player')).toHaveCount(0);
 

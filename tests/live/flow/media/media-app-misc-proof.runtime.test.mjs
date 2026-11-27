@@ -3,7 +3,7 @@ import { resetHouseholdAt } from './lib/household.mjs';
 import {
   A, ITEM, VIEWPORTS, receiverState, openReceiver, startOn, stopReceiver, resetControls, newAppPage, gotoMedia, warmMedia, openHouse, openRemote,
 } from './lib/receivers.mjs';
-import { openSearch, resultRow, closeSearch } from './lib/search.mjs';
+import { openSearch, resultRow, playResultHere } from './lib/search.mjs';
 import { scriptReceiver, SCRIPTED } from './lib/scriptedReceiver.mjs';
 
 // Smaller journeys that close single rows: skip back/forward for any queue,
@@ -66,8 +66,11 @@ test('[AUTO.3a/AC3] a device left open in the app shows, in the house overview, 
   // Playing: still there, now with what it plays.
   const input = await openSearch(page, vp);
   await input.fill('Faith');
-  await resultRow(page, vp, ITEM.FAITH).click();
-  await closeSearch(page, vp);
+  // Selecting a row only opens its info view; PLAY plays (here, chosen on purpose).
+  await playResultHere(page, resultRow(page, vp, ITEM.FAITH));
+  await expect(page.getByTestId('media-mini-player')).toContainText('Faith', { timeout: 30000 });
+  // PLAY left the info view open and the list closed (Escape there is Back,
+  // which reopens the list): go straight to the house overview.
   await openHouse(page, vp);
   await expect(page.getByTestId(`fleet-card-${cardId}`)).toContainText('Faith', { timeout: 60000 });
   await expect(mine).toHaveText('This device');

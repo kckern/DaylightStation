@@ -70,7 +70,9 @@ test.describe('MediaApp — browse lifecycle', () => {
     await expect(page.getByTestId('browse-row-demo:show')).toContainText('Show');
 
     await page.getByTestId('browse-open-demo:show').click();
-    await expect(page.getByTestId('browse-dispatch-header')).toContainText('This device');
+    // A first-time browser has no habit for a show yet, so its ▶ asks where
+    // ("Play on…") rather than guessing this device.
+    await expect(page.getByTestId('browse-dispatch-play')).toHaveText(/Play on…/);
     await expect(page.getByTestId('browse-dispatch-play')).toBeVisible();
     await expect(page.getByTestId('browse-dispatch-shuffle')).toBeVisible();
     await expect(page.getByTestId('browse-dispatch-queue')).toBeVisible();

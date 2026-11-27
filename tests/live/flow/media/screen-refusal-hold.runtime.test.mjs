@@ -94,8 +94,9 @@ test('a refused episode is HELD with a fixing note (never skipped), then resumes
     v.currentTime = t;
   }, SPOT);
 
-  // The screen shows the quiet fixing note, TV-legible.
-  const note = receiver.getByTestId('player-source-notice');
+  // The screen shows the quiet fixing note, TV-legible: the held card's
+  // "Waiting for the video" with the note under it (2026-11-25, PlayerHeldCard).
+  const note = receiver.getByTestId('player-held-card');
   await expect(note).toContainText('Fixing this video', { timeout: 45000 });
   // The backend is asked about the EPISODE, not a container.
   expect(checks.length).toBeGreaterThan(0);
@@ -144,8 +145,9 @@ test('OK on the remote skips a held episode (D-pad + OK alone is enough)', async
     const v = dash?.shadowRoot?.querySelector('video') || dash || document.querySelector('video');
     v.currentTime = 300;
   });
-  await expect(receiver.getByTestId('player-source-notice')).toContainText('Fixing this video', { timeout: 45000 });
-  await expect(receiver.getByTestId('player-source-skip')).toBeVisible();
+  const card = receiver.getByTestId('player-held-card');
+  await expect(card).toContainText('Fixing this video', { timeout: 45000 });
+  await expect(card.locator('[data-action="skip"]')).toBeVisible();
 
   readable = true; // the next episode must be readable to play
   await receiver.keyboard.press('Enter'); // OK

@@ -6,7 +6,18 @@ import {
   A, B, A_NAME, ITEM, VIEWPORTS, call, receiverState, openReceiver, startOn, stopReceiver, resetControls,
   newAppPage, gotoMedia, warmMedia, openHouse, openRemote,
 } from './lib/receivers.mjs';
-import { goArea, openSearch, resultRow, closeSearch } from './lib/search.mjs';
+import { goArea, openSearch, resultRow, closeSearch, playResultHere } from './lib/search.mjs';
+
+// Selecting a result only opens its info view; PLAY plays it (here, chosen on
+// purpose: a video's first ▶ would otherwise ask where). Leaves the search
+// closed on every size.
+async function playHere(page, vp, id) {
+  await playResultHere(page, resultRow(page, vp, id));
+  await expect(page.getByTestId('media-mini-player')).toBeVisible({ timeout: 30000 });
+  const sheetClose = page.getByTestId('search-mode-close');
+  if (await sheetClose.isVisible().catch(() => false)) await sheetClose.click();
+  else if (await page.locator('[data-testid^="combobox-option-"]').first().isVisible().catch(() => false)) await page.keyboard.press('Escape');
+}
 
 // STEER — the handle, the Remote (another screen's controls), the queue and
 // shuffle/repeat. Real mounted receivers; scripted screens for states no page
@@ -92,7 +103,7 @@ test('[STEER.1b/AC1] the Remote lays its controls out like the local ones (same 
   // Local: play Faith here and open Now Playing.
   const input = await openSearch(page, vp);
   await input.fill('Faith');
-  await resultRow(page, vp, ITEM.FAITH).click();
+  await playHere(page, vp, ITEM.FAITH);
   await page.getByTestId('mini-player-open-nowplaying').click();
   await expect(page.getByTestId('now-playing-view')).toBeVisible({ timeout: 30000 });
   const order = (scope) => scope.getByTestId('np-transport').locator('[data-testid^="np-"]').evaluateAll((els) => els.map((e) => e.dataset.testid).filter((t) => !['np-transport', 'np-target-label', 'np-command-feedback'].includes(t)));
@@ -302,12 +313,12 @@ async function localQueue(page, vp, titles) {
     await input.fill('');
     await input.fill(text);
     await expect(resultRow(page, vp, id)).toBeVisible({ timeout: 40000 });
-    if (index === 0) await resultRow(page, vp, id).click();
+    if (index === 0) await playHere(page, vp, id);
     else {
       await page.getByTestId(`result-more-${id}`).click();
       await page.getByRole('menuitem', { name: 'Add to Queue', exact: true }).click();
+      await closeSearch(page, vp);
     }
-    await closeSearch(page, vp);
   }
 }
 
@@ -395,8 +406,7 @@ for (const [label, vp] of Object.entries(VIEWPORTS)) {
     await gotoMedia(page);
     const input = await openSearch(page, vp);
     await input.fill('Hospital');
-    await resultRow(page, vp, ITEM.HOSPITAL).click();
-    await closeSearch(page, vp);
+    await playHere(page, vp, ITEM.HOSPITAL);
     await page.getByTestId('mini-player-open-nowplaying').click();
     const view = page.getByTestId('now-playing-view');
     const video = view.getByTestId('now-playing-host').locator('video');
@@ -447,9 +457,7 @@ for (const [label, vp] of Object.entries(VIEWPORTS)) {
     await gotoMedia(page);
     const input = await openSearch(page, vp);
     await input.fill('Hospital');
-    await resultRow(page, vp, ITEM.HOSPITAL).click();
-    await page.keyboard.press('Escape');
-    if (vp.width < 600) { await page.getByTestId('search-mode-close').click().catch(() => {}); }
+    await playHere(page, vp, ITEM.HOSPITAL);
     const handle = page.getByTestId('media-mini-player');
     const expectHandle = async (where) => {
       await expect(handle, `handle at ${where}`).toBeVisible({ timeout: 40000 });
@@ -506,10 +514,15 @@ test('(STEER.3a/AC3, transport) after a press on another screen\'s transport con
       pos: q('[data-testid="np-seek"]')?.getAttribute('aria-valuenow'),
     });
   });
-  const reflects = async (name, press) => {
+  // The 2 s run from the press itself: a control the Remote holds disabled
+  // while the previous press settles (Next loading the next item) cannot be
+  // pressed yet, and Playwright's wait for it to enable is not the screen's
+  // reaction time.
+  const reflects = async (name, button) => {
+    await expect(button).toBeEnabled({ timeout: 15000 });
     const before = await signature();
     const t0 = Date.now();
-    await press();
+    await button.click();
     let changed = false;
     while (Date.now() - t0 < 2000) {
       if ((await signature()) !== before) { changed = true; break; }
@@ -517,11 +530,11 @@ test('(STEER.3a/AC3, transport) after a press on another screen\'s transport con
     }
     expect(changed, `${name}: nothing changed (and nothing said "pending") within 2 s`).toBe(true);
   };
-  await reflects('Pause', () => panel.getByTestId('np-toggle').click());
-  await reflects('Play', () => panel.getByTestId('np-toggle').click());
-  await reflects('Forward 10 seconds', () => panel.getByTestId('np-ffw').click());
-  await reflects('Next', () => panel.getByTestId('np-next').click());
-  await reflects('Stop', () => panel.getByTestId('np-stop').click());
+  await reflects('Pause', panel.getByTestId('np-toggle'));
+  await reflects('Play', panel.getByTestId('np-toggle'));
+  await reflects('Forward 10 seconds', panel.getByTestId('np-ffw'));
+  await reflects('Next', panel.getByTestId('np-next'));
+  await reflects('Stop', panel.getByTestId('np-stop'));
   await stopReceiver(request, A);
   await context.close();
   await receiver.context.close();
@@ -537,8 +550,7 @@ test('[STEER.5a/AC2] speed can be changed for video and for audio on this device
     await input.fill('');
     await input.fill(text);
     await expect(resultRow(page, vp, id)).toBeVisible({ timeout: 90000 });
-    await resultRow(page, vp, id).click();
-    await closeSearch(page, vp);
+    await playHere(page, vp, id);
     await page.getByTestId('mini-player-open-nowplaying').click();
     // The host can render more than one media node of a kind (an audio node that is not the one playing); the rate must
     // change on the node that is actually playing, so find it rather than assuming it is the first.

@@ -12,10 +12,14 @@ let server;
 let bus;
 let socketUrl;
 
-test.beforeAll(async () => {
+test.beforeAll(async ({}, testInfo) => {
   server = http.createServer();
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  bus = new WebSocketEventBus({ logger: { info() {}, warn() {}, error() {}, debug() {} } });
+  // This bus is on its own port, so the app's pages reach it cross-site: the
+  // bus refuses any other site's page unless it is allowed (`http.allowed_origins`,
+  // since the cross-site guard). Allow exactly the app under test.
+  const appOrigin = new URL(testInfo.project.use.baseURL).origin;
+  bus = new WebSocketEventBus({ logger: { info() {}, warn() {}, error() {}, debug() {} }, allowedOrigins: [appOrigin] });
   await bus.start(server);
   registerClientIngress({ eventBus: bus, logger: { info() {}, warn() {}, error() {}, debug() {} } });
   socketUrl = `ws://127.0.0.1:${server.address().port}/ws`;
@@ -79,6 +83,9 @@ test('[HOUSE.4a] stable browser identities route a queue command through the act
   await target.getByRole('textbox', { name: 'Device name' }).fill(tabletName);
   await target.getByRole('textbox', { name: 'Room' }).fill('Kitchen');
   await target.getByRole('button', { name: 'Save device name' }).click();
+  // Saving is two writes (the name, then the room); the dialog closes only once
+  // both are done. Reloading sooner aborts the room write.
+  await expect(target.getByRole('button', { name: 'Save device name' })).toBeHidden({ timeout: 15000 });
   await target.reload();
   await expect(target.getByRole('textbox', { name: 'Search media…' })).toBeVisible({ timeout: 30000 });
   expect(await profileId(target)).toBe(targetStableId);

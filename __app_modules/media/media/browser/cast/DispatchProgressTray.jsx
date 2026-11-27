@@ -21,7 +21,7 @@ import { useDevice } from "../fleet/useDevice.js";
 import { useFleetContext } from "../fleet/useFleetContext.js";
 import { deviceName } from "../fleet/deviceDisplay.js";
 import { useNav } from "../shell/NavProvider.jsx";
-import { friendlyStepLabel, friendlyStepPhrase, deviceKind, notSentReason } from "./castCopy.js";
+import { friendlyStepLabel, friendlyStepPhrase, deviceKind, notSentReason, heldForFileRepair } from "./castCopy.js";
 import { pickHandlePlay } from "../shell/screenHandleModel.js";
 import { rowPhase } from "./dispatchRowPhase.js";
 import mediaLog from "../logging/mediaLog.js";
@@ -143,7 +143,9 @@ function localCopy(d, phase, name) {
     // RELY.5a: name the item, the screen (this device, or a steered one), and what plays instead.
     const where = d.distance === 'here' ? 'this device' : (d.targetName ?? name ?? 'that screen');
     if (phase === 'waiting') {
-      return { primary: `Waiting for ${title} — the file is being repaired`, secondary: d.distance === 'here' ? 'On this device' : `On ${where}` };
+      const secondary = d.distance === 'here' ? 'On this device' : `On ${where}`;
+      if (!heldForFileRepair(d.reason)) return { primary: `${title} stopped loading`, secondary };
+      return { primary: `Waiting for ${title} — the file is being repaired`, secondary };
     }
     if (phase === 'library-unavailable') {
       return { primary: 'Library unavailable', secondary: `${title} is waiting for its file on ${where}` };

@@ -214,6 +214,9 @@ const Player = forwardRef(function Player(props, ref) {
   const issuedOwnerRevisionsRef = useRef({ playbackRevision: 0, queueRevision: 0 });
   const itemActionStopRevisionRef = useRef(0);
   const ownerStoppedRef = useRef(false);
+  // Where a seek put a STOPPED item's playhead: Play's fresh visit starts there
+  // (a Stop leaves the item in place at its start; a seek moves it).
+  const stoppedSeekRef = useRef(null);
   const pendingQueueLookupsRef = useRef(new Map());
   const retireQueueLookups = useCallback((ops) => {
     const lookups = pendingQueueLookupsRef.current;
@@ -2374,6 +2377,7 @@ const Player = forwardRef(function Player(props, ref) {
     issueOwnerRevision({ playback: true });
     cancelPendingRendererOperation('stop');
     ownerStoppedRef.current = true;
+    stoppedSeekRef.current = null;
     const el = _getMediaElFallback();
     try { el?.pause?.(); } catch { /* best-effort native Stop */ }
     try { if (el) el.currentTime = 0; } catch { /* non-seekable source */ }
@@ -2399,10 +2403,14 @@ const Player = forwardRef(function Player(props, ref) {
       // A new visit commits a fresh native binding. Retired callbacks remain
       // tied to the stopped visit instead of inheriting this Play's target.
       const observerIds = [...mountedOperationObserversRef.current.keys()];
+      // A seek made while stopped (a Remote moving the playhead, then Play)
+      // is where this visit starts; otherwise the item's start.
+      const seekedTo = stoppedSeekRef.current;
+      stoppedSeekRef.current = null;
       return beginRendererBoundary({
         operationId: `owner-restart-${++rendererOperationSequenceRef.current}`,
         expectedContentId: mountedMediaRegistrationRef.current.resolvedContentId ?? completionAssetId,
-        targetSeconds: effectiveMeta?.segment?.start ?? 0,
+        targetSeconds: Number.isFinite(seekedTo) ? seekedTo : (effectiveMeta?.segment?.start ?? 0),
         autoplay: true,
         requiredObserverIds: observerIds,
         requireObserver: observerIds.length > 0,
@@ -2451,6 +2459,7 @@ const Player = forwardRef(function Player(props, ref) {
     acceptRecoveryIntent('seek');
     // Seeking away from a completed end makes the next end a new completion.
     completedMediaKeyRef.current = null;
+    if (ownerStoppedRef.current) stoppedSeekRef.current = seconds;
     withTransport(
       (api) => api.seek?.(seconds),
       () => { const el = _getMediaElFallback(); if (el) el.currentTime = seconds; },

@@ -8,10 +8,13 @@ import path from 'node:path';
 // RELY.5a — local playback problems, split by cause (2026-10-03 ruling):
 //  * a REFUSED file (the Plex proxy's real 503 source-unreadable answer) is
 //    waited out: a waiting notice + handle sign within seconds, Skip now and
-//    Retry; it resumes when the file comes back, or is skipped as "file
-//    unavailable" at Media's 60 s limit — never earlier;
+//    Retry; it resumes when the file comes back. At Media's 60 s limit a
+//    finite video is HELD, never given up to the queue (2026-10-26, see
+//    __docs/reference/player/media-source-healing.md "terminal holds"): the
+//    person skips it with Skip now;
 //  * a FAILING stream whose file the backend calls readable belongs to the
-//    stall ladder: skipped with a notice naming what plays instead.
+//    stall ladder: at exhaustion it is held the same way, and its notice says
+//    it stopped loading (nobody is repairing a readable file).
 // The acceptance preview refuses non-GET /api calls, so the backend check is
 // answered here with the real response shape; nothing fabricates playback.
 test.use({ viewport: { width: 1440, height: 900 }, trace: 'retain-on-failure' });
@@ -53,8 +56,10 @@ async function queueTwo(page) {
 }
 
 for (const branch of ['comes back', 'stays refused']) {
-  test(`[RELY.5a] refused file: waiting notice and sign, then it ${branch === 'comes back' ? 'resumes when the file comes back' : 'is skipped as unavailable at 60 s, not before'}`, async ({ page }, testInfo) => {
+  test(`[RELY.5a] refused file: waiting notice and sign, then it ${branch === 'comes back' ? 'resumes when the file comes back' : 'is held at 60 s, never skipped, until Skip now'}`, async ({ page }, testInfo) => {
     const flush = recordPlaybackConsole(page, testInfo);
+    let heldAt = null;
+    page.on('console', (message) => { if (heldAt === null && message.text().includes('resilience-exhausted-hold')) heldAt = Date.now(); });
     let readable = false;
     const refusals = [];
     const checks = [];
@@ -94,22 +99,25 @@ for (const branch of ['comes back', 'stays refused']) {
         await expect(page.getByTestId('mini-player-open-nowplaying')).toContainText('Arrival');
         await expect(page.getByTestId('mini-problem')).toHaveCount(0);
         await expect(waiting).toHaveCount(0);
-        await expect(page.getByTestId('dispatch-tray')).not.toContainText('file unavailable');
+        // (No tray at all is fine too: assert on rows, not on the tray's text.)
+        await expect(page.locator('[data-testid^="dispatch-row-"]').filter({ hasText: 'file unavailable' })).toHaveCount(0);
       } else {
-        // Never skipped before Media's 60 s limit.
+        // Media's 60 s limit holds the video: it is never skipped, before or after.
         const firstWaitAt = firstCheck.at;
-        await page.waitForTimeout(Math.max(0, firstWaitAt + 52000 - Date.now()));
+        await expect.poll(() => heldAt, { timeout: 80000 }).not.toBeNull();
+        const heldAfter = heldAt - firstWaitAt;
+        expect(heldAfter).toBeGreaterThanOrEqual(58000);
+        expect(heldAfter).toBeLessThan(75000);
+        await page.waitForTimeout(5000);
         await expect(page.getByTestId('mini-player-open-nowplaying')).toContainText('Arrival');
-        await expect(page.getByTestId('dispatch-tray')).not.toContainText('file unavailable');
-        const skipped = page.locator('[data-testid^="dispatch-row-"]').filter({ hasText: 'Arrival skipped — file unavailable' });
-        await expect(skipped).toBeVisible({ timeout: 25000 });
-        const skippedAt = Date.now() - firstWaitAt;
-        expect(skippedAt).toBeGreaterThanOrEqual(58000);
-        expect(skippedAt).toBeLessThan(75000);
-        await expect(skipped).toContainText('Now playing Disclosure Day');
-        await expect(skipped.getByRole('button', { name: /Retry/ })).toBeVisible();
+        // (No tray at all is fine too: assert on rows, not on the tray's text.)
+        await expect(page.locator('[data-testid^="dispatch-row-"]').filter({ hasText: 'file unavailable' })).toHaveCount(0);
+        await expect(waiting).toBeVisible();
+        await expect(page.getByTestId('mini-problem')).toHaveAccessibleName(/waiting for the file of Arrival/);
+        // The person decides: Skip now moves on to the next item.
+        await waiting.getByRole('button', { name: 'Skip now' }).click();
+        await expect(page.getByTestId('mini-player-open-nowplaying')).toContainText('Disclosure Day', { timeout: 30000 });
         await expect(waiting).toHaveCount(0);
-        await expect(page.getByTestId('mini-player-open-nowplaying')).toContainText('Disclosure Day');
       }
     } finally {
       await flush();
@@ -117,7 +125,7 @@ for (const branch of ['comes back', 'stays refused']) {
   });
 }
 
-test('[RELY.5a] failing stream on a readable file: the stall ladder skips it with a notice and a handle sign until the next item plays', async ({ page }, testInfo) => {
+test('[RELY.5a] failing stream on a readable file: the stall ladder holds it with a "stopped loading" notice and a handle sign; Skip now plays the next item', async ({ page }, testInfo) => {
   const flush = recordPlaybackConsole(page, testInfo);
   // The backend says the file itself is readable, so the stall ladder owns
   // a broken stream deterministically (no refused-source wait).
@@ -141,18 +149,20 @@ test('[RELY.5a] failing stream on a readable file: the stall ladder skips it wit
     await page.mouse.click(box.x + box.width * 0.6, box.y + box.height / 2);
     await page.getByTestId('now-playing-back').click();
 
-    const notice = page.locator('[data-testid^="dispatch-row-"]').filter({ hasText: 'Arrival' }).filter({ hasText: 'this device' });
+    const notice = page.locator('[data-testid^="dispatch-row-"]').filter({ hasText: 'Arrival stopped loading' }).filter({ hasText: 'this device' });
     await expect(notice).toBeVisible({ timeout: 180000 });
-    await expect(notice).toContainText('Now playing Disclosure Day');
-    await expect(notice).toHaveAttribute('data-phase', 'skipped');
+    await expect(notice).toHaveAttribute('data-phase', 'waiting');
+    await expect(notice).not.toContainText('being repaired');
     await expect(notice.getByRole('button', { name: /Retry/ })).toBeVisible();
     await expect(page.getByTestId('media-mini-player')).toHaveClass(/mini-player--problem/);
+    await expect(page.getByTestId('mini-problem')).toHaveAccessibleName('Playback problem: Arrival stopped loading');
     expect(withheld.length).toBeGreaterThan(0);
-    await expect(page.getByTestId('mini-player-open-nowplaying')).toContainText('Disclosure Day');
+    // Held, not given up to the queue.
+    await expect(page.getByTestId('mini-player-open-nowplaying')).toContainText('Arrival');
+    await notice.getByRole('button', { name: 'Skip now' }).click();
+    await expect(page.getByTestId('mini-player-open-nowplaying')).toContainText('Disclosure Day', { timeout: 30000 });
     await expect.poll(() => page.evaluate(() => [...document.querySelectorAll('video')].some((v) => !v.paused && v.readyState >= 2 && v.currentTime > 0)), { timeout: 60000 }).toBe(true);
     await expect(page.getByTestId('mini-problem')).toHaveCount(0, { timeout: 30000 });
-    await expect(notice).toBeVisible();
-    await notice.getByRole('button', { name: 'Dismiss' }).click();
     await expect(notice).toHaveCount(0);
   } finally {
     await flush();

@@ -27,7 +27,9 @@ test.describe('MediaApp — inline cast from a result row', () => {
     await expect(page.getByTestId('dispatch-target-picker')).toBeVisible();
 
     // Tap the first device (JS clicks bypass overlay pointer-event interception); an idle target is sent to by the tap itself (NF-TAP-10).
-    const firstDevice = page.locator('[data-testid^="picker-device-"]').first();
+    // (The first IDLE one: a busy screen asks first, and the picker leads with
+    // what is on now, so a screen an earlier journey left playing comes first.)
+    const firstDevice = page.locator('[data-testid^="picker-device-"]').filter({ hasNotText: /Playing|Paused|Starting/ }).first();
     await expect(firstDevice).toBeVisible();
     await firstDevice.click();
 

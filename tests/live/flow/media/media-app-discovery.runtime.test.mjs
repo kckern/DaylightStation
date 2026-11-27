@@ -2,6 +2,8 @@
 import { test, expect } from '@playwright/test';
 import { markFirstUseDone } from './lib/firstUse.mjs';
 import { searchFor } from './lib/mediaDriver.mjs';
+import { aimHere } from './lib/aim.mjs';
+import { answerSpotChooser, openRowMenuAll } from './lib/search.mjs';
 
 // The header search is the dock's "Search media…" textbox (laptop width, the
 // default here); results are combobox options whose ⋯ menu carries the verbs.
@@ -37,8 +39,11 @@ test.describe('MediaApp — P2 discovery', () => {
     await expect(option).toHaveCount(1, { timeout: 15000 });
     const contentId = await contentIdOf(option);
 
+    // A film nobody has chosen a screen for asks where; this device, on purpose.
+    await aimHere(page);
     await option.getByRole('button', { name: 'More actions' }).click();
     await page.getByTestId(`result-action-playNow-${contentId}`).click();
+    await answerSpotChooser(page);
 
     await page.getByTestId('mini-player-open-nowplaying').click();
     // The heading shows the human title; the canonical id is exposed as a
@@ -56,7 +61,8 @@ test.describe('MediaApp — P2 discovery', () => {
     await expect(option).toHaveCount(1, { timeout: 15000 });
     const contentId = await contentIdOf(option);
 
-    await option.getByRole('button', { name: 'More actions' }).click();
+    // Open detail sits behind the menu's More (four verbs lead).
+    await openRowMenuAll(page, contentId);
     await page.getByTestId(`result-action-detail-${contentId}`).click();
 
     await expect(page.getByTestId('detail-view')).toBeVisible({ timeout: 15000 });

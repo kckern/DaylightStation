@@ -24,11 +24,33 @@
  */
 import { isNearEnd } from './nearEnd.js';
 
+// "Nothing left to play": the playhead is this close to the end of what is buffered.
+const STARVED_AHEAD_SECONDS = 0.25;
+
+/**
+ * A PLAYING element starved at the very end of what it buffered, when that end
+ * is within `tailSeconds` of the declared duration. An HLS playlist can promise
+ * more than the content holds: Plex's direct-stream playlist for a copied video
+ * with long GOPs lists 3 s segments the segmenter never wrote ("we
+ * overestimated the number of segments"), answers them with a 188-byte blank,
+ * hls.js cannot parse those and never calls endOfStream, and the element parks
+ * ~1 s before `duration` forever: `ended` never fires and the 0.5 s
+ * at-duration window never opens (2026-11-26, plex:266151 parked at 438.0 of
+ * 439). The terminal gate still checks the position against the catalog end.
+ */
+export function isStarvedAtTail(info, tailSeconds) {
+  if (!info || info.paused !== false) return false;
+  const { currentTime, duration, bufferedEnd } = info;
+  if (![currentTime, duration, bufferedEnd].every(Number.isFinite) || duration <= 0) return false;
+  return bufferedEnd - currentTime <= STARVED_AHEAD_SECONDS && bufferedEnd >= duration - tailSeconds;
+}
+
 export function createEndOfContentWatchdog({
   onAdvance,
   onTerminalCandidate,
-  getMediaInfo,           // () => { currentTime, duration, paused, seeking }
+  getMediaInfo,           // () => { currentTime, duration, paused, seeking, bufferedEnd? }
   thresholdSeconds = 0.5, // currentTime must be within this of duration
+  tailSeconds = 1.5,      // or: playing, starved at a buffered end within this of duration
   idleMs = 3000,          // how long to wait before advancing
   log = () => {}
 }) {
@@ -36,7 +58,8 @@ export function createEndOfContentWatchdog({
   let armedAtTime = null; // currentTime captured when the current timer was scheduled
   let fired = false;
 
-  const isAtDuration = (info) => !!info && isNearEnd(info.currentTime, info.duration, thresholdSeconds);
+  const isAtDuration = (info) => !!info
+    && (isNearEnd(info.currentTime, info.duration, thresholdSeconds) || isStarvedAtTail(info, tailSeconds));
 
   const cancel = () => {
     if (timerId != null) {
@@ -61,13 +84,22 @@ export function createEndOfContentWatchdog({
     // See ops:docs/_wip/plans/2026-07-10-player-resilience-soak-defects.md
     const info = getMediaInfo();
     if (!info || !isAtDuration(info)) return;
-    if (!Number.isFinite(armedAt) || Math.abs(info.currentTime - armedAt) > 0.05) return;
+    if (!Number.isFinite(armedAt) || Math.abs(info.currentTime - armedAt) > 0.05) {
+      // The clock moved since arming but is still at the end (it crept up to
+      // the buffered end after the last event): watch a fresh idle window
+      // rather than dropping the watch with no event left to re-arm it.
+      armedAtTime = info.currentTime;
+      timerId = setTimeout(fire, idleMs);
+      return;
+    }
     const result = onTerminalCandidate?.({ reason: 'watchdog', nativeSeconds: info.currentTime });
     if (onTerminalCandidate && result?.accepted !== true) return;
     fired = true;
     log('playback.end-of-content-advance', {
       currentTime: info.currentTime,
       duration: info.duration,
+      bufferedEnd: Number.isFinite(info.bufferedEnd) ? info.bufferedEnd : null,
+      via: isNearEnd(info.currentTime, info.duration, thresholdSeconds) ? 'at-duration' : 'starved-tail',
       idleMs,
       thresholdSeconds
     });

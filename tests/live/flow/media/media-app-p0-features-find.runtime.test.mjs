@@ -141,7 +141,14 @@ for (const { kind, query, id, title } of [
   // (Retype: the box kept these words, so the same words would not search again.)
   await search.click({ position: { x: 48, y: 12 } });
   await search.fill('');
+  // The list still shows the kept results while the retyped words wait out
+  // the debounce; their new results re-render the rows and close a menu
+  // opened on the old ones. Open it once the new search has answered.
+  const searched = page.waitForResponse((r) => r.url().includes('/search/stream') && r.url().includes(encodeURIComponent(query)));
   await search.fill(query);
+  const answered = await searched;
+  await Promise.race([answered.finished(), page.waitForTimeout(10000)]);
+  await expect(page.getByTestId(`result-more-${id}`)).toBeVisible();
   await page.getByTestId(`result-more-${id}`).click();
   await page.getByTestId(`result-action-playOn-${id}`).click();
   await expect(page.getByText(/^Show (.+ )?on…$/).first()).toBeVisible();

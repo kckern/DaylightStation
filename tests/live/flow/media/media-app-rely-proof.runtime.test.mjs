@@ -2,9 +2,9 @@ import { test, expect } from '@playwright/test';
 import { resetHouseholdAt } from './lib/household.mjs';
 import { scriptReceiver, failWake, SCRIPTED } from './lib/scriptedReceiver.mjs';
 import {
-  A, A_NAME, ITEM, VIEWPORTS, call, receiverState, openReceiver, startOn, stopReceiver, newAppPage, gotoMedia, warmMedia,
+  A, A_NAME, ITEM, VIEWPORTS, call, receiverState, openReceiver, startOn, stopReceiver, newAppPage, gotoMedia, warmMedia, startOutcome,
 } from './lib/receivers.mjs';
-import { goArea, openSearch, resultRow, closeSearch, detailVerb } from './lib/search.mjs';
+import { goArea, openSearch, resultRow, closeSearch, detailVerb, playResult, showAllRows } from './lib/search.mjs';
 
 // RELY — confirmations (one outcome vocabulary on every size), retries on
 // another screen, wake step wording by kind of screen, and a quiet failure of
@@ -17,6 +17,9 @@ test.beforeAll(async ({ browser }) => { test.setTimeout(300000); await warmMedia
 test.beforeEach(async ({ request, baseURL }) => { await resetHouseholdAt(request, baseURL); });
 
 const rows = (page) => page.locator('[data-testid^="dispatch-row-"]');
+// The newest start on a screen reads on the screen handle (Starting, Playing,
+// Retry); the tray keeps the older ones. Either carries that start's Retry.
+const RETRY = '[data-testid^="dispatch-retry-"], [data-testid="screen-handle-retry"]';
 const rowWith = (page, text) => rows(page).filter({ hasText: text });
 const OFFLINE = 'acceptance-offline';
 
@@ -92,7 +95,8 @@ test('[RELY.1a/AC5][PLAY.1a/AC3] playing here confirms quietly; playing on anoth
   const input = await openSearch(page, vp);
   // Here.
   await input.fill('Faith');
-  await resultRow(page, vp, ITEM.FAITH).click();
+  // Selecting the row opens its info view; PLAY plays it (music, nothing aimed: here).
+  await playResult(page, resultRow(page, vp, ITEM.FAITH));
   const here = rowWith(page, 'Playing Faith here');
   await expect(here).toBeVisible({ timeout: 30000 });
   await expect(here).toHaveClass(/cast-tray-row--quiet/);
@@ -104,14 +108,11 @@ test('[RELY.1a/AC5][PLAY.1a/AC3] playing here confirms quietly; playing on anoth
   await page.getByTestId(`result-more-${ITEM.ARRIVAL}`).click();
   await page.getByRole('menuitem', { name: 'Play on…', exact: true }).click();
   await page.getByTestId(`picker-device-${A}`).click();
-  // Faith is genuinely playing here, so a one-off Play on… asks whether this device stops or keeps
-  // playing (PLACE.6a/AC2) and is sent by its button, not by the tile tap. Keep it playing here.
-  await page.getByTestId('picker-mode-fork').click();
-  await page.getByTestId('picker-submit').click();
-  const far = rowWith(page, A_NAME);
+  // The calm picker sends on the tap (1d3e9e087d) and keeps this device playing.
+  const far = startOutcome(page, { screen: A_NAME, title: 'Arrival' });
   await expect(far).toBeVisible({ timeout: 30000 });
   await expect(far).not.toHaveClass(/cast-tray-row--quiet/);
-  await expect(far).toContainText('Arrival');
+  await expect(page.getByTestId('media-mini-player')).toContainText('Faith');
   await expect(far).toContainText(/Sending|Sent to|Starting playback|Playing on/);
   await stopReceiver(request, A);
   await context.close();
@@ -132,17 +133,21 @@ test('[RELY.6a/AC2][RELY.6a/AC3] a failed send offers Retry and "Another screen�
     await expect(resultRow(page, vp, id)).toBeVisible({ timeout: 40000 });
     await page.getByTestId(`result-more-${id}`).click();
     await page.getByRole('menuitem', { name: 'Play on…', exact: true }).click();
+    // The picker leads with three screens; the rest sit behind its More (k).
+    await expect(page.locator('[data-testid^="picker-device-"]').first()).toBeVisible({ timeout: 15000 });
+    await showAllRows(page, 'picker');
     await page.getByTestId(`picker-device-${deviceId}`).click();
   };
+  const DEN = 'Acceptance den TV';
+  const failed = (title) => startOutcome(page, { screen: DEN, title }).filter({ has: page.locator(RETRY) });
   await sendTo(ITEM.ARRIVAL, 'Arrival', SCRIPTED.POWER);
-  const failedRow = (text) => rowWith(page, text).filter({ has: page.locator('[data-phase="failed"], [data-testid^="dispatch-retry-"]') });
-  await expect(rowWith(page, 'Arrival').filter({ has: page.locator('[data-testid^="dispatch-retry-"]') })).toBeVisible({ timeout: 120000 });
+  await expect(failed('Arrival')).toBeVisible({ timeout: 120000 });
   await sendTo(ITEM.HOSPITAL, 'Hospital', SCRIPTED.POWER);
-  await expect(rowWith(page, 'Hospital').filter({ has: page.locator('[data-testid^="dispatch-retry-"]') })).toBeVisible({ timeout: 120000 });
-  void failedRow;
-  // AC3: both failures are on screen, each with its own Retry.
-  await expect(page.locator('[data-testid^="dispatch-retry-"]')).toHaveCount(2);
-  await expect(rows(page).filter({ has: page.locator('[data-testid^="dispatch-retry-"]') })).toHaveCount(2);
+  await expect(failed('Hospital')).toBeVisible({ timeout: 120000 });
+  // AC3: both failures are on screen, each with its own Retry (the newer on the
+  // screen handle, the older in the tray).
+  await expect(page.locator(RETRY)).toHaveCount(2);
+  await expect(failed('Arrival')).toHaveCount(1);
 
   // AC2: next to Retry, choose another screen for that attempt only.
   const arrivalRow = rowWith(page, 'Arrival').filter({ has: page.locator('[data-testid^="dispatch-elsewhere-"]') });
@@ -150,7 +155,7 @@ test('[RELY.6a/AC2][RELY.6a/AC3] a failed send offers Retry and "Another screen�
   await arrivalRow.locator('[data-testid^="dispatch-elsewhere-list-"]').getByRole('button', { name: new RegExp(A_NAME) }).click();
   await expect.poll(async () => (await receiverState(request, A))?.currentItem?.contentId, { timeout: 120000 }).toBe(ITEM.ARRIVAL);
   // The other failed attempt is untouched: still failed, still has its own Retry, and nothing else went to the screen chosen.
-  await expect(rowWith(page, 'Hospital').locator('[data-testid^="dispatch-retry-"]')).toBeVisible();
+  await expect(failed('Hospital').locator(RETRY)).toBeVisible();
   expect((await receiverState(request, A)).queue.items.map((i) => i.contentId)).toEqual([ITEM.ARRIVAL]);
   await stopReceiver(request, A);
   await context.close();
@@ -161,13 +166,17 @@ test('[RELY.2a/AC1][RELY.2a/AC3] a far screen that needs waking shows its steps 
   const vp = VIEWPORTS.laptop;
   const { context, page } = await newAppPage(browser, vp);
   await gotoMedia(page);
-  const sendTo = async (deviceId) => {
+  // A speaker plays sound only (it is never offered a film): it gets Faith.
+  const sendTo = async (deviceId, [id, text] = [ITEM.ARRIVAL, 'Arrival']) => {
     const input = await openSearch(page, vp);
     await input.fill('');
-    await input.fill('Arrival');
-    await expect(resultRow(page, vp, ITEM.ARRIVAL)).toBeVisible({ timeout: 40000 });
-    await page.getByTestId(`result-more-${ITEM.ARRIVAL}`).click();
+    await input.fill(text);
+    await expect(resultRow(page, vp, id)).toBeVisible({ timeout: 40000 });
+    await page.getByTestId(`result-more-${id}`).click();
     await page.getByRole('menuitem', { name: 'Play on…', exact: true }).click();
+    // The picker leads with three screens; the rest sit behind its More (k).
+    await expect(page.locator('[data-testid^="picker-device-"]').first()).toBeVisible({ timeout: 15000 });
+    await showAllRows(page, 'picker');
     await page.getByTestId(`picker-device-${deviceId}`).click();
   };
   // The den TV has (virtual) device control: it is woken, and the person reads the steps.
@@ -175,7 +184,8 @@ test('[RELY.2a/AC1][RELY.2a/AC3] a far screen that needs waking shows its steps 
   await page.exposeFunction('__noteTray', (text) => seen.add(text));
   await page.evaluate(() => {
     new MutationObserver(() => {
-      for (const row of document.querySelectorAll('[data-testid^="dispatch-row-"]')) window.__noteTray(row.innerText.replace(/\s+/g, ' '));
+      // The tray's rows and the screen handle, which carries the newest start's steps.
+      for (const row of document.querySelectorAll('[data-testid^="dispatch-row-"], [data-testid="screen-handle"]')) window.__noteTray(row.innerText.replace(/\s+/g, ' '));
     }).observe(document.body, { childList: true, subtree: true, characterData: true });
   });
   await sendTo(SCRIPTED.POWER);
@@ -185,7 +195,7 @@ test('[RELY.2a/AC1][RELY.2a/AC3] a far screen that needs waking shows its steps 
   expect(wake.body.calls.some((c) => c.action === 'on')).toBe(true);
   // A speaker is never called a TV, in progress or in failure.
   seen.clear();
-  await sendTo(SCRIPTED.SPEAKER);
+  await sendTo(SCRIPTED.SPEAKER, [ITEM.FAITH, 'Faith']);
   await expect.poll(() => [...seen].filter((t) => /speaker/i.test(t)).length, { timeout: 90000 }).toBeGreaterThan(0);
   expect([...seen].filter((t) => /speaker/i.test(t)).every((t) => !/\bTV\b/.test(t)), [...seen].join(' | ')).toBe(true);
   await context.close();

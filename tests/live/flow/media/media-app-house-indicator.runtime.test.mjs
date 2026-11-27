@@ -91,7 +91,10 @@ for (const [label, viewport, phone] of sizes) {
 
       for (const view of views) {
         await page.goto(`/media${view.query}`, { waitUntil: 'domcontentloaded' });
-        await expect(page.getByTestId(view.root)).toBeVisible();
+        // Each goto is a full reload of the dev acceptance server's unbundled
+        // modules; under load a cold view takes longer than the 5 s default
+        // (2026-11-27: 314 module loads over 1.5 s in one run of this journey).
+        await expect(page.getByTestId(view.root)).toBeVisible({ timeout: 30000 });
         if (view.title) await expect(page.getByRole('heading', { name: view.title })).toBeVisible();
         if (view.nowPlaying) await expect(page.getByTestId('now-playing-title')).toHaveText(view.nowPlaying);
         const indicator = page.getByTestId('house-indicator');
