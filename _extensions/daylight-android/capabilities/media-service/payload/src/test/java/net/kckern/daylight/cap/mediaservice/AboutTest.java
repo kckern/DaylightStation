@@ -53,4 +53,17 @@ public class AboutTest {
         assertEquals("Richard III", a.getString("title"));
         assertEquals("William Shakespeare", a.getString("byline"));
     }
+
+    @Test public void anAlbumsHeaderHasItsArtistAndYear() throws Exception {
+        JSONObject info = new JSONObject().put("id", "plex:80244").put("title", "Snakes & Arrows")
+                .put("metadata", new JSONObject().put("year", 2007).put("parentTitle", "Rush")
+                        .put("parentType", "artist").put("parentRatingKey", "80086"));
+        JSONObject a = About.of(info, null, null, null);
+        assertEquals("Rush", a.getString("byline"));
+        assertEquals(2007, a.getInt("year"));
+        assertEquals("plex:80086", a.getString("bylineId"));
+        JSONObject noYear = About.of(new JSONObject().put("id", "plex:1").put("metadata", new JSONObject()), null, null, null);
+        assertFalse(noYear.has("year"));
+        assertFalse(noYear.has("bylineId"));
+    }
 }

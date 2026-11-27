@@ -1671,6 +1671,24 @@ public final class MediaServiceCapability implements Capability {
      * An author's, speaker's or artist's header (About): home's info, and for an author or a
      * speaker their books' lengths and progress. {id: content id, books: true for an author}.
      */
+    /**
+     * Every track under an author, page by page (2026-11-27: Shakespeare has 660 tracks; the
+     * first 500 held 29 of his 36 books, so the header said "29 books · 182 h" over 36 rows).
+     */
+    private JSONObject allLeaves(String listId) throws Exception {
+        final int page = 500, cap = 4000;
+        JSONArray all = new JSONArray();
+        for (int skip = 0; skip < cap; skip += page) {
+            JSONObject one = api.list(listId, page, skip);
+            JSONArray items = one == null ? null : one.optJSONArray("items");
+            int n = items == null ? 0 : items.length();
+            for (int i = 0; i < n; i++) all.put(items.get(i));
+            int total = one == null ? -1 : one.optInt("total", -1);
+            if (n < page || (total >= 0 && all.length() >= total)) break;
+        }
+        return new JSONObject().put("items", all);
+    }
+
     private Outcome about(JSONObject request) throws Exception {
         String id = Json.str(request, "id");
         if (!ContentId.valid(id)) return failure(400, "bad_request");
@@ -1679,7 +1697,7 @@ public final class MediaServiceCapability implements Capability {
         if (request.optBoolean("books")) {
             String local = ContentId.local(id);
             if (local.matches("\\d+")) {
-                try { leaves = api.list(ContentId.source(id) + ":library/metadata/" + local + "/allLeaves", 500, 0); }
+                try { leaves = allLeaves(ContentId.source(id) + ":library/metadata/" + local + "/allLeaves"); }
                 catch (Exception none) { /* the header without lengths */ }
             }
             try { recent = api.recent(200); } catch (Exception none) { /* without progress */ }

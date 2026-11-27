@@ -17,7 +17,7 @@ import java.util.Map;
  * them (the list endpoint's allLeaves of the author: each track's book and length) with
  * each book's progress from the household's recent list. Pure.
  *
- * <p>{portrait?, summary?, countries[], genres[], styles[], children, totalSec, books:{<book
+ * <p>{portrait?, summary?, year?, byline?, bylineId? (an album's artist), countries[], genres[], styles[], children, totalSec, books:{<book
  * content id>: {seconds, parts[], playedSec, started, finished}}, continue?: {id, title,
  * partId}}. "continue" is the started, unfinished book played last.
  */
@@ -39,6 +39,14 @@ final class About {
         if (!title.isEmpty()) out.put("title", title);
         String by = meta == null ? "" : Json.first(Json.str(meta, "artist"), Json.str(meta, "grandparentTitle"), Json.str(meta, "parentTitle"));
         if (!by.isEmpty()) out.put("byline", by);
+        // An album's year and its artist's page (the header's "Rush · 2007", the artist tappable).
+        int year = meta == null ? 0 : meta.optInt("year", 0);
+        if (year > 0) out.put("year", year);
+        String parentKey = meta == null ? "" : Json.str(meta, "parentRatingKey");
+        if (!parentKey.isEmpty() && "artist".equals(Json.str(meta, "parentType"))) {
+            String src = info != null && ContentId.valid(Json.str(info, "id")) ? ContentId.source(Json.str(info, "id")) : "plex";
+            if (ContentId.valid(src + ":" + parentKey)) out.put("bylineId", src + ":" + parentKey);
+        }
 
         // The books, in the order the tracks came (the author's order), with their parts.
         Map<String, JSONObject> books = new LinkedHashMap<>();

@@ -863,4 +863,18 @@ public class MediaServiceCapabilityTest {
         assertFalse(MediaServiceCapability.longKind("playlist"));
         assertFalse(MediaServiceCapability.longKind(null));
     }
+
+    /** Shakespeare: 660 tracks; the first 500 held 29 of his 36 books. Every page is read. */
+    @Test public void anAuthorsBooksAreCountedFromEveryPageOfTracks() throws Exception {
+        api.responses.put("info plex:7", new JSONObject().put("id", "plex:7").put("metadata", new JSONObject()).toString());
+        org.json.JSONArray first = new org.json.JSONArray(), second = new org.json.JSONArray();
+        for (int i = 0; i < 500; i++) first.put(new JSONObject().put("id", "plex:" + (1000 + i)).put("albumId", String.valueOf(100 + i / 20)).put("duration", 60));
+        for (int i = 0; i < 160; i++) second.put(new JSONObject().put("id", "plex:" + (2000 + i)).put("albumId", String.valueOf(200 + i / 20)).put("duration", 60));
+        api.responses.put("list plex:library/metadata/7/allLeaves 500 0", new JSONObject().put("total", 660).put("items", first).toString());
+        api.responses.put("list plex:library/metadata/7/allLeaves 500 500", new JSONObject().put("total", 660).put("items", second).toString());
+        api.responses.put("recent 200", "{\"items\":[]}");
+        JSONObject about = cap.call(new JSONObject().put("op", "about").put("id", "plex:7").put("books", true)).body.getJSONObject("about");
+        assertEquals(25 + 8, about.getInt("children"));
+        assertEquals(660 * 60, about.getLong("totalSec"));
+    }
 }

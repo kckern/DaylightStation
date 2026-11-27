@@ -99,26 +99,48 @@ final class RowLine {
         return 0;
     }
 
-    /** An author's facts line: "United Kingdom · 12 books · 96 h"; an artist's: "United Kingdom · Rock · 9 albums". */
+    /**
+     * An album page's by-line: its artist and year ("Rush · 2007") from home's about, the
+     * row's by-line until it answers; the year alone, or the artist alone, when that is all.
+     */
+    static String albumBy(String subtitle, JSONObject about) {
+        String artist = about == null ? "" : about.optString("byline", "");
+        if (artist.isEmpty()) artist = subtitle == null ? "" : subtitle.trim();
+        int year = about == null ? 0 : about.optInt("year", 0);
+        if (year <= 0) return artist;
+        return artist.isEmpty() ? String.valueOf(year) : artist + " · " + year;
+    }
+
+    /** A no-break space: a fact's number and unit stay on one line ("182 h", never "182 / h"). */
+    static final String NB = "\u00A0";
+
+    /**
+     * An author's facts line: "United Kingdom · 12 books · 96 h"; an artist's: "United Kingdom ·
+     * Rock · 9 albums". The count has one source, home's about answer (its books, from every
+     * track): before it answers there is no count at all, never the rows' or a search row's
+     * (2026-11-27: "36 books" jumped to "29 books"). An artist's rows count only once home
+     * answered without a count of its own. A number and its unit never break apart.
+     */
     static String facts(String kind, JSONObject about, int childrenShown) {
+        if (about == null) return "";
         StringBuilder b = new StringBuilder();
-        org.json.JSONArray countries = about == null ? null : about.optJSONArray("countries");
+        org.json.JSONArray countries = about.optJSONArray("countries");
         if (countries != null && countries.length() > 0) b.append(countries.optString(0));
-        int n = about == null ? 0 : about.optInt("children", 0);
-        if (n <= 0) n = childrenShown;
+        int n = about.optInt("children", 0);
         if (MediaKind.aboutPerson(kind) && !MediaKind.hasBooks(kind)) {
-            org.json.JSONArray styles = about == null ? null : about.optJSONArray("styles");
-            org.json.JSONArray genres = about == null ? null : about.optJSONArray("genres");
+            if (n <= 0) n = childrenShown;
+            org.json.JSONArray styles = about.optJSONArray("styles");
+            org.json.JSONArray genres = about.optJSONArray("genres");
             String g = styles != null && styles.length() > 0 ? styles.optString(0) : genres != null && genres.length() > 0 ? genres.optString(0) : "";
             if (!g.isEmpty()) sep(b).append(g);
-            if (n > 0) sep(b).append(n).append(n == 1 ? " album" : " albums");
+            if (n > 0) sep(b).append(n).append(NB).append(n == 1 ? "album" : "albums");
             return b.toString();
         }
-        String noun = "speaker".equals(MediaKind.normal(kind)) ? (n == 1 ? " course" : " courses") : (n == 1 ? " book" : " books");
-        if (n > 0) sep(b).append(n).append(noun);
-        long total = about == null ? 0 : about.optLong("totalSec", 0);
-        if (total >= 3600) sep(b).append(Math.round(total / 3600.0)).append(" h");
-        else if (total > 0) sep(b).append(Math.max(1, total / 60)).append(" min");
+        String noun = "speaker".equals(MediaKind.normal(kind)) ? (n == 1 ? "course" : "courses") : (n == 1 ? "book" : "books");
+        if (n > 0) sep(b).append(n).append(NB).append(noun);
+        long total = about.optLong("totalSec", 0);
+        if (total >= 3600) sep(b).append(Math.round(total / 3600.0)).append(NB).append("h");
+        else if (total > 0) sep(b).append(Math.max(1, total / 60)).append(NB).append("min");
         return b.toString();
     }
 
