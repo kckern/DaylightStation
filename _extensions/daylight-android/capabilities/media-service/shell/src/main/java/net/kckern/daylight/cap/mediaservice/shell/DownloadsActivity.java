@@ -102,11 +102,13 @@ public final class DownloadsActivity extends Activity {
         KeepStore.get(this).refresh();
         // Automatic keeps whose removal is due go now (a finished book's 24 h, 30 days unplayed).
         KeepStore.get(this).autoSweepSoon();
+        net.kckern.daylight.shellkit.LiveDownloads.listen(liveRedraw);
         fill();
     }
 
     @Override protected void onPause() {
         super.onPause();
+        net.kckern.daylight.shellkit.LiveDownloads.unlisten(liveRedraw);
         main.removeCallbacks(tick);
     }
 
@@ -121,6 +123,18 @@ public final class DownloadsActivity extends Activity {
         mini.stop();
         super.onStop();
     }
+
+    /** Each second the keep store publishes live bytes: the downloading rows redraw their words and bar, nothing else. */
+    private void redrawLive() {
+        if (rowsBox == null) return;
+        KeepStore store = KeepStore.get(this);
+        for (int i = 0; i < rowsBox.getChildCount(); i++) {
+            View row = rowsBox.getChildAt(i);
+            if (row.getTag() instanceof Row && ((Row) row.getTag()).shown != null) bind(store, row, ((Row) row.getTag()).shown);
+        }
+    }
+
+    private final Runnable liveRedraw = this::redrawLive;
 
     /** What the top bar's ⋮ offers, from the last fill. */
     private boolean barFinished;
@@ -305,6 +319,8 @@ public final class DownloadsActivity extends Activity {
     private static final class Row {
         ImageView cover;
         TextView name, state;
+        /** The item's progress inside its row while it downloads: filled when the length is known, sliding when not. */
+        android.widget.ProgressBar bar;
         /** The state's icon at the row's end (D12); an error's icon retries when tapped. */
         android.widget.ImageButton icon;
         String glyphShown;
@@ -433,6 +449,16 @@ public final class DownloadsActivity extends Activity {
         h.state = t.text(this, "", Type.LABEL, t.inkMuted, false);
         h.state.setMaxLines(2);
         text.addView(h.state);
+        h.bar = new android.widget.ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        h.bar.setMax(1000);
+        h.bar.setProgressTintList(android.content.res.ColorStateList.valueOf(t.primary));
+        h.bar.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(t.track));
+        h.bar.setIndeterminateTintList(android.content.res.ColorStateList.valueOf(t.primary));
+        h.bar.setVisibility(View.GONE);
+        h.bar.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        LinearLayout.LayoutParams barLp = new LinearLayout.LayoutParams(-1, dp(3));
+        barLp.topMargin = dp(6);
+        text.addView(h.bar, barLp);
         row.addView(text, new LinearLayout.LayoutParams(0, -2, 1));
         h.icon = new android.widget.ImageButton(this);
         h.icon.setBackground(t.pressable(DaylightTheme.round(0x00000000, dp(24))));
@@ -461,10 +487,12 @@ public final class DownloadsActivity extends Activity {
         Row h = (Row) row.getTag();
         String cid = k.optString("contentId");
         String title = TextUtils.isEmpty(k.optString("title")) ? "Kept item" : k.optString("title");
-        String words = KeptIndex.describe(k);
+        net.kckern.daylight.shellkit.LiveDownload live = net.kckern.daylight.shellkit.LiveDownloads.get(cid);
+        String words = KeptIndex.describe(k, live);
         long size = Math.max(k.optLong("bytes"), k.optLong("expectedBytes"));
         h.name.setText(title);
-        h.state.setText(words + (size > 0 && !words.contains("MB") && !words.contains("GB") ? " · " + KeptIndex.size(size) : ""));
+        h.state.setText(words + (live == null && size > 0 && !words.contains("MB") && !words.contains("GB") ? " · " + KeptIndex.size(size) : ""));
+        showBar(h, live);
         loadCover(h.cover, k.optString("art"));
         row.setContentDescription(title + ". " + words);
         h.title = title;
@@ -474,7 +502,7 @@ public final class DownloadsActivity extends Activity {
         h.shown = k;
         View menu = ((LinearLayout) row).getChildAt(3);
         if (menu != null) menu.setContentDescription("More for " + title);
-        KeepRowState.Glyph g = KeepRowState.glyph(k);
+        KeepRowState.Glyph g = KeepRowState.glyph(k, live != null && live.stalled());
         if (g.name().equals(h.glyphShown)) return;
         h.glyphShown = g.name();
         int icon, tint;
@@ -483,18 +511,31 @@ public final class DownloadsActivity extends Activity {
             case KEPT: icon = R.drawable.daylight_np_kept; tint = t.primary; said = "On this phone"; break;
             case MOVING: icon = R.drawable.daylight_np_downloading; tint = t.inkMuted; said = words; break;
             case PAUSED: icon = net.kckern.daylight.shellkit.R.drawable.daylight_mini_pause; tint = t.inkMuted; said = "Paused"; break;
-            case ERROR: icon = net.kckern.daylight.shellkit.R.drawable.daylight_ic_replay; tint = t.attention; said = "Try again"; break;
+            case ERROR: case STALLED: icon = net.kckern.daylight.shellkit.R.drawable.daylight_ic_replay; tint = t.attention; said = "Try again"; break;
             default: icon = R.drawable.daylight_np_downloading; tint = t.disabled; said = words; break;
         }
         h.icon.setImageResource(icon);
         h.icon.setImageTintList(android.content.res.ColorStateList.valueOf(tint));
         h.icon.setContentDescription(said);
         h.icon.setTooltipText(said);
-        boolean acts = g == KeepRowState.Glyph.ERROR;
+        boolean acts = g == KeepRowState.Glyph.ERROR || g == KeepRowState.Glyph.STALLED;
         h.icon.setClickable(acts);
         h.icon.setFocusable(acts);
         h.icon.setImportantForAccessibility(acts ? View.IMPORTANT_FOR_ACCESSIBILITY_YES : View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        h.icon.setOnClickListener(acts ? v -> { UiTelemetry.event("Downloads", "keep.retry", new JSONObject()); store.retry(cid, this::say); } : null);
+        h.icon.setOnClickListener(!acts ? null : g == KeepRowState.Glyph.STALLED
+                ? v -> { UiTelemetry.event("Downloads", "keep.restart", new JSONObject()); store.restart(cid, this::say); }
+                : v -> { UiTelemetry.event("Downloads", "keep.retry", new JSONObject()); store.retry(cid, this::say); });
+    }
+
+    /** The bar inside a downloading row: filled by the item's progress, sliding while its length is unknown, gone otherwise. */
+    private void showBar(Row h, net.kckern.daylight.shellkit.LiveDownload live) {
+        if (live == null) { h.bar.setVisibility(View.GONE); return; }
+        h.bar.setVisibility(View.VISIBLE);
+        float f = live.fraction();
+        // A stalled bar stands still at where it got to; only a live transfer of unknown length slides.
+        boolean slides = f < 0 && !live.stalled();
+        if (h.bar.isIndeterminate() != slides) h.bar.setIndeterminate(slides);
+        if (!slides) h.bar.setProgress(Math.round(Math.max(0f, f) * 1000));
     }
 
     /** A kept row's item sheet (D17): the item, then its verbs for its state, Remove last. */
@@ -505,8 +546,10 @@ public final class DownloadsActivity extends Activity {
         boolean unit = isUnit(k);
         net.kckern.daylight.shellkit.ItemSheet sheet = net.kckern.daylight.shellkit.ItemSheet.of(this, "Downloads")
                 .item(k.optString("art"), net.kckern.daylight.shellkit.CoverGlyph.Kind.ALBUM, h.title, "", h.state.getText().toString());
-        for (KeepRowState.Verb v : KeepRowState.verbs(k)) {
+        net.kckern.daylight.shellkit.LiveDownload live = net.kckern.daylight.shellkit.LiveDownloads.get(cid);
+        for (KeepRowState.Verb v : KeepRowState.verbs(k, live != null && live.stalled())) {
             switch (v) {
+                case RESTART: sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_replay, "Try again", () -> store.restart(cid, this::say)); break;
                 case RETRY: sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_replay, "Try again", () -> store.retry(cid, this::say)); break;
                 case RESUME: sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_download, "Resume download", () -> { store.resume(cid); fill(); }); break;
                 case PAUSE: sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_stop, "Pause download", () -> { store.pause(cid); fill(); }); break;

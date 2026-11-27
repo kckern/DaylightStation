@@ -61,6 +61,12 @@ public final class KeepService extends DownloadService {
         } catch (RuntimeException ignored) { }
     }
 
+    /** The item moving and its live bytes, else {@code otherwise}. */
+    private String live(String otherwise) {
+        String line = KeepStore.get(this).liveLine();
+        return line.isEmpty() ? otherwise : line;
+    }
+
     @Override protected Notification getForegroundNotification(List<Download> downloads, int notMetRequirements) {
         int[] p = KeepStore.get(this).progress();
         // Android requires this notification while bytes move; for automatic keeps alone it says
@@ -75,7 +81,7 @@ public final class KeepService extends DownloadService {
         return new Notification.Builder(this, CHANNEL)
                 .setSmallIcon(android.R.drawable.stat_sys_download)
                 .setContentTitle(title)
-                .setContentText(notMetRequirements != 0 ? KeepRules.waitingWords(notMetRequirements) : "Tap to see what is kept")
+                .setContentText(notMetRequirements != 0 ? KeepRules.waitingWords(notMetRequirements) : live("Tap to see what is kept"))
                 .setProgress(Math.max(1, p[2]), p[1], p[2] == 0)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)

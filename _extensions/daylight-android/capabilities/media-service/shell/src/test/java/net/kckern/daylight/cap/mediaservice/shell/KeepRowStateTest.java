@@ -27,4 +27,12 @@ public class KeepRowStateTest {
         assertEquals(Collections.singletonList(KeepRowState.Verb.REMOVE), KeepRowState.verbs(in("ready")));
         assertEquals(Collections.emptyList(), KeepRowState.verbs(in("removing")));
     }
+
+    @Test public void aStalledDownloadShowsTheRetryIconAndOffersTryAgainFirst() throws Exception {
+        assertEquals(KeepRowState.Glyph.STALLED, KeepRowState.glyph(in("downloading"), true));
+        assertEquals(KeepRowState.Glyph.MOVING, KeepRowState.glyph(in("downloading"), false));
+        assertEquals(Arrays.asList(KeepRowState.Verb.RESTART, KeepRowState.Verb.PAUSE, KeepRowState.Verb.REMOVE),
+                KeepRowState.verbs(in("downloading"), true));
+        assertEquals(KeepRowState.verbs(in("downloading")), KeepRowState.verbs(in("downloading"), false));
+    }
 }

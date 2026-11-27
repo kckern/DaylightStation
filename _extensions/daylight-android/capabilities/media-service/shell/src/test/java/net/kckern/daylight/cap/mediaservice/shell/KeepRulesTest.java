@@ -39,14 +39,6 @@ public class KeepRulesTest {
         assertFalse(KeepRules.discardPartial(KeepRules.UNREACHABLE));
     }
 
-    @Test public void aDownloadWithNoBytesFor30MinutesWhileAllowedHasStalled() {
-        long t = 10_000_000;
-        assertTrue(KeepRules.stalled(true, true, t, t + KeepRules.STALL_MS));
-        assertFalse(KeepRules.stalled(true, true, t, t + KeepRules.STALL_MS - 1));
-        assertFalse("waiting for Wi-Fi is not a stall", KeepRules.stalled(true, false, t, t + 2 * KeepRules.STALL_MS));
-        assertFalse(KeepRules.stalled(false, true, t, t + 2 * KeepRules.STALL_MS));
-    }
-
     @Test public void mobileDataCarriesNoKeepByteUnlessAllowed() {
         assertTrue(KeepRules.networkAllows(true, false, false));
         assertFalse(KeepRules.networkAllows(true, true, false));

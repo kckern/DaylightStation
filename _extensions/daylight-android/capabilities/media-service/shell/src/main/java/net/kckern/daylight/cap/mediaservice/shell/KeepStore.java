@@ -33,7 +33,10 @@ import androidx.media3.exoplayer.offline.DownloadRequest;
 import androidx.media3.exoplayer.offline.DownloadService;
 import androidx.media3.exoplayer.scheduler.Requirements;
 
+import net.kckern.daylight.shellkit.DownloadProgress;
 import net.kckern.daylight.shellkit.KeptIndex;
+import net.kckern.daylight.shellkit.LiveDownload;
+import net.kckern.daylight.shellkit.LiveDownloads;
 import net.kckern.daylight.shellkit.UiTelemetry;
 
 import org.json.JSONArray;
@@ -90,6 +93,7 @@ final class KeepStore {
     static final int OUTCOME_NOTIFICATION = 7_260;
     /** Stop reason for an item the person paused (Media3: any non-zero reason stops it). */
     private static final int STOP_PAUSED = 1;
+    private static final int STOP_RESTART = 2;
     private static KeepStore instance;
 
     final DownloadManager manager;
@@ -243,8 +247,6 @@ final class KeepStore {
     private final Object downloadsLock = new Object();
     private final Handler main = new Handler(Looper.getMainLooper());
     private final Runnable refreshNow = () -> local.execute(this::refreshOnce);
-    /** Bytes per collection when they last moved, against the uptime clock (never the wall clock). */
-    private final Map<String, long[]> moved = new java.util.concurrent.ConcurrentHashMap<>();
     private volatile long capMb = 4096;
     private volatile boolean onCellular, removeFinished;
     private volatile long removeFinishedAfterMs = KeepRules.DAY_MS;
@@ -322,6 +324,7 @@ final class KeepStore {
             @Override public void onDownloadChanged(DownloadManager m, Download d, Exception e) {
                 if (d.state == Download.STATE_FAILED) local.execute(() -> failed(d.request.id, e));
                 if (d.state == Download.STATE_COMPLETED) local.execute(() -> completed(d.request.id));
+                if (d.state == Download.STATE_DOWNLOADING) liveTickSoon();
                 refreshSoon();
             }
             @Override public void onDownloadRemoved(DownloadManager m, Download d) {
@@ -1065,7 +1068,6 @@ final class KeepStore {
                 } catch (Exception unreachable) { /* due again at the next sync */ }
             }
         }
-        watchStalls(items);
     }
 
     /**
@@ -1159,33 +1161,120 @@ final class KeepStore {
         }
     }
 
-    private void watchStalls(JSONArray items) {
-        boolean met = manager.getNotMetRequirements() == 0 && !manager.getDownloadsPaused();
-        long up = SystemClock.elapsedRealtime();
-        Map<String, Download> all = downloads();
-        for (int i = 0; items != null && i < items.length(); i++) {
-            JSONObject k = items.optJSONObject(i);
-            if (k == null) continue;
-            String cid = k.optString("contentId");
-            long bytes = 0;
-            List<String> moving = new ArrayList<>();
-            JSONArray tracks = k.optJSONArray("tracks");
-            for (int j = 0; tracks != null && j < tracks.length(); j++) {
-                String key = keyFor(tracks.optJSONObject(j).optString("id"));
-                Download d = all.get(key);
-                if (d == null) continue;
-                bytes += d.getBytesDownloaded();
-                if (d.state == Download.STATE_DOWNLOADING) moving.add(key);
+    // ── live progress and stalls ─────────────────────────────────────────────
+
+    /** One kept item's tracks in order, for the live line. Rebuilt by every refresh. */
+    private static final class Layout {
+        final List<String> keys; final String kind, title;
+        Layout(List<String> keys, String kind, String title) { this.keys = keys; this.kind = kind; this.title = title; }
+    }
+
+    private volatile Map<String, Layout> layout = new java.util.HashMap<>();
+    /** Per downloading item: its byte samples (rate, stall, the restart). Main thread. */
+    private final Map<String, DownloadProgress> samples = new java.util.HashMap<>();
+    /** The track each row's live line is about, so two running at once do not make it flip. Main thread. */
+    private final Map<String, String> shownTrack = new java.util.HashMap<>();
+    private boolean liveTicking;
+    private volatile String liveLine = "";
+
+    /** What the keep notification says while bytes move: "Title · Track 1 of 2 · 12.4 of 40.1 MB · 1.2 MB/s". */
+    String liveLine() { return liveLine; }
+
+    /** Starts the once-a-second live tick if it is not running. It stops itself when nothing downloads. */
+    private void liveTickSoon() {
+        main.post(() -> {
+            if (liveTicking) return;
+            liveTicking = true;
+            liveTick.run();
+        });
+    }
+
+    /**
+     * Live bytes from the manager's own in-memory list (never its index, written every 5 s),
+     * published through {@link LiveDownloads} for the open screens and the notification. No bytes
+     * for 15 s on a usable network is a stall: the transfer is restarted once.
+     */
+    private final Runnable liveTick = new Runnable() {
+        @Override public void run() {
+            Map<String, LiveDownload> out = new java.util.LinkedHashMap<>();
+            boolean moving = false;
+            String line = "";
+            try {
+                Map<String, Download> byKey = new HashMap<>();
+                for (Download d : manager.getCurrentDownloads()) byKey.put(d.request.id, d);
+                boolean usable = manager.getNotMetRequirements() == 0 && !manager.getDownloadsPaused();
+                long now = SystemClock.elapsedRealtime();
+                for (Map.Entry<String, Layout> en : layout.entrySet()) {
+                    String cid = en.getKey();
+                    Layout l = en.getValue();
+                    int done = 0, current = -1;
+                    long all = 0, bytes = 0, total = 0;
+                    List<String> downloading = new ArrayList<>();
+                    boolean stuck = false;
+                    for (int j = 0; j < l.keys.size(); j++) {
+                        Download d = byKey.get(l.keys.get(j));
+                        if (d == null) continue;
+                        all += d.getBytesDownloaded();
+                        if (d.state == Download.STATE_COMPLETED) done++;
+                        if (d.state != Download.STATE_DOWNLOADING) continue;
+                        downloading.add(l.keys.get(j));
+                        // The track shown stays the one shown while it downloads (two run at once; the row must not flip).
+                        boolean shown = l.keys.get(j).equals(shownTrack.get(cid));
+                        if (current < 0 || (shown && !stuck)) {
+                            current = j + 1; bytes = d.getBytesDownloaded(); total = d.contentLength > 0 ? d.contentLength : 0;
+                            stuck = shown;
+                        }
+                    }
+                    if (current > 0) shownTrack.put(cid, l.keys.get(current - 1)); else shownTrack.remove(cid);
+                    if (current < 0) { samples.remove(cid); continue; }
+                    moving = true;
+                    // Waiting on the network, a pause or low storage is the index's words, not a stall.
+                    if (!usable) { samples.remove(cid); continue; }
+                    DownloadProgress p = samples.get(cid);
+                    if (p == null) { p = new DownloadProgress(); samples.put(cid, p); }
+                    p.sample(now, all);
+                    DownloadProgress.Phase phase = p.phase(now);
+                    if (p.restartDue(now)) {
+                        Log.w(TAG, "keep: no bytes for 15 s at " + bytes + " of " + total + "; restarting the transfer");
+                        event("keep.stalled", new JSONObject().put("bytes", bytes).put("total", total).put("tracks", downloading.size()));
+                        cycle(downloading);
+                    }
+                    LiveDownload ld = new LiveDownload(current, l.keys.size(), done, l.kind, bytes, total, p.bytesPerSecond(), phase);
+                    out.put(cid, ld);
+                    if (line.isEmpty()) line = l.title + " · " + ld.words();
+                }
+            } catch (Exception unknown) {
+                Log.w(TAG, "keep: live progress failed: " + unknown);
             }
-            long[] last = moved.get(cid);
-            if (last == null || last[0] != bytes || moving.isEmpty()) { moved.put(cid, new long[] { bytes, up }); continue; }
-            if (KeepRules.stalled(true, met, last[1], up)) {
-                Log.w(TAG, "keep: stalled 30 min, restarting once");
-                event("keep.stalled", jsonOf("tracks", moving.size()));
-                for (String key : moving) main.post(() -> { manager.setStopReason(key, 2); manager.setStopReason(key, Download.STOP_REASON_NONE); });
-                moved.put(cid, new long[] { bytes, up });
-            }
+            liveLine = line;
+            samples.keySet().retainAll(out.keySet());
+            LiveDownloads.publish(out);
+            if (moving) main.postDelayed(this, 1_000);
+            else liveTicking = false;
         }
+    };
+
+    /** Stops and starts the given downloads again: the transfer's connection is dropped and a new one opened, the bytes kept. */
+    private void cycle(List<String> keys) {
+        for (String key : keys) { manager.setStopReason(key, STOP_RESTART); manager.setStopReason(key, Download.STOP_REASON_NONE); }
+    }
+
+    /** A stalled row's Retry: the same restart, whenever the person asks (main or any thread). */
+    void restart(String contentId, Consumer<String> done) {
+        main.post(() -> {
+            Layout l = layout.get(contentId);
+            List<String> moving = new ArrayList<>();
+            if (l != null) {
+                Map<String, Download> byKey = new HashMap<>();
+                for (Download d : manager.getCurrentDownloads()) byKey.put(d.request.id, d);
+                for (String key : l.keys) { Download d = byKey.get(key); if (d != null && d.state == Download.STATE_DOWNLOADING) moving.add(key); }
+            }
+            samples.remove(contentId);
+            manager.resumeDownloads();
+            cycle(moving);
+            event("keep.restart", jsonOf("tracks", moving.size()));
+            say(done, moving.isEmpty() ? "Nothing to restart" : "Trying again");
+        });
     }
 
     // ── finished books ───────────────────────────────────────────────────────
@@ -1921,6 +2010,7 @@ final class KeepStore {
                 for (String id : mine) holders.merge(id, 1, Integer::sum);
             }
             JSONArray index = new JSONArray(), report = new JSONArray();
+            Map<String, Layout> nextLayout = new HashMap<>();
             Set<String> covers = new HashSet<>();
             int notMet = manager.getNotMetRequirements();
             boolean globallyPaused = manager.getDownloadsPaused() && !KeepRules.SD_MISSING.equals(location);
@@ -1999,8 +2089,13 @@ final class KeepStore {
                 e.put("frees", GroupKeepRules.freedBytes(mineIds, shared, trackBytes)).put("shared", !shared.isEmpty() || k.optBoolean("alone"));
                 if (k.has("art")) { e.put("art", k.optString("art")); covers.add(k.optString("art")); }
                 index.put(e);
+                List<String> orderedKeys = new ArrayList<>();
+                for (int j = 0; j < ids.length(); j++) orderedKeys.add(keyFor(ids.optString(j)));
+                nextLayout.put(cid, new Layout(orderedKeys, k.optString("kind"), k.optString("title")));
                 report.put(reportItem(e, free, limit));
             }
+            layout = nextLayout;
+            liveTickSoon();
             // Kept while away, and being checked: shown, and told to the web.
             JSONArray away = pending();
             for (int i = 0; i < away.length(); i++) {

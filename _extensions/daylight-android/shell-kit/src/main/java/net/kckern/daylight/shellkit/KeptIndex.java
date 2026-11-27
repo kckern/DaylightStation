@@ -144,6 +144,17 @@ public final class KeptIndex {
         return words + " · " + KEPT_AUTOMATICALLY;
     }
 
+    /**
+     * {@link #describe(JSONObject)} with the live line of an item downloading right now (bytes
+     * from the download manager's own in-memory list, so they move every second).
+     */
+    public static String describe(JSONObject k, LiveDownload live) {
+        String state = k.optString("state", "");
+        if (live == null || !(DOWNLOADING.equals(state) || UPDATING.equals(state))) return describe(k);
+        String words = (UPDATING.equals(state) ? "Updating · " : "") + live.words();
+        return k.optBoolean("auto") ? words + " · " + KEPT_AUTOMATICALLY : words;
+    }
+
     private static String stateWords(JSONObject k) {
         int done = k.optInt("done"), total = k.optInt("total"), failed = k.optInt("failed"), damaged = k.optInt("damaged");
         String reason = k.optString("reason", "");

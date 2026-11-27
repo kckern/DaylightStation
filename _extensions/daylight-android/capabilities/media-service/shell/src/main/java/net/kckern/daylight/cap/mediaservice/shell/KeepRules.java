@@ -11,7 +11,7 @@ import java.util.Locale;
 
 /**
  * The rules downloads live by, kept pure so each is tested: when a failed track is tried
- * again, why it failed in words a person can act on, when a download has stalled, and
+ * again, why it failed in words a person can act on, and
  * whether a byte may be fetched on the network the phone is on.
  */
 final class KeepRules {
@@ -99,18 +99,6 @@ final class KeepRules {
 
     /** After a failure for this reason, the partial file is thrown away rather than resumed onto. */
     static boolean discardPartial(String reason) { return FULL.equals(reason) || INCOMPLETE.equals(reason); }
-
-    // ── stalls ───────────────────────────────────────────────────────────────
-
-    static final long STALL_MS = 30 * 60_000L;
-
-    /**
-     * A collection downloading with its requirements met whose bytes have not moved since
-     * {@code lastChangeAt} for 30 minutes has stalled.
-     */
-    static boolean stalled(boolean downloading, boolean requirementsMet, long lastChangeAt, long now) {
-        return downloading && requirementsMet && lastChangeAt > 0 && now - lastChangeAt >= STALL_MS;
-    }
 
     // ── the network rule ─────────────────────────────────────────────────────
 

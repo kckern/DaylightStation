@@ -15,9 +15,15 @@ final class KeepRowState {
     private KeepRowState() { }
 
     /** The icon at the row's end. ERROR is the one that acts when tapped (Retry). */
-    enum Glyph { KEPT, MOVING, PAUSED, WAITING, ERROR }
+    enum Glyph { KEPT, MOVING, STALLED, PAUSED, WAITING, ERROR }
 
-    enum Verb { RETRY, RESUME, PAUSE, MOBILE_ONCE, REMOVE }
+    enum Verb { RESTART, RETRY, RESUME, PAUSE, MOBILE_ONCE, REMOVE }
+
+    /** A download whose bytes stopped (live, not in the index) shows the retry icon; tapping it restarts the transfer. */
+    static Glyph glyph(JSONObject k, boolean stalled) {
+        Glyph g = glyph(k);
+        return stalled && g == Glyph.MOVING ? Glyph.STALLED : g;
+    }
 
     static Glyph glyph(JSONObject k) {
         String s = k.optString("state", "");
@@ -30,6 +36,12 @@ final class KeepRowState {
     }
 
     /** The sheet's verbs for a row in this state, Remove last (it is destructive). */
+    static List<Verb> verbs(JSONObject k, boolean stalled) {
+        List<Verb> out = verbs(k);
+        if (stalled && out.contains(Verb.PAUSE)) out.add(0, Verb.RESTART);
+        return out;
+    }
+
     static List<Verb> verbs(JSONObject k) {
         List<Verb> out = new ArrayList<>();
         String s = k.optString("state", "");

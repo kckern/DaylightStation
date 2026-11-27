@@ -1689,6 +1689,24 @@ come from shell-kit's `KeptIndex` (`files/kept-index.json`), written by `KeepSto
 | Not available | "On the SD card — not inserted" | card back: as before |
 | Damaged | "1 track needs downloading again" | re-downloaded on an allowed network |
 
+**Live progress and stalls** (shell 200). While a keep downloads, the row's words and a thin bar
+inside the row move every second: "Track 1 of 2 · 12.4 of 40.1 MB · 1.2 MB/s" ("Part" for a
+book, no count for a single item). The bytes come from `DownloadManager.getCurrentDownloads()`
+(in memory, current), never from the download index, which Media3 1.1.1 writes about every 5 s.
+`KeepStore` publishes them once a second through shell-kit's `LiveDownloads` (an in-memory
+channel, not `kept-index.json`, not reported to home); the Downloads screen, On this phone on
+the home page and the keep notification read it. `KeptIndex.describe(k, live)` swaps the index's
+line for the live one while Downloading or Updating. An unknown length is never a percentage:
+"12.4 MB · 640 KB/s", or "Downloading…" before the first byte, with a sliding bar. A known
+length fills the bar with finished tracks plus the part of this one. A stall is no new bytes
+for 15 s while the network is usable and not paused (a wait for Wi-Fi or storage is the index's
+own words, not a stall; `DownloadProgress`, pure). It restarts the transfer once
+(`setStopReason` stop then none: the connection is dropped and a new one opened, the bytes
+kept) and says "Stalled · restarting"; if no bytes come 15 s later it says "Stalled · will
+retry when the connection improves". The row's end icon becomes Retry (and "Try again" heads
+the row's sheet): it restarts the transfer on demand. Bytes past the most seen end the stall;
+a count that dips and climbs back does not. The old 30-minute stall check is gone.
+
 Failure reasons, one set everywhere: Gone from the library (404, permanent only after a
 fresh URL also got one), Home refused it (401/403), Home had a problem (5xx, retried), Home
 not reachable (network), Phone full, Incomplete file, Not allowed on mobile data, Card

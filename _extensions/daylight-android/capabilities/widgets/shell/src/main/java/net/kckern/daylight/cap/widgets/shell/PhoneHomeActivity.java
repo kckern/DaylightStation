@@ -689,9 +689,15 @@ public class PhoneHomeActivity extends Activity {
         java.util.List<JSONObject> first = net.kckern.daylight.shellkit.KeptGroups.firstBlocks(
                 net.kckern.daylight.shellkit.KeptGroups.rows(index), 3, 3);
         // Moving, checking, queued or removing: refreshed every 3 s; waiting: every 30 s (a network or room may come).
-        if (busy) timer.postDelayed(keptTick, 3000);
+        // Downloading: every second (live bytes, in memory); the rest as above.
+        StringBuilder liveWords = new StringBuilder();
+        for (JSONObject k : index) {
+            net.kckern.daylight.shellkit.LiveDownload live = net.kckern.daylight.shellkit.LiveDownloads.get(k.optString("contentId"));
+            if (live != null) liveWords.append(k.optString("contentId")).append(live.words()).append(live.fraction());
+        }
+        if (busy) timer.postDelayed(keptTick, liveWords.length() > 0 ? 1000 : 3000);
         else if (!index.isEmpty()) timer.postDelayed(keptTick, 30_000);
-        String shown = first + "|" + room + "|" + over + "|" + index.isEmpty();
+        String shown = first + "|" + room + "|" + over + "|" + index.isEmpty() + "|" + liveWords;
         if (shown.equals(keptShown)) return;
         keptShown = shown;
         if (index.isEmpty()) {
@@ -821,8 +827,9 @@ public class PhoneHomeActivity extends Activity {
         card.setTag(R.id.daylight_home_kept, k);
         String title = k.optString("title");
         boolean group = keptGroupRow(k), unit = keptUnitRow(k);
-        String line = group ? net.kckern.daylight.shellkit.KeptGroups.line(k) : net.kckern.daylight.shellkit.KeptIndex.describe(k);
         String cid = k.optString("contentId");
+        String line = group ? net.kckern.daylight.shellkit.KeptGroups.line(k)
+                : net.kckern.daylight.shellkit.KeptIndex.describe(k, net.kckern.daylight.shellkit.LiveDownloads.get(cid));
         card.setPadding(unit ? dp(28) : dp(8), dp(8), dp(4), dp(8));
         h.side.setVisibility(group || unit ? View.VISIBLE : View.GONE);
         if (group) {
