@@ -11,7 +11,7 @@ import { openSearch, resultRow, playResultHere } from './lib/search.mjs';
 import { aimHere } from './lib/aim.mjs';
 import {
   A, A_NAME, ITEM, VIEWPORTS, call, receiverState, openReceiver, startOn, stopReceiver, resetControls,
-  newAppPage, gotoMedia, warmMedia, openHouse, openRemote,
+  newAppPage, gotoMedia, warmMedia, openHouse, openRemote, showFleetCard,
 } from './lib/receivers.mjs';
 
 // Proof-gaps Phase 3 (batch D): the P1/P2 ledger rows still open after Phase 2.
@@ -65,7 +65,8 @@ for (const [label, vp] of Object.entries({ phone: VIEWPORTS.phone, laptop: VIEWP
     const names = {
       [A]: A_NAME, [SCRIPTED.SPEAKER]: 'Acceptance speaker', [SCRIPTED.POWER]: 'Acceptance den TV', 'acceptance-offline': 'Acceptance guest room TV',
     };
-    for (const id of Object.keys(names)) await expect(page.getByTestId(`fleet-card-${id}`)).toBeVisible({ timeout: 40000 });
+    // Devices leads with what is on now; the rest sit behind "Off or not heard from (k)".
+    for (const id of Object.keys(names)) await showFleetCard(page, `fleet-card-${id}`, { timeout: 40000 });
     // Every card in the overview, whatever it is (screens, the browsers using the app): a name, never a code.
     const cards = await page.locator('[data-testid^="fleet-card-"] .fleet-card-name').allInnerTexts();
     expect(cards.length).toBeGreaterThanOrEqual(Object.keys(names).length);

@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { markFirstUseDone } from './lib/firstUse.mjs';
 import { SEED, resetHouseholdAt, recordHouseholdRequests, captureProgressLogs, pinBrowserIdentity, household } from './lib/household.mjs';
 import { openDetailMore } from './lib/search.mjs';
+import { aimHere } from './lib/aim.mjs';
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -65,7 +66,17 @@ async function openTileMenu(page, testId) {
   const tile = page.getByTestId(testId);
   await tile.scrollIntoViewIfNeeded();
   await tile.getByRole('button', { name: /More actions for/ }).click();
+  // The menu leads with four verbs; the rest sit behind its More (k), which
+  // expands in place (smart long lists). Show them all: these journeys pick
+  // verbs from the whole set.
+  await expandMenuMore(page, testId);
   return page.getByTestId(`${testId}-menu`);
+}
+
+async function expandMenuMore(page, testId) {
+  const more = page.getByTestId(`${testId}-verb-more-more`);
+  await more.waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
+  if (await more.isVisible().catch(() => false)) await more.click();
 }
 
 async function stopLocal(page) {
@@ -243,8 +254,13 @@ for (const [size, viewport] of Object.entries(VIEWPORTS)) {
       await page.waitForTimeout(400); // let the menu finish fading in before the picture
       await shot(page, `home-menu-${size}`);
       await page.keyboard.press('Escape');
-      // A playable recent item plays at the aim with the same confirmation and Undo.
+      // A playable item's picture opens it (looking); only its ▶ plays.
       await page.getByTestId(`home-tile-recent-${FAITH}-picture`).click();
+      await expect(page.getByTestId('detail-view')).toBeVisible({ timeout: 30000 });
+      await page.goBack();
+      await expect(page.getByTestId('home-row-recent')).toBeVisible();
+      // ▶ plays at the aim (music with nothing aimed: here) with the same confirmation and Undo.
+      await page.getByTestId(`home-tile-recent-${FAITH}-play`).click();
       const row = page.locator('[data-testid^="dispatch-row-"]').filter({ hasText: 'Playing Faith here' });
       await expect(row).toBeVisible({ timeout: 15000 });
       await expect(row.getByTestId('item-action-undo')).toBeVisible();
@@ -282,17 +298,20 @@ test.describe('saved spots and Start over (PLAY.4a)', () => {
     const plays = [];
     page.on('request', request => { if (/\/api\/v1\/play\/plex/.test(request.url())) plays.push(request.url()); });
     await openHome(page);
+    // A tile's picture only opens the item; its ▶ plays (at the aim: here).
+    await aimHere(page);
     // Screens hold different spots: the person chooses.
-    await page.getByTestId(`home-tile-carry-on-${DISCLOSURE}-picture`).click();
+    await page.getByTestId(`home-tile-carry-on-${DISCLOSURE}-play`).click();
     const chooser = page.getByRole('dialog');
-    await expect(chooser).toContainText('12 m on Kid\'s tablet');
-    await expect(chooser).toContainText('1 h 20 m on Acceptance receiver');
+    // The chooser names each spot as a clock (SpotChooser: formatTime).
+    await expect(chooser).toContainText('12:00 on Kid\'s tablet');
+    await expect(chooser).toContainText('1:20:00 on Acceptance receiver');
     await expect(chooser).toContainText('From the beginning');
     for (const choice of await chooser.getByRole('button', { name: /on |beginning/ }).all()) {
       expect((await choice.boundingBox()).height).toBeGreaterThanOrEqual(44);
     }
     await shot(page, 'spot-chooser-laptop');
-    await chooser.getByRole('button', { name: /1 h 20 m on Acceptance receiver/ }).click();
+    await chooser.getByRole('button', { name: /1:20:00 on Acceptance receiver/ }).click();
     // The confirmation says where it continues and offers Start over.
     const row = page.locator('[data-testid^="dispatch-row-"]').filter({ hasText: 'Playing Disclosure Day here' }).first();
     await expect(row).toContainText('Continuing from 1 h 20 m', { timeout: 15000 });
@@ -321,7 +340,9 @@ test.describe('saved spots and Start over (PLAY.4a)', () => {
     const plays = [];
     page.on('request', request => { if (/\/api\/v1\/play\/plex/.test(request.url())) plays.push(request.url()); });
     await openHome(page);
-    await page.getByTestId(`home-tile-carry-on-${ARRIVAL}-picture`).click();
+    // A tile's picture only opens the item; its ▶ plays (at the aim: here).
+    await aimHere(page);
+    await page.getByTestId(`home-tile-carry-on-${ARRIVAL}-play`).click();
     const row = page.locator('[data-testid^="dispatch-row-"]').filter({ hasText: 'Playing Arrival here' }).first();
     await expect(row).toContainText('Continuing from 30 m', { timeout: 15000 });
     await expect(row.getByRole('button', { name: 'Start over' })).toBeVisible();
@@ -335,7 +356,8 @@ test.describe('saved spots and Start over (PLAY.4a)', () => {
     test.setTimeout(180000);
     await installHousehold(page);
     await openHome(page);
-    await page.getByTestId('home-tile-new-plex:675677-picture').click();
+    await aimHere(page);
+    await page.getByTestId('home-tile-new-plex:675677-play').click();
     const row = page.locator('[data-testid^="dispatch-row-"]').filter({ hasText: 'Mario Kart Arcade GP' }).first();
     await expect(row).toBeVisible({ timeout: 15000 });
     await expect(row.getByRole('button', { name: 'Start over' })).toHaveCount(0);
@@ -354,7 +376,7 @@ test.describe('Played earlier (FIND.11a)', () => {
         await pinBrowserIdentity(page);
         const state = await installHousehold(page);
         await openHome(page);
-        await page.getByTestId(`home-tile-recent-${FAITH}-picture`).click();
+        await page.getByTestId(`home-tile-recent-${FAITH}-play`).click();
         await expect(page.getByTestId('media-mini-player')).toContainText('Faith', { timeout: 30000 });
         await page.getByTestId('mini-player-open-nowplaying').click();
         const earlier = page.getByTestId('played-earlier');
@@ -368,6 +390,7 @@ test.describe('Played earlier (FIND.11a)', () => {
         await expect(earlier.getByTestId('played-earlier-1')).toContainText('Hospital');
         await expect.poll(() => earlier.locator('[data-testid="played-earlier-0"] img').evaluate(img => img.naturalWidth), { timeout: 30000 }).toBeGreaterThan(0);
         await earlier.getByTestId('played-earlier-1-more').click();
+        await expandMenuMore(page, 'played-earlier-1');
         await page.getByTestId('played-earlier-1-verb-favourite').click();
         await expect(page.locator('[data-testid^="dispatch-row-"]').filter({ hasText: 'Added Hospital to favourites' })).toBeVisible();
         expect(state.requests.some(r => r.method === 'POST' && r.path.endsWith('/household/favourites') && r.body.id === HOSPITAL)).toBe(true);

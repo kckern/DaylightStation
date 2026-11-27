@@ -148,9 +148,24 @@ export async function openHouse(page, viewport) {
 export async function openRemote(page, id, viewport) {
   await gotoMedia(page);
   await openHouse(page, viewport);
-  await expect(page.getByTestId(`fleet-peek-${id}`)).toBeVisible({ timeout: 30000 });
+  await showFleetCard(page, `fleet-peek-${id}`);
   await page.getByTestId(`fleet-peek-${id}`).click();
   await expect(page.getByTestId('peek-panel')).toBeVisible();
+}
+
+/**
+ * Wait for something on a Devices card. Devices leads with what is on now; a
+ * screen with no page open sits behind "Off or not heard from (k)"
+ * (`fleet-more`), which this opens when the card is behind it.
+ */
+export async function showFleetCard(page, testId, { timeout = 30000 } = {}) {
+  const target = page.getByTestId(testId);
+  await expect(async () => {
+    if (await target.isVisible().catch(() => false)) return;
+    const more = page.getByTestId('fleet-more');
+    if (await more.isVisible().catch(() => false)) await more.click();
+    await expect(target).toBeVisible({ timeout: 1000 });
+  }).toPass({ timeout });
 }
 
 export async function newAppPage(browser, viewport = VIEWPORTS.laptop) {

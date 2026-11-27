@@ -3,6 +3,12 @@ import { markFirstUseDone } from './lib/firstUse.mjs';
 
 test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 
+// The Start fresh confirmation (shared ConfirmModal, which carries no test ids
+// since 2026-11-20): read it by its name and its buttons' words.
+const startFresh = (page) => page.getByRole('dialog', { name: 'Start fresh on this device?' });
+const confirmOk = (page) => startFresh(page).getByRole('button', { name: 'Start fresh', exact: true });
+const confirmCancel = (page) => startFresh(page).getByRole('button', { name: 'Cancel', exact: true });
+
 const entry = (id, title) => ({ queueItemId: `q-${id}`, contentId: `plex:${id}`, title, format: 'video', priority: 'queue', addedAt: '' });
 const SESSION = {
   schemaVersion: 1, sessionId: 'old', updatedAt: 't', wasPlayingOnUnload: true,
@@ -37,30 +43,30 @@ test.describe('MediaApp — Start fresh', () => {
 
     await page.getByTestId('settings-menu-trigger').click();
     await page.getByTestId('settings-reset-session').click();
-    await expect(page.getByTestId('confirm-dialog')).toBeVisible();
+    await expect(startFresh(page)).toBeVisible();
 
     // Cancel does nothing
-    await page.getByTestId('confirm-cancel').click();
-    await expect(page.getByTestId('confirm-dialog')).toBeHidden({ timeout: 2000 });
+    await confirmCancel(page).click();
+    await expect(startFresh(page)).toBeHidden({ timeout: 2000 });
     await expect(page.getByTestId('mini-player-open-nowplaying')).toBeVisible();
 
     // Confirm actually resets
     await page.getByTestId('settings-menu-trigger').click();
     await page.getByTestId('settings-reset-session').click();
-    await page.getByTestId('confirm-ok').click();
+    await confirmOk(page).click();
     await expect(page.getByTestId('mini-player-open-nowplaying')).toBeHidden({ timeout: 5000 });
   });
 
   test('[RELY.8a] Start fresh lists exactly what it clears, keeps what is unticked, and confirms first', async ({ page }) => {
     await page.goto('/media');
     await expect(page.getByTestId('mini-player-open-nowplaying')).toContainText('Arrival', { timeout: 15000 });
-    await expect(page.getByRole('button', { name: /^Playing on Acceptance receiver/ }).first()).toBeVisible({ timeout: 30000 });
+    await expect(page.getByRole('button', { name: /^Plays on Acceptance receiver/ }).first()).toBeVisible({ timeout: 30000 });
 
     // One step from anywhere: the settings gear lives in the persistent dock.
     await page.getByTestId('app-nav-fleet').click();
     await page.getByTestId('settings-menu-trigger').click();
     await page.getByRole('menuitem', { name: 'Start fresh' }).click();
-    const dialog = page.getByTestId('confirm-dialog');
+    const dialog = startFresh(page);
     await expect(dialog).toBeVisible();
     const playing = dialog.getByRole('checkbox', { name: "What's playing: Arrival" });
     const queue = dialog.getByRole('checkbox', { name: 'Queue: 2 more items' });
@@ -73,20 +79,20 @@ test.describe('MediaApp — Start fresh', () => {
     await queue.uncheck();
     await aim.uncheck();
     await expect(page.getByTestId('mini-player-open-nowplaying')).toContainText('Arrival');
-    await page.getByTestId('confirm-ok').click();
+    await confirmOk(page).click();
     await expect(dialog).toBeHidden();
     await expect(page.getByTestId('mini-state')).toHaveText('Ready to play');
     await expect(page.getByTestId('mini-queue-count')).toHaveText('2 queued');
-    await expect(page.getByRole('button', { name: /^Playing on Acceptance receiver/ }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: /^Plays on Acceptance receiver/ }).first()).toBeVisible();
     await expect(page.locator('video')).toHaveCount(0);
 
     // Clearing everything reads as new, and stays new after a reload.
     await page.getByTestId('settings-menu-trigger').click();
     await page.getByRole('menuitem', { name: 'Start fresh' }).click();
     await expect(dialog.getByRole('checkbox', { name: 'Queue: 2 items' })).toBeChecked();
-    await page.getByTestId('confirm-ok').click();
+    await confirmOk(page).click();
     await expect(page.getByTestId('media-mini-player')).toHaveCount(0);
-    await expect(page.getByRole('button', { name: /^Playing on Acceptance receiver/ })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /^Plays on Acceptance receiver/ })).toHaveCount(0);
     await page.reload();
     await expect(page.getByTestId('media-dock')).toBeVisible({ timeout: 30000 });
     await expect(page.getByTestId('media-mini-player')).toHaveCount(0);

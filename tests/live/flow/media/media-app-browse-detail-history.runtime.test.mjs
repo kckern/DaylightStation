@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { openRowMenuAll } from './lib/search.mjs';
 
 test.use({ viewport: { width: 1280, height: 800 }, trace: 'retain-on-failure', actionTimeout: 10000 });
 test.setTimeout(60000);
@@ -23,13 +24,18 @@ for (const entrypoint of ['Details', 'More → Open detail']) {
     await page.getByTestId('app-nav-browse').click();
     await page.getByTestId('browse-open-demo:season-2').click();
     await expect(page.locator('.browse-crumb--current')).toHaveText('Season 2');
-    const action = page.getByTestId(entrypoint === 'Details' ? 'browse-detail-demo:e20' : 'result-more-demo:e20');
+    // A leaf row's tap opens its info view; its ⋯ menu keeps Open detail
+    // behind More (four verbs lead).
+    const action = page.getByTestId(entrypoint === 'Details' ? 'browse-open-demo:e20' : 'result-more-demo:e20');
     await action.scrollIntoViewIfNeeded();
     const canvas = page.getByTestId('media-canvas');
     const before = await canvas.evaluate(node => node.scrollTop);
     expect(before).toBeGreaterThan(0);
-    await action.click();
-    if (entrypoint !== 'Details') await page.getByRole('menuitem', { name: 'Open detail' }).click();
+    if (entrypoint === 'Details') await action.click();
+    else {
+      await openRowMenuAll(page, 'demo:e20');
+      await page.getByRole('menuitem', { name: 'Open detail' }).click();
+    }
     await expect(page.getByTestId('detail-view').getByRole('heading')).toHaveText('Episode 20');
     await expect(page).toHaveURL(/view=detail/);
 
@@ -37,7 +43,7 @@ for (const entrypoint of ['Details', 'More → Open detail']) {
 
     await expect(page).toHaveURL(/path=demo%2Fseason-2/);
     await expect(page.locator('.browse-crumb--current')).toHaveText('Season 2');
-    await expect(page.getByTestId('result-play-now-demo:e20')).toBeFocused();
+    await expect(page.getByTestId('browse-open-demo:e20')).toBeFocused();
     await expect.poll(() => canvas.evaluate(node => node.scrollTop)).toBe(before);
   });
 }

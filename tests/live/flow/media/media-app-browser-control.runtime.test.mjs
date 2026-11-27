@@ -12,10 +12,14 @@ let server;
 let bus;
 let socketUrl;
 
-test.beforeAll(async () => {
+test.beforeAll(async ({}, testInfo) => {
   server = http.createServer();
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  bus = new WebSocketEventBus({ logger: { info() {}, warn() {}, error() {}, debug() {} } });
+  // This bus is on its own port, so the app's pages reach it cross-site: the
+  // bus refuses any other site's page unless it is allowed (`http.allowed_origins`,
+  // since the cross-site guard). Allow exactly the app under test.
+  const appOrigin = new URL(testInfo.project.use.baseURL).origin;
+  bus = new WebSocketEventBus({ logger: { info() {}, warn() {}, error() {}, debug() {} }, allowedOrigins: [appOrigin] });
   await bus.start(server);
   registerClientIngress({ eventBus: bus, logger: { info() {}, warn() {}, error() {}, debug() {} } });
   socketUrl = `ws://127.0.0.1:${server.address().port}/ws`;

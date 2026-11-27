@@ -4,7 +4,7 @@ import { createHomeAssistantCaller } from '../../../_lib/media-ha-caller.mjs';
 import { resetHouseholdAt, pinBrowserIdentity } from './lib/household.mjs';
 import {
   A, A_NAME, ITEM, VIEWPORTS, call, receiverState, openReceiver, reopenReceiver, startOn, stopReceiver, resetControls,
-  newAppPage, gotoMedia, openHouse, warmMedia,
+  newAppPage, gotoMedia, openHouse, warmMedia, showFleetCard,
 } from './lib/receivers.mjs';
 
 // AUTO — routines (Home Assistant) start playback on a named screen. Every
@@ -108,7 +108,8 @@ test('[AUTO.1a/AC3] a routine that cannot start is reported like any failed send
   const { context, page } = await newAppPage(browser, VIEWPORTS.laptop);
   await gotoMedia(page);
   await openHouse(page, VIEWPORTS.laptop);
-  await expect(page.getByTestId('fleet-card-acceptance-offline')).toBeVisible({ timeout: 30000 });
+  // An offline screen sits under Devices' "Off or not heard from (k)".
+  await showFleetCard(page, 'fleet-card-acceptance-offline');
   await expect(page.getByTestId('fleet-card-acceptance-offline')).toContainText(/couldn.t start|failed|not sent|Last start/i, { timeout: 30000 });
   await context.close();
 });

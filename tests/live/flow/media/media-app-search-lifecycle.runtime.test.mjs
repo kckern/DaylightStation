@@ -33,11 +33,14 @@ test.describe('MediaApp — search dropdown lifecycle', () => {
 
   test('[FIND.1a/AC5] playable-row Play keeps the desktop search open with its exact query', async ({ page }) => {
     await page.goto('/media');
-    await searchInput(page).fill('Arrival');
-    const firstRow = page.locator('[data-testid^="combobox-option-"]').first();
-    await expect(firstRow).toBeVisible({ timeout: 15000 });
-    await firstRow.click();
+    await searchInput(page).fill('Faith');
+    // A row's own ▶ plays (selecting the row would open its info view and
+    // close the list). Faith is music with nothing aimed: it plays here.
+    const play = page.getByTestId('result-play-all-plex:584614');
+    await expect(play).toBeVisible({ timeout: 15000 });
+    await play.click();
+    await expect(page.getByTestId('media-mini-player')).toContainText('Faith', { timeout: 30000 });
     await expect(page.locator('[role="listbox"]')).toBeVisible();
-    await expect(searchInput(page)).toHaveValue('Arrival');
+    await expect(searchInput(page)).toHaveValue('Faith');
   });
 });
