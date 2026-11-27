@@ -205,4 +205,18 @@ public class PlayInboxTest {
         try { inbox.pollOnce(); fail(); } catch (PlayInbox.NotServed expected) { }
         assertEquals(List.of(true), reached);
     }
+
+    /** The app closed: the background job asks without waiting and says the kept list at once. */
+    @Test public void theBackgroundCheckAsksWithoutWaitingAndSendsTheKeptList() throws Exception {
+        PlayInbox inbox = inbox(true);
+        inbox.reportKeeps(new JSONArray().put(new JSONObject().put("contentId", "plex:9").put("state", "ready")));
+        pollStatus = 200;
+        pollBody = new JSONObject().put("commands", new JSONArray()).toString();
+        inbox.checkOnce();
+        assertEquals("https://home.example/api/v1/device/phone/commands?wait=0&background=1&installId=" + ME + "&model=SM-S921U", polled.get(0));
+        assertEquals("Bearer tok-1", sentHeaders.get(0).get("Authorization"));
+        boolean sent = false;
+        for (String p : posts) if (p.startsWith("https://home.example/api/v1/device/phone/keeps ")) sent = true;
+        assertTrue("the kept list goes with the check, not 5 s later", sent);
+    }
 }

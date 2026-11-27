@@ -32,10 +32,12 @@ describe('phoneKeeps', () => {
     const s = keepStatus(v, T, { id: 'plex:5' });
     expect(s.state).toBe('asked');
     expect(s.line).toMatch(/^Waiting for Phone · asked /);
+    expect(s.line).toMatch(/ · usually within 15 min$/);
     expect(s.cancel).toBe('k1');
     expect(keepEntries(T, s)).toEqual([{ kind: 'cancelKeepOn:phone#k1', label: 'Cancel keep on Phone' }]);
     const sent = keepStatus(view({ waiting: [{ ...v.waiting[0], handedOver: true }] }), T, { id: 'plex:5' });
     expect(sent.cancel).toBeUndefined();
+    expect(sent.line).not.toMatch(/15 min/);
     expect(keepEntries(T, sent)[0].label).toBe('Remove from Phone');
   });
 

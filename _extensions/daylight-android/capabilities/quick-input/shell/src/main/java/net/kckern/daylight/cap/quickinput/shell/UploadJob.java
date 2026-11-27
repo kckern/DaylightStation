@@ -49,14 +49,21 @@ public final class UploadJob extends JobService {
 
     @Override public boolean onStartJob(JobParameters params) {
         if (!somethingWaiting(this)) return false;
-        ShellStart.ensure(this);
-        finish = () -> jobFinished(params, false);
+        // Android 12+ refuses a service start from a job; a bind is allowed (ShellStart.hold).
+        Object held = ShellStart.hold(this);
+        if (held == null) ShellStart.ensure(this);
+        this.held = held;
+        finish = () -> { ShellStart.release(this, this.held); this.held = null; jobFinished(params, false); };
         main.postDelayed(finish, RUN_MS);
         return true;
     }
 
+    private Object held;
+
     @Override public boolean onStopJob(JobParameters params) {
         if (finish != null) main.removeCallbacks(finish);
+        ShellStart.release(this, held);
+        held = null;
         return false;
     }
 
