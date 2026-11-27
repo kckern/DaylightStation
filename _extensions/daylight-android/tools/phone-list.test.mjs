@@ -192,6 +192,7 @@ test('playing with no window adds one service of media-service, not exported, an
     'android.permission.FOREGROUND_SERVICE_DATA_SYNC', 'android.permission.ACCESS_NETWORK_STATE']);
   const own = Object.entries(EXPECTED_COMPONENTS).filter(([key]) => key.includes('.cap.mediaservice.'));
   assert.deepEqual(own.map(([key, row]) => `${key} exported=${row.exported} permission=${row.permission}`).sort(), [
+    'activity net.kckern.daylight.cap.mediaservice.shell.BrowseActivity exported=false permission=null',
     'activity net.kckern.daylight.cap.mediaservice.shell.DownloadsActivity exported=false permission=null',
     'activity net.kckern.daylight.cap.mediaservice.shell.NowPlayingActivity exported=false permission=null',
     'activity net.kckern.daylight.cap.mediaservice.shell.PlayActivity exported=false permission=null',

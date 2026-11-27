@@ -40,7 +40,7 @@ public class BackendMediaApiTest {
     /** The route read from the backend: GET /api/v1/content/query/search with text and take. */
     @Test public void aSearchIsOneEncodedQueryParameterOnTheContentQueryRoute() throws Exception {
         api.search("miles & davis/../x?y=1#z", 50);
-        assertEquals("https://kiosk.example/api/v1/content/query/search?text=miles+%26+davis%2F..%2Fx%3Fy%3D1%23z&take=50", gets.get(0));
+        assertEquals("https://kiosk.example/api/v1/content/query/search?text=miles+%26+davis%2F..%2Fx%3Fy%3D1%23z&take=50&source=plex", gets.get(0));
     }
 
     @Test public void thePlayRequestDisablesResumeOnlyWhenAsked() throws Exception {

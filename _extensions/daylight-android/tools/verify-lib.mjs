@@ -326,6 +326,7 @@ export const EXPECTED_COMPONENTS = {
   'service net.kckern.daylight.cap.mediaservice.shell.KeepJob': { exported: false, permission: 'android.permission.BIND_JOB_SERVICE' },
   // On this phone: opened by this app, its notification, and Settings' Manage space (the system).
   'activity net.kckern.daylight.cap.mediaservice.shell.DownloadsActivity': { exported: false, permission: null },
+  'activity net.kckern.daylight.cap.mediaservice.shell.BrowseActivity': { exported: false, permission: null },
   // Opening the record screen starts a recording, so only this app can: the payload on a
   // keyed memo link, and the recording's own notification.
   'activity net.kckern.daylight.cap.quickinput.shell.RecordActivity': { exported: false, permission: null },

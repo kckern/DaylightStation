@@ -63,6 +63,14 @@
              every kept file, and the downloads themselves while Wi-Fi and storage allow:
              KeepScheduler, never Media3's PlatformScheduler, which starts a foreground service
              from the background). -->
+        <!-- Not exported: lookup and browse (search, the library, a collection's page),
+             opened by this app (the Play tab, Now playing's artist and album lines) and by
+             the media/open link through the link activity. -->
+        <activity android:name="net.kckern.daylight.cap.mediaservice.shell.BrowseActivity"
+            android:exported="false"
+            android:label="Library"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.Daylight.WithTitle" />
         <!-- Not exported: On this phone (kept items, room, Remove), opened by this app, the
              download notification and Android Settings' Manage space (the system). -->
         <activity android:name="net.kckern.daylight.cap.mediaservice.shell.DownloadsActivity"

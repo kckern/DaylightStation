@@ -968,6 +968,56 @@ out of reach the last answer is served, however old; a level never loaded fails
 only when it is an https URL on the backend; anything else is left out, in the
 payload and again in the installed service.
 
+### Lookup and browse
+
+Lookup, not discovery (ops:docs/superpowers/specs/2026-11-26-phone-lookup-and-browse.md):
+anything the household has can be found in two taps; nothing is proposed. Audio only.
+One screen, `BrowseActivity` (not exported), in three modes:
+
+- **Search**: the box at the top of the Play tab. Results as you type (250 ms after the
+  last key), grouped Books · Albums · Artists · Playlists · Tracks, five each with "N
+  more". Books are albums in a library whose name holds "book", "stor" or "speech". The
+  last ten searches show under an empty box (kept on the phone; Clear recent searches).
+  No home: "Searching this phone", the kept collections whose title holds every word.
+- **Library** (Play tab → Browse library): every audio Plex library, then the household's
+  list sources (Plex's audio playlists as **Playlists**, programs, watchlists, custom
+  lists). Offline: what is kept, "Showing what's on this phone".
+- **A level** (a library, an artist, an album, a book, a playlist): rows of a fixed
+  64 dp height, the last answer drawn at once from the phone and replaced in place, fixed
+  placeholders the first time; a long level ends in **More**, which appends the next
+  50 in place. A collection has a header: cover, name, Play (a book: Resume), Shuffle,
+  Play on… (Now playing's picker, `TargetPicker`: this phone first, each screen's state, off ones greyed; a screen gets the screen's load, as the web's Play on) and Keep (the
+  one Keep flow). A track's ⋮: Play here, Play next, Add to queue, Play on…, Keep.
+  Playing goes through the media session (the same media ids the car uses) and opens
+  Now playing.
+
+Now playing's artist and album lines open that artist's or album's page, found from the
+playing track's own `albumId`/`artistId` (`parents` op over `/api/v1/info`); only without
+them does the line open the search on the name. A link
+`daylight://media/<book|album|artist|playlist>/<content id>` (or
+`daylight://media/open?kind=…&id=…`; through the link activity, with the install key)
+opens a page. Long-press on a Play tab playlist tile offers **Open** (its page).
+
+A **book** page also shows how far in it is ("2 h 10 min left · 34 %", Finished, Not
+started: from the household's recent list), **Speed** (the book's remembered long-form
+speed, the same key Now playing uses) and **Mark finished** (the web's mark-watched for
+each part). An album or playlist page offers **Add to Your playlists** (the Play tab's
+tiles and the widget picker's list). A level of 40 rows or more gets an **A–Z** strip, letters in A–Z order whatever order the level comes in (a library may list by date added). A playlist is read through the list catalog (`a:0|<id>`), as the car reads it.
+Search adds an author's books (Plex finds "Boethius" the author, not the book) to the top
+of Books. There is no Favourites row: the household's favourites list is empty.
+
+| Payload op | Answers | Endpoint |
+|---|---|---|
+| `lookup` `{query}` | `{groups:[{key, title, items, more}], offline}` | `GET /api/v1/content/query/search` |
+| `library` | `{items:[{id, title, kind}], offline}` | `GET /api/v1/list/plex`, `GET /api/v1/queue/catalog/audio-sources` |
+| `browse` `{parent}` | a level, as the car's | `GET /api/v1/list/…`, the audio-lists catalog |
+| `parents` `{id}` | `{parents:{album?, artist?}}` | `GET /api/v1/info/<id>` |
+| `progress` `{ids}` | `{progress:{id:{playhead, duration, finished}}}` | `GET /api/v1/media/household/recent` |
+| `mark-finished` `{ids, finished}` | `{marked}` | `POST /api/v1/media/household/watched` |
+
+Telemetry: `browse.view` (kind), `search.query` (length, result count, offline: never
+the words), `browse.action` (verb, kind), and a tag on every row and button.
+
 ### Downloads: Keep on this phone
 
 A whole collection (a book, an album, a playlist, a household list) can be kept on the

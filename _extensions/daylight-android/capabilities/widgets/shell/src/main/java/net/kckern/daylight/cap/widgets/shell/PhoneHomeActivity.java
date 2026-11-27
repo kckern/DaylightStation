@@ -560,6 +560,28 @@ public class PhoneHomeActivity extends Activity {
 
     private static final String PLAY = "net.kckern.daylight.cap.mediaservice.shell.PlayActivity";
 
+    private static final String BROWSE = "net.kckern.daylight.cap.mediaservice.shell.BrowseActivity";
+
+    /** The search field at the top of the Play tab: a fixed-height box that opens the search. */
+    private void addLookup() {
+        TextView box = t.text(this, "Search books, albums, artists, playlists", Type.BODY, t.inkMuted, false);
+        box.setGravity(Gravity.CENTER_VERTICAL);
+        box.setPadding(dp(16), 0, dp(16), 0);
+        box.setBackground(t.pressable(t.round(t.surface, Radius.LARGE)));
+        box.setOnClickListener(v -> openBrowse("search"));
+        box.setContentDescription("Search");
+        net.kckern.daylight.shellkit.UiTelemetry.tag(box, "play.search");
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(52));
+        lp.topMargin = dp(4);
+        lp.bottomMargin = dp(8);
+        column.addView(box, lp);
+    }
+
+    private void openBrowse(String mode) {
+        try { startActivity(new Intent().setClassName(this, BROWSE).putExtra("mode", mode)); }
+        catch (RuntimeException absent) { toast("Not available in this build"); }
+    }
+
     private void addPlay() {
         // The player screen is media-service's (installed code in another capability), so
         // it is named, and offered only in a build that has it.
@@ -568,6 +590,7 @@ public class PhoneHomeActivity extends Activity {
         // Not a library to browse: what this phone is in the middle of, and the playlists
         // already chosen (Drive, widgets, Driving Radio), each one tap from playing here.
         if (player) {
+            addLookup();
             LinearLayout continuing = new LinearLayout(this);
             continuing.setOrientation(LinearLayout.VERTICAL);
             column.addView(continuing);
@@ -579,6 +602,7 @@ public class PhoneHomeActivity extends Activity {
                 section("Your playlists");
                 playlistTiles(mine);
             }
+            row("Browse library", "Audiobooks, music, playlists, talks", "play", "›", () -> openBrowse("library"));
             section("Player");
             row("Now playing", "Control this phone or a screen", "play", "›", () -> startActivity(nowPlaying));
         }
@@ -739,7 +763,13 @@ public class PhoneHomeActivity extends Activity {
 
     /** Long-press on something playable: Keep it on this phone, or see it there when it is kept. */
     private boolean keepMenu(View anchor, String mediaId, String contentId) {
+        return keepMenu(anchor, mediaId, contentId, null, null, null);
+    }
+
+    /** Keep, or its state; and Open (the collection's page) when {@code openKind} is given. */
+    private boolean keepMenu(View anchor, String mediaId, String contentId, String openKind, String title, String art) {
         android.widget.PopupMenu menu = new android.widget.PopupMenu(this, anchor);
+        if (openKind != null && mediaId.startsWith("c:")) menu.getMenu().add(0, 3, 0, "Open");
         JSONObject kept = null;
         for (JSONObject k : net.kckern.daylight.shellkit.KeptIndex.read(getFilesDir())) {
             if (contentId.equals(k.optString("contentId"))) kept = k;
@@ -749,6 +779,14 @@ public class PhoneHomeActivity extends Activity {
         if (kept == null) menu.getMenu().add(0, 1, 0, "Keep on this phone");
         else menu.getMenu().add(0, 2, 0, net.kckern.daylight.shellkit.KeptIndex.describe(kept) + " ›");
         menu.setOnMenuItemClickListener(item -> {
+            if (item.getItemId() == 3) {
+                net.kckern.daylight.shellkit.UiTelemetry.event("Browse", "browse.open_from_tile", new JSONObject());
+                try {
+                    startActivity(new Intent().setClassName(this, BROWSE).putExtra("mode", "level").putExtra("parent", mediaId)
+                            .putExtra("kind", openKind).putExtra("title", title == null ? "" : title).putExtra("art", art == null ? "" : art));
+                } catch (RuntimeException absent) { toast("Not available in this build"); }
+                return true;
+            }
             net.kckern.daylight.shellkit.UiTelemetry.event("Downloads", item.getItemId() == 1 ? "keep.tap" : "keep.screen", new JSONObject());
             openDownloads(item.getItemId() == 1 ? mediaId : null);
             return true;
@@ -909,7 +947,7 @@ public class PhoneHomeActivity extends Activity {
             net.kckern.daylight.shellkit.UiTelemetry.tag(tile, "play.playlist");
             String id = p.id;
             tile.setOnClickListener(v -> playHere("c:" + id));
-            tile.setOnLongClickListener(v -> keepMenu(tile, "c:" + id, id));
+            tile.setOnLongClickListener(v -> keepMenu(tile, "c:" + id, id, "playlist", p.title, p.art));
             LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(0, -2, 1);
             if (pair.getChildCount() < 2) tp.setMarginEnd(dp(6));
             pair.addView(tile, tp);

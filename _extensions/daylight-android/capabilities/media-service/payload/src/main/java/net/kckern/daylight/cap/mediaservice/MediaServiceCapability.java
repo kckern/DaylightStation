@@ -46,6 +46,7 @@ public final class MediaServiceCapability implements Capability {
     static final String PORT = "media";
     static final String WORKER = "Daylight-media";
     private static final String PLAY_ACTIVITY = "net.kckern.daylight.cap.mediaservice.shell.PlayActivity";
+    private static final String BROWSE_ACTIVITY = "net.kckern.daylight.cap.mediaservice.shell.BrowseActivity";
     private static final String NOW_PLAYING_ACTIVITY = "net.kckern.daylight.cap.mediaservice.shell.NowPlayingActivity";
     private static final String ROOTS = "media.roots";
     /** Whether this device takes "Play on" from the household's web (the phone: long-polls the backend). */
@@ -73,6 +74,8 @@ public final class MediaServiceCapability implements Capability {
         void play(String mediaId);
         /** Opens the player screen on a target: "local", a screen's device id, or "" for the last one used. */
         default void nowPlaying(String target) { }
+        /** Opens a page of the phone's library: a container media id, its kind and title. */
+        default void browse(String mediaId, String kind, String title) { }
     }
 
     /** An answer for the port and for a route: the body, and the status a route gives it. */
@@ -189,6 +192,29 @@ public final class MediaServiceCapability implements Capability {
                     Launcher l = launcher();
                     if (l == null) return LinkEffect.toast("Not available on this device");
                     l.nowPlaying(target);
+                    return LinkEffect.none();
+                }
+                // media/<kind>/<content id>: the same as media/open?kind=&id= (spec's form).
+                java.util.regex.Matcher alias = java.util.regex.Pattern.compile("(book|album|artist|playlist)/(.+)").matcher(arg == null ? "" : arg);
+                if (alias.matches()) {
+                    java.util.Map<String, String> q = new java.util.HashMap<>(query);
+                    q.put("kind", alias.group(1));
+                    q.put("id", alias.group(2));
+                    query = q;
+                    arg = "open";
+                }
+                if ("open".equals(arg)) {
+                    // A page of the phone's library (media/open?kind=album&id=plex:123): a book,
+                    // album, artist or playlist. The id is held to the content-id rule.
+                    String kind = query.get("kind") == null ? "" : query.get("kind");
+                    String cid = query.get("id");
+                    if (!kind.matches("book|album|artist|playlist") || !ContentId.valid(cid)) {
+                        throw new IllegalArgumentException("expected media/open?kind=<book|album|artist|playlist>&id=<content id>");
+                    }
+                    Launcher l = launcher();
+                    if (l == null) return LinkEffect.toast("Not available on this device");
+                    String title = query.get("title") == null ? "" : query.get("title");
+                    l.browse(MediaId.container(cid), kind, title.length() > 120 ? title.substring(0, 120) : title);
                     return LinkEffect.none();
                 }
                 String id = query.get("id");
@@ -352,6 +378,31 @@ public final class MediaServiceCapability implements Capability {
             if ("event".equals(op)) return event(request);
             if ("action".equals(op)) return action(request);
             if ("search".equals(op)) return search(request);
+            if ("lookup".equals(op)) return lookup(request);
+            if ("library".equals(op)) return library();
+            if ("parents".equals(op)) {
+                String cid = Json.str(request, "id");
+                if (!ContentId.valid(cid)) return failure(400, "bad_request");
+                return new Outcome(200, Replies.ok().put("parents", Lookup.parents(api.info(cid))));
+            }
+            if ("progress".equals(op)) {
+                JSONArray ids = request.optJSONArray("ids");
+                java.util.Set<String> want = new java.util.HashSet<>();
+                for (int i = 0; ids != null && i < ids.length() && i < 500; i++) if (ContentId.valid(ids.optString(i))) want.add(ids.optString(i));
+                return new Outcome(200, Replies.ok().put("progress", Lookup.progress(api.recent(200), want)));
+            }
+            if ("mark-finished".equals(op)) {
+                JSONArray ids = request.optJSONArray("ids");
+                boolean finished = request.optBoolean("finished", true);
+                int done = 0;
+                for (int i = 0; ids != null && i < ids.length() && i < 200; i++) {
+                    String cid = ids.optString(i);
+                    if (!ContentId.valid(cid)) continue;
+                    api.markWatched(cid, finished);
+                    done++;
+                }
+                return new Outcome(200, Replies.ok().put("marked", done));
+            }
             if ("keep".equals(op)) return keep(request);
             if ("kept".equals(op)) return keptList();
             if ("kept-finished".equals(op)) {
@@ -1025,6 +1076,51 @@ public final class MediaServiceCapability implements Capability {
      * "best": what "play <query>" plays. The query is never noted or logged; it is kept
      * for a minute as the key of the answer in memory, as a browse level is.
      */
+    /**
+     * The phone's search (ops:docs/superpowers/specs/2026-11-26-phone-lookup-and-browse.md):
+     * results grouped Books, Albums, Artists, Playlists, Tracks, audio only. With no home,
+     * the collections kept on this phone that match, as {offline: true}.
+     */
+    private Outcome lookup(JSONObject request) throws Exception {
+        Object raw = request.opt("query");
+        if (raw != null && raw != JSONObject.NULL && !(raw instanceof String)) throw new IllegalArgumentException("query must be text");
+        final String text = BrowseTree.searchText(raw instanceof String ? (String) raw : "");
+        if (text.isEmpty()) return new Outcome(200, Replies.ok().put("groups", new JSONArray()).put("offline", false));
+        JSONObject body;
+        try {
+            JSONObject found = api.search(text, 60);
+            body = Lookup.groups(found, backend, 5);
+            health.answered();
+            // An author found by name shows their books too (at most two authors, eight books each).
+            for (String[] a : Lookup.authors(found, 2)) {
+                try { Lookup.prependBooks(body, Lookup.booksOf(api.list(a[0], 8, 0), a[1], backend, 8)); }
+                catch (Exception oneAuthor) { /* the author row still leads to them */ }
+            }
+        } catch (IllegalArgumentException bad) {
+            throw bad;
+        } catch (Exception unreachable) {
+            health.failed(clock.getAsLong());
+            body = Lookup.offline(kept().list(), text);
+        }
+        JSONObject out = Replies.ok();
+        for (java.util.Iterator<String> k = body.keys(); k.hasNext(); ) { String key = k.next(); out.put(key, body.get(key)); }
+        return new Outcome(200, out);
+    }
+
+    /** The library's first level: the audio Plex libraries, then the household's list sources; offline, what is kept. */
+    private Outcome library() throws Exception {
+        try {
+            JSONArray items = Lookup.libraryRoot(api.libraries(), api.audioSources());
+            health.answered();
+            return new Outcome(200, Replies.ok().put("items", items).put("offline", false));
+        } catch (Exception unreachable) {
+            health.failed(clock.getAsLong());
+            JSONArray items = new JSONArray();
+            for (MediaNode n : BrowseTree.keptNodes(kept().list(), 200, null)) items.put(n.toJson().put("kind", "kept"));
+            return new Outcome(200, Replies.ok().put("items", items).put("offline", true));
+        }
+    }
+
     private Outcome search(JSONObject request) throws Exception {
         Object raw = request.opt("query");
         if (raw != null && raw != JSONObject.NULL && !(raw instanceof String)) throw new IllegalArgumentException("query must be text");
@@ -1148,6 +1244,12 @@ public final class MediaServiceCapability implements Capability {
                     // activity is on screen, which is what lets a service context start one.
                     c.startActivity(new Intent().setClassName(c, PLAY_ACTIVITY).putExtra("id", mediaId)
                             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                }
+
+                @Override public void browse(String mediaId, String kind, String title) {
+                    Context c = (Context) context;
+                    c.startActivity(new Intent().setClassName(c, BROWSE_ACTIVITY).putExtra("parent", mediaId)
+                            .putExtra("kind", kind).putExtra("title", title).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
                 }
 
                 @Override public void nowPlaying(String target) {

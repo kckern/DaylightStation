@@ -48,6 +48,32 @@ final class PayloadMedia {
         return port.call(request.toString(), waitMs);
     }
 
+    /** The phone's search: results grouped by kind, audio only; offline, what is kept. */
+    String lookup(String query, long waitMs) throws Exception {
+        return port.call(new JSONObject().put("op", "lookup").put("query", query == null ? "" : query).toString(), waitMs);
+    }
+
+    /** A track's album and artist as library pages: {parents:{album?, artist?}}. */
+    String parents(String contentId, long waitMs) throws Exception {
+        return port.call(new JSONObject().put("op", "parents").put("id", contentId).toString(), waitMs);
+    }
+
+    /** The household's progress for these items: {progress:{contentId:{playhead, duration, finished}}}. */
+    String progress(java.util.List<String> contentIds, long waitMs) throws Exception {
+        return port.call(new JSONObject().put("op", "progress").put("ids", new org.json.JSONArray(contentIds)).toString(), waitMs);
+    }
+
+    /** Marks these items finished (or not) for the household. */
+    String markFinished(java.util.List<String> contentIds, boolean finished, long waitMs) throws Exception {
+        return port.call(new JSONObject().put("op", "mark-finished").put("ids", new org.json.JSONArray(contentIds))
+                .put("finished", finished).toString(), waitMs);
+    }
+
+    /** The library's first level: the audio libraries and the household's list sources. */
+    String library(long waitMs) throws Exception {
+        return port.call(new JSONObject().put("op", "library").toString(), waitMs);
+    }
+
     /** A car's voice search. The query goes to the payload as it came; the payload cuts and cleans it. */
     String search(String query, long waitMs) throws Exception {
         return port.call(new JSONObject().put("op", "search").put("query", query == null ? "" : query).toString(), waitMs);

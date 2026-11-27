@@ -57,9 +57,14 @@ final class BackendMediaApi implements MediaApi {
      * path. No mediaType or capability filter is sent: the route's capability filter
      * would drop playlists and albums, and mediaType is handed to the adapters, not
      * applied to the merged result. What comes back is filtered by BrowseTree.fromSearch.
+     * Only Plex is asked (source=plex): unfiltered, the route waits for every source the
+     * household has (photos, files, sing-along, Audiobookshelf), 8 s on the real phone
+     * against 0.4 s for Plex alone, and none of the others is audio this player lists
+     * (Audiobookshelf mirrors the Plex audiobook folders; the list source finds nothing
+     * Plex does not).
      */
     @Override public JSONObject search(String text, int take) throws Exception {
-        return get("search", "/api/v1/content/query/search?text=" + URLEncoder.encode(text, "UTF-8") + "&take=" + take);
+        return get("search", "/api/v1/content/query/search?text=" + URLEncoder.encode(text, "UTF-8") + "&take=" + take + "&source=plex");
     }
 
     @Override public JSONObject log(JSONObject body) throws Exception {
@@ -96,6 +101,14 @@ final class BackendMediaApi implements MediaApi {
             throw new Refused(route, 502);
         }
     }
+
+    @Override public void markWatched(String contentId, boolean watched) throws Exception {
+        Http.Reply r = http.postJson(backend.url("/api/v1/media/household/watched"),
+                new JSONObject().put("contentId", contentId).put("watched", watched).toString());
+        if (!r.ok()) throw new Refused("watched", r.status);
+    }
+
+    @Override public JSONObject libraries() throws Exception { return get("libraries", "/api/v1/list/plex?take=60"); }
 
     private JSONObject get(String route, String path) throws Exception {
         Http.Reply r = http.get(backend.url(path));

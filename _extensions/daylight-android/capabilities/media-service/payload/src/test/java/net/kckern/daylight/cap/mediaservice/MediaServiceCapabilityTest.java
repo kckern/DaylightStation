@@ -165,6 +165,32 @@ public class MediaServiceCapabilityTest {
         other.stop();
     }
 
+    /** A library page by link: media/open?kind=&id= and its alias media/<kind>/<id>; anything else is refused. */
+    @Test public void anOpenLinkOpensALibraryPage() throws Exception {
+        List<String> opened = new ArrayList<>();
+        MediaServiceCapability other = new MediaServiceCapability(api, () -> now, new MediaServiceCapability.Launcher() {
+            @Override public void play(String mediaId) { fail("not a play"); }
+            @Override public void browse(String mediaId, String kind, String title) { opened.add(kind + " " + mediaId); }
+        });
+        net.kckern.daylight.core.CoreRuntime second = TestCore.create(tmp.newFolder());
+        second.add(other);
+        second.prepare(new JSONObject());
+        second.settings().set(Backend.BASE_URL, "https://kiosk.example");
+        LinkHandler link = null;
+        for (LinkHandler h : second.services().all(LinkHandler.class)) if ("media".equals(h.kind())) link = h;
+        java.util.Map<String, String> q = new java.util.HashMap<>();
+        q.put("kind", "playlist");
+        q.put("id", "plex:758161");
+        link.handle("open", q);
+        link.handle("album/plex:731396", Collections.<String, String>emptyMap());
+        assertEquals(Arrays.asList("playlist c:plex:758161", "album c:plex:731396"), opened);
+        for (String bad : new String[] { "movie/plex:1", "album/https://evil.example", "open" }) {
+            try { link.handle(bad, Collections.<String, String>emptyMap()); fail("accepted " + bad); }
+            catch (IllegalArgumentException expected) { }
+        }
+        other.stop();
+    }
+
     /** The screen ops reach ScreenRemote; a refused command kind is a 400, not a send. */
     @Test public void theScreenOpsAnswerThroughThePort() throws Exception {
         List<String> sent = new ArrayList<>();

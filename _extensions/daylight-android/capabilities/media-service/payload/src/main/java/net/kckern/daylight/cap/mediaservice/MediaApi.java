@@ -39,4 +39,8 @@ interface MediaApi {
     default JSONObject chapters(String contentId) throws Exception { return null; }
     /** GET /api/v1/info/<source>/<id>: an item's details (a track's albumId is in its metadata). */
     default JSONObject info(String contentId) throws Exception { return null; }
+    /** The Plex libraries (the list endpoint's top level): the library browser's first level. */
+    default JSONObject libraries() throws Exception { return null; }
+    /** Marks an item finished (or not) for the household: the web's "mark watched". */
+    default void markWatched(String contentId, boolean watched) throws Exception { }
 }

@@ -132,6 +132,11 @@ public final class DrivingRadioSettings {
         return prefs.getAll();
     }
 
+    /** Adds a playlist to Your playlists (the same as the widget picker's staging). */
+    public void stage(String id, String title, boolean shuffle) {
+        prefs.edit().putString(STAGED + id, title).putBoolean(SHUFFLE + id, shuffle).apply();
+    }
+
     public boolean isStaged(String id) {
         return !id.isEmpty() && prefs.contains(STAGED + id);
     }
