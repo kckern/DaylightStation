@@ -47,7 +47,10 @@ paradigm (content IDs, formats, Playable Contract), see
 #### `GET /api/v1/play/:source/*`
 Resolves a content ID to a renderable `PlayableItem`. The `*` portion is the
 `localId` (may contain slashes). Supports optional query params: `shuffle`,
-`shader`, `volume`, and format-specific options.
+`shader`, `volume`, and format-specific options. `shuffle` is ignored for an
+ordered work (a book or talk series: `play_on_demand.library_kinds` books / talks,
+the same rule as the queue), so Play with shuffle on starts where the listener is,
+never on a random part (`play.shuffle.ignored_ordered_work`).
 
 **Response (200):** `PlayableItem` — see §9.1.
 
@@ -474,6 +477,8 @@ answers **501**.
 | Play ledger | `POST /api/v1/play/log` with a device, on each playback **start** | `history/media-plays/<local YYYY-MM-DD>.yml`, 90-day retention |
 | Favourites | `POST/DELETE /household/favourites` | `media/favourites.yml` (`items: [...]`) |
 | Removed ids | `POST/DELETE /household/removed`, `POST/DELETE /household/continue/hide` (the phone) | `media/removed.yml` (`items: {<id>: {removedAt}}`) |
+| Listened time | `POST /api/v1/play/log` (every player) | `listenedSec`, `listenRun`, `listenLegacy` on the progress record |
+| Continue review decisions | `POST /household/continue/review` | `media/continue-review.yml` (`items: {<id>: {decision: keep\|clear, decidedAt}}`) |
 | What is on a screen now | `device-state:<id>` broadcasts | in memory (`DeviceLivenessService`) |
 
 **Screen identity.** `play/log` keys a spot by an explicit body `deviceId`,
@@ -580,6 +585,71 @@ are hidden.
 catalog lookup ran out of time or failed, so some display fields are missing (not "not found");
 a client may ask again shortly.
 
+**Listened time** (lookup spec §13). `play/log` folds each report into the
+item's `listenedSec`: between two consecutive reports of one session it adds
+`min(Δposition, Δwall × rate × 1.1)`, only when the position moved forward and
+the reports are at most 20 s apart (twice the 10 s report interval of the phone
+and the web player). Seeks add next to nothing; a pause, a seek back or a gap
+starts a new run. The session is the body's optional `sessionId`, else the
+spot device, else the request's device; the speed is the body's optional `rate`
+(the web player sends it when not 1), else 1; the time is `observedAt` when
+sent, else arrival. `listenRun` `{key, pos, at}` holds the run's last report. A
+record that already had progress when it was first measured is flagged
+`listenLegacy: true`. Other writers (marks, skips) keep the three fields. Pure
+rule: `__capabilities/playback/server/domain/services/listenedTime.mjs`.
+
+#### `GET /household/continue?limit=20`
+
+Continue listening, the one answer for the phone's Continue and carry on's long
+audio (the web's Continue). Rules in `domain/continueListening.mjs`.
+
+```json
+{ "items": [ { "contentId": "plex:900", "playContentId": "plex:902",
+    "title": "Henry VI Part 3", "byline": "William Shakespeare", "thumbnail": "…",
+    "type": "album", "kind": "books", "partTitle": "Part 2", "partIndex": 2, "partCount": 5,
+    "playhead": 900, "duration": 3000, "remainingSec": 11100, "listenedSec": 3780,
+    "lastPlayed": "2026-11-26 09:00:00", "legacy": false } ],
+  "reviewCount": 0, "minListenedMin": 5, "degraded": false }
+```
+
+- **Long audio only:** a `books` or `talks` library's item (`play_on_demand.library_kinds`),
+  an audiobook or podcast; with no library kind known, audio of 20 min or more. Music
+  and video never.
+- **Listened:** an entry counts at `continue.minListenedMin` (household media config,
+  default 5) minutes of `listenedSec` in total across the book's parts. A seek to the
+  middle never qualifies.
+- **One row per book or series:** parts of a books/talks item collapse into their parent
+  (`contentId`); the row shows the most recently played unfinished part
+  (`playContentId`, `partTitle`, `partIndex` of `partCount`, its `playhead`/`duration`)
+  and `remainingSec` in the whole book (the part's rest plus the later parts). A
+  standalone item is its own row (`partTitle`/`partIndex`/`partCount` null).
+- **Leaves** when finished (every part finished, or the book id marked finished after
+  its parts were last played), removed from Continue (the book or any of its parts,
+  until played again after the removal), or unplayed for `continue.unplayedDays`
+  (default 90). Progress is read fresh on every call, so a finish or a hide shows at
+  once.
+- **Legacy entries** (progress from before listened time was measured) are not guessed:
+  undecided they stay with `legacy: true` and are counted in `reviewCount`.
+  `keep` makes one a normal entry; `clear` takes it out until it is heard for the
+  threshold again.
+
+```yaml
+# household config/media.yml
+continue:
+  minListenedMin: 5   # default
+  unplayedDays: 90    # default
+```
+
+#### Continue listening review
+
+| Route | Body | Answer |
+|---|---|---|
+| `GET /household/continue/review` | — | `{ items: [ContinueRow & {legacy: true}], degraded }` (undecided legacy rows) |
+| `POST /household/continue/review` | `{ contentId, decision: "keep" \| "clear" }` or `{ all: true, decision: "clear" }` | `{ decided: [ids], decision }` |
+
+A bad decision, a missing id, or `all` with `keep` answers 400. Log events:
+`media.continue.review` (route), `media.continue.review_decided` (service).
+
 #### `GET /household/carry-on?limit=20`
 
 ```json
@@ -598,6 +668,10 @@ a client may ask again shortly.
 - Both kinds are ranked together by recency (when the spot was left / the
   previous episode finished), then cut to `limit`.
 - Songs (`type: "track"`) are never carry on.
+- Long audio (books, talks, audiobooks, podcasts) is not judged by open spots: carry on
+  takes Continue listening's rows (`GET /household/continue`, above: listened, one row
+  per book, legacy rows included) as `reason: "unfinished"` entries keyed by the book id,
+  with `playContentId`, and leaves out a row whose part is on a screen now.
 - `nowOn`: items on a screen right now — online, with `state` in
   `playing | paused | buffering | loading | stalled` — are moved here instead
   of `items` ("Now on <screen> · Remote · Move here"). Two sources, fleet

@@ -16,4 +16,9 @@ describe('tileMeta', () => {
     expect(out).toHaveLength(2);
     expect(out.join(' ')).not.toMatch(/Stopped in/);
   });
+
+  it('a book in Continue says its part and the time left in the whole book', () => {
+    const entry = { playContentId: 'plex:902', partIndex: 2, partCount: 5, remainingSec: 11100, playhead: 900, duration: 3000 };
+    expect(tileMeta('carry-on', { id: 'plex:900' }, entry, () => null)).toBe('Part 2 of 5 · 3 h 5 min left');
+  });
 });
