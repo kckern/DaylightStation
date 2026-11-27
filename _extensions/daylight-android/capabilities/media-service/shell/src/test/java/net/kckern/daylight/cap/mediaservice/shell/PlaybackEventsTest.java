@@ -43,6 +43,7 @@ public class PlaybackEventsTest {
                     case "getCurrentPosition": return current == second ? 2400L : 0L;
                     case "getDuration": return current == second ? 2400L : 1200L;
                     case "getPlaybackState": return playbackState;
+                    case "getPlaybackParameters": return androidx.media3.common.PlaybackParameters.DEFAULT;
                     case "isPlaying": return false;
                     default: throw new AssertionError(method.getName());
                 }
