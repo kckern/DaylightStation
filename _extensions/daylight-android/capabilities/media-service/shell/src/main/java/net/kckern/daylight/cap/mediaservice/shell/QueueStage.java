@@ -126,6 +126,9 @@ final class QueueStage {
 
     View view() { return root; }
 
+    /** The list shows its first row at the top: a swipe down there may close Now playing. */
+    boolean atTop() { return !list.canScrollVertically(-1); }
+
     private int dp(int v) { return (int) (v * d); }
 
     private QueueController queue() { return remote ? null : QueueController.live(); }
@@ -330,6 +333,7 @@ final class QueueStage {
             handle.setContentDescription("Drag to reorder");
             UiTelemetry.tag(handle, "queue.drag");
             handle.setOnTouchListener((v, e) -> drag(e, position, r));
+            handle.setTag(R.id.daylight_np_own_drag, Boolean.TRUE);
             row.addView(handle, new LinearLayout.LayoutParams(dp(44), dp(48)));
         }
         ImageButton menu = new ImageButton(activity);

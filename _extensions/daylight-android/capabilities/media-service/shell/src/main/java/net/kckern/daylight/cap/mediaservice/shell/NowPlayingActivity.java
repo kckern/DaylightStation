@@ -390,7 +390,143 @@ public class NowPlayingActivity extends Activity {
     @Override public void onBackPressed() {
         if (padShown) { showPad(false); return; }
         if (stage != Stage.ART) { setStage(Stage.ART); return; }
+        note("player.dismiss", "how", "back");
         super.onBackPressed();
+    }
+
+    /** Closes Now playing (it falls to the mini player), saying how: swipe, chevron or back. */
+    private void dismiss(String how) {
+        Log.i(TAG, "now playing dismissed by " + how);
+        note("player.dismiss", "how", how);
+        finish();
+    }
+
+    // ── swipe down to close ──────────────────────────────────────────────────
+
+    private DismissGesture dismissRule;
+    private android.view.VelocityTracker dismissVelocity;
+    private float dismissX, dismissY;
+    private boolean dismissArmed, dismissDragging, dismissSeeThrough;
+
+    /**
+     * Swipe down anywhere on the screen closes it (DismissGesture has the rules): the sheet
+     * follows the finger and, let go far enough or flicked, falls to the mini player;
+     * otherwise it springs back. Seen here, before any view, so the cover, the title and
+     * empty space all take it; the view that had the touch is sent a cancel once the
+     * drag is a dismiss.
+     */
+    @Override public boolean dispatchTouchEvent(MotionEvent e) {
+        boolean mine = false;
+        try { mine = dismissTouch(e); } catch (RuntimeException never) { /* the gesture never breaks the screen */ }
+        return mine || super.dispatchTouchEvent(e);
+    }
+
+    private boolean dismissTouch(MotionEvent e) {
+        if (root == null) return false;
+        if (dismissRule == null) {
+            dismissRule = new DismissGesture(getResources().getDisplayMetrics().density,
+                    android.view.ViewConfiguration.get(this).getScaledTouchSlop());
+        }
+        int action = e.getActionMasked();
+        if (action == MotionEvent.ACTION_DOWN) {
+            dismissX = e.getRawX();
+            dismissY = e.getRawY();
+            dismissDragging = false;
+            dismissArmed = dismissMayStart((int) dismissX, (int) dismissY);
+            if (dismissVelocity != null) dismissVelocity.clear(); else dismissVelocity = android.view.VelocityTracker.obtain();
+        }
+        if (!dismissArmed) return false;
+        if (dismissVelocity != null) dismissVelocity.addMovement(e);
+        float dx = e.getRawX() - dismissX, dy = e.getRawY() - dismissY;
+        switch (action) {
+            case MotionEvent.ACTION_POINTER_DOWN:
+                if (!dismissDragging) dismissArmed = false;
+                return dismissDragging;
+            case MotionEvent.ACTION_MOVE:
+                if (!dismissDragging) {
+                    DismissGesture.Move m = dismissRule.decide(dx, dy);
+                    if (m == DismissGesture.Move.NOT_MINE) { dismissArmed = false; return false; }
+                    if (m == DismissGesture.Move.UNDECIDED) return false;
+                    dismissDragging = true;
+                    // The view that had the touch (the cover's skip, a row) lets go of it.
+                    MotionEvent cancel = MotionEvent.obtain(e);
+                    cancel.setAction(MotionEvent.ACTION_CANCEL);
+                    super.dispatchTouchEvent(cancel);
+                    cancel.recycle();
+                    root.animate().cancel();
+                    seeThrough(true);
+                }
+                root.setTranslationY(DismissGesture.offset(dy));
+                return true;
+            case MotionEvent.ACTION_UP:
+            case MotionEvent.ACTION_CANCEL: {
+                dismissArmed = false;
+                if (!dismissDragging) return false;
+                dismissDragging = false;
+                float vy = 0;
+                if (dismissVelocity != null) { dismissVelocity.computeCurrentVelocity(1000); vy = dismissVelocity.getYVelocity(); }
+                if (action == MotionEvent.ACTION_UP && dismissRule.closes(dx, dy, root.getHeight(), vy)) {
+                    tick(root);
+                    dismiss("swipe");
+                } else {
+                    root.animate().translationY(0).setDuration(200)
+                            .setInterpolator(new android.view.animation.DecelerateInterpolator())
+                            .withEndAction(() -> seeThrough(false)).start();
+                }
+                return true;
+            }
+            default:
+                return dismissDragging;
+        }
+    }
+
+    /** Whether a touch at this point may become a swipe down to close. */
+    private boolean dismissMayStart(int x, int y) {
+        boolean ownDrag = false, scrolledList = false;
+        for (View v : viewsAt(root, x, y, new ArrayList<>())) {
+            if (v.getTag(R.id.daylight_np_own_drag) != null) ownDrag = true;
+            if (v.canScrollVertically(-1)) scrolledList = true;
+        }
+        boolean listStage = stage != Stage.ART;
+        boolean atTop;
+        if (stage == Stage.LYRICS) atTop = !lyricsView.canScrollVertically(-1);
+        else if (stage == Stage.QUEUE) atTop = chapterList() ? !queueScroll.canScrollVertically(-1) : queueStage.atTop();
+        else atTop = true;
+        return DismissGesture.mayStart(listStage, atTop, ownDrag, scrolledList);
+    }
+
+    /** Every shown view under the point, outermost first. */
+    private static List<View> viewsAt(View v, int x, int y, List<View> out) {
+        if (v == null || !v.isShown()) return out;
+        android.graphics.Rect r = new android.graphics.Rect();
+        if (!v.getGlobalVisibleRect(r) || !r.contains(x, y)) return out;
+        out.add(v);
+        if (v instanceof ViewGroup) {
+            ViewGroup g = (ViewGroup) v;
+            for (int i = g.getChildCount() - 1; i >= 0; i--) {
+                int before = out.size();
+                viewsAt(g.getChildAt(i), x, y, out);
+                if (out.size() > before) break;
+            }
+        }
+        return out;
+    }
+
+    /**
+     * While the sheet is dragged the screen below shows through (Android 11+: the window
+     * turns translucent and its own background clear; the page keeps its own). Before 11 the
+     * sheet moves over the page color. Undone when it springs back.
+     */
+    private void seeThrough(boolean on) {
+        if (on == dismissSeeThrough || android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.R) return;
+        dismissSeeThrough = on;
+        try {
+            if (on) getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
+            setTranslucent(on);
+            if (!on) getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(base == null ? android.graphics.Color.BLACK : base.background));
+        } catch (RuntimeException refused) {
+            Log.i(TAG, "now playing: no see-through drag (" + refused.getClass().getSimpleName() + ")");
+        }
     }
 
     /**
@@ -2164,8 +2300,8 @@ public class NowPlayingActivity extends Activity {
         // Top: close, where it plays, and the D-pad for a screen.
         LinearLayout top = new LinearLayout(this);
         top.setGravity(Gravity.CENTER_VERTICAL);
-        close = icon(R.drawable.daylight_np_expand, "Close", 0, this::finish);
-        close.setOnClickListener(v -> finish());
+        close = icon(R.drawable.daylight_np_expand, "Close", 0, () -> dismiss("chevron"));
+        close.setOnClickListener(v -> dismiss("chevron"));
         top.addView(close, new LinearLayout.LayoutParams(dp(48), dp(48)));
         pick = new LinearLayout(this);
         pick.setGravity(Gravity.CENTER);
@@ -2196,6 +2332,7 @@ public class NowPlayingActivity extends Activity {
         player.setOrientation(LinearLayout.VERTICAL);
         col.addView(player, new LinearLayout.LayoutParams(-1, 0, 1));
         pad = buildPad();
+        pad.setTag(R.id.daylight_np_own_drag, Boolean.TRUE);
         pad.setVisibility(View.GONE);
         col.addView(pad, new LinearLayout.LayoutParams(-1, -2));
 
@@ -2296,6 +2433,7 @@ public class NowPlayingActivity extends Activity {
         });
         remaining.setContentDescription("Switch between time left and length");
         wave = new WaveformBar(this);
+        wave.setTag(R.id.daylight_np_own_drag, Boolean.TRUE);
         wave.setPadding(dp(8), dp(6), dp(8), dp(6));
         wave.setListener(new WaveformBar.Listener() {
             @Override public void onScrub(float fraction, boolean done) {

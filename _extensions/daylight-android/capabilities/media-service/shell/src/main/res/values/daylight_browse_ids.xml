@@ -5,4 +5,7 @@
     <item name="daylight_keep_bar_attempt" type="id" />
     <!-- A row's "More options for <title>" accessibility action (its long-press sheet). -->
     <item name="daylight_browse_row_menu" type="id" />
+    <!-- A Now playing control that drags by itself (seek bar, queue drag handle, D-pad):
+         a downward drag that starts on it never closes the screen (DismissGesture). -->
+    <item name="daylight_np_own_drag" type="id" />
 </resources>
