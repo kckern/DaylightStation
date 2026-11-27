@@ -141,6 +141,33 @@ export function plexPersonTags(item) {
   return out;
 }
 
+/**
+ * What a show/season/album/artist page header says beyond its title and
+ * summary (Media browse headers, 2026-11-27): content rating, genres (shows
+ * and seasons; people get theirs from plexPersonTags), background art as a
+ * proxy URL, the episode/track count (`leafCount`) and, for a show, its season
+ * count (Plex's `childCount`, which the generic `childCount` field overwrites
+ * with the leaf count). Empty values are left out.
+ */
+export function plexContainerFacts(item, proxyPath) {
+  if (!item) return {};
+  const out = {};
+  if (typeof item.contentRating === 'string' && item.contentRating.trim()) out.contentRating = item.contentRating.trim();
+  if (['show', 'season', 'movie', 'collection'].includes(item.type)) {
+    const genres = (Array.isArray(item.Genre) ? item.Genre : [])
+      .map((t) => (typeof t === 'string' ? t : t?.tag))
+      .filter((t) => typeof t === 'string' && t.trim())
+      .map((t) => t.trim());
+    if (genres.length) out.genres = genres;
+  }
+  if (typeof item.art === 'string' && item.art) out.art = `${proxyPath}${item.art}`;
+  const leaves = Number(item.leafCount);
+  if (Number.isFinite(leaves) && leaves > 0) out.leafCount = leaves;
+  const children = Number(item.childCount);
+  if (item.type === 'show' && Number.isFinite(children) && children > 0) out.seasonCount = children;
+  return out;
+}
+
 export function plexAddedAt(item) {
   const raw = item?.addedAt;
   const seconds = typeof raw === 'number' ? raw : (typeof raw === 'string' && /^\d+$/.test(raw) ? Number(raw) : NaN);
@@ -1161,6 +1188,7 @@ export class PlexAdapter {
         childCount: item.leafCount || item.childCount || 0,
         addedAt: plexAddedAt(item),
         ...plexPersonTags(item),
+        ...plexContainerFacts(item, this.proxyPath),
       };
 
       // Add parent info for containers

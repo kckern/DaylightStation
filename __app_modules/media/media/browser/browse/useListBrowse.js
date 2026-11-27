@@ -1,18 +1,16 @@
 import { useState, useEffect, useCallback } from 'react';
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
+import { isApiResourceFresh, peekApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 import { useRefreshableRead } from '@/lib/hooks/useRefreshableRead.js';
 import { mediaLog } from "../logging/mediaLog.js";
+import { buildPath } from "./browsePath.js";
 
-function buildPath(path, { modifiers = {} }) {
-  const clean = String(path).replace(/^\/|\/$/g, '');
-  const segs = [clean];
-  if (modifiers.playable) segs.push('playable');
-  if (modifiers.shuffle) segs.push('shuffle');
-  if (modifiers.recent_on_top) segs.push('recent_on_top');
-  // Opt out of the router's season-as-one-tile wrapping: browsing a season
-  // must list its episodes, not the season itself (defect 14).
-  if (modifiers.expand) segs.push('expand');
-  return `api/v1/list/${segs.join('/')}`;
+/** A first page a prefetch (browse/prefetchBrowse.js) already holds, fresh. */
+function warmPage(url, attempt) {
+  if (attempt !== 0 || !isApiResourceFresh(url)) return null;
+  const res = peekApiResource(url);
+  if (!res) return null;
+  return { url, attempt, items: Array.isArray(res.items) ? res.items : EMPTY_ITEMS, total: typeof res.total === 'number' ? res.total : 0, warm: true };
 }
 
 // A Back restore re-fetches every row the person had scrolled through in one
@@ -34,7 +32,8 @@ export function useListBrowse(path, { modifiers = {}, take = 50, initialTake = 0
   const [attempt, setAttempt] = useState(0);
   const [result, setResult] = useState(null);
   const [append, setAppend] = useState(null);
-  const page = result?.url === initialUrl && result.attempt === attempt ? result : null;
+  // A page prefetched on hover paints at once: no skeleton, no second request.
+  const page = (result?.url === initialUrl && result.attempt === attempt ? result : null) ?? warmPage(initialUrl, attempt);
   const items = page?.items ?? EMPTY_ITEMS;
   const total = page?.total ?? 0;
   const error = page?.error ?? null;
@@ -43,6 +42,12 @@ export function useListBrowse(path, { modifiers = {}, take = 50, initialTake = 0
   const hasMore = Boolean(page) && !error && items.length < total;
 
   const readFirst = useCallback(async (isCurrent, signal) => {
+    const warm = warmPage(initialUrl, attempt);
+    if (warm) {
+      setResult(warm);
+      setAppend(null);
+      return;
+    }
     setResult(null);
     setAppend(null);
     try {

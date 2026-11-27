@@ -827,6 +827,58 @@ whether the aim, learning or a one-off choice decided it), `habit.pick-recorded`
   a second to "No results": the search names the unknown source instead of
   asking every library for the literal text.
 
+## Browse pages: headers and navigation (2026-11-27)
+
+- **Every container page has a header** (`browse/BrowseHeader.jsx`): picture
+  (round for an author or artist, square for an album or book, 2:3 for a show
+  or season), the name, the parent as a linked chip with its picture (a book's
+  author, an album's artist, a season's show), one muted facts line
+  (`browseHeaderModel.headerFacts`: kind, year, content rating, up to three
+  genres, country for people, seasons/episodes, books/albums, a book's length),
+  and the summary clamped to 3 lines on the Mac and 2 on a phone, with **Show
+  more** only when it overflows. On a phone the summary sits below the buttons.
+- **The header's buttons are the info view's row 1** (`browse/ItemActionRow.jsx`,
+  shared with `DetailView`): amber **▶ Play on <dest>**, Play here, Play on…,
+  and More ⋯ from `actions/itemMenuTable.js` (Shuffle and Add to Queue live
+  there). When ▶ itself asks where ("Play on…"), the second Play on… is left out.
+  A collection plays whole and replaces the queue (`playContainerAsQueue`).
+- **The page reads its own info** (`GET /api/v1/info/:source/:id`), so a page
+  opened by its address gets the same header. Plex containers carry
+  `contentRating`, `genres` (shows, seasons), `art`, `leafCount` and a show's
+  `seasonCount` (`PlexAdapter.plexContainerFacts`).
+- **A show with one season lists its episodes under the show header** — no
+  "Season 1" tile to open first (`browse.sole-season`).
+- **An author's or artist's page lists by kind**: "Books (14)", "Albums (9)",
+  natural order within each, ten shown then "More (k)" (`TopMoreList`), empty
+  kinds left out.
+- **Breadcrumb**: Home / the trail you took, or for a page opened by its
+  address the content's own parents (`ancestorsOf`). Every part is a link (the
+  current page's goes to its top). It never names the app area you came from
+  ("Devices") and never shows a raw id — "…" until the title arrives.
+- **One tap to the parent** from the info view: the parent chip under the
+  title opens the author, artist or show page.
+- **Focus on arrival**: Back returns to the row you left, scrolled where you
+  left it; otherwise a container page puts focus on its PLAY (unless you are
+  typing).
+- **Eager, without outside effects**: resting the pointer on (or focusing) a
+  container row, a breadcrumb or the parent chip reads that page's first list
+  page and info into the shared resource cache (`browse/prefetchBrowse.js`,
+  GET only, once per 30 s per page); opening it then paints without a skeleton.
+
+Logs: `browse.header-shown`, `browse.parent-opened`, `browse.crumb-opened`,
+`browse.sole-season`, `browse.summary-expanded`, `browse.prefetched` (debug),
+`list.more-expanded` (`surface: browse-section-<kind>`).
+
+### Playback failure notices on this device
+
+- **One notice per failure.** A newer notice about the same item replaces the
+  older one, and a notice whose "Now playing X" has itself just failed is
+  withdrawn, so the tray never contradicts itself (`playback.notice-replaced`).
+- **A failed item is not tried again from a copy right behind it** in the
+  queue (Retry used to leave the failed copy queued): the session steps past
+  entries for the same item after an error, stall or refused source
+  (`playback.duplicate-skipped`).
+
 ## Visual system
 
 The app's look is one small system, defined in the Media pack

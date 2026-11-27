@@ -954,55 +954,85 @@ $amber-ink: $on-accent;
   .browse-crumb:first-child { margin-left: -8px; }
 }
 
-// Container dispatch header (Task 15, spec D6 addendum): a container tap
-// always browses (Task 14) — this pays that cost back so a browsed-into
-// album/show/playlist is one more tap from playing, not a dead end. Sits
-// directly under the breadcrumb, above the row list.
-.browse-dispatch-header {
+// Browse header (2026-11-27; jellyfin study rec 1–3): the info view's header
+// for a person, show, season, album or collection. Picture in a fixed column
+// on the left, one left edge for the title, parent link, facts, summary and
+// row one; the text measure stops near 760 px. On a phone the picture shrinks
+// beside the title and the summary moves below the buttons (2-line clamp).
+.browse-header {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 760px);
+  grid-template-areas: "art top" "art body";
+  grid-template-rows: auto 1fr;
+  column-gap: var(--mantine-spacing-lg);
+  row-gap: var(--mantine-spacing-xs);
+  align-items: start;
+
+  &:not(:has(.browse-header__art)) { grid-template-columns: minmax(0, 760px); grid-template-areas: "top" "body"; }
+
+  .browse-header__top {
+    grid-area: top;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .browse-header__art {
+    grid-area: art;
+    width: 200px;
+    aspect-ratio: 2 / 3;
+    border-radius: var(--mantine-radius-md);
+    &--round { aspect-ratio: 1; border-radius: 50%; }
+    &--square { aspect-ratio: 1; }
+  }
+
+  .browse-header__body {
+    grid-area: body;
+    display: flex;
+    flex-direction: column;
+    gap: var(--mantine-spacing-xs);
+    min-width: 0;
+  }
+
+  .browse-header__title { line-height: 1.15; }
+
+  @media (max-width: 480px) {
+    grid-template-columns: 96px minmax(0, 1fr);
+    grid-template-areas: "art top" "body body";
+    column-gap: var(--mantine-spacing-sm);
+    row-gap: var(--mantine-spacing-sm);
+
+    &:not(:has(.browse-header__art)) { grid-template-columns: minmax(0, 1fr); grid-template-areas: "top" "body"; }
+    .browse-header__art { width: 96px; }
+    .browse-header__title { font-size: 1.375rem; }
+  }
+}
+
+// The parent link (author, artist, show): a small picture and the name.
+.media-parent-chip {
+  align-self: flex-start;
+  border-radius: var(--mantine-radius-xl);
+  padding: 2px 10px 2px 2px;
+  min-height: 36px;
+  @include media-focus-ring;
+  &:hover .media-parent-chip__name { text-decoration: underline; }
+  .media-parent-chip__text { display: inline-flex; flex-direction: column; line-height: 1.1; }
+}
+
+.media-summary {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
-  background: var(--media-surface);
-  border: 1px solid var(--media-line);
-  border-radius: var(--mantine-radius-md);
+  align-items: flex-start;
+  gap: 2px;
 }
 
-.browse-dispatch-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.browse-dispatch-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  flex: 1 1 0;
-  min-width: 0;
-  min-height: 44px;
-  background: transparent;
-  border: 1px solid var(--media-line);
-  border-radius: var(--mantine-radius-sm);
-  color: var(--media-text);
-  font: inherit;
-  font-size: 0.9375rem;
+// Type sections on a person page (jellyfin study rec 4): "Books (14)".
+.browse-section-title {
+  margin-top: var(--mantine-spacing-sm);
+  font-size: 1rem;
   font-weight: 600;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: border-color var(--ds-motion-fast) var(--ds-motion-easing);
-
-  &:hover { border-color: var(--media-muted); }
-  @include media-focus-ring;
-
-  &--primary {
-    background: var(--mantine-color-amber-5);
-    color: $amber-ink;
-    border-color: transparent;
-
-    &:hover { background: var(--mantine-color-amber-4); }
-  }
+  color: var(--media-text);
 }
 
 .browse-list {
@@ -1054,6 +1084,15 @@ $amber-ink: $on-accent;
 }
 
 // ---- Detail ---------------------------------------------------------------------
+// Row 1 on a phone, wherever it sits (info view or Browse header).
+@media (max-width: 480px) {
+  .browse-header .detail-row-one {
+    flex-wrap: wrap;
+    > .mantine-Button-root { flex: 1 1 0; min-width: 0; padding-inline: var(--mantine-spacing-xs); }
+    > .detail-play-primary { flex: 1 0 100%; }
+  }
+}
+
 .detail-view {
   max-width: 680px;
 

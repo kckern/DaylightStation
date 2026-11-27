@@ -58,4 +58,46 @@ describe('LocalPlaybackOutcomes', () => {
     expect(removeDispatch).toHaveBeenCalledWith('wait-row');
     vi.useRealTimers();
   });
+
+  it('one notice per failure, naming what is actually playing now (owner report 2026-11-27)', () => {
+    // A failed book skipped to its own retry, which failed and skipped to Sonic:
+    // the first notice ("Now playing Is God a Mathematician?") is no longer true.
+    let listener = null;
+    let current = null;
+    const controller = { problems: { get: () => current, subscribe: (fn) => { listener = fn; return () => {}; } } };
+    let n = 0;
+    const recordLocal = vi.fn(() => `row-${++n}`);
+    const removeDispatch = vi.fn();
+    render(
+      <LocalSessionContext.Provider value={{ controller }}>
+        <DispatchContext.Provider value={{ recordLocal, removeDispatch }}><LocalPlaybackOutcomes /></DispatchContext.Provider>
+      </LocalSessionContext.Provider>,
+    );
+    const book = { contentId: 'plex:505134', title: 'Is God a Mathematician?' };
+    const sonic = { contentId: 'plex:775444', title: 'Sonic the Hedgehog' };
+    act(() => { current = { kind: 'skipped', reason: 'error', item: book, replacement: book }; listener(current); });
+    act(() => { current = { kind: 'skipped', reason: 'error', item: book, replacement: sonic }; listener(current); });
+    expect(removeDispatch).toHaveBeenCalledWith('row-1');
+    expect(recordLocal).toHaveBeenLastCalledWith(expect.objectContaining({ replacement: sonic }));
+    // A different item failing later keeps its own notice and leaves this one.
+    removeDispatch.mockClear();
+    act(() => { current = { kind: 'skipped', reason: 'error', item: { contentId: 'plex:9', title: 'Other' }, replacement: null }; listener(current); });
+    expect(removeDispatch).not.toHaveBeenCalledWith('row-2');
+  });
+
+  it('a notice whose replacement then fails is withdrawn: it no longer names what is playing', () => {
+    let listener = null;
+    const controller = { problems: { get: () => null, subscribe: (fn) => { listener = fn; return () => {}; } } };
+    let n = 0;
+    const recordLocal = vi.fn(() => `row-${++n}`);
+    const removeDispatch = vi.fn();
+    render(
+      <LocalSessionContext.Provider value={{ controller }}>
+        <DispatchContext.Provider value={{ recordLocal, removeDispatch }}><LocalPlaybackOutcomes /></DispatchContext.Provider>
+      </LocalSessionContext.Provider>,
+    );
+    act(() => { listener({ kind: 'skipped', reason: 'error', item: { contentId: 'plex:1', title: 'A' }, replacement: { contentId: 'plex:2', title: 'B' } }); });
+    act(() => { listener({ kind: 'skipped', reason: 'error', item: { contentId: 'plex:2', title: 'B' }, replacement: { contentId: 'plex:3', title: 'C' } }); });
+    expect(removeDispatch).toHaveBeenCalledWith('row-1');
+  });
 });

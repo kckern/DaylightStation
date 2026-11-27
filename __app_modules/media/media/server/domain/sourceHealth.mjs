@@ -29,6 +29,19 @@ export function parsePlexRatingKey(contentId) {
 }
 
 /**
+ * The library folder to rescan when Plex says a file is missing: the folder
+ * ABOVE the file's own folder. A rename outside Plex (2026-11-27: audiobook
+ * folders lost their "?" and ":") changes the file's folder too, so only its
+ * parent still exists and still contains the renamed copy. Null when the path
+ * is too shallow to name such a folder.
+ */
+export function rescanFolderFor(filePath) {
+  const parts = String(filePath ?? '').split('/').filter(Boolean);
+  if (parts.length < 4) return null;
+  return `/${parts.slice(0, -2).join('/')}`;
+}
+
+/**
  * Classify the parts of a Plex metadata item fetched with `checkFiles=1`.
  * Plex sets `exists` and `accessible` on every part when asked to check.
  * A multi-part item is only as readable as its worst part.

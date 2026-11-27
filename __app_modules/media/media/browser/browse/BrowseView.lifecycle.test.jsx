@@ -24,7 +24,7 @@ vi.mock("../household/useHouseholdResultActions.js", () => ({
   useHouseholdResultActions: () => ({ extraActions: () => [], runHousehold: () => false }),
 }));
 vi.mock("../../../../../frontend/src/lib/logging/Logger.js", () => {
-  const getLogger = () => ({ child: () => ({ info: vi.fn() }) });
+  const getLogger = () => ({ child: () => ({ info: vi.fn(), debug: vi.fn(), warn: vi.fn() }) });
   return { default: getLogger, getLogger };
 });
 vi.mock("../fleet/useFleetContext.js", () => ({ useFleetContext: () => ({ devices: [] }) }));

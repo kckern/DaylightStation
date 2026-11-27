@@ -7,10 +7,11 @@ vi.mock("../../../../../frontend/src/lib/api.mjs", () => ({
 }));
 
 import { useListBrowse } from "./useListBrowse.js";
+import { primeApiResource, resetApiResourceCache } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 
 const requestOptions = [{}, 'GET', { signal: expect.any(AbortSignal) }];
 
-beforeEach(() => { apiMock.mockReset(); });
+beforeEach(() => { apiMock.mockReset(); resetApiResourceCache(); });
 
 function deferred() {
   let resolve;
@@ -20,6 +21,14 @@ function deferred() {
 }
 
 describe('useListBrowse', () => {
+  it('a page prefetched on hover paints at once, with no skeleton and no second request', () => {
+    primeApiResource('api/v1/list/plex/457029/expand?take=50', { items: [{ id: 'plex:457030' }], total: 1 });
+    const { result } = renderHook(() => useListBrowse('plex/457029', { modifiers: { expand: true } }));
+    expect(result.current.loading).toBe(false);
+    expect(result.current.items).toEqual([{ id: 'plex:457030' }]);
+    expect(apiMock).not.toHaveBeenCalled();
+  });
+
   it('fetches on mount with take param and exposes items', async () => {
     apiMock.mockResolvedValueOnce({ items: [{ id: 'a' }, { id: 'b' }], total: 10 });
     const { result } = renderHook(() => useListBrowse('watchlist/TVApp', { take: 25 }));

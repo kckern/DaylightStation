@@ -128,9 +128,13 @@ describe('PlayerBridge recovery', () => {
     mount(controller);
     act(() => { controller.transport.play(); });
     act(() => { latestProps.onResilienceEvent({ kind: 'resilience-exhausted', reason: 'stall' }); });
+    mediaLog.playbackAdvanced.mockClear();
     // The same Player (same content id) clears after the bridge re-rendered.
     act(() => { latestProps.clear(); });
-    expect(controller.getSnapshot().queue.items[controller.getSnapshot().queue.currentIndex].queueItemId).toBe('q-1b');
+    // Since 2026-11-27 the failed item's duplicate right behind it is stepped
+    // past (it would fail the same way), so the one advance lands on Nova.
+    expect(controller.getSnapshot().queue.items[controller.getSnapshot().queue.currentIndex].queueItemId).toBe('q-2');
+    expect(mediaLog.playbackAdvanced).toHaveBeenCalledTimes(0);
   });
 
   it('re-verify 1: in the prod order the stale clear is consumed, and the next item\'s genuine end soon after still advances', () => {

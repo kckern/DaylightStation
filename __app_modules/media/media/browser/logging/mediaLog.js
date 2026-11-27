@@ -68,6 +68,8 @@ export const mediaLog = {
   playbackError:          error('playback.error'),
   playbackAdvanced:       info('playback.advanced'),
   playbackProblem:        warn('playback.problem'),
+  playbackDuplicateSkipped: info('playback.duplicate-skipped'),
+  playbackNoticeReplaced: info('playback.notice-replaced'),
   playbackRecovered:      info('playback.recovered'),
   searchIssued:           debug('search.issued'),
   searchResultChunk:      debug('search.result-chunk'),
@@ -191,6 +193,13 @@ export const mediaLog = {
   // Owner ruling 2026-11-26: the info view's More ⋯ (browse/DetailView.jsx).
   detailMoreOpened:       info('detail.more-opened'),
   detailMorePicked:       info('detail.more-picked'),
+  // Browse headers and navigation (2026-11-27).
+  parentOpened:           info('browse.parent-opened'),
+  browseHeaderShown:      info('browse.header-shown'),
+  browseSoleSeason:       info('browse.sole-season'),
+  browseSummaryExpanded:  info('browse.summary-expanded'),
+  browsePrefetched:       debug('browse.prefetched'),
+  browseCrumbOpened:      info('browse.crumb-opened'),
   remoteProblemReported:  warn('remote-problem.reported'),
   screenHandleShown:      info('screen-handle.shown'),
   screenHandleHidden:     debug('screen-handle.hidden'),

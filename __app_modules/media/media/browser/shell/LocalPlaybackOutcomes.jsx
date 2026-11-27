@@ -6,6 +6,7 @@
 import { useContext, useEffect, useRef } from 'react';
 import { LocalSessionContext } from "../session/LocalSessionContext.js";
 import { DispatchContext } from "../cast/DispatchProvider.jsx";
+import mediaLog from "../logging/mediaLog.js";
 
 export function LocalPlaybackOutcomes() {
   const controller = useContext(LocalSessionContext)?.controller ?? null;
@@ -16,6 +17,9 @@ export function LocalPlaybackOutcomes() {
   // A waiting/held notice is withdrawn when the file comes back or when a
   // skip notice replaces it; skip and failure notices stay until dismissed.
   const heldRowRef = useRef(null);
+  // One notice per failure (owner report 2026-11-27): the rows this device
+  // has up, by the item that failed and the item each said plays instead.
+  const rowsRef = useRef(new Map());
   useEffect(() => {
     if (!controller?.problems?.subscribe || !recordLocal) return undefined;
     const withdrawHeld = () => {
@@ -27,6 +31,16 @@ export function LocalPlaybackOutcomes() {
       if (seenRef.current === problem) return;
       seenRef.current = problem;
       withdrawHeld();
+      // A newer notice about the same item replaces the older one, and a notice
+      // whose "Now playing X" just failed itself is no longer true: withdraw both.
+      const failedId = problem.item?.contentId ?? null;
+      for (const [rowId, row] of rowsRef.current) {
+        if (failedId && (row.failedId === failedId || row.replacementId === failedId)) {
+          removeDispatch?.(rowId);
+          rowsRef.current.delete(rowId);
+          mediaLog.playbackNoticeReplaced({ withdrawn: rowId, contentId: failedId });
+        }
+      }
       const attemptId = recordLocal({
         kind: 'playback',
         phase: problem.kind,
@@ -36,6 +50,10 @@ export function LocalPlaybackOutcomes() {
         command: { kind: problem.target ? 'retry' : 'playNow', ...(problem.target ? { target: problem.target } : {}), item: { contentId: problem.item?.contentId, title: problem.item?.title ?? null } },
       });
       if (problem.kind === 'waiting' || problem.kind === 'library-unavailable') heldRowRef.current = attemptId ?? null;
+      else if (attemptId) {
+        rowsRef.current.set(attemptId, { failedId, replacementId: problem.replacement?.contentId ?? null });
+        if (rowsRef.current.size > 20) rowsRef.current.delete(rowsRef.current.keys().next().value);
+      }
     };
     report(controller.problems.get());
     return controller.problems.subscribe(report);

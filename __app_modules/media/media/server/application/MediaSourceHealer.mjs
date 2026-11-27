@@ -15,6 +15,11 @@
  *   3. Ask Plex again.
  *   4. Once a file has been unreadable for `alertAfterMs`, push one alert.
  *
+ * A file Plex reports MISSING usually was renamed or moved outside Plex (the
+ * NAS mount gives Plex no change events). The healer then asks Plex to rescan
+ * the folder above the file's folder, once per folder per `rescanCooldownMs`,
+ * so the library catches up on its own instead of failing every play.
+ *
  * Every rung logs `media.source.heal.step` with its result, and the episode
  * closes with `media.source.heal.resolved {resolvedBy}` — so after a few
  * incidents the logs say which rung actually fixes it.
@@ -29,6 +34,7 @@ import {
   SOURCE_STATE,
   parsePlexRatingKey,
   composeSourceUnreadablePush,
+  rescanFolderFor,
 } from "../domain/sourceHealth.mjs";
 
 const DEFAULTS = Object.freeze({
@@ -39,6 +45,8 @@ const DEFAULTS = Object.freeze({
   // A refusal the PROXY saw refreshes the file on the host even when Plex says
   // it can read it; at most once per file per this long.
   proxyRefreshCooldownMs: 60_000,
+  // A missing file's library folder is rescanned at most once per this long.
+  rescanCooldownMs: 10 * 60_000,
 });
 
 export class MediaSourceHealer {
@@ -51,6 +59,7 @@ export class MediaSourceHealer {
   #episodes = new Map();
   #inflight = new Map();
   #proxyRefreshAt = new Map();
+  #rescanAt = new Map();
 
   /**
    * @param {Object} deps
@@ -106,6 +115,8 @@ export class MediaSourceHealer {
       const refreshed = await this.#proxyRefresh(steps, ratingKey, contentId, probe);
       if (refreshed) probe = refreshed;
     }
+
+    if (probe.state === SOURCE_STATE.missing) await this.#rescanMissing(steps, ratingKey, contentId, probe);
 
     if (probe.state !== SOURCE_STATE.unreadable) {
       // `unknown` (Plex itself unreachable, say) says nothing about the file, so
@@ -165,6 +176,30 @@ export class MediaSourceHealer {
     });
     if (host.ok === false) return null;
     return this.#step(steps, ratingKey, 'plex-recheck', () => this.#probe.probe(ratingKey));
+  }
+
+  /**
+   * Plex says the file does not exist: ask it to rescan the folder above the
+   * file's folder, where a renamed copy would be. Rate-limited per folder.
+   */
+  async #rescanMissing(steps, ratingKey, contentId, probe) {
+    if (typeof this.#probe.rescanFolder !== 'function' || !probe.sectionId) return;
+    const folder = rescanFolderFor(probe.path);
+    if (!folder) return;
+    const now = this.#clock();
+    const last = this.#rescanAt.get(folder);
+    if (last !== undefined && now - last < this.#cfg.rescanCooldownMs) return;
+    if (this.#rescanAt.size >= 500) {
+      for (const [key, at] of this.#rescanAt) {
+        if (now - at >= this.#cfg.rescanCooldownMs) this.#rescanAt.delete(key);
+      }
+      if (this.#rescanAt.size >= 500) return;
+    }
+    this.#rescanAt.set(folder, now);
+    const result = await this.#step(steps, ratingKey, 'plex-rescan', () => this.#probe.rescanFolder(probe.sectionId, folder));
+    this.#logger.info?.('media.source.heal.rescan-requested', {
+      ratingKey, contentId, title: probe.title ?? null, folder, sectionId: probe.sectionId, ok: result.ok ?? null,
+    });
   }
 
   async #step(steps, ratingKey, name, fn) {

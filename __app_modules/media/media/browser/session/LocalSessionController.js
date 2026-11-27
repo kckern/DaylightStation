@@ -629,8 +629,26 @@ export function createLocalSessionController({
   // by the skipNext command (→ its captured `opOrigin`). The distinction is
   // made explicit here, at the call site, rather than inferred from whatever
   // happens to be staged ambiently when the player fires.
+  // After a failure, an entry for the SAME item right behind it fails the same
+  // way (2026-11-27: Retry queued a refused book a second time, and the
+  // second copy failed and produced a contradictory notice). Step past such
+  // entries without loading them.
+  const FAILURE_REASONS = new Set(['item-error', 'source-unavailable', 'stall-auto-advance']);
   const advance = (reason, { playerDriven = false, opOrigin } = {}) => {
-    const next = pickNextQueueItem(snap(), { reason });
+    let next = pickNextQueueItem(snap(), { reason });
+    const failed = FAILURE_REASONS.has(reason) ? snap().currentItem : null;
+    if (failed?.contentId && snap().config.repeat !== 'one') {
+      let skipped = 0;
+      const seen = new Set([failed.queueItemId]);
+      while (next && next.contentId === failed.contentId && !seen.has(next.queueItemId) && skipped < 50) {
+        seen.add(next.queueItemId);
+        store.replace(qOps.consumeExecutionVisit(snap(), next.queueItemId), { type: 'REPLACE_SNAPSHOT', __playerDriven: true });
+        skipped += 1;
+        next = pickNextQueueItem(snap(), { reason });
+      }
+      if (next && next.contentId === failed.contentId) next = null;
+      if (skipped) mediaLog.playbackDuplicateSkipped({ sessionId: snap().sessionId, contentId: failed.contentId, skipped });
+    }
     mediaLog.playbackAdvanced({
       sessionId: snap().sessionId,
       reason,

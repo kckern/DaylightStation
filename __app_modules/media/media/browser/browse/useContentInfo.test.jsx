@@ -7,8 +7,9 @@ vi.mock("../../../../../frontend/src/lib/api.mjs", () => ({
 }));
 
 import { useContentInfo } from "./useContentInfo.js";
+import { resetApiResourceCache } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 
-beforeEach(() => { apiMock.mockReset(); });
+beforeEach(() => { apiMock.mockReset(); resetApiResourceCache(); });
 
 describe('useContentInfo', () => {
   it('fetches /api/v1/info/:source/:localId and exposes info', async () => {

@@ -531,6 +531,30 @@ describe('LocalSessionController — player events', () => {
     expect(c.getSnapshot().currentItem?.contentId).toBe('b');
   });
 
+  it('a failed item is not tried again from a duplicate entry right after it (2026-11-27: Retry left the book queued twice)', () => {
+    const c = makeController();
+    c.queue.add({ contentId: 'plex:505134', format: 'audio', title: 'Is God a Mathematician?' });
+    c.queue.add({ contentId: 'plex:505134', format: 'audio', title: 'Is God a Mathematician?' });
+    c.queue.add({ contentId: 'plex:775444', format: 'video', title: 'Sonic the Hedgehog' });
+    const problems = [];
+    c.problems.subscribe((p) => { if (p) problems.push(p); });
+    c.transport.play();
+    c.onPlayerError({ message: 'Playback gave up', code: 'resilience-exhausted' });
+    expect(c.getSnapshot().currentItem?.contentId).toBe('plex:775444');
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toMatchObject({ kind: 'skipped', item: { contentId: 'plex:505134' }, replacement: { contentId: 'plex:775444', title: 'Sonic the Hedgehog' } });
+    expect(mediaLog.playbackDuplicateSkipped).toHaveBeenCalledWith(expect.objectContaining({ contentId: 'plex:505134', skipped: 1 }));
+  });
+
+  it('a failed item whose only successor is itself ends instead of failing again', () => {
+    const c = makeController();
+    c.queue.add({ contentId: 'plex:1', format: 'audio', title: 'A' });
+    c.queue.add({ contentId: 'plex:1', format: 'audio', title: 'A' });
+    c.transport.play();
+    c.onPlayerError({ message: 'boom', code: 'E_X' });
+    expect(c.getSnapshot().state).toBe('ended');
+  });
+
   it('excluded audio stalls log and advance; no-op without a current item', () => {
     const c = makeController();
     c.queue.playNow({ contentId: 'p:1', format: 'audio', title: 'A', duration: 60 });

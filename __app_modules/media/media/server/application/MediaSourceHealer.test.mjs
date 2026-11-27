@@ -205,4 +205,42 @@ describe('MediaSourceHealer', () => {
       expect((await healer.check('plex:59546', { origin: 'proxy' })).state).toBe('readable');
     });
   });
+
+  describe('missing file: the library folder is rescanned (renamed outside Plex)', () => {
+    // 2026-11-27: audiobook folders were renamed on the NAS ("?" and ":" dropped);
+    // Plex kept the old paths, answered 404, and the healer gave up on `missing`.
+    const BOOK = '/data/media/audio/audiobooks/Mario Livio/2009 Is God a Mathematician?/Is God a Mathematician?.mp3';
+    const missingProbe = () => ({
+      probe: vi.fn(async () => ({ state: 'missing', path: BOOK, sectionId: '9', title: 'Is God a Mathematician?', showTitle: 'Mario Livio' })),
+      rescanFolder: vi.fn(async () => ({ ok: true })),
+    });
+
+    it('asks Plex to rescan the folder above the missing file\'s folder', async () => {
+      const probe = missingProbe();
+      const { healer, logger } = setup({ probe });
+      const result = await healer.check('plex:505134');
+      expect(result.state).toBe('missing');
+      expect(probe.rescanFolder).toHaveBeenCalledWith('9', '/data/media/audio/audiobooks/Mario Livio');
+      expect(result.steps.map((s) => s.step)).toEqual(['plex-check', 'plex-rescan']);
+      expect(events(logger, 'media.source.heal.rescan-requested')[0]).toMatchObject({ ratingKey: '505134', folder: '/data/media/audio/audiobooks/Mario Livio' });
+    });
+
+    it('rescans one folder at most once per cooldown', async () => {
+      const probe = missingProbe();
+      const { healer, advance } = setup({ probe });
+      await healer.check('plex:505134');
+      advance(60_000);
+      await healer.check('plex:505134');
+      expect(probe.rescanFolder).toHaveBeenCalledTimes(1);
+      advance(10 * 60_000);
+      await healer.check('plex:505134');
+      expect(probe.rescanFolder).toHaveBeenCalledTimes(2);
+    });
+
+    it('does nothing without a section or a rescanner', async () => {
+      const probe = { probe: vi.fn(async () => ({ state: 'missing', path: BOOK, title: 'x' })) };
+      const { healer } = setup({ probe });
+      expect((await healer.check('plex:505134')).steps.map((s) => s.step)).toEqual(['plex-check']);
+    });
+  });
 });

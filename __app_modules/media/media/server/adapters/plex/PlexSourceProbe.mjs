@@ -49,6 +49,7 @@ export class PlexSourceProbe {
       path: part?.file ?? null,
       title: item.title ?? null,
       showTitle: item.grandparentTitle ?? item.parentTitle ?? null,
+      sectionId: item.librarySectionID != null ? String(item.librarySectionID) : null,
     };
     if (state !== SOURCE_STATE.readable) return answer;
 
@@ -60,6 +61,18 @@ export class PlexSourceProbe {
       return { ...answer, state: SOURCE_STATE.unreadable, reason: 'part-refused', partStatus };
     }
     return answer;
+  }
+
+  /**
+   * Ask Plex to rescan one folder of a library section (a partial scan). Plex
+   * answers at once and scans in the background.
+   * @param {string} sectionId
+   * @param {string} folder - a path as Plex sees it
+   */
+  async rescanFolder(sectionId, folder) {
+    if (!/^\d+$/.test(String(sectionId)) || !folder) return { ok: false, error: 'bad-request' };
+    await this.#client.request(`/library/sections/${sectionId}/refresh?path=${encodeURIComponent(folder)}`, { deadline: 15_000 });
+    return { ok: true };
   }
 
   /** HTTP status for one byte of the part, or null when it cannot be asked. */

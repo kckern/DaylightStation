@@ -15,15 +15,18 @@
 // body) are stubbed, same as SearchMode.test.jsx.
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 
 // ── useListBrowse: control items/loading directly, no network ──
 let navBack = 'Devices';
+const listPaths = [];
 let browseState = { items: [], total: 0, loading: false, error: null };
 const loadMore = vi.fn();
+let pageInfo = null;
+vi.mock("./useContentInfo.js", () => ({ useContentInfo: () => ({ info: pageInfo, loading: false, error: null, reload: () => {} }) }));
 vi.mock("./useListBrowse.js", () => ({
-  useListBrowse: () => ({ ...browseState, loadMore }),
+  useListBrowse: (path) => { listPaths.push(path); return { ...browseState, loadMore }; },
 }));
 
 // ── useSessionController: BrowseView's own leaf-row Play Now/Add (unrelated
@@ -60,7 +63,7 @@ vi.mock("../household/useHouseholdResultActions.js", () => ({
   useHouseholdResultActions: () => ({ extraActions: () => [], runHousehold: () => false }),
 }));
 vi.mock("../../../../../frontend/src/lib/logging/Logger.js", () => {
-  const getLogger = () => ({ child: () => ({ info: vi.fn() }) });
+  const getLogger = () => ({ child: () => ({ info: vi.fn(), debug: vi.fn(), warn: vi.fn() }) });
   return { default: getLogger, getLogger };
 });
 
@@ -106,22 +109,30 @@ beforeEach(() => {
   addContainerToQueueMock.mockClear();
   dispatchLeafVerbMock.mockClear();
   navBack = 'Devices';
+  pageInfo = null;
   fleetDevices = [];
   localStorage.clear(); seedHabits().recordScreen('video', []);
 });
 
 describe('BrowseView — container dispatch header (Task 15)', () => {
-  it('names the actual prior area on its breadcrumb Back control', () => {
+  it('never names the app area the person came from (owner: "Devices" in a show\'s breadcrumb)', () => {
     renderBrowse();
-    expect(screen.getByTestId('browse-crumb-back')).toHaveTextContent('Devices');
-    fireEvent.click(screen.getByTestId('browse-crumb-back'));
-    expect(navPop).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('browse-crumb-back')).toBeNull();
+    expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).not.toHaveTextContent('Devices');
   });
-  it('does not repeat Home: when Back would land on Home only the Home crumb shows', () => {
-    navBack = 'Home';
-    renderBrowse();
-    expect(screen.queryByTestId('browse-crumb-back')).not.toBeInTheDocument();
-    expect(screen.getByTestId('browse-crumb-home')).toBeInTheDocument();
+  it('a page opened by its address: the breadcrumb is the content\'s parents, every part a link, no raw id', () => {
+    pageInfo = { title: 'Season 1', type: 'season', metadata: { type: 'season', parentTitle: 'Bluey (2018)', parentRatingKey: '59493' } };
+    render(<MantineProvider><CastTargetProvider><BrowseView path="plex/59494" /></CastTargetProvider></MantineProvider>);
+    const nav = screen.getByRole('navigation', { name: 'Breadcrumb' });
+    expect(nav).toHaveTextContent('Home/Bluey (2018)/Season 1');
+    expect(nav).not.toHaveTextContent('59494');
+    fireEvent.click(screen.getByTestId('browse-crumb-parent-0'));
+    expect(navReplace).toHaveBeenCalledWith('browse', expect.objectContaining({ path: 'plex/59493', label: 'Bluey (2018)', breadcrumbs: [] }));
+    expect(screen.getByTestId('browse-crumb-current').tagName).toBe('BUTTON');
+  });
+  it('a page opened by its address shows no raw id while its title loads', () => {
+    render(<MantineProvider><CastTargetProvider><BrowseView path="plex/457029" /></CastTargetProvider></MantineProvider>);
+    expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).not.toHaveTextContent('457029');
   });
   const containerItem = { id: 'plex:663508', title: 'Tuttle Twins', type: 'show' };
 
@@ -135,13 +146,54 @@ describe('BrowseView — container dispatch header (Task 15)', () => {
     expect(screen.queryByTestId('browse-dispatch-header')).not.toBeInTheDocument();
   });
 
-  it('renders ▶ Play · 🔀 Shuffle · + Queue for a container browse view, Play naming where it plays', () => {
+  it('the header offers the info view\'s row: ▶ (naming where), Play on…, More ⋯ — Shuffle and Queue inside More', () => {
     renderBrowse({ containerItem });
     expect(screen.getByTestId('browse-dispatch-header')).toBeInTheDocument();
     // Nothing aimed or learned: the ▶ says it plays here.
     expect(screen.getByTestId('browse-dispatch-play')).toHaveTextContent('Play here');
+    expect(screen.getByTestId('browse-dispatch-play-on')).toHaveTextContent('Play on…');
+    expect(screen.queryByTestId('browse-dispatch-shuffle')).toBeNull();
+    fireEvent.click(screen.getByTestId('browse-dispatch-more'));
     expect(screen.getByTestId('browse-dispatch-shuffle')).toHaveTextContent('Shuffle');
-    expect(screen.getByTestId('browse-dispatch-queue')).toHaveTextContent('Queue');
+    expect(screen.getByTestId('browse-dispatch-queue')).toHaveTextContent('Add to Queue');
+  });
+  it('the header shows the picture, the facts and the summary from the page\'s info', () => {
+    pageInfo = {
+      title: 'Bluey (2018)', type: 'show', thumbnail: '/thumb.jpg',
+      metadata: { type: 'show', year: 2018, contentRating: 'TV-Y', genres: ['Animation'], seasonCount: 4, leafCount: 155, summary: 'A puppy.' },
+    };
+    renderBrowse({ containerItem: null, path: 'plex/59493' });
+    expect(screen.getByTestId('browse-header-art')).toHaveAttribute('src', '/thumb.jpg');
+    expect(screen.getByTestId('browse-header-facts')).toHaveTextContent('TV Show · 2018 · TV-Y · Animation · 4 seasons · 155 episodes');
+    expect(screen.getByTestId('browse-header-summary')).toHaveTextContent('A puppy.');
+  });
+  it('an author page lists its items by kind: "Books (2)"', () => {
+    pageInfo = { title: 'Mario Livio', type: 'artist', metadata: { type: 'artist', librarySectionTitle: 'Audiobooks' } };
+    browseState = { items: [
+      { id: 'plex:505133', title: 'Is God a Mathematician?', itemType: 'container', type: 'album', metadata: { type: 'album' } },
+      { id: 'plex:505135', title: 'Brilliant Blunders', itemType: 'container', type: 'album', metadata: { type: 'album' } },
+    ], total: 2, loading: false, error: null };
+    renderBrowse({ containerItem: null, path: 'plex/196996' });
+    const section = screen.getByTestId('browse-section-album');
+    expect(section).toHaveTextContent('Books (2)');
+    expect(screen.getByTestId('browse-header-facts')).toHaveTextContent('Author · 2 books');
+  });
+  it('arriving at a container page puts focus on its PLAY', async () => {
+    renderBrowse({ containerItem });
+    await waitFor(() => expect(screen.getByTestId('browse-dispatch-play')).toHaveFocus());
+  });
+  it('coming Back to a row does not move focus to PLAY', async () => {
+    browseState = { items: [{ id: 'plex:9999', title: 'Season 1', itemType: 'container', type: 'season' }, { id: 'plex:9998', title: 'Season 2', itemType: 'container', type: 'season' }], total: 2, loading: false, error: null };
+    renderBrowse({ containerItem, focusedId: 'plex:9998' });
+    await waitFor(() => expect(screen.getByTestId('browse-open-plex:9998')).toHaveFocus());
+    expect(screen.getByTestId('browse-dispatch-play')).not.toHaveFocus();
+  });
+  it('a show with one season lists that season\'s episodes under the show header', async () => {
+    pageInfo = { title: 'Bibleman', type: 'show', metadata: { type: 'show', seasonCount: 1, leafCount: 18 } };
+    browseState = { items: [{ id: 'plex:457030', title: 'Season 1', itemType: 'container', type: 'season' }], total: 1, loading: false, error: null };
+    renderBrowse({ containerItem: null, path: 'plex/457029' });
+    await waitFor(() => expect(listPaths.at(-1)).toBe('plex/457030'));
+    expect(screen.getByTestId('browse-header-title')).toHaveTextContent('Bibleman');
   });
 
   it('renders the header directly under the breadcrumb, above the row list', () => {
@@ -159,12 +211,14 @@ describe('BrowseView — container dispatch header (Task 15)', () => {
 
   it('Shuffle invokes container-as-queue dispatch with shuffle:true', () => {
     renderBrowse({ containerItem });
+    fireEvent.click(screen.getByTestId('browse-dispatch-more'));
     fireEvent.click(screen.getByTestId('browse-dispatch-shuffle'));
     expect(playContainerAsQueueMock).toHaveBeenCalledWith('plex:663508', containerItem, { shuffle: true });
   });
 
   it('Queue invokes the append (+) dispatch, never the replacing Play dispatch', () => {
     renderBrowse({ containerItem });
+    fireEvent.click(screen.getByTestId('browse-dispatch-more'));
     fireEvent.click(screen.getByTestId('browse-dispatch-queue'));
     expect(addContainerToQueueMock).toHaveBeenCalledWith('plex:663508', containerItem);
     expect(playContainerAsQueueMock).not.toHaveBeenCalled();
@@ -173,7 +227,9 @@ describe('BrowseView — container dispatch header (Task 15)', () => {
   it('every verb targets the WHOLE container id, not a row within it', () => {
     renderBrowse({ containerItem });
     fireEvent.click(screen.getByTestId('browse-dispatch-play'));
+    fireEvent.click(screen.getByTestId('browse-dispatch-more'));
     fireEvent.click(screen.getByTestId('browse-dispatch-shuffle'));
+    fireEvent.click(screen.getByTestId('browse-dispatch-more'));
     fireEvent.click(screen.getByTestId('browse-dispatch-queue'));
     for (const call of playContainerAsQueueMock.mock.calls) expect(call[0]).toBe('plex:663508');
     for (const call of addContainerToQueueMock.mock.calls) expect(call[0]).toBe('plex:663508');

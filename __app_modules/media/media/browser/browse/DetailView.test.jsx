@@ -7,6 +7,7 @@ import { resetApiResourceCache } from '../../../../../frontend/src/lib/hooks/use
 const dispatchLeafVerb = vi.fn();
 const queuePlayNow = vi.fn();
 const pop = vi.fn();
+const navPush = vi.fn();
 let backDestination = 'Browse';
 let contentState;
 const apiMock = vi.fn(() => Promise.resolve({ items: [] }));
@@ -25,7 +26,7 @@ vi.mock("../controller/useSessionController.js", () => ({
   useSessionController: () => ({ queue: { playNow: queuePlayNow, playNext: vi.fn(), addUpNext: vi.fn(), add: vi.fn() } }),
 }));
 vi.mock("../cast/CastButton.jsx", () => ({ CastButton: () => null }));
-vi.mock("../shell/NavProvider.jsx", () => ({ useNav: () => ({ pop, backDestination }) }));
+vi.mock("../shell/NavProvider.jsx", () => ({ useNav: () => ({ pop, push: navPush, backDestination }) }));
 vi.mock("../logging/mediaLog.js", () => {
   const stub = new Proxy({}, { get: (target, key) => { if (!(key in target)) target[key] = vi.fn(); return target[key]; } });
   return { default: stub, mediaLog: stub };
@@ -59,6 +60,42 @@ beforeEach(() => {
   apiMock.mockReset();
   apiMock.mockImplementation(() => Promise.resolve({ items: [] }));
   devicesOverride = null;
+});
+
+describe('DetailView parent chip (browse headers 2026-11-27)', () => {
+  it('a book track shows its author as a linked chip; one tap opens the author page', () => {
+    contentState.info = {
+      title: 'Is God a Mathematician?', type: 'track', duration: 32681,
+      metadata: { type: 'track', librarySectionTitle: 'Audiobooks', artist: 'Mario Livio', artistId: '196996', album: 'Is God a Mathematician?', albumId: '505133' },
+    };
+    render(<MantineProvider><DetailView contentId="plex:505134" /></MantineProvider>);
+    const chip = screen.getByTestId('detail-parent');
+    expect(chip).toHaveTextContent('Author');
+    expect(chip).toHaveTextContent('Mario Livio');
+    fireEvent.click(chip);
+    expect(navPush).toHaveBeenCalledWith('browse', { path: 'plex/196996', label: 'Mario Livio' });
+    expect(mediaLog.parentOpened).toHaveBeenCalledWith({ from: 'plex:505134', to: 'plex:196996', surface: 'detail' });
+  });
+  it('when ▶ itself asks where, there is no second "Play on…" beside it', () => {
+    localStorage.clear();
+    contentState.info = { title: 'Arrival', type: 'movie', metadata: { type: 'movie' } };
+    render(<MantineProvider><DetailView contentId="plex:55854" /></MantineProvider>);
+    expect(screen.getByTestId('detail-play-now')).toHaveTextContent('Play on…');
+    expect(screen.queryByTestId('detail-play-on')).toBeNull();
+  });
+  it('a film has no parent chip', () => {
+    contentState.info = { title: 'Arrival', type: 'movie', metadata: { type: 'movie' } };
+    render(<MantineProvider><DetailView contentId="plex:55854" /></MantineProvider>);
+    expect(screen.queryByTestId('detail-parent')).toBeNull();
+  });
+  it('a long summary is clamped with More, which shows it all', () => {
+    contentState.info = { title: 'Arrival', type: 'movie', metadata: { type: 'movie', summary: 'A linguist. '.repeat(40) } };
+    render(<MantineProvider><DetailView contentId="plex:55854" /></MantineProvider>);
+    const more = screen.getByTestId('detail-summary-more');
+    expect(more).toHaveTextContent('Show more');
+    fireEvent.click(more);
+    expect(more).toHaveTextContent('Show less');
+  });
 });
 
 describe('DetailView facts (FIND.8a/AC2)', () => {
