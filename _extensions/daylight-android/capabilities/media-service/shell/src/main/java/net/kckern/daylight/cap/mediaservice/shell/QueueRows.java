@@ -88,11 +88,9 @@ final class QueueRows {
         }
     }
 
-    /** "2 h 48 min left", "34 min left". */
+    /** "2 h 48 min left", "34 min left": the book from its place at 1× (TimeLeft). */
     static String left(long ms) {
-        long min = Math.max(0, ms) / 60_000;
-        if (min >= 60) return (min / 60) + " h " + (min % 60) + " min left";
-        return Math.max(1, min) + " min left";
+        return net.kckern.daylight.shellkit.TimeLeft.words(Math.max(0, ms) / 1000);
     }
 
     /** The snackbar's words for an add (spec §2). */

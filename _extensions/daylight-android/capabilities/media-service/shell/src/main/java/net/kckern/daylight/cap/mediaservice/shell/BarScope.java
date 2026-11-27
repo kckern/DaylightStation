@@ -12,7 +12,7 @@ import java.util.regex.Pattern;
  * <ul>
  *   <li><b>Chapter</b> (the default for an item with chapters): the bar spans the current
  *       chapter; the times either side are the chapter's elapsed and remaining; a line under
- *       it reads "Canto 7 of 33 · 2 h 46 left in book"; no chapter notches (it is one).</li>
+ *       it reads "Canto 7 of 33 · 2 h 46 min left in book"; no chapter notches (it is one).</li>
  *   <li><b>Whole book</b> (⋮ Progress bar, remembered): the bar spans the file; chapter notches
  *       only when every two are at least 24 dp apart, otherwise none, with a lighter band
  *       over the current chapter's span.</li>
@@ -102,18 +102,13 @@ final class BarScope {
         return n * 2 >= titles.length ? best : "Chapter";
     }
 
-    /** "Canto 7 of 33 · 2 h 46 left in book" (time left as it will be spent, at the speed). */
+    /**
+     * "Canto 7 of 33 · 2 h 46 min left in book": the book from its place at 1×, whatever the
+     * speed (TimeLeft: one rule with the book page, the author's row and Continue).
+     */
     static String line(String word, Span s, long positionMs, long fileMs, float speed) {
         if (s.chapter < 0) return "";
-        long left = (long) (Math.max(0, fileMs - positionMs) / Math.max(0.1f, speed));
-        return word + " " + (s.chapter + 1) + " of " + s.count + " · " + left(left) + " left in book";
-    }
-
-    /** "2 h 46", "46 min", "under a minute". */
-    static String left(long ms) {
-        long min = ms / 60_000;
-        if (min < 1) return "under a minute";
-        if (min < 60) return min + " min";
-        return (min / 60) + " h " + String.format(Locale.ROOT, "%02d", min % 60);
+        long left = Math.max(0, fileMs - positionMs);
+        return word + " " + (s.chapter + 1) + " of " + s.count + " · " + net.kckern.daylight.shellkit.TimeLeft.amount(left / 1000) + " left in book";
     }
 }

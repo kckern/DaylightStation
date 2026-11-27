@@ -58,12 +58,11 @@ final class RowLine {
         }
     }
 
-    /** "2 h 10 min left", "Finished", or "" for a book not started. */
+    /** "2 h 10 min left" (the whole book from its place, at 1×: TimeLeft), "Finished", or "" for a book not started. */
     static String progress(JSONObject book) {
         if (book.optBoolean("finished")) return "Finished";
         if (!book.optBoolean("started")) return "";
-        long left = Math.max(0, book.optLong("seconds") - book.optLong("playedSec"));
-        return left >= 3600 ? (left / 3600) + " h " + (left % 3600) / 60 + " min left" : Math.max(1, left / 60) + " min left";
+        return net.kckern.daylight.shellkit.TimeLeft.words(Math.max(0, book.optLong("seconds") - book.optLong("playedSec")));
     }
 
     /** "9 h 40 min" or "42 min" for long items; "3:45" for a song. */

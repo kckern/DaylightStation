@@ -1327,9 +1327,8 @@ public class PhoneHomeActivity extends Activity {
 
     /** "2 h 31 min left", "18 min left", "Under a minute left". */
     static String timeLeft(long seconds) {
-        long minutes = seconds / 60, hours = minutes / 60;
-        if (hours > 0) return hours + " h " + (minutes % 60) + " min left";
-        return minutes > 0 ? minutes + " min left" : "Under a minute left";
+        // One rule for "left" on every phone surface: the whole book from its place, at 1×.
+        return net.kckern.daylight.shellkit.TimeLeft.words(seconds);
     }
 
     /** The playlists already chosen, as cover tiles three to a row; a tap plays one here. */

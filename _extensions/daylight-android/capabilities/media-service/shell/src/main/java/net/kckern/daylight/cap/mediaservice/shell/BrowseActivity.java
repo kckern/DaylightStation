@@ -703,6 +703,11 @@ public final class BrowseActivity extends Activity {
      * Off the main thread.
      */
     private List<String> allPartIds(List<String> loaded) {
+        return allPartIds(loaded, null);
+    }
+
+    /** @param lengths filled with each part's length (seconds) as home's rows give it, when not null */
+    private List<String> allPartIds(List<String> loaded, java.util.Map<String, Long> lengths) {
         List<String> ids = new ArrayList<>(loaded);
         int pageSize = 50;
         for (int page = Math.max(1, loaded.size() / pageSize); ids.size() >= page * pageSize && page < 40; page++) {
@@ -711,20 +716,33 @@ public final class BrowseActivity extends Activity {
             catch (Exception noMore) { break; }
             int before = ids.size();
             for (int i = 0; items != null && i < items.length(); i++) {
-                String id = items.optJSONObject(i) == null ? "" : items.optJSONObject(i).optString("id");
+                JSONObject row = items.optJSONObject(i);
+                String id = row == null ? "" : row.optString("id");
                 String cid = contentIdOf(id);
                 if (id.startsWith("p:") && !cid.isEmpty() && !ids.contains(cid)) ids.add(cid);
+                if (lengths != null && id.startsWith("p:") && row.optLong("durationSec", 0) > 0) lengths.put(cid, row.optLong("durationSec"));
             }
             if (ids.size() == before) break;
         }
         return ids;
     }
 
+    /** Each loaded part's length (seconds), from its row. */
+    private java.util.Map<String, Long> partLengths() {
+        java.util.Map<String, Long> out = new java.util.HashMap<>();
+        for (JSONObject r : rows) {
+            String id = r.optString("id");
+            if (id.startsWith("p:") && r.optLong("durationSec", 0) > 0) out.put(contentIdOf(id), r.optLong("durationSec"));
+        }
+        return out;
+    }
+
     private void loadProgress() {
         final List<String> loaded = trackIds();
         if (loaded.isEmpty()) return;
+        final java.util.Map<String, Long> lengths = partLengths();
         io.execute(() -> {
-            final List<String> ids = allPartIds(loaded);
+            final List<String> ids = allPartIds(loaded, lengths);
             JSONObject p = null, reply = null;
             String reason = "";
             try { reply = new JSONObject(media.progress(ids, WAIT_MS)); p = reply.optJSONObject("progress"); }
@@ -733,14 +751,14 @@ public final class BrowseActivity extends Activity {
             String why = reason;
             main.post(() -> {
                 if (isFinishing() || progressLine == null) return;
-                progressLine.setText(progressWords(ids, got, progressUnavailable(causeOf(said, why))));
+                progressLine.setText(progressWords(ids, lengths, got, progressUnavailable(causeOf(said, why))));
             });
         });
     }
 
     /** "2 h 10 min left · 34 %", "Finished", or "Not started" from the parts' progress (seconds). */
     static String progressWords(List<String> ids, JSONObject progress) {
-        return progressWords(ids, progress, "Progress isn't available offline");
+        return progressWords(ids, null, progress, "Progress isn't available offline");
     }
 
     /** The progress line when home gave none, by why. */
@@ -752,27 +770,23 @@ public final class BrowseActivity extends Activity {
         }
     }
 
-    /** @param unavailable the line when there is no progress answer (why home did not answer) */
     static String progressWords(List<String> ids, JSONObject progress, String unavailable) {
+        return progressWords(ids, null, progress, unavailable);
+    }
+
+    /**
+     * What is left of the whole book from its place, at 1× (BookLeft, TimeLeft: one rule with
+     * the author's row, Continue and Now playing), and how far in.
+     *
+     * @param lengths     each part's length from its row (a part with no place counts whole)
+     * @param unavailable the line when there is no progress answer (why home did not answer)
+     */
+    static String progressWords(List<String> ids, java.util.Map<String, Long> lengths, JSONObject progress, String unavailable) {
         if (progress == null) return unavailable;
-        long played = 0, total = 0;
-        boolean any = false, allDone = true;
-        for (String id : ids) {
-            JSONObject p = progress.optJSONObject(id);
-            if (p == null) { allDone = false; continue; }
-            any = true;
-            long d = Math.max(0, p.optLong("duration")), at = Math.max(0, Math.min(d, p.optLong("playhead")));
-            boolean done = p.optBoolean("finished") || (d > 0 && at >= d * 0.97);
-            total += d;
-            played += done ? d : at;
-            if (!done) allDone = false;
-        }
-        if (!any) return "Not started";
-        if (allDone) return "Finished";
-        long left = Math.max(0, total - played);
-        int pct = total > 0 ? (int) Math.round(played * 100.0 / total) : 0;
-        String l = left >= 3600 ? (left / 3600) + " h " + (left % 3600) / 60 + " min left" : Math.max(1, left / 60) + " min left";
-        return l + " · " + pct + " %";
+        BookLeft b = BookLeft.of(ids, lengths, progress);
+        if (!b.started) return "Not started";
+        if (b.finished) return "Finished";
+        return net.kckern.daylight.shellkit.TimeLeft.words(b.leftSec) + " · " + b.percent + " %";
     }
 
     private SharedPreferences speeds() { return getSharedPreferences(LongFormPolicy.PREFS, MODE_PRIVATE); }

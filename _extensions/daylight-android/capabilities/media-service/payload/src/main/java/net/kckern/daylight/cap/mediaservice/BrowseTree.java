@@ -297,7 +297,10 @@ final class BrowseTree {
     static String continueLine(JSONObject row) {
         long left = row.has("remainingSec") ? row.optLong("remainingSec")
                 : Math.max(0, row.optLong("duration") - row.optLong("playhead"));
-        String leftText = left >= 3600 ? (left / 3600) + " h " + (left % 3600) / 60 + " min left" : Math.max(1, left / 60) + " min left";
+        // The phone's one form for "left" (shell-kit TimeLeft): the whole book from its place, at 1×.
+        long minutes = Math.max(0, left) / 60;
+        String leftText = minutes >= 60 ? (minutes / 60) + " h " + (minutes % 60) + " min left"
+                : minutes > 0 ? minutes + " min left" : "Under a minute left";
         int n = row.optInt("partIndex", 0), of = row.optInt("partCount", 0);
         return n > 0 && of > 1 ? "Part " + n + " of " + of + " · " + leftText : leftText;
     }

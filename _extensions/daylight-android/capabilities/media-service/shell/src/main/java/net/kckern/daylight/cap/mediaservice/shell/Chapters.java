@@ -98,7 +98,8 @@ final class Chapters {
     String line(long positionMs, float speed) {
         if (isEmpty()) return "";
         int i = indexAt(positionMs);
-        long left = (long) (Math.max(0, ends[i] - positionMs) / Math.max(0.1f, speed));
+        // At 1×, as every "left" on the phone is (TimeLeft); the speed does not change the words.
+        long left = Math.max(0, ends[i] - positionMs);
         String name = nameOf(i);
         if (name.isEmpty()) return "Chapter " + (i + 1) + " of " + count() + " · " + leftText(left) + " in chapter";
         return (i + 1) + "/" + count() + " · " + name + " · " + leftText(left);
@@ -134,10 +135,7 @@ final class Chapters {
     }
 
     static String leftText(long ms) {
-        if (ms < 60_000) return "under a minute left";
-        long min = ms / 60_000;
-        if (min < 60) return min + " min left";
-        return (min / 60) + " h " + (min % 60) + " min left";
+        return net.kckern.daylight.shellkit.TimeLeft.words(Math.max(0, ms) / 1000);
     }
 
     static String clock(long ms) {

@@ -59,8 +59,9 @@ public class BarScopeTest {
         long[] starts = new long[33], ends = new long[33];
         for (int i = 0; i < 33; i++) { starts[i] = i * 10 * M; ends[i] = (i + 1) * 10 * M; }
         BarScope.Span s = BarScope.span(330 * M, starts, ends, 64 * M, BarScope.Mode.CHAPTER);
-        assertEquals("Canto 7 of 33 · 4 h 26 left in book", BarScope.line("Canto", s, 64 * M, 330 * M, 1f));
-        assertEquals("Canto 7 of 33 · 2 h 13 left in book", BarScope.line("Canto", s, 64 * M, 330 * M, 2f));
+        assertEquals("Canto 7 of 33 · 4 h 26 min left in book", BarScope.line("Canto", s, 64 * M, 330 * M, 1f));
+        // At 1× whatever the speed: one rule for "left" (TimeLeft).
+        assertEquals("Canto 7 of 33 · 4 h 26 min left in book", BarScope.line("Canto", s, 64 * M, 330 * M, 2f));
     }
 
     @Test public void theModeIsRemembered() {
