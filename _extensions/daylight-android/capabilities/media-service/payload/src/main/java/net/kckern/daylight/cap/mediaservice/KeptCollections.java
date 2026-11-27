@@ -239,6 +239,7 @@ final class KeptCollections {
         o.put("refreshedAt", now);
         // A re-sync keeps how it was kept: automatically, and to which parts.
         if (auto(before)) markAuto(o, only(before));
+        else keepScope(before, o);
         keepMembership(before, o);
         write(new File(dir, fileName(contentId)), o.toString());
         return true;
@@ -268,6 +269,12 @@ final class KeptCollections {
         JSONArray a = collection == null ? null : collection.optJSONArray("only");
         for (int i = 0; a != null && i < a.length(); i++) if (!a.optString(i).isEmpty()) ids.add(a.optString(i));
         return ids;
+    }
+
+    /** A manual keep of some tracks ("Keep this track") stays that scope through a re-sync or a restore. */
+    private static void keepScope(JSONObject from, JSONObject to) throws Exception {
+        List<String> scope = only(from);
+        if (!scope.isEmpty()) to.put("only", new JSONArray(scope));
     }
 
     private static void markAuto(JSONObject o, List<String> scope) throws Exception {
@@ -399,6 +406,7 @@ final class KeptCollections {
                 dir.mkdirs();
                 JSONObject o = record(cid, k.optString("title"), k.optString("art", ""), tracks, k.optLong("keptAt"), k.optString("kind", ""));
                 if (auto(k)) markAuto(o, only(k));
+                else keepScope(k, o);
                 keepMembership(k, o);
                 write(new File(dir, fileName(cid)), o.toString());
                 clearQuarantine(cid);

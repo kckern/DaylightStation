@@ -76,4 +76,24 @@ public class KeepOneTrackTest {
         JSONObject again = keep(new JSONObject().put("id", "p:plex:502").put("mode", "keep").put("only", new JSONArray().put("plex:502")));
         assertEquals(2, count(again));
     }
+
+    /** The emulator, 2026-11-27: two one-track keeps, a re-sync between them, and the third keep took the whole album. */
+    @Test public void aReSyncBetweenOneTrackKeepsKeepsTheScope() throws Exception {
+        keep(new JSONObject().put("id", "p:plex:502").put("mode", "keep").put("only", new JSONArray().put("plex:502")));
+        keep(new JSONObject().put("id", "c:plex:500").put("mode", "refresh"));
+        assertEquals(java.util.Collections.singletonList("plex:502"), KeptCollections.only(cap.kept().get("plex:500")));
+        api.responses.put("info plex:501", new JSONObject().put("metadata", new JSONObject().put("albumId", "500").put("type", "track")).toString());
+        JSONObject second = keep(new JSONObject().put("id", "p:plex:501").put("mode", "keep").put("only", new JSONArray().put("plex:501")));
+        assertEquals(2, count(second));
+        keep(new JSONObject().put("id", "c:plex:500").put("mode", "refresh"));
+        assertEquals(2, KeptCollections.only(cap.kept().get("plex:500")).size());
+    }
+
+    @Test public void aRestoreFromTheShellsMirrorKeepsTheScope() throws Exception {
+        keep(new JSONObject().put("id", "p:plex:502").put("mode", "keep").put("only", new JSONArray().put("plex:502")));
+        JSONObject saved = cap.kept().get("plex:500");
+        KeptCollections fresh = new KeptCollections(tmp.newFolder("again"));
+        fresh.restore(new JSONArray().put(saved));
+        assertEquals(java.util.Collections.singletonList("plex:502"), KeptCollections.only(fresh.get("plex:500")));
+    }
 }
