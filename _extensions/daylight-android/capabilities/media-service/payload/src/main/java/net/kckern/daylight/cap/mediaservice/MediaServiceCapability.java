@@ -876,7 +876,7 @@ public final class MediaServiceCapability implements Capability {
         if (r == null) {
             try {
                 r = Resolver.resolve(mediaIds, request.optInt("startIndex", -1), request.optBoolean("explicitPosition"),
-                        api, backend, "daylight-" + core.deviceId(), request.optBoolean("shuffle"));
+                        queueCache(), backend, "daylight-" + core.deviceId(), request.optBoolean("shuffle"));
                 health.answered();
                 r = newerUnsent(r, request.optBoolean("explicitPosition"));
                 flushSoon();
@@ -893,13 +893,32 @@ public final class MediaServiceCapability implements Capability {
         JSONArray tracks = new JSONArray();
         for (Track t : r.tracks) tracks.put(t.toJson());
         try {
+            String cache = queueCache == null ? "" : queueCache.last;
             android.util.Log.i("Daylight-Media", "play answered " + (offline != null ? "from the phone" : "by home") + " in "
-                    + (android.os.SystemClock.elapsedRealtime() - began) + " ms");
+                    + (android.os.SystemClock.elapsedRealtime() - began) + " ms" + (cache.isEmpty() ? "" : ", list " + cache));
         } catch (Throwable jvmTest) { /* no android.util.Log in a JVM test */ }
         String first = mediaIds.isEmpty() ? null : mediaIds.get(0);
         if (first != null && first.startsWith("c:") && !r.tracks.isEmpty()) rememberList(first.substring(2));
         return new Outcome(200, Replies.ok().put("tracks", tracks).put("startIndex", r.startIndex)
                 .put("startPositionMs", r.startPositionMs).put("selectionResolved", r.selectionResolved));
+    }
+
+    private QueueCache queueCache;
+    private MediaApi queueCacheFor;
+    private final java.util.concurrent.ExecutorService queueRefresher = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "daylight-queue-refresh");
+        t.setDaemon(true);
+        return t;
+    });
+
+    /** Music lists' last answers, played at once while home is asked again (QueueCache). */
+    private synchronized MediaApi queueCache() {
+        if (queueCache == null || queueCacheFor != api) {
+            queueCacheFor = api;
+            queueCache = new QueueCache(api, new java.io.File(stateDir(), "queue-cache"), queueRefresher, System::currentTimeMillis);
+        }
+        queueCache.last = "";
+        return queueCache;
     }
 
     private RecentLists recentLists;
