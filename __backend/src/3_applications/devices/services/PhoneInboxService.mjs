@@ -547,6 +547,8 @@ export class PhoneInboxService {
       if (typeof it.reason === 'string' && it.reason) item.reason = it.reason.slice(0, 200);
       for (const k of ['totalBytes', 'neededBytes', 'failed']) if (it[k] !== undefined) item[k] = n(it[k]);
       if (it.finished === true) item.finished = true;
+      // Kept automatically while listening (lifecycle spec §3.10): the web says "Kept automatically".
+      if (it.auto === true) item.auto = true;
       if (Array.isArray(it.trackIds)) item.trackIds = it.trackIds.filter((t) => typeof t === 'string' && t.length <= 200).slice(0, 2000);
       clean.push(item);
     }
@@ -567,7 +569,9 @@ export class PhoneInboxService {
     if (digest === box.reportDigest[id] && !receivedChanged) return clean.length;
     box.reportDigest[id] = digest;
     if (!(await this.#save(deviceId, box))) throw new InboxStoreUnavailableError();
-    this.#logger.info?.('phone-inbox.keeps.reported', { deviceId, installId: id, items: clean.length });
+    this.#logger.info?.('phone-inbox.keeps.reported', {
+      deviceId, installId: id, items: clean.length, auto: clean.filter((c) => c.auto).length,
+    });
     return clean.length;
   }
 

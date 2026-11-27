@@ -818,7 +818,7 @@ public class NowPlayingActivity extends Activity {
         statusIsSleep = false;
         if (line.isEmpty() && !remote()) { line = SleepTimer.describeNow(); statusIsSleep = !line.isEmpty(); }
         // A kept track says where it plays from (the spec's offline mark).
-        if (line.isEmpty() && !remote() && hasItem) line = fromPhone(c.getCurrentMediaItem()) ? "Playing from this phone" : "";
+        if (line.isEmpty() && !remote() && hasItem) line = fromPhone(c.getCurrentMediaItem()) ? KeepLabels.playingFromPhone(this, c.getCurrentMediaItem().mediaId) : "";
         status.setText(line);
         // One line, always reserved; a long message shrinks to fit rather than adding a line.
         status.setVisibility(line.isEmpty() ? View.INVISIBLE : View.VISIBLE);

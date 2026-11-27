@@ -38,10 +38,23 @@ final class KeptCollections {
     }
 
     synchronized void save(String contentId, String title, String art, JSONArray tracks, long now, String kind) throws Exception {
+        save(contentId, title, art, tracks, now, kind, null);
+    }
+
+    /**
+     * Saved as a keep. {@code autoScope} non-null: kept automatically while listening
+     * (spec §3.10), holding only these track ids (a lecture window, or a book's current part
+     * on mobile data; empty for the whole collection). Null: a manual keep, which a later
+     * automatic one never turns back (MediaServiceCapability checks first).
+     */
+    synchronized void save(String contentId, String title, String art, JSONArray tracks, long now, String kind,
+                           List<String> autoScope) throws Exception {
         if (!ContentId.valid(contentId)) throw new IllegalArgumentException("not a content id");
         //noinspection ResultOfMethodCallIgnored
         dir.mkdirs();
-        write(new File(dir, fileName(contentId)), record(contentId, title, art, tracks, now, kind).toString());
+        JSONObject o = record(contentId, title, art, tracks, now, kind);
+        if (autoScope != null) markAuto(o, autoScope);
+        write(new File(dir, fileName(contentId)), o.toString());
         clearQuarantine(contentId);
         // Kept again: its old removal no longer deletes anything.
         JSONObject tombs = tombstones();
@@ -57,6 +70,8 @@ final class KeptCollections {
         if (before == null || tombstoned(contentId)) return false;
         JSONObject o = record(contentId, title, art, tracks, before.optLong("keptAt", now), kind);
         o.put("refreshedAt", now);
+        // A re-sync keeps how it was kept: automatically, and to which parts.
+        if (auto(before)) markAuto(o, only(before));
         write(new File(dir, fileName(contentId)), o.toString());
         return true;
     }
@@ -67,6 +82,22 @@ final class KeptCollections {
         if (art != null && !art.isEmpty()) o.put("art", art);
         if (kind != null && !kind.isEmpty()) o.put("kind", kind);
         return o;
+    }
+
+    /** Whether a kept record was kept automatically (spec §3.10). */
+    static boolean auto(JSONObject collection) { return collection != null && collection.optBoolean("auto", false); }
+
+    /** The track ids an automatic keep is limited to; empty for all of the collection. */
+    static List<String> only(JSONObject collection) {
+        List<String> ids = new ArrayList<>();
+        JSONArray a = collection == null ? null : collection.optJSONArray("only");
+        for (int i = 0; a != null && i < a.length(); i++) if (!a.optString(i).isEmpty()) ids.add(a.optString(i));
+        return ids;
+    }
+
+    private static void markAuto(JSONObject o, List<String> scope) throws Exception {
+        o.put("auto", true);
+        if (scope != null && !scope.isEmpty()) o.put("only", new JSONArray(scope));
     }
 
     /** A collection written again: its unreadable copy (quarantined) is no longer needed. */
@@ -188,6 +219,7 @@ final class KeptCollections {
                 //noinspection ResultOfMethodCallIgnored
                 dir.mkdirs();
                 JSONObject o = record(cid, k.optString("title"), k.optString("art", ""), tracks, k.optLong("keptAt"), k.optString("kind", ""));
+                if (auto(k)) markAuto(o, only(k));
                 write(new File(dir, fileName(cid)), o.toString());
                 clearQuarantine(cid);
                 n++;

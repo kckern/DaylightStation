@@ -275,8 +275,9 @@ export function createDeviceRouter({ fleetService, presenceService, sessionServi
   /**
    * The phone's own list of what it keeps (its truth, the whole list each time):
    * {installId, freeBytes?, limitBytes?, items:[{contentId, state, title?, done, total,
-   * bytes, totalBytes?, neededBytes?, failed?, reason?, finished?, trackIds?}]}, state one
-   * of the lifecycle states (KEEP_STATES). Device token (or the unauthenticated
+   * bytes, totalBytes?, neededBytes?, failed?, reason?, finished?, auto?, trackIds?}]}, state one
+   * of the lifecycle states (KEEP_STATES); `auto: true` marks an item the phone kept
+   * automatically while listening (books, talks, courses). Device token (or the unauthenticated
    * transition). 204; 503 when it could not be stored.
    */
   router.post('/:deviceId/keeps', asyncHandler(async (req, res) => {

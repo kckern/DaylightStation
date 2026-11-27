@@ -108,6 +108,16 @@ export function keepStatus(view, target, item) {
       : { state: 'received', line: `Received by ${name}`, kept: true };
   }
   if (!item0) return { state: 'none', line: null, kept: false };
+  const status = reportedStatus(item0, name);
+  // Kept automatically while listening (§3.10): said with the state, the phone's own label.
+  if (item0.auto === true && status.line) return { ...status, auto: true, line: `${status.line} · ${KEPT_AUTOMATICALLY}` };
+  return status;
+}
+
+/** The label the phone shows for an item it kept automatically while listening (books, talks, courses). */
+export const KEPT_AUTOMATICALLY = 'Kept automatically';
+
+function reportedStatus(item0, name) {
   const size = formatBytes(item0.bytes);
   const total = formatBytes(item0.totalBytes);
   const reason = item0.reason ? `: ${item0.reason}` : '';

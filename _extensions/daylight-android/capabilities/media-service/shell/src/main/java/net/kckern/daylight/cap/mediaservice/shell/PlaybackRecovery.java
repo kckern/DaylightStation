@@ -29,6 +29,11 @@ final class PlaybackRecovery {
     static final long[] RETRY_MS = { 2_000, 5_000, 10_000, 30_000 };
     static final String LOST = "Lost connection to home · will resume";
     static final String WONT_PLAY = "This item won't play";
+    /** A part of something kept (automatically or not) whose copy is not complete yet, with home out of reach. */
+    static final String NOT_YET = "Not on this phone yet: needs a connection";
+
+    /** Where the failed item plays from (KeepStore.where). */
+    static final int NOT_KEPT = 0, KEPT_NOT_YET = 1, ON_PHONE = 2;
 
     /** The line Now playing shows for this phone's player error; "" when none is set. */
     private static volatile String shown = "";
@@ -60,8 +65,17 @@ final class PlaybackRecovery {
      * playing (playWhenReady); a paused item is never skipped past.
      */
     Action onError(int code, int httpStatus, boolean kept, boolean playing, boolean hasNext) {
-        if (!kept && isNetwork(code, httpStatus)) {
-            shown = LOST;
+        return onError(code, httpStatus, kept ? ON_PHONE : NOT_KEPT, playing, hasNext);
+    }
+
+    /**
+     * As above, by where the item plays from. Only a copy on this phone makes an IO error the
+     * file's; a kept part still downloading streams like any other, so with home out of reach
+     * it holds (never skips past the place) and says it is not on this phone yet.
+     */
+    Action onError(int code, int httpStatus, int where, boolean playing, boolean hasNext) {
+        if (where != ON_PHONE && isNetwork(code, httpStatus)) {
+            shown = where == KEPT_NOT_YET ? NOT_YET : LOST;
             return Action.HOLD;
         }
         if (playing && hasNext && skips < MAX_SKIPS) {
@@ -97,7 +111,7 @@ final class PlaybackRecovery {
     /** The person picked another item or another list: retries start again, skips stand. */
     void moved() {
         retries = 0;
-        if (LOST.equals(shown)) shown = "";
+        if (LOST.equals(shown) || NOT_YET.equals(shown)) shown = "";
     }
 
     /** The service is going: no line is left behind for a later Now playing. */

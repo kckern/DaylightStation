@@ -127,8 +127,24 @@ public final class KeptIndex {
         }
     }
 
-    /** The state's words, exactly as every surface shows them. */
+    /** Kept automatically while listening (spec §3.10): the label every surface shows with the state. */
+    public static final String KEPT_AUTOMATICALLY = "Kept automatically";
+
+    /**
+     * The state's words, exactly as every surface shows them. An item kept automatically says
+     * so: "Kept automatically · 230 MB" when ready, "Downloading 3 of 12 · 84 MB · Kept
+     * automatically" before.
+     */
     public static String describe(JSONObject k) {
+        String words = stateWords(k);
+        if (!k.optBoolean("auto")) return words;
+        if (READY.equals(k.optString("state", ""))) {
+            return (k.optBoolean("finished") ? "Finished · " : "") + KEPT_AUTOMATICALLY + " · " + size(k.optLong("bytes"));
+        }
+        return words + " · " + KEPT_AUTOMATICALLY;
+    }
+
+    private static String stateWords(JSONObject k) {
         int done = k.optInt("done"), total = k.optInt("total"), failed = k.optInt("failed"), damaged = k.optInt("damaged");
         String reason = k.optString("reason", "");
         long bytes = k.optLong("bytes"), expected = k.optLong("expectedBytes");

@@ -1269,7 +1269,8 @@ removed.
   before a keep, and a standing line with the button on On this phone, open the app's
   settings page.
 - **Running with the app closed.** `KeepService` runs in the foreground (`dataSync`) with one
-  grouped notification, "Keeping 2 items · 3 of 26", Pause and Cancel, a tap opens On this
+  grouped notification, "Keeping 2 items · 3 of 26" ("Keeping <title> for offline" when only
+  automatic keeps are moving), Pause and Cancel, a tap opens On this
   phone. Waiting downloads are scheduled by `KeepScheduler`, this app's own job
   (`KeepJob`, id 7206) with the network and storage constraints: not Media3's
   PlatformScheduler, whose job starts a foreground service from the background, which
@@ -1277,7 +1278,8 @@ removed.
   the foreground service only where Android allows it. Every `KeepJob` starts the shell first
   and waits for the payload; without one it is rescheduled, not dropped. Its other jobs: sync
   now (7204, the payload schedules it on a web keep), a retry when a network comes (7207),
-  daily re-sync on Wi-Fi (7205), a weekly check of every kept file (7209), and screen actions
+  daily re-sync on Wi-Fi (7205), a weekly check of every kept file (7209), an automatic
+  keep's removal falling due (7212), automatic keeps waiting for Wi-Fi (7213), and screen actions
   (7300–7399, one id per action and item).
 - **Never stuck.** A failed track is tried again after 1 min, 10 min, 1 h, then daily, each
   time with a fresh URL from the payload's `keep` op in `refresh` mode; a 404 gets one fresh
@@ -1335,6 +1337,58 @@ removed.
   the phone (`positions.json`, `pending-progress.json`) are written beside and renamed, the
   oldest heard goes first past 200, never one still kept. A play sends waiting reports after
   it starts, one flush at a time, and resumes from an unsent place on this phone.
+- **Kept automatically while you listen** (spec §3.10; `AutoKeeper`, `AutoKeepRules`,
+  `KeepStore.autoKeep`). Long items are heard over many sittings, often where the
+  connection is worst, so the phone keeps what you are in the middle of:
+  - **Trigger.** A long item played on this phone for `media.autoKeepAfterMin` minutes in
+    total (default 10, counted over every sitting on the uptime clock, per book or list:
+    `ListenMeter`, prefs `daylight.autokeep`). Long means the player's own test (from a
+    household list, or at least 20 minutes) and never music: an item from a list must be at
+    least 8 minutes, one not from a list at least 20, and a collection the payload calls a
+    playlist is never kept this way. An item resumed from Continue listening (its id is in
+    the Play tab's last Continue answer) is kept at once when the phone is on Wi-Fi.
+    `media.autoKeep: false` stops it; turning it off removes nothing already kept.
+  - **What.** A book (no list): all its parts, the part playing downloaded first, then the
+    rest in play order. A talk or course series (an item from a household list): the
+    lecture playing and the next two in its album's order (a rolling window): each new
+    lecture moves the window, and the lecture it passed is released and deleted
+    (`keep.auto.removed{reason: window}`). The payload records the keep with `auto: true`
+    and, for a window, `only: [track ids]` (`KeptCollections`); a re-sync keeps the scope.
+  - **Network and room.** The keep rules: Wi-Fi unless `media.downloadOnCellular`. On
+    mobile data only the part playing is fetched, and only when mobile data is allowed; the
+    rest follows on Wi-Fi (job 7213, unmetered). Automatic keeps share a quarter of the limit
+    between them and never push out a manual keep; with no room the keep is skipped and On
+    this phone (and the book's page) say "Not kept automatically: needs room". Automatic
+    keeps have no notification of their own; while their bytes move Android still requires
+    the downloads notification, which then reads "Keeping <title> for offline".
+  - **Shown as.** "Kept automatically" in the item's state everywhere the kept index is
+    shown ("Kept automatically · 230 MB" when ready, "Downloading 3 of 12 · 84 MB · Kept
+    automatically" before): On this phone, the Play tab's On this phone, Now playing's ⋮;
+    on the book's page under its title; Now playing says "Playing from this phone · Kept
+    automatically". **Keep** on such an item makes it a manual keep (the whole collection,
+    never removed by these rules). **Remove** on one stops it being kept automatically
+    again until it is kept by hand.
+  - **Removed automatically.** A book finished (home says so after Mark finished or 97 %,
+    or its last part heard to 97 % here) goes 24 hours later, so the last chapter can still
+    be replayed; anything kept automatically and not played for 30 days goes. A series is
+    never "finished" by its window's last lecture (the window moves on; an unplayed one goes
+    after 30 days). Each removal is listed under On this phone for 7 days ("Removed:
+    finished", "Removed: not played for 30 days") with **Keep again**. Manual keeps are never
+    removed by these rules (only by `media.removeFinished`). The removals run in every sync,
+    when On this phone opens, and at the time one falls due (job 7212).
+  - **Mid-play.** The part playing streams until its copy is complete (the player's cache
+    key is `track:<content id>`, the download's too), and the next part plays from the copy.
+    Offline, a part of a kept item whose copy is not complete holds the player (it never
+    skips past the place) and Now playing says "Not on this phone yet: needs a connection"
+    (`PlaybackRecovery.KEPT_NOT_YET`; before, a kept part still downloading was skipped).
+  - **Reported.** Each automatic keep goes to home in the keeps report with `auto: true`; the
+    web's phone page and item menus say "Kept automatically". Automatic keeps are per install.
+  - **Checking it quickly.** A debuggable build reads `files/autokeep-debug.json`
+    (`{"afterMin": 1, "graceMin": 2, "staleMin": 5}`, written with `adb shell run-as`) to
+    shorten the threshold, the 24-hour grace and the 30 days; a release build ignores it.
+  - **Telemetry** (`Downloads`, no titles): `keep.auto.started{kind, minutes, trigger,
+    tracks}`, `keep.auto.ready{tracks, bytes}`, `keep.auto.skipped{reason: needs_room |
+    mobile_data | music}`, `keep.auto.removed{reason: finished | stale | window | setting}`.
 - **Location.** `media.downloadLocation: sd` keeps downloads on a removable card when the
   phone has one (takes effect on the next start; the kept items download again there). A
   card that is out makes every item Not available: nothing is reconciled, nothing deleted,
@@ -1358,6 +1412,8 @@ removed.
 | `media.removeFinished` | false | Remove a kept book a day after it is finished, with Undo for a day |
 | `media.removeFinishedAfterMin` | 1440 | Minutes from finished to removed (at least 1); shortened only to check the Undo notification |
 | `media.downloadLocation` | internal | `internal` or `sd` (a removable card, when the phone has one) |
+| `media.autoKeep` | true | Keep a book, talk or course automatically while listening (never music); off removes nothing already kept |
+| `media.autoKeepAfterMin` | 10 | Minutes of a long item heard on this phone before it is kept automatically (1–600) |
 
 ### The phone's inbox: Play on Phone and Keep from the web
 

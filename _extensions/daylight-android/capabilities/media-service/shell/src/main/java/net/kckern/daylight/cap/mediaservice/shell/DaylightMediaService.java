@@ -306,6 +306,8 @@ public class DaylightMediaService extends MediaLibraryService {
                 },
                 getSharedPreferences(LongFormPolicy.PREFS, MODE_PRIVATE), SystemClock::elapsedRealtime);
         player.addListener(longFormPolicy);
+        // Kept automatically while you listen (spec §3.10): see AutoKeeper.
+        player.addListener(new AutoKeeper(this, player));
         // Loudness levelling: each track at its Plex gain (never above full), times the
         // sleep timer's fade; the two meet here so neither undoes the other.
         player.addListener(new Player.Listener() {
@@ -348,9 +350,9 @@ public class DaylightMediaService extends MediaLibraryService {
                 if (skipDamagedKept(failed, error)) return;
                 if (failed == null || failed.localConfiguration == null
                         || !"audio".equals(failed.localConfiguration.uri.getQueryParameter("stream"))) return;
-                boolean kept;
-                try { kept = KeepStore.get(DaylightMediaService.this).isKept(failed.mediaId); }
-                catch (RuntimeException broken) { kept = false; }
+                int kept;
+                try { kept = KeepStore.get(DaylightMediaService.this).where(failed.mediaId); }
+                catch (RuntimeException broken) { kept = PlaybackRecovery.NOT_KEPT; }
                 PlaybackRecovery.Action action = recovery.onError(error.errorCode, httpStatus(error), kept,
                         player.getPlayWhenReady(), player.hasNextMediaItem());
                 Log.w(TAG, "player error " + error.getErrorCodeName() + " -> " + action

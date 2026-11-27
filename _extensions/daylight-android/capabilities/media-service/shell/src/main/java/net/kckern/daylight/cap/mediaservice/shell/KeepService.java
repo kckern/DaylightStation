@@ -53,8 +53,9 @@ public final class KeepService extends DownloadService {
 
     @Override protected Notification getForegroundNotification(List<Download> downloads, int notMetRequirements) {
         int[] p = KeepStore.get(this).progress();
-        int items = Math.max(1, p[0]);
-        String title = "Keeping " + items + (items == 1 ? " item" : " items") + (p[2] > 0 ? " · " + p[1] + " of " + p[2] : "");
+        // Android requires this notification while bytes move; for automatic keeps alone it says
+        // "Keeping The Book for offline" (spec §3.10: no notification of their own).
+        String title = KeepStore.get(this).notificationTitle();
         int flags = PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT;
         PendingIntent open = PendingIntent.getActivity(this, 0,
                 new Intent(this, DownloadsActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), flags);

@@ -95,4 +95,16 @@ public class PlaybackRecoveryTest {
         assertFalse(PlaybackRecovery.endsSleepTimer(Player.STATE_BUFFERING, false));
         assertFalse(PlaybackRecovery.endsSleepTimer(Player.STATE_READY, false));
     }
+
+    @Test public void aKeptPartNotOnThePhoneYetHoldsAndSaysSo() {
+        // Offline, a part of an automatic keep still downloading: never skipped past the place.
+        assertEquals(PlaybackRecovery.Action.HOLD, r.onError(PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED, -1,
+                PlaybackRecovery.KEPT_NOT_YET, true, true));
+        assertEquals("Not on this phone yet: needs a connection", PlaybackRecovery.statusNow());
+        r.moved();
+        assertEquals("", PlaybackRecovery.statusNow());
+        // A copy on the phone that fails is the file's problem: skipped, as before.
+        assertEquals(PlaybackRecovery.Action.SKIP, r.onError(PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED, -1,
+                PlaybackRecovery.ON_PHONE, true, true));
+    }
 }
