@@ -293,6 +293,40 @@ final class BrowseTree {
         return out;
     }
 
+    /** Long audio's line: under this in all, an item is not Continue listening (home's LONG_FORM_SECONDS). */
+    static final long LONG_FORM_SEC = 20 * 60;
+    private static final java.util.Set<String> VIDEO_TYPES = new java.util.HashSet<>(java.util.Arrays.asList(
+            "movie", "episode", "video", "clip", "show", "season"));
+    private static final java.util.Set<String> NOT_LISTENING_KINDS = new java.util.HashSet<>(java.util.Arrays.asList(
+            "music", "movies", "shows", "video"));
+
+    /**
+     * Continue listening on the phone is long audio only (2026-11-27: a film's audio and a
+     * 79-second item in a books library showed there): never video or music, never an item
+     * under 20 min in all. A book with several parts is long by its parts (its row's
+     * duration is the current part's). Home answers the same since this date; this keeps a
+     * phone right against a home that does not yet. Returns the answer with only those items.
+     */
+    static JSONObject listeningOnly(JSONObject answer) throws org.json.JSONException {
+        JSONArray items = answer == null ? null : answer.optJSONArray("items");
+        if (items == null) return answer;
+        JSONArray kept = new JSONArray();
+        for (int i = 0; i < items.length(); i++) {
+            JSONObject item = items.optJSONObject(i);
+            if (item != null && listening(item)) kept.put(item);
+        }
+        return new JSONObject(answer.toString()).put("items", kept);
+    }
+
+    static boolean listening(JSONObject item) {
+        String type = Json.str(item, "type").toLowerCase(java.util.Locale.ROOT);
+        String kind = Json.str(item, "kind").toLowerCase(java.util.Locale.ROOT);
+        if (NOT_LISTENING_KINDS.contains(kind) || VIDEO_TYPES.contains(type)) return false;
+        if (item.optInt("partCount", 0) > 1) return true;
+        long duration = item.optLong("duration", 0);
+        return duration <= 0 || duration >= LONG_FORM_SEC;
+    }
+
     /** "Part 2 of 5 · 1 h 10 min left" for a book's row, or the time left alone. */
     static String continueLine(JSONObject row) {
         long left = row.has("remainingSec") ? row.optLong("remainingSec")

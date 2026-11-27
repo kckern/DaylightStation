@@ -877,4 +877,19 @@ public class MediaServiceCapabilityTest {
         assertEquals(25 + 8, about.getInt("children"));
         assertEquals(660 * 60, about.getLong("totalSec"));
     }
+
+    /** The phone's Continue: long audio only (a film's audio and a 79-second item showed there, 2026-11-27). */
+    @Test public void continueListeningOnThePhoneIsLongAudioOnly() throws Exception {
+        api.responses.put("continue 12", continueAnswer(0,
+                "{\"contentId\":\"plex:10\",\"playContentId\":\"plex:12\",\"title\":\"Henry VI Part 3\",\"partIndex\":2,\"partCount\":5,\"playhead\":600,\"duration\":900,\"type\":\"album\",\"kind\":\"books\"}",
+                "{\"contentId\":\"plex:622178\",\"title\":\"Indiana Jones - Raiders of the Lost Ark\",\"playhead\":385,\"duration\":691,\"type\":\"track\",\"kind\":\"books\"}",
+                "{\"contentId\":\"plex:441034\",\"title\":\"Orlando Saunders\",\"playhead\":17,\"duration\":79,\"type\":\"track\",\"kind\":\"books\"}",
+                "{\"contentId\":\"plex:5\",\"title\":\"A film\",\"playhead\":1200,\"duration\":7200,\"type\":\"movie\"}",
+                "{\"contentId\":\"plex:6\",\"title\":\"A song\",\"playhead\":30,\"duration\":240,\"type\":\"track\",\"kind\":\"music\"}",
+                "{\"contentId\":\"plex:727000\",\"title\":\"A single-file book\",\"playhead\":600,\"duration\":17687,\"type\":\"track\",\"kind\":\"books\"}"));
+        org.json.JSONArray items = cap.call(new JSONObject().put("op", "continue").put("limit", 8)).body.getJSONArray("items");
+        assertEquals(2, items.length());
+        assertEquals("Henry VI Part 3", items.getJSONObject(0).getString("title"));
+        assertEquals("A single-file book", items.getJSONObject(1).getString("title"));
+    }
 }

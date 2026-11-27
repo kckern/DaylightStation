@@ -11,6 +11,8 @@
  * - A row leaves when the book is finished, when it was removed from Continue
  *   (the household removed list, §10; hiding the book hides its parts), or when
  *   nothing in it was played for `unplayedDays` (90).
+ * - A row shorter than 20 min in all (LONG_FORM_SECONDS) is not long audio: a
+ *   standalone item by its own length, a book by its parts' total when known.
  * - Legacy: progress recorded before listened time was measured is not guessed.
  *   Undecided, it stays in the answer flagged `legacy` and is listed for review;
  *   a person's decision ("keep" / "clear") settles it.
@@ -145,6 +147,13 @@ export function judgeContinueGroup({
     if (parts.every((p) => isSpotFinished(recordOf.get(p.id) ?? null))) return { status: 'out', reason: 'finished' };
   }
 
+  // Too short to continue: Continue listening is long audio (a book, a talk), never a
+  // 79-second item or an 11-minute clip filed in a books library (2026-11-27: "Orlando
+  // Saunders · 1 min left" and a film's audio on the phone). A standalone item by its
+  // own length; a book by its parts' total when they are known (unknown parts keep it).
+  const total = totalSeconds({ standalone, current, display, parts });
+  if (total !== null && total < LONG_FORM_SECONDS) return { status: 'out', reason: 'short' };
+
   // Listened, rolled up per id (the highest measure where an id lives twice).
   const listenedById = new Map();
   for (const r of groupRecords) {
@@ -190,6 +199,17 @@ export function judgeContinueGroup({
     legacy: status === 'legacy',
   };
   return { status, row };
+}
+
+/**
+ * A Continue row's whole length in seconds: a standalone item's own, a book's parts summed
+ * (null when its parts are not known, so a lookup that failed never drops a real book).
+ */
+export function totalSeconds({ standalone, current, display = {}, parts = null }) {
+  if (standalone) return Number(current?.duration) || Number(display?.duration) || 0;
+  if (!Array.isArray(parts) || !parts.length) return null;
+  const sum = parts.reduce((a, p) => a + (Number(p?.duration) || 0), 0);
+  return sum > 0 ? sum : null;
 }
 
 /** A review decision, validated. */

@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest';
 import {
-  continueCandidates, continueSettings, isLongFormAudio, judgeContinueGroup, isLegacyRecord,
+  continueCandidates, continueSettings, isLongFormAudio, judgeContinueGroup, isLegacyRecord, totalSeconds,
 } from './continueListening.mjs';
 
 const NOW = Date.parse('2026-11-26T12:00:00Z');
@@ -121,5 +121,32 @@ describe('continue listening — what is long audio', () => {
     expect(isLongFormAudio({ type: 'track', duration: 3600 }, null)).toBe(true);
     expect(isLongFormAudio({ type: 'track', duration: 300 }, null)).toBe(false);
     expect(isLongFormAudio({ type: 'episode', duration: 3600 }, null)).toBe(false);
+  });
+});
+
+describe('continue listening — too short to continue', () => {
+  const standalone = (contentId, duration, over = {}) => judgeContinueGroup({
+    groupId: contentId, current: rec(contentId, { duration, playhead: Math.min(17, duration), listenedSec: 600 }),
+    display: { title: 'Item', type: 'track' }, groupRecords: [rec(contentId, { duration, listenedSec: 600 })],
+    minListenedSec: 300, kind: 'books', ...over,
+  });
+
+  it('a 79-second item or an 11-minute clip in a books library is not Continue listening', () => {
+    expect(standalone('plex:441034', 79)).toEqual({ status: 'out', reason: 'short' });
+    expect(standalone('plex:622178', 691)).toEqual({ status: 'out', reason: 'short' });
+  });
+
+  it('a single-file book of 20 minutes or more stays', () => {
+    expect(standalone('plex:727000', 1200).status).toBe('qualified');
+    expect(standalone('plex:727001', 17687).status).toBe('qualified');
+  });
+
+  it('a book counts its parts in all, short parts or not; unknown parts never drop it', () => {
+    const short = [1, 2].map((n) => ({ id: `plex:10${n}`, duration: 300 }));
+    expect(judge({ parts: short, current: rec('plex:102'), groupRecords: [rec('plex:102')] }))
+      .toEqual({ status: 'out', reason: 'short' });
+    const many = Array.from({ length: 10 }, (_, i) => ({ id: `plex:1${i}`, duration: 300 }));
+    expect(judge({ parts: many, current: rec('plex:11'), groupRecords: [rec('plex:11')] }).status).toBe('qualified');
+    expect(totalSeconds({ standalone: false, current: rec('plex:1', { duration: 60 }), parts: null })).toBeNull();
   });
 });

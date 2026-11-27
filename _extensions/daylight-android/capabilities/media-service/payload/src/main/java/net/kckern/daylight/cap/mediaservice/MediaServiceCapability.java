@@ -1723,7 +1723,7 @@ public final class MediaServiceCapability implements Capability {
      */
     private Going continueGoing(int limit) throws Exception {
         try {
-            JSONObject answer = api.continueListening(limit);
+            JSONObject answer = BrowseTree.listeningOnly(api.continueListening(limit));
             return new Going(BrowseTree.continueRows(answer, backend, limit), Math.max(0, answer.optInt("reviewCount", 0)));
         } catch (MediaApi.Refused older) {
             if (older.status != 404) throw older;
