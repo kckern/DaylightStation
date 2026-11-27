@@ -346,6 +346,16 @@ public class PhoneHomeActivity extends Activity {
         topBar.removeAllViews();
         TextView name = t.text(this, launcherPicker ? "Choose a shortcut" : TABS[tab], Type.TITLE, t.ink, true);
         name.setAccessibilityHeading(true);
+        if (!launcherPicker) {
+            // The section's icon before its name (spec §13): the bottom bar's, 24 dp, muted.
+            ImageView icon = new ImageView(this);
+            icon.setImageResource(navIcon(tab));
+            icon.setImageTintList(android.content.res.ColorStateList.valueOf(t.inkMuted));
+            icon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(dp(24), dp(24));
+            ip.setMarginEnd(dp(12));
+            topBar.addView(icon, ip);
+        }
         topBar.addView(name, new LinearLayout.LayoutParams(0, -2, 1));
         if (!launcherPicker && tab == HomeSections.PLAY && getPackageManager().resolveActivity(new Intent().setClassName(this, BROWSE), 0) != null) {
             android.widget.ImageButton search = new android.widget.ImageButton(this);
@@ -641,7 +651,7 @@ public class PhoneHomeActivity extends Activity {
                 @Override public View create(JSONObject k) { return keptCard(k); }
                 @Override public View update(View card, JSONObject k) { bindKeptCard(card, k); return card; }
             });
-            TextView manage = label("Manage downloads ›", Type.LABEL, t.primary);
+            TextView manage = label("Manage downloads ›", Type.LABEL, t.inkMuted);
             manage.setPadding(dp(4), dp(10), dp(4), dp(6));
             manage.setContentDescription("Manage downloads: everything kept on this phone");
             net.kckern.daylight.shellkit.UiTelemetry.tag(manage, "play.kept.manage");
@@ -664,12 +674,12 @@ public class PhoneHomeActivity extends Activity {
         KeptCard h = new KeptCard();
         LinearLayout card = new LinearLayout(this);
         card.setGravity(Gravity.CENTER_VERTICAL);
-        card.setPadding(dp(8), dp(8), dp(12), dp(8));
-        card.setBackground(t.pressable(t.round(t.surface, Radius.SMALL)));
+        card.setMinimumHeight(dp(72));
+        card.setPadding(0, dp(8), 0, dp(8));
+        card.setBackground(t.pressable(null));
         h.cover = new ImageView(this);
         h.cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        h.cover.setClipToOutline(true);
-        h.cover.setBackground(t.round(t.tile, Radius.SMALL));
+        net.kckern.daylight.shellkit.CoverGlyph.behind(h.cover, t, net.kckern.daylight.shellkit.CoverGlyph.Kind.ALBUM, dp(56), t.radius(Radius.SMALL));
         card.addView(h.cover, new LinearLayout.LayoutParams(dp(56), dp(56)));
         LinearLayout words = new LinearLayout(this);
         words.setOrientation(LinearLayout.VERTICAL);
@@ -683,13 +693,17 @@ public class PhoneHomeActivity extends Activity {
         h.sub.setEllipsize(android.text.TextUtils.TruncateAt.END);
         words.addView(h.sub);
         card.addView(words, new LinearLayout.LayoutParams(0, -2, 1));
-        h.retry = label("Retry", Type.LABEL, t.primary);
+        h.retry = label("Retry", Type.LABEL, t.ink);
         h.retry.setPadding(dp(12), dp(10), dp(4), dp(10));
         net.kckern.daylight.shellkit.UiTelemetry.tag(h.retry, "play.kept.retry");
         card.addView(h.retry);
         net.kckern.daylight.shellkit.UiTelemetry.tag(card, "play.kept");
-        // Long-press: On this phone (state, Pause, Retry, Remove, room).
-        card.setOnLongClickListener(v -> { openDownloads(null); return true; });
+        // Long-press: the item sheet (Open on this phone, Remove).
+        card.setOnLongClickListener(v -> {
+            JSONObject k2 = (JSONObject) card.getTag(R.id.daylight_home_kept);
+            if (k2 == null) { openDownloads(null); return true; }
+            return keepMenu(card, "c:" + k2.optString("contentId"), k2.optString("contentId"), k2.optString("kind", "album"), k2.optString("title"), k2.optString("art"));
+        });
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.topMargin = dp(6);
         card.setLayoutParams(lp);
@@ -701,6 +715,7 @@ public class PhoneHomeActivity extends Activity {
     /** Puts one kept collection's words, cover, Retry and tap on its card (new or refreshed). */
     private void bindKeptCard(View card, JSONObject k) {
         KeptCard h = (KeptCard) card.getTag();
+        card.setTag(R.id.daylight_home_kept, k);
         String title = k.optString("title"), line = net.kckern.daylight.shellkit.KeptIndex.describe(k);
         String cid = k.optString("contentId");
         h.name.setText(title);
@@ -877,14 +892,15 @@ public class PhoneHomeActivity extends Activity {
     private View continueCard(JSONObject item) {
         long played = item.optLong("playhead"), duration = item.optLong("duration");
         String title = item.optString("title"), sub = item.optString("subtitle");
+        // A flat row (design sweep D4): cover, title, by-line, progress line; no box around it.
         LinearLayout card = new LinearLayout(this);
         card.setGravity(Gravity.CENTER_VERTICAL);
-        card.setPadding(dp(8), dp(8), dp(12), dp(8));
-        card.setBackground(t.pressable(t.round(t.surface, Radius.SMALL)));
+        card.setMinimumHeight(dp(72));
+        card.setPadding(0, dp(8), 0, dp(8));
+        card.setBackground(t.pressable(null));
         ImageView cover = new ImageView(this);
         cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        cover.setClipToOutline(true);
-        cover.setBackground(t.round(t.tile, Radius.SMALL));
+        net.kckern.daylight.shellkit.CoverGlyph.behind(cover, t, net.kckern.daylight.shellkit.CoverGlyph.Kind.BOOK, dp(56), t.radius(Radius.SMALL));
         card.addView(cover, new LinearLayout.LayoutParams(dp(56), dp(56)));
         loadCover(cover, item.optString("art"));
         LinearLayout words = new LinearLayout(this);
@@ -900,7 +916,16 @@ public class PhoneHomeActivity extends Activity {
                 net.kckern.daylight.shellkit.KeptIndex.read(getFilesDir()), item.optString("contentId"));
         boolean reachable = here || online();
         String said = !reachable ? "Needs a connection" : (here ? "On this phone · " : "") + (sub.isEmpty() || sub.equals(title) ? left : sub + " · " + left);
-        TextView line = label(said, Type.LABEL, here ? t.primary : t.inkMuted);
+        // "On this phone" is a fact, not an action: muted, with the offline glyph (accent is for primary, selected, progress).
+        TextView line = label(said, Type.LABEL, t.inkMuted);
+        if (here) {
+            android.graphics.drawable.Drawable glyph = getDrawable(net.kckern.daylight.shellkit.R.drawable.daylight_ic_on_phone).mutate();
+            int g = dp(14);
+            glyph.setBounds(0, 0, g, g);
+            glyph.setTint(t.inkMuted);
+            line.setCompoundDrawablesRelative(glyph, null, null, null);
+            line.setCompoundDrawablePadding(dp(4));
+        }
         line.setMaxLines(1);
         line.setEllipsize(android.text.TextUtils.TruncateAt.END);
         words.addView(line);
@@ -1058,18 +1083,18 @@ public class PhoneHomeActivity extends Activity {
             }
             LinearLayout tile = new LinearLayout(this);
             tile.setOrientation(LinearLayout.VERTICAL);
-            tile.setPadding(dp(6), dp(6), dp(6), dp(8));
-            tile.setBackground(t.pressable(t.round(t.surface, Radius.SMALL)));
+            // Just the cover and the name under it (design sweep D4): no box around the box.
+            tile.setPadding(0, 0, 0, dp(8));
+            tile.setBackground(t.pressable(null));
             AspectCover cover = new AspectCover(this);
             cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            cover.setClipToOutline(true);
-            cover.setBackground(t.round(t.tile, Radius.SMALL));
+            net.kckern.daylight.shellkit.CoverGlyph.behind(cover, t, net.kckern.daylight.shellkit.CoverGlyph.Kind.PLAYLIST, dp(108), t.radius(Radius.SMALL));
             tile.addView(cover, new LinearLayout.LayoutParams(-1, -2));
             loadCover(cover, p.art);
             TextView name = t.text(this, p.title, Type.LABEL, t.ink, true);
             name.setMaxLines(2);
             name.setEllipsize(android.text.TextUtils.TruncateAt.END);
-            name.setPadding(dp(2), dp(6), dp(2), 0);
+            name.setPadding(0, dp(6), 0, 0);
             tile.addView(name);
             tile.setContentDescription("Play " + p.title);
             net.kckern.daylight.shellkit.UiTelemetry.tag(tile, "play.playlist");
@@ -1679,9 +1704,10 @@ public class PhoneHomeActivity extends Activity {
         });
 
         ImageView icon = new ImageView(this);
-        icon.setBackground(DaylightTheme.round(t.primary, dp(8)));
-        icon.setPadding(dp(6), dp(6), dp(6), dp(6));
+        // The accent is for primary, selected and progress (D9): an ordinary row's glyph is muted ink, unfilled.
+        icon.setPadding(dp(2), dp(2), dp(2), dp(2));
         icon.setImageResource(drawable(glyph));
+        icon.setImageTintList(android.content.res.ColorStateList.valueOf(t.inkMuted));
         icon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         line.addView(icon, dp(24), dp(24));
 
@@ -1690,7 +1716,7 @@ public class PhoneHomeActivity extends Activity {
         heading.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         line.addView(heading, new LinearLayout.LayoutParams(0, -2, 1));
 
-        TextView cue = PlaylistPicker.glyph(this, indicator, 20, t.primary);
+        TextView cue = PlaylistPicker.glyph(this, indicator, 20, t.inkMuted);
         cue.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         line.addView(cue);
 

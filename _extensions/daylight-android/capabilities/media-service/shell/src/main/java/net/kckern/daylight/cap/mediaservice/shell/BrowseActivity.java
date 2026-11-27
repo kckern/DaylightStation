@@ -772,7 +772,7 @@ public final class BrowseActivity extends Activity {
         ImageView cover = new ImageView(this);
         cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
         cover.setClipToOutline(true);
-        cover.setBackground(DaylightTheme.round(t.tile, dp(8)));
+        net.kckern.daylight.shellkit.CoverGlyph.behind(cover, t, net.kckern.daylight.shellkit.CoverGlyph.of(kind), dp(112), dp(8));
         cover.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         top.addView(cover, new LinearLayout.LayoutParams(dp(112), dp(112)));
         String portrait = about == null ? "" : about.optString("portrait", "");
@@ -1193,7 +1193,7 @@ public final class BrowseActivity extends Activity {
         ImageView img = new ImageView(this);
         img.setScaleType(ImageView.ScaleType.CENTER_CROP);
         img.setClipToOutline(true);
-        img.setBackground(DaylightTheme.round(t.tile, dp(8)));
+        net.kckern.daylight.shellkit.CoverGlyph.behind(img, t, net.kckern.daylight.shellkit.CoverGlyph.of(browsable ? rowKind : MediaKind.spoken(pageKind) ? "book" : "track"), dp(48), dp(8));
         row.addView(img, new LinearLayout.LayoutParams(dp(48), dp(48)));
         loadCover(img, cover, 144);
         LinearLayout words = new LinearLayout(this);

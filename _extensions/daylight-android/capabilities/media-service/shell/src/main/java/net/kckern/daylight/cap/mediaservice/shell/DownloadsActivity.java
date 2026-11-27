@@ -276,7 +276,7 @@ public final class DownloadsActivity extends Activity {
         h.cover = new ImageView(this);
         h.cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
         h.cover.setClipToOutline(true);
-        h.cover.setBackground(t.round(t.tile, Radius.SMALL));
+        net.kckern.daylight.shellkit.CoverGlyph.behind(h.cover, t, net.kckern.daylight.shellkit.CoverGlyph.Kind.ALBUM, dp(56), t.radius(Radius.SMALL));
         top.addView(h.cover, new LinearLayout.LayoutParams(dp(52), dp(52)));
         LinearLayout text = new LinearLayout(this);
         text.setOrientation(LinearLayout.VERTICAL);
