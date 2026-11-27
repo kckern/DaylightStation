@@ -407,7 +407,8 @@ final class KeepStore {
                     event("keep.received", new JSONObject().put("tracks", count(reply)));
                     // Kept by hand: no longer declined for automatic keeps, nothing automatic left on it.
                     String kc = reply.optString("contentId");
-                    prefs.edit().remove("autoDeclined." + kc).remove("autoFinishedAt." + kc).apply();
+                    prefs.edit().remove("autoDeclined." + kc).remove("autoFinishedAt." + kc).remove("autoSeries." + kc)
+                            .remove("autoReady." + kc).apply();
                     autoLog.clear(kc);
                     line = decide(reply);
                 }
