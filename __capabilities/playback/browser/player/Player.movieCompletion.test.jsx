@@ -345,4 +345,43 @@ describe('movie terminal candidates through Player, SinglePlayer and native cont
     expect(ledger.dumpAll().sessions.every(session => session.count === 0)).toBe(true);
   });
 
+
+  it('Stop, then a seek, then Play starts the fresh visit where the seek put the playhead', async () => {
+    // 2026-11-26 (RQ-STEER-20 journey): a cancelled next-episode countdown
+    // stops the screen; a Remote then seeks near the end and presses Play.
+    // The fresh visit started at 0 and dropped the seek.
+    const { node, ref } = await mount({ seconds: 0, catalogDuration: 100, timeline: { ...full, expectedEndSeconds: 100 } });
+    act(() => ref.current.stop());
+    expect(node.currentTime).toBe(0);
+    act(() => ref.current.seek(96));
+    await act(async () => ref.current.play());
+    const fresh = ref.current.getMediaElement();
+    expect(fresh).not.toBe(node);
+    Object.defineProperties(fresh, {
+      currentTime: { configurable: true, writable: true, value: 0 },
+      duration: { configurable: true, value: 100 },
+      readyState: { configurable: true, value: 4 },
+      paused: { configurable: true, writable: true, value: false },
+      ended: { configurable: true, writable: true, value: false },
+    });
+    act(() => { fresh.dispatchEvent(new Event('durationchange')); fresh.dispatchEvent(new Event('loadedmetadata')); });
+    expect(fresh.currentTime).toBe(96);
+  });
+
+  it('Stop then Play with no seek still starts from the beginning', async () => {
+    const { node, ref } = await mount({ seconds: 50, catalogDuration: 100, timeline: { ...full, expectedEndSeconds: 100 } });
+    act(() => ref.current.stop());
+    await act(async () => ref.current.play());
+    const fresh = ref.current.getMediaElement();
+    expect(fresh).not.toBe(node);
+    Object.defineProperties(fresh, {
+      currentTime: { configurable: true, writable: true, value: 0 },
+      duration: { configurable: true, value: 100 },
+      readyState: { configurable: true, value: 4 },
+      paused: { configurable: true, writable: true, value: false },
+      ended: { configurable: true, writable: true, value: false },
+    });
+    act(() => { fresh.dispatchEvent(new Event('durationchange')); fresh.dispatchEvent(new Event('loadedmetadata')); });
+    expect(fresh.currentTime).toBe(0);
+  });
 });

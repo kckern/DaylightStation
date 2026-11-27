@@ -179,7 +179,8 @@ callbacks stay rejected while a replacement resolves and after newer controls.
 Stop supersedes pending terminal events without spending a recovery attempt.
 Playing a stopped finite audio/video item starts a new visit through the
 existing renderer boundary, with a fresh native binding at zero or the authored
-clip start. The clip window survives a fresh full-item transport descriptor.
+clip start, or where a seek made while stopped put the playhead (a Remote that
+seeks a stopped screen and then presses Play). The clip window survives a fresh full-item transport descriptor.
 Without a catalog or clip end, ordinary EOF remains available and records
 `completion-unverified`; this does not validate the whole film.
 
