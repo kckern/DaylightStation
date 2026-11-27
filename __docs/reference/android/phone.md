@@ -1333,9 +1333,14 @@ removed.
   next part), a track of one plays on from itself, and a play by the collection's own id as
   a leaf (`p:<book>`, what a `media/play?id=<book>` link sends) plays as the collection. A
   kept book's parts are stored in the book's own order (its `GET /api/v1/list/<id>`
-  listing), not in home's queue order, which puts heard parts last. Online, a `p:<book>`
-  starts at the part and place home's play route answers, and a `c:<book>` at the first
-  queue item's saved place. Each track's `longForm` (home's `resumable`) travels to the
+  listing). Online, a `p:<book>` starts at the part and place home's play route answers,
+  and a `c:<book>` at the queue's `startIndex` (`QueueMapper.startIndex`, the item found
+  by id among the audio tracks), at that part's saved place. Home answers a book in its
+  own order and names the start; shuffle is ignored for a book, so a shuffled `c:<book>`
+  starts there too. A queue with no `startIndex` (a show, music, a backend before
+  2026-11-26, which put the part in progress first) starts at its first item, at that
+  item's saved place unless shuffled. See `__docs/reference/content/content-playback.md`
+  ("Order and `startIndex`"). Each track's `longForm` (home's `resumable`) travels to the
   shell, so a book whose chapters are short never crossfades. The car
   has an **On phone** tab (`media.roots` target `kept`) answered from the phone; offline,
   every other car level shows "Offline: showing what is on this phone".

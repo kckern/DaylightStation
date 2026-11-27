@@ -63,9 +63,15 @@ final class Resolver {
             if (id.kind == MediaId.Kind.CONTAINER) {
                 JSONObject queue = api.queue(id.contentId, shuffle);
                 List<Track> whole = QueueMapper.fromQueue(queue, backend, session);
-                // A book home has a place in: its queue starts with the part in progress, with
-                // that place (a song is never resumable, so music starts at the top).
-                if (single && !shuffle && !whole.isEmpty()) startPositionMs = QueueMapper.resumeMs(itemOf(queue, whole.get(0).id));
+                if (single && !whole.isEmpty()) {
+                    // A book (an ordered work) is answered in its own order with startIndex,
+                    // the part to start at, at its place. An older backend named no start and
+                    // put the part in progress first; a show or music list names none either
+                    // (a song is never resumable, so music starts at the top).
+                    int at = QueueMapper.startIndex(queue, whole);
+                    if (at > 0) startIndex = tracks.size() + at;
+                    if (at >= 0 || !shuffle) startPositionMs = QueueMapper.resumeMs(itemOf(queue, whole.get(Math.max(at, 0)).id));
+                }
                 tracks.addAll(whole);
                 continue;
             }
