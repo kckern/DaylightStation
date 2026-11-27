@@ -13,9 +13,14 @@ import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
+/** How often a device that stays away is reported again (a warning). */
+const UNREACHABLE_REPORT_MS = 60 * 60 * 1000;
 
 export class AdbAdapter {
   #serial;
+  #now;
+  /** While the device does not answer: {since, failures, reportedAt}; null when it does. */
+  #unreachable = null;
   #logger;
   #metrics;
   #execCommand;
@@ -43,6 +48,7 @@ export class AdbAdapter {
     this.#execCommand = deps.execCommand || execAsync;
     this.#execFileCommand = deps.execFileCommand || execFileAsync;
 
+    this.#now = deps.now || Date.now;
     this.#metrics = {
       startedAt: Date.now(),
       commands: 0,
@@ -56,7 +62,8 @@ export class AdbAdapter {
    * @returns {Promise<{ok: boolean, error?: string}>}
    */
   async connect() {
-    const result = await this.#exec(`adb connect ${this.#serial}`);
+    // `adb connect` exits 0 even when it could not connect: only the check below says the device answered.
+    const result = await this.#exec(`adb connect ${this.#serial}`, { answered: false });
     if (!result.ok) return result;
 
     // adb connect exits 0 even when device needs authorization.
@@ -64,7 +71,9 @@ export class AdbAdapter {
     const verify = await this.#exec(`adb -s ${this.#serial} shell echo ok`);
     if (!verify.ok) {
       const isAuth = verify.error?.includes('authoriz') || verify.error?.includes('unauthorized');
-      this.#logger.warn?.('adb.connect.verifyFailed', {
+      // A device that is still away fails this on every poll; only the first is a warning.
+      const level = !isAuth && this.#unreachable?.failures > 1 ? 'debug' : 'warn';
+      this.#logger[level]?.('adb.connect.verifyFailed', {
         serial: this.#serial,
         isAuth,
         error: verify.error
@@ -204,7 +213,7 @@ export class AdbAdapter {
    * Execute an ADB command
    * @private
    */
-  async #exec(command, { logFailure = true } = {}) {
+  async #exec(command, { logFailure = true, answered = true } = {}) {
     this.#metrics.commands++;
     const startTime = Date.now();
 
@@ -215,6 +224,7 @@ export class AdbAdapter {
       const elapsedMs = Date.now() - startTime;
 
       this.#logger.debug?.('adb.exec.success', { command, elapsedMs, stdout: stdout?.trim() });
+      if (answered) this.#markReachable();
 
       return { ok: true, output: stdout?.trim(), stderr: stderr?.trim() };
     } catch (error) {
@@ -228,13 +238,50 @@ export class AdbAdapter {
     }
   }
 
+  /**
+   * One error when a device stops answering, a warning each hour it stays away, and
+   * one info when it answers again. Pollers retry every few seconds; before this, a
+   * screen that was switched off for days wrote an error every 16 s.
+   */
   #logExecError(command, result) {
+    if (this.#isUnreachable(result.error)) {
+      const now = this.#now();
+      const away = this.#unreachable;
+      if (away) {
+        away.failures++;
+        if (now - away.reportedAt >= UNREACHABLE_REPORT_MS) {
+          away.reportedAt = now;
+          this.#logger.warn?.('adb.device.stillUnreachable', {
+            serial: this.#serial, awayMs: now - away.since, failures: away.failures, error: result.error,
+          });
+        } else {
+          this.#logger.debug?.('adb.exec.error', { command, error: result.error, code: result.code, repeat: true });
+        }
+        return;
+      }
+      this.#unreachable = { since: now, failures: 1, reportedAt: now };
+    }
     this.#logger.error?.('adb.exec.error', {
       command,
       error: result.error,
       code: result.code,
       elapsedMs: result.elapsedMs,
     });
+  }
+
+  #markReachable() {
+    const away = this.#unreachable;
+    if (!away) return;
+    this.#unreachable = null;
+    this.#logger.info?.('adb.device.reachable', {
+      serial: this.#serial, awayMs: this.#now() - away.since, failures: away.failures,
+    });
+  }
+
+  /** The device is not there (off, unplugged, moved): retrying will not help until it returns. */
+  #isUnreachable(errorMsg) {
+    if (!errorMsg) return false;
+    return this.#isDeviceNotFound(errorMsg) || /no route to host|connection refused|host is unreachable|failed to connect|cannot connect/i.test(errorMsg);
   }
 
   /**
@@ -252,6 +299,7 @@ export class AdbAdapter {
       const { stdout, stderr } = await this.#execFileCommand('adb', fullArgs, { timeout: 10_000 });
       const elapsedMs = Date.now() - startTime;
       this.#logger.debug?.('adb.execArgs.success', { elapsedMs, stdout: stdout?.trim() });
+      this.#markReachable();
       return { ok: true, output: stdout?.trim(), stderr: stderr?.trim() };
     } catch (error) {
       this.#metrics.errors++;

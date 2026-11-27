@@ -49,3 +49,32 @@ describe('AdbAdapter shell recovery', () => {
     );
   });
 });
+
+describe('AdbAdapter while a device is away', () => {
+  const away = () => Object.assign(new Error("Command failed: adb -s 10.20.30.12:5555 shell echo ok\nadb: device '10.20.30.12:5555' not found\n"), { code: 1 });
+
+  it('logs one error, hourly warnings, and one info when the device answers again', async () => {
+    let now = 0;
+    const execCommand = vi.fn(async (cmd) => {
+      if (cmd.startsWith('adb connect')) return { stdout: 'failed to connect', stderr: '' };
+      if (execCommand.back) return { stdout: 'ok', stderr: '' };
+      throw away();
+    });
+    const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const adapter = new AdbAdapter({ host: '10.20.30.12' }, { logger, execCommand, now: () => now });
+
+    for (let i = 0; i < 300; i++) { now = i * 16_000; await adapter.shell('pidof x'); } // 80 min of polls
+    expect(logger.error).toHaveBeenCalledTimes(1);
+    expect(logger.warn.mock.calls.filter(([e]) => e === 'adb.connect.verifyFailed')).toHaveLength(1);
+    expect(logger.warn.mock.calls.filter(([e]) => e === 'adb.device.stillUnreachable')).toHaveLength(1);
+
+    execCommand.back = true;
+    now += 16_000;
+    await expect(adapter.shell('pidof x')).resolves.toMatchObject({ ok: true });
+    expect(logger.info).toHaveBeenCalledWith('adb.device.reachable', expect.objectContaining({ serial: '10.20.30.12:5555' }));
+
+    execCommand.back = false;
+    await adapter.shell('pidof x');
+    expect(logger.error).toHaveBeenCalledTimes(2); // a new absence is news again
+  });
+});
