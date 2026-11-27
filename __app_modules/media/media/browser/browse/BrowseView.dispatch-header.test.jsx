@@ -231,11 +231,13 @@ describe('BrowseView — container dispatch header (Task 15)', () => {
     pageInfo = { title: 'Bluey', type: 'show', metadata: { type: 'show' } };
     unwatchedById = { 'plex:1': { unwatched: 8, total: 52 }, 'plex:2': { unwatched: 0, total: 52 } };
     browseState = { items: [
-      { id: 'plex:1', title: 'Season 1', type: 'season', itemType: 'container' },
+      { id: 'plex:1', title: 'Season 1', type: 'season', itemType: 'container', metadata: { type: 'season', librarySectionTitle: 'TV Shows' } },
       { id: 'plex:2', title: 'Season 2', type: 'season', itemType: 'container' },
     ], total: 2, loading: false, error: null };
     renderBrowse({ containerItem: null, path: 'plex/59493' });
     expect(screen.getByTestId('browse-row-plex:1')).toHaveTextContent('8 unwatched');
+    // Inside a show the library name is noise: "Season · …", not "TV Show · Season · …".
+    expect(screen.getByTestId('browse-row-plex:1')).not.toHaveTextContent('TV Show');
     expect(screen.getByTestId('browse-row-plex:2')).toHaveTextContent('All watched');
   });
   it('a long season header takes its unwatched count from the server', () => {

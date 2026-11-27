@@ -71,6 +71,13 @@ function RowSubtitle({ row, base }) {
   return <>{[base, line].filter(Boolean).join(' · ')}</>;
 }
 
+/** Inside a show the library name says nothing: "Season · 52 episodes". */
+export function withoutLibrary(row) {
+  if (!row?.metadata?.librarySectionTitle && !row?.librarySectionTitle) return row;
+  const { librarySectionTitle, ...metadata } = row.metadata ?? {};
+  return { ...row, librarySectionTitle: undefined, metadata };
+}
+
 /**
  * List rows do not carry their library; the page does. A row under an
  * audiobook page is then named an Audiobook, not a Song (kindLabel).
@@ -341,7 +348,7 @@ export function BrowseView({
                   subtitle={(isSourceRow ? null : rowExtrasFor({ ...row, id }).playingOn?.onLine)
                     ?? <RowSubtitle row={{ ...row, id }} base={episodeRows && String(row.type ?? row.metadata?.type) === 'episode'
                       ? episodeSubtitle(row)
-                      : watchedSubtitle(sourceRootPresentation(inLibraryOf(row, headerItem)).subtitle, watchState(row))} />}
+                      : watchedSubtitle(sourceRootPresentation(episodeRows ? withoutLibrary(row) : inLibraryOf(row, headerItem)).subtitle, watchState(row))} />}
                   thumbnail={row.thumbnail}
                   leading={row.thumbnail ? null : sourceIconFor(row)}
                   testId={`browse-open-${id}`}
