@@ -189,6 +189,14 @@ describe('BrowseView — container dispatch header (Task 15)', () => {
     expect(screen.getByTestId('browse-row-plex:2')).toHaveTextContent('5 min left');
     expect(screen.getByTestId('browse-header-facts')).toHaveTextContent('1 unwatched');
   });
+  it('a book\'s track is named an Audiobook from the page\'s library, never Track or Song', () => {
+    pageInfo = { title: 'Is God a Mathematician?', type: 'album', metadata: { type: 'album', librarySectionTitle: 'Audiobooks' } };
+    browseState = { items: [{ id: 'plex:505134', title: 'Is God a Mathematician?', type: 'track', itemType: 'leaf', duration: 32681 }], total: 1, loading: false, error: null };
+    renderBrowse({ containerItem: null, path: 'plex/505133' });
+    const row = screen.getByTestId('browse-row-plex:505134');
+    expect(row).toHaveTextContent('Audiobook · 9 hr 5 min');
+    expect(row).not.toHaveTextContent(/Track|Song/);
+  });
   it('arriving at a container page puts focus on its PLAY', async () => {
     renderBrowse({ containerItem });
     await waitFor(() => expect(screen.getByTestId('browse-dispatch-play')).toHaveFocus());

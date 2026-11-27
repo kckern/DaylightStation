@@ -5,6 +5,7 @@
 // (`GET /api/v1/info/:source/:id`, PlexAdapter container metadata).
 import { formatDuration } from "../search/resultPresentation.js";
 import { contentIdToBrowsePath } from "./browsePath.js";
+import { kindLabel, isBookLibrary as inBookLibrary } from "../../../../../__capabilities/content-catalog/browser/kind-labels.mjs";
 
 const PROXY_THUMB = (ratingKey) => `/api/v1/proxy/plex/library/metadata/${ratingKey}/thumb`;
 
@@ -12,14 +13,8 @@ function typeOf(item) {
   return String(item?.type ?? item?.metadata?.type ?? '').toLowerCase() || null;
 }
 
-function sectionOf(item) {
-  return String(item?.metadata?.librarySectionTitle ?? '').toLowerCase();
-}
-
 /** Audiobook libraries call an artist an author and an album a book. */
-function isBookLibrary(item) {
-  return /audiobook|book/.test(sectionOf(item));
-}
+const isBookLibrary = inBookLibrary;
 
 function count(n, noun) {
   const value = Number(n);
@@ -27,17 +22,9 @@ function count(n, noun) {
   return `${value} ${noun}${value === 1 ? '' : 's'}`;
 }
 
-const KIND = {
-  show: 'TV Show', season: 'Season', movie: 'Movie', collection: 'Collection', playlist: 'Playlist',
-};
-
 /** The kind of page in one word: Author, Artist, Book, Album, TV Show, Season, … */
 export function headerKind(item) {
-  const type = typeOf(item);
-  if (type === 'artist') return isBookLibrary(item) ? 'Author' : 'Artist';
-  if (type === 'album') return isBookLibrary(item) ? 'Book' : 'Album';
-  if (KIND[type]) return KIND[type];
-  return type ? type.charAt(0).toUpperCase() + type.slice(1) : null;
+  return kindLabel(item);
 }
 
 /**

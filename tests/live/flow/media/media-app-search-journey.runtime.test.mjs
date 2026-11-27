@@ -31,7 +31,7 @@ test('[FIND.1a/AC5] phone a row opens the info view (nothing plays) and only PLA
   const result = search.getByTestId('search-mode-results').getByText(title, { exact: true });
   await expect(result).toHaveCount(1, { timeout: 15000 });
   const row = result.locator('xpath=ancestor::li');
-  await expect(row.getByText('Movie', { exact: true })).toBeVisible();
+  await expect(row.getByText('Film', { exact: true })).toBeVisible();
   expect(await row.locator('img, [data-testid="result-artwork-placeholder"]').count()).toBeGreaterThan(0);
 
   await row.getByRole('button', { name: 'More actions' }).click();

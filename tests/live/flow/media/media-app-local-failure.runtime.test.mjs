@@ -25,7 +25,7 @@ const ARRIVAL_PART = /\/api\/v1\/proxy\/plex\/(?:stream\/55854(?:\?|$)|library\/
 async function addToQueue(page, title) {
   const search = page.getByRole('textbox', { name: 'Search media…' });
   await search.fill(title);
-  const row = page.getByRole('option').filter({ hasText: title }).filter({ hasText: 'Movie' });
+  const row = page.getByRole('option').filter({ hasText: title }).filter({ hasText: 'Film' });
   await expect(row).toHaveCount(1, { timeout: 15000 });
   await row.getByRole('button', { name: 'More actions' }).click();
   await page.getByRole('menuitem', { name: 'Add to Queue', exact: true }).click();

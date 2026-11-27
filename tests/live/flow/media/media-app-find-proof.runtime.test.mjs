@@ -58,7 +58,7 @@ for (const [label, vp] of Object.entries(VIEWPORTS)) {
       await expect(row).toBeVisible({ timeout: 30000 });
       await expect(rowPicture(row).first()).toBeVisible();
       await expect(row).toContainText('Arrival');
-      await expect(row).toContainText('Movie');
+      await expect(row).toContainText('Film');
 
       // AC4: closing search returns me to exactly where I was.
       await closeSearch(page, vp);
@@ -93,7 +93,7 @@ test('[FIND.1a/AC3] search looks and behaves the same at every size, and while a
       chips,
       firstTitle: (await first.locator('.media-result-title, p').first().innerText()).trim(),
       hasPicture: (await rowPicture(first).count()) > 0,
-      hasKind: /Movie|Show|Episode|Album|Track|Song|Playlist|Collection|Artist|Book|Photo|Clip|Video/.test(await first.innerText()),
+      hasKind: /Film|Movie|Show|Episode|Album|Track|Song|Playlist|Collection|Artist|Book|Photo|Clip|Video/.test(await first.innerText()),
     };
     return shape;
   };
@@ -428,9 +428,9 @@ test('[FIND.8a/AC2] details show picture, title, description, length, kind and h
   await expect(detail.locator('img')).toBeVisible();
   await expect(detail.getByRole('heading', { name: 'Arrival' })).toBeVisible();
   await expect(detail.getByTestId('detail-progress')).toContainText(/left|min/);
-  await expect(detail).toContainText('Movie');
+  await expect(detail).toContainText('Film');
   // Length and kind sit together on the facts line (not the progress line, which also says "min left").
-  await expect(detail.getByTestId('detail-facts')).toHaveText(/^Movie · \d+ hr( \d+ min)?$/);
+  await expect(detail.getByTestId('detail-facts')).toHaveText(/^Film · \d+ hr( \d+ min)?$/);
   expect((await detail.innerText()).length).toBeGreaterThan(200);
   await context.close();
 });

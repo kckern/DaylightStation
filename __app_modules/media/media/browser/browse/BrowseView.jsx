@@ -60,6 +60,16 @@ import { sourceLabel } from "../../../../../__capabilities/content-catalog/brows
 import mediaLog from "../logging/mediaLog.js";
 
 const LISTABLE_TYPES = new Set(['season', 'collection']);
+
+/**
+ * List rows do not carry their library; the page does. A row under an
+ * audiobook page is then named an Audiobook, not a Song (kindLabel).
+ */
+export function inLibraryOf(row, page) {
+  const section = page?.metadata?.librarySectionTitle;
+  if (!section || row?.metadata?.librarySectionTitle) return row;
+  return { ...row, metadata: { ...(row.metadata ?? {}), librarySectionTitle: section } };
+}
 /** A page worth a header: a container by the shared predicate, or a season/collection. */
 function headerWorthy(item) {
   if (!item) return false;
@@ -311,7 +321,7 @@ export function BrowseView({
                   item={{ ...row, id }}
                   title={sourceRootPresentation(row).title}
                   subtitle={(isSourceRow ? null : rowExtrasFor({ ...row, id }).playingOn?.onLine)
-                    ?? watchedSubtitle(sourceRootPresentation(row).subtitle, watchState(row))}
+                    ?? watchedSubtitle(sourceRootPresentation(inLibraryOf(row, headerItem)).subtitle, watchState(row))}
                   thumbnail={row.thumbnail}
                   leading={row.thumbnail ? null : sourceIconFor(row)}
                   testId={`browse-open-${id}`}

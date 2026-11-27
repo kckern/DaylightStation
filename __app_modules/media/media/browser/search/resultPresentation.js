@@ -5,6 +5,7 @@
 import { looksLikeMachineTitle } from "../../../../../frontend/src/hooks/useStreamingSearch.js";
 import { sourceLabel } from "../../../../../__capabilities/content-catalog/browser/source-labels.mjs";
 import { parseDateTitle, presentTitle } from "../browse/tilePresentation.js";
+import { kindLabel } from "../../../../../__capabilities/content-catalog/browser/kind-labels.mjs";
 
 const TYPE_LABELS = {
   movie: 'Movie',
@@ -105,10 +106,13 @@ export function displayTitle(row) {
 export function resultSubtitle(row) {
   const parts = [];
   const type = rawType(row);
-  const section = row?.metadata?.librarySectionTitle
+  let section = row?.metadata?.librarySectionTitle
     ? singularize(row.metadata.librarySectionTitle)
     : null;
-  let typeLabel = type ? (TYPE_LABELS[type] ?? capitalize(type)) : null;
+  // A film library's name says no more than the kind: "Film", once.
+  if (section && type === 'movie' && /^(movie|film)$/i.test(section)) section = null;
+  // By library kind (2026-11-27): an audiobook is "Audiobook", a song "Song".
+  let typeLabel = kindLabel(row) ?? (type ? (TYPE_LABELS[type] ?? capitalize(type)) : null);
 
   if (section) {
     parts.push(section);
@@ -116,7 +120,7 @@ export function resultSubtitle(row) {
     // "TV Shows" + show) — no "Audiobook · Album" noise.
     const redundant = typeLabel && (
       typeLabel.toLowerCase() === section.toLowerCase()
-      || (section.toLowerCase() === 'audiobook' && (type === 'album' || type === 'book'))
+      || (section.toLowerCase() === 'audiobook' && ['album', 'book', 'track'].includes(type))
     );
     if (redundant) typeLabel = null;
   }

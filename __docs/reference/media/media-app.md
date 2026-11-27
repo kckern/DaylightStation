@@ -865,6 +865,11 @@ whether the aim, learning or a one-off choice decided it), `habit.pick-recorded`
   page and info into the shared resource cache (`browse/prefetchBrowse.js`,
   GET only, once per 30 s per page); opening it then paints without a skeleton.
 
+- **Kinds are named by library** (`content-catalog/browser/lib/kindLabel.js`,
+  shared by the search rows, result subtitles and the headers): an audiobook
+  library's track is an **Audiobook**, its album a **Book**, its artist an
+  **Author**; a music track is a **Song**; a movie a **Film**; never "Track".
+
 Logs: `browse.header-shown`, `browse.parent-opened`, `browse.crumb-opened`,
 `browse.sole-season`, `browse.summary-expanded`, `browse.prefetched` (debug),
 `list.more-expanded` (`surface: browse-section-<kind>`).

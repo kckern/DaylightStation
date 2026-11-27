@@ -33,7 +33,7 @@ async function findArrivalOption(page) {
   // the movie deterministically before it opens Detail's CastButton.
   const option = page.getByRole('option')
     .filter({ hasText: ARRIVAL })
-    .filter({ hasText: 'Movie' });
+    .filter({ hasText: 'Film' });
   await expect(option).toHaveCount(1, { timeout: 15000 });
   const testId = await option.getAttribute('data-testid');
   const contentId = testId?.replace(/^combobox-option-/, '');

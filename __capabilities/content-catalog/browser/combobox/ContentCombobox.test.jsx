@@ -117,12 +117,14 @@ describe('ContentCombobox (hook wiring)', () => {
   // 2026-09-29 scan added "Frozen Planet" (a show) to the Frozen results and
   // FIND.2a's dock journey caught the two surfaces disagreeing.
   it.each([
-    ['show', 'TV Show'], ['series', 'TV Show'], ['movie', 'Movie'], ['episode', 'Episode'],
-  ])('labels a %s result "%s" in its subtitle', async (type, label) => {
+    // By library kind (2026-11-27): a film, and an audiobook never "Track".
+    ['show', 'TV Show'], ['series', 'TV Show'], ['movie', 'Film'], ['episode', 'Episode'],
+    ['track', 'Audiobook', 'Audiobooks'], ['track', 'Song', 'Music'],
+  ])('labels a %s result "%s" in its subtitle', async (type, label, section) => {
     currentHook = makeHook({
       state: {
         ...initialState(''), mode: Modes.SEARCH, search: 'fr',
-        results: [{ id: 'plex:1', title: 'Frozen Planet', source: 'plex', type }],
+        results: [{ id: 'plex:1', title: 'Frozen Planet', source: 'plex', type, ...(section ? { metadata: { type, librarySectionTitle: section } } : {}) }],
       },
     });
     renderCombobox();
@@ -131,6 +133,7 @@ describe('ContentCombobox (hook wiring)', () => {
     const option = await screen.findByTestId('combobox-option-plex:1');
     expect(option.textContent).toContain(label);
     if (label === 'TV Show') expect(option.textContent).not.toMatch(/(^|[^V] )Show/);
+    expect(option.textContent).not.toContain('Track');
   });
 
   it('typing routes through handleInput', () => {

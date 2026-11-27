@@ -15,6 +15,7 @@
 //   - app-param picker and ItemDetailsDrawer (stay in ListsItemRow, Task 13)
 //   - result grouping by `group` field (index-owned highlight requires DOM
 //     order === items order; no current search transport emits `group`)
+import { kindLabel } from "../lib/kindLabel.js";
 import { Component, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useDismissLayer } from '@/lib/ui/dismiss/useDismissLayer.js';
 import { getReducedMotionQuery } from '@/lib/ui/browserMotion.js';
@@ -38,7 +39,6 @@ import { SearchSkeletonRows } from "./SearchSkeletonRows.jsx";
 import "./ContentCombobox.scss";
 
 /** Result-subtitle labels that are not just the capitalised raw type. */
-const TYPE_LABEL_OVERRIDES = Object.freeze({ show: 'TV Show', series: 'TV Show' });
 
 const TYPE_ICONS = {
   show: IconVideo,
@@ -729,8 +729,8 @@ export function ContentCombobox({
     // NOTE: parent-subtitle click navigation deliberately dropped (§3.1-8).
     // Plex's raw `show`/`series` reads as "Show" capitalised; say "TV Show",
     // matching Media's phone search (resultPresentation TYPE_LABELS).
-    const typeLabel = TYPE_LABEL_OVERRIDES[type]
-      ?? (type ? type.charAt(0).toUpperCase() + type.slice(1) : null);
+    // By library kind (2026-11-27): an audiobook reads "Audiobook", not "Track".
+    const typeLabel = kindLabel(item);
     const indexedLabel = typeLabel && itemIndex != null ? `${typeLabel} ${itemIndex}` : typeLabel;
     const parts = [indexedLabel, parentTitle].filter(Boolean);
     const subtitleText = parts.length > 0 ? parts.join(' • ') : localId;

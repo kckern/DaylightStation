@@ -122,7 +122,7 @@ describe('DetailView facts (FIND.8a/AC2)', () => {
   it('states the kind and the length in words, and the summary as the description', () => {
     contentState.info = { title: 'Arrival', type: 'movie', duration: 6983, metadata: { type: 'movie', librarySectionTitle: 'Movies', summary: 'Linguist meets aliens.' } };
     render(<MantineProvider><DetailView contentId="plex:55854" /></MantineProvider>);
-    expect(screen.getByTestId('detail-facts')).toHaveTextContent('Movie · 1 hr 56 min');
+    expect(screen.getByTestId('detail-facts')).toHaveTextContent('Film · 1 hr 56 min');
     expect(screen.getByText('Linguist meets aliens.')).toBeVisible();
   });
   it('knows how far anyone has got on a page opened straight to the item (lists not loaded yet)', async () => {
