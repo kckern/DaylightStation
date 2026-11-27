@@ -155,6 +155,11 @@ public final class KeptIndex {
         return k.optBoolean("auto") ? words + " · " + KEPT_AUTOMATICALLY : words;
     }
 
+    /** {@link #describe(JSONObject, LiveDownload)} with whatever {@link LiveDownloads} holds for the item now. */
+    public static String describeNow(JSONObject k) {
+        return describe(k, LiveDownloads.get(k.optString("contentId")));
+    }
+
     private static String stateWords(JSONObject k) {
         int done = k.optInt("done"), total = k.optInt("total"), failed = k.optInt("failed"), damaged = k.optInt("damaged");
         String reason = k.optString("reason", "");

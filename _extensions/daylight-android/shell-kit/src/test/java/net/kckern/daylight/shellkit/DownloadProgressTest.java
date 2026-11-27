@@ -107,4 +107,23 @@ public class DownloadProgressTest {
             java.util.Locale.setDefault(was);
         }
     }
+
+    @Test public void anItemWithNoFirstByteGetsFortyFiveSecondsBeforeItStalls() {
+        DownloadProgress p = new DownloadProgress();
+        p.sample(0, 0);
+        p.sample(44_000, 0);
+        assertEquals("a cold, slow connection is not a stall", DownloadProgress.Phase.MOVING, p.phase(44_000));
+        assertFalse(p.restartDue(44_000));
+        p.sample(45_000, 0);
+        assertEquals(DownloadProgress.Phase.RESTARTING, p.phase(45_000));
+        assertTrue(p.restartDue(45_000));
+    }
+
+    @Test public void onceBytesHaveComeTheShortWindowApplies() {
+        DownloadProgress p = new DownloadProgress();
+        p.sample(0, 0);
+        p.sample(1_000, 100_000);
+        p.sample(16_000, 100_000);
+        assertEquals(DownloadProgress.Phase.RESTARTING, p.phase(16_000));
+    }
 }

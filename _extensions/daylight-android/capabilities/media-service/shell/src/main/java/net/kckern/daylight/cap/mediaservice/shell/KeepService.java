@@ -22,8 +22,34 @@ public final class KeepService extends DownloadService {
     private static final String CHANNEL = "daylight_downloads";
     private static final int NOTIFICATION_ID = 7203;
 
+    private static final String ACTION_TRY_AGAIN = "net.kckern.daylight.keep.TRY_AGAIN";
+    /** True from the first foreground notification until the service ends: only then is it updated by the live tick. */
+    private volatile boolean foreground;
+    private final Runnable liveChanged = this::updateNotification;
+
     public KeepService() {
         super(NOTIFICATION_ID, DEFAULT_FOREGROUND_NOTIFICATION_UPDATE_INTERVAL, CHANNEL, R.string.daylight_downloads_channel, 0);
+    }
+
+    @Override public void onCreate() {
+        super.onCreate();
+        net.kckern.daylight.shellkit.LiveDownloads.listen(liveChanged);
+    }
+
+    @Override public void onDestroy() {
+        net.kckern.daylight.shellkit.LiveDownloads.unlisten(liveChanged);
+        foreground = false;
+        super.onDestroy();
+    }
+
+    /** Each second the keep store publishes live bytes (main thread): the notification shows them. Only while it is the foreground one. */
+    private void updateNotification() {
+        if (!foreground || !net.kckern.daylight.shellkit.LiveDownloads.any()) return;
+        try {
+            DownloadManager m = KeepStore.get(this).manager;
+            ((android.app.NotificationManager) getSystemService(NOTIFICATION_SERVICE))
+                    .notify(NOTIFICATION_ID, getForegroundNotification(m.getCurrentDownloads(), m.getNotMetRequirements()));
+        } catch (RuntimeException ignored) { }
     }
 
     @Override protected DownloadManager getDownloadManager() { return KeepStore.get(this).manager; }
@@ -36,6 +62,8 @@ public final class KeepService extends DownloadService {
             String cid = intent.getStringExtra("contentId");
             if (cid != null) KeepStore.get(this).action("undo", cid, "", null);
             cancelUndo(cid);
+        } else if (ACTION_TRY_AGAIN.equals(action)) {
+            KeepStore.get(this).restartStalled();
         } else if (KeepStore.ACTION_CANCEL.equals(action)) {
             KeepStore.get(this).cancelUnfinished(null);
         } else if (KeepStore.ACTION_RESUME_ALL.equals(action)) {
@@ -68,6 +96,7 @@ public final class KeepService extends DownloadService {
     }
 
     @Override protected Notification getForegroundNotification(List<Download> downloads, int notMetRequirements) {
+        foreground = true;
         int[] p = KeepStore.get(this).progress();
         // Android requires this notification while bytes move; for automatic keeps alone it says
         // "Keeping The Book for offline" (spec §3.10: no notification of their own).
@@ -78,7 +107,7 @@ public final class KeepService extends DownloadService {
         PendingIntent pause = PendingIntent.getService(this, 1, buildPauseDownloadsIntent(this, KeepService.class, true), flags);
         PendingIntent cancel = PendingIntent.getService(this, 2,
                 new Intent(this, KeepService.class).setAction(KeepStore.ACTION_CANCEL), flags);
-        return new Notification.Builder(this, CHANNEL)
+        Notification.Builder b = new Notification.Builder(this, CHANNEL)
                 .setSmallIcon(android.R.drawable.stat_sys_download)
                 .setContentTitle(title)
                 .setContentText(notMetRequirements != 0 ? KeepRules.waitingWords(notMetRequirements) : live("Tap to see what is kept"))
@@ -87,7 +116,12 @@ public final class KeepService extends DownloadService {
                 .setOnlyAlertOnce(true)
                 .setContentIntent(open)
                 .addAction(new Notification.Action.Builder(null, "Pause", pause).build())
-                .addAction(new Notification.Action.Builder(null, "Cancel", cancel).build())
-                .build();
+                .addAction(new Notification.Action.Builder(null, "Cancel", cancel).build());
+        // Only while an item's bytes have stopped: restarts the transfer (the same as Retry on its row).
+        if (net.kckern.daylight.shellkit.LiveDownloads.anyStalled()) {
+            PendingIntent again = PendingIntent.getService(this, 3, new Intent(this, KeepService.class).setAction(ACTION_TRY_AGAIN), flags);
+            b.addAction(new Notification.Action.Builder(null, "Try again", again).build());
+        }
+        return b.build();
     }
 }

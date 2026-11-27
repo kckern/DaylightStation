@@ -37,6 +37,7 @@ import net.kckern.daylight.shellkit.DownloadProgress;
 import net.kckern.daylight.shellkit.KeptIndex;
 import net.kckern.daylight.shellkit.LiveDownload;
 import net.kckern.daylight.shellkit.LiveDownloads;
+import net.kckern.daylight.shellkit.StallRemedy;
 import net.kckern.daylight.shellkit.UiTelemetry;
 
 import org.json.JSONArray;
@@ -324,10 +325,12 @@ final class KeepStore {
             @Override public void onDownloadChanged(DownloadManager m, Download d, Exception e) {
                 if (d.state == Download.STATE_FAILED) local.execute(() -> failed(d.request.id, e));
                 if (d.state == Download.STATE_COMPLETED) local.execute(() -> completed(d.request.id));
+                if (d.state == Download.STATE_STOPPED) stoppedKeys.add(d.request.id); else stoppedKeys.remove(d.request.id);
                 if (d.state == Download.STATE_DOWNLOADING) liveTickSoon();
                 refreshSoon();
             }
             @Override public void onDownloadRemoved(DownloadManager m, Download d) {
+                stoppedKeys.remove(d.request.id);
                 String again = prefs.getString("readd." + d.request.id, "");
                 prefs.edit().remove("readd." + d.request.id).apply();
                 if (!again.isEmpty()) add(request(d.request.id, again));
@@ -834,6 +837,7 @@ final class KeepStore {
         switch (action) {
             case "keep": keep(mediaId.isEmpty() ? "c:" + contentId : mediaId, done); break;
             case "retry": retry(contentId, done); break;
+            case "restart": restart(contentId, done); break;
             case "remove": remove(contentId, "remove", done); break;
             case "unit-remove": removeUnit(contentId, done); break;
             case "group-remove": removeGroup(contentId, done); break;
@@ -1169,11 +1173,25 @@ final class KeepStore {
         Layout(List<String> keys, String kind, String title) { this.keys = keys; this.kind = kind; this.title = title; }
     }
 
+    /** A stall's remedy in progress for one item: the order of its steps and the tracks it acts on. */
+    private static final class Fix {
+        final StallRemedy remedy = new StallRemedy();
+        List<String> keys = new ArrayList<>();
+    }
+
     private volatile Map<String, Layout> layout = new java.util.HashMap<>();
-    /** Per downloading item: its byte samples (rate, stall, the restart). Main thread. */
+    // Everything below is touched on the main thread only.
+    /** Per item: byte samples of all its tracks (stall detection). */
     private final Map<String, DownloadProgress> samples = new java.util.HashMap<>();
-    /** The track each row's live line is about, so two running at once do not make it flip. Main thread. */
+    /** Per shown track: its own byte samples, so the rate is of the bytes the row shows. */
+    private final Map<String, DownloadProgress> rates = new java.util.HashMap<>();
+    private final Map<String, Fix> fixes = new java.util.HashMap<>();
+    /** The track each row's live line is about, so two running at once do not make it flip. */
     private final Map<String, String> shownTrack = new java.util.HashMap<>();
+    /** Downloads the manager reports STOPPED (the stall remedy's second step waits for this). */
+    private final Set<String> stoppedKeys = new HashSet<>();
+    /** Items whose partial files were already removed and fetched again for a stall, until bytes flow again. */
+    private final Set<String> readded = new HashSet<>();
     private boolean liveTicking;
     private volatile String liveLine = "";
 
@@ -1192,7 +1210,8 @@ final class KeepStore {
     /**
      * Live bytes from the manager's own in-memory list (never its index, written every 5 s),
      * published through {@link LiveDownloads} for the open screens and the notification. No bytes
-     * for 15 s on a usable network is a stall: the transfer is restarted once.
+     * for 15 s on a usable network (45 s before an item's first byte) is a stall, and the remedy
+     * ({@link StallRemedy}) acts on it.
      */
     private final Runnable liveTick = new Runnable() {
         @Override public void run() {
@@ -1204,13 +1223,14 @@ final class KeepStore {
                 for (Download d : manager.getCurrentDownloads()) byKey.put(d.request.id, d);
                 boolean usable = manager.getNotMetRequirements() == 0 && !manager.getDownloadsPaused();
                 long now = SystemClock.elapsedRealtime();
+                Set<String> shownKeys = new HashSet<>();
                 for (Map.Entry<String, Layout> en : layout.entrySet()) {
                     String cid = en.getKey();
                     Layout l = en.getValue();
                     int done = 0, current = -1;
                     long all = 0, bytes = 0, total = 0;
                     List<String> downloading = new ArrayList<>();
-                    boolean stuck = false;
+                    boolean taken = false;
                     for (int j = 0; j < l.keys.size(); j++) {
                         Download d = byKey.get(l.keys.get(j));
                         if (d == null) continue;
@@ -1220,46 +1240,89 @@ final class KeepStore {
                         downloading.add(l.keys.get(j));
                         // The track shown stays the one shown while it downloads (two run at once; the row must not flip).
                         boolean shown = l.keys.get(j).equals(shownTrack.get(cid));
-                        if (current < 0 || (shown && !stuck)) {
+                        if (current < 0 || (shown && !taken)) {
                             current = j + 1; bytes = d.getBytesDownloaded(); total = d.contentLength > 0 ? d.contentLength : 0;
-                            stuck = shown;
+                            taken = shown;
                         }
                     }
-                    if (current > 0) shownTrack.put(cid, l.keys.get(current - 1)); else shownTrack.remove(cid);
-                    if (current < 0) { samples.remove(cid); continue; }
+                    Fix fx = fixes.get(cid);
+                    if (current < 0 && fx == null) { samples.remove(cid); shownTrack.remove(cid); continue; }
                     moving = true;
                     // Waiting on the network, a pause or low storage is the index's words, not a stall.
-                    if (!usable) { samples.remove(cid); continue; }
+                    if (!usable) { samples.remove(cid); fixes.remove(cid); continue; }
                     DownloadProgress p = samples.get(cid);
                     if (p == null) { p = new DownloadProgress(); samples.put(cid, p); }
                     p.sample(now, all);
                     DownloadProgress.Phase phase = p.phase(now);
-                    if (p.restartDue(now)) {
-                        Log.w(TAG, "keep: no bytes for 15 s at " + bytes + " of " + total + "; restarting the transfer");
+                    if (current >= 0 && p.restartDue(now)) {
+                        Log.w(TAG, "keep: no bytes at " + bytes + " of " + total + "; restarting the transfer");
                         event("keep.stalled", new JSONObject().put("bytes", bytes).put("total", total).put("tracks", downloading.size()));
-                        cycle(downloading);
+                        if (fx == null) { fx = new Fix(); fixes.put(cid, fx); }
+                        fx.keys = downloading;
+                        fx.remedy.begin(now);
                     }
-                    LiveDownload ld = new LiveDownload(current, l.keys.size(), done, l.kind, bytes, total, p.bytesPerSecond(), phase);
+                    if (fx != null) {
+                        boolean stopped = !fx.keys.isEmpty() && stoppedKeys.containsAll(fx.keys);
+                        StallRemedy.Step step = fx.remedy.step(now, stopped, phase == DownloadProgress.Phase.MOVING);
+                        // Removing and adding again throws the partial file away: once, until bytes have really flowed since
+                        // (a blackholed network must not eat a new partial file every minute).
+                        if (step == StallRemedy.Step.READD && !readded.add(cid)) step = StallRemedy.Step.NONE;
+                        applyStep(fx, step, byKey);
+                        // Removed and added again: it starts from nothing, so the old high-water mark and episode are over.
+                        if (step == StallRemedy.Step.READD) { samples.remove(cid); fixes.remove(cid); continue; }
+                        if (!fx.remedy.active()) fixes.remove(cid);
+                    }
+                    if (current < 0) continue;
+                    String trackKey = l.keys.get(current - 1);
+                    shownTrack.put(cid, trackKey);
+                    shownKeys.add(trackKey);
+                    DownloadProgress r = rates.get(trackKey);
+                    if (r == null) { r = new DownloadProgress(); rates.put(trackKey, r); }
+                    r.sample(now, bytes);
+                    LiveDownload ld = new LiveDownload(current, l.keys.size(), done, l.kind, bytes, total, r.bytesPerSecond(), phase);
                     out.put(cid, ld);
+                    if (ld.rate > 0) readded.remove(cid);
                     if (line.isEmpty()) line = l.title + " · " + ld.words();
                 }
+                rates.keySet().retainAll(shownKeys);
+                fixes.keySet().retainAll(layout.keySet());
             } catch (Exception unknown) {
                 Log.w(TAG, "keep: live progress failed: " + unknown);
             }
             liveLine = line;
-            samples.keySet().retainAll(out.keySet());
+            samples.keySet().retainAll(layout.keySet());
             LiveDownloads.publish(out);
             if (moving) main.postDelayed(this, 1_000);
             else liveTicking = false;
         }
     };
 
-    /** Stops and starts the given downloads again: the transfer's connection is dropped and a new one opened, the bytes kept. */
-    private void cycle(List<String> keys) {
-        for (String key : keys) { manager.setStopReason(key, STOP_RESTART); manager.setStopReason(key, Download.STOP_REASON_NONE); }
+    /** One step of a stall's remedy (main thread). */
+    private void applyStep(Fix fx, StallRemedy.Step step, Map<String, Download> byKey) throws Exception {
+        switch (step) {
+            case STOP:
+                for (String key : fx.keys) manager.setStopReason(key, STOP_RESTART);
+                break;
+            case RESUME:
+                for (String key : fx.keys) manager.setStopReason(key, Download.STOP_REASON_NONE);
+                break;
+            case READD:
+                // Still no bytes 20 s after the resume: the strong step. The partial file goes and is fetched again.
+                event("keep.stalled.readd", jsonOf("tracks", fx.keys.size()));
+                Log.w(TAG, "keep: still no bytes; removing and adding " + fx.keys.size() + " download(s) again");
+                for (String key : fx.keys) {
+                    Download d = byKey.get(key);
+                    String url = d != null ? d.request.uri.toString() : urlOf(key);
+                    if (url == null || url.isEmpty()) continue;
+                    prefs.edit().putString("readd." + key, url).apply();
+                    delete(key, "refetch");
+                }
+                break;
+            default: break;
+        }
     }
 
-    /** A stalled row's Retry: the same restart, whenever the person asks (main or any thread). */
+    /** A stalled row's Retry (or the notification's Try again): the remedy starts now, whatever the clock says. */
     void restart(String contentId, Consumer<String> done) {
         main.post(() -> {
             Layout l = layout.get(contentId);
@@ -1269,12 +1332,23 @@ final class KeepStore {
                 for (Download d : manager.getCurrentDownloads()) byKey.put(d.request.id, d);
                 for (String key : l.keys) { Download d = byKey.get(key); if (d != null && d.state == Download.STATE_DOWNLOADING) moving.add(key); }
             }
-            samples.remove(contentId);
             manager.resumeDownloads();
-            cycle(moving);
+            if (!moving.isEmpty()) {
+                Fix fx = fixes.get(contentId);
+                if (fx == null) { fx = new Fix(); fixes.put(contentId, fx); }
+                if (!fx.remedy.active()) fx.keys = moving;
+                fx.remedy.begin(SystemClock.elapsedRealtime());
+                liveTickSoon();
+            }
+            Log.i(TAG, "keep: restart asked for " + moving.size() + " download(s)");
             event("keep.restart", jsonOf("tracks", moving.size()));
             say(done, moving.isEmpty() ? "Nothing to restart" : "Trying again");
         });
+    }
+
+    /** Every item whose bytes have stopped, restarted (the notification's Try again). */
+    void restartStalled() {
+        for (String cid : LiveDownloads.stalledIds()) restart(cid, null);
     }
 
     // ── finished books ───────────────────────────────────────────────────────

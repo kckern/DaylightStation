@@ -28,6 +28,18 @@ public final class LiveDownloads {
 
     public static boolean any() { return !now.isEmpty(); }
 
+    public static boolean anyStalled() {
+        for (LiveDownload l : now.values()) if (l.stalled()) return true;
+        return false;
+    }
+
+    /** Content ids of the items whose bytes have stopped. */
+    public static java.util.List<String> stalledIds() {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        for (Map.Entry<String, LiveDownload> e : now.entrySet()) if (e.getValue().stalled()) out.add(e.getKey());
+        return out;
+    }
+
     public static void listen(Runnable r) { LISTENERS.addIfAbsent(r); }
 
     public static void unlisten(Runnable r) { LISTENERS.remove(r); }

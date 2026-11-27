@@ -42,7 +42,7 @@ final class KeepLabels {
         if (contentId == null || contentId.isEmpty()) return "";
         for (JSONObject k : index(c)) {
             if (!contentId.equals(k.optString("contentId"))) continue;
-            return k.optBoolean("auto") ? KeptIndex.describe(k) : "";
+            return k.optBoolean("auto") ? KeptIndex.describeNow(k) : "";
         }
         try { return KeepStore.get(c).autoLine(contentId); } catch (RuntimeException unavailable) { return ""; }
     }

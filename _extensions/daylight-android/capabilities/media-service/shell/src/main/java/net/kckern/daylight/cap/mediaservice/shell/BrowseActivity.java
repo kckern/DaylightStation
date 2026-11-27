@@ -228,6 +228,7 @@ public final class BrowseActivity extends Activity {
         // The row that plays shows the playing glyph: redrawn as the item changes.
         playingShown = playingTitle();
         net.kckern.daylight.shellkit.NowPlayingNote.listen(playingChanged);
+        net.kckern.daylight.shellkit.LiveDownloads.listen(liveKeep);
         if (started && !rows.isEmpty()) redrawRows();
         // Back from Now playing or On this phone: the book's progress and Keep's state are read again.
         if (started && detail()) fillHeader();
@@ -251,17 +252,25 @@ public final class BrowseActivity extends Activity {
         if (!detail() || parent == null) return "";
         String cid = contentIdOf(parent);
         JSONObject k = KeepLabels.holding(net.kckern.daylight.shellkit.KeptIndex.read(getFilesDir()), cid);
-        return (k == null ? "-" : k.optString("state") + "|" + k.optBoolean("auto")) + "|" + KeepLabels.collectionLine(this, cid);
+        net.kckern.daylight.shellkit.LiveDownload live = net.kckern.daylight.shellkit.LiveDownloads.get(cid);
+        return (k == null ? "-" : k.optString("state") + "|" + k.optBoolean("auto")) + "|" + KeepLabels.collectionLine(this, cid)
+                + "|" + (live == null ? "" : live.words());
     }
+
+    /** The keep's live bytes arrive once a second (LiveDownloads): the header's keep button and line follow them. */
+    private final Runnable liveKeep = () -> {
+        if (isFinishing() || isDestroyed() || !detail()) return;
+        String now = keepState();
+        if (!now.equals(keepShown)) {
+            keepShown = now;
+            fillHeader();
+        }
+    };
 
     private final Runnable keepWatch = new Runnable() {
         @Override public void run() {
             if (isFinishing() || isDestroyed()) return;
-            String now = keepState();
-            if (!now.equals(keepShown)) {
-                keepShown = now;
-                fillHeader();
-            }
+            liveKeep.run();
             main.postDelayed(this, KEEP_WATCH_MS);
         }
     };
@@ -269,6 +278,7 @@ public final class BrowseActivity extends Activity {
     @Override protected void onStop() {
         main.removeCallbacks(keepWatch);
         net.kckern.daylight.shellkit.NowPlayingNote.unlisten(playingChanged);
+        net.kckern.daylight.shellkit.LiveDownloads.unlisten(liveKeep);
         mini.stop();
         super.onStop();
     }
@@ -1331,7 +1341,7 @@ public final class BrowseActivity extends Activity {
                 JSONObject k = KeepLabels.holding(net.kckern.daylight.shellkit.KeptIndex.read(getFilesDir()), contentIdOf(parent));
                 boolean ready = k != null && net.kckern.daylight.shellkit.KeptIndex.ready(k);
                 ImageButton b = iconButton(k == null ? R.drawable.daylight_np_download : ready ? R.drawable.daylight_np_kept : R.drawable.daylight_np_downloading,
-                        k == null ? "Keep on this phone" : net.kckern.daylight.shellkit.KeptIndex.describe(k));
+                        k == null ? "Keep on this phone" : net.kckern.daylight.shellkit.KeptIndex.describeNow(k));
                 // Kept is a selected state: the accent; downloading or queued stays muted.
                 if (ready) b.setImageTintList(ColorStateList.valueOf(t.primary));
                 b.setOnClickListener(v -> { if (k == null) KeepFlow.start(this, self(), title); else DownloadsActivity.open(this); });

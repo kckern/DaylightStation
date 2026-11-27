@@ -1700,12 +1700,20 @@ line for the live one while Downloading or Updating. An unknown length is never 
 "12.4 MB · 640 KB/s", or "Downloading…" before the first byte, with a sliding bar. A known
 length fills the bar with finished tracks plus the part of this one. A stall is no new bytes
 for 15 s while the network is usable and not paused (a wait for Wi-Fi or storage is the index's
-own words, not a stall; `DownloadProgress`, pure). It restarts the transfer once
-(`setStopReason` stop then none: the connection is dropped and a new one opened, the bytes
-kept) and says "Stalled · restarting"; if no bytes come 15 s later it says "Stalled · will
-retry when the connection improves". The row's end icon becomes Retry (and "Try again" heads
-the row's sheet): it restarts the transfer on demand. Bytes past the most seen end the stall;
-a count that dips and climbs back does not. The old 30-minute stall check is gone.
+own words, not a stall; `DownloadProgress`, pure; an item with no first byte yet gets 45 s,
+because a cold connection is slow to set up). The remedy is ordered by `StallRemedy` (pure,
+fake-clock tests): stop the item's downloads (`setStopReason`), resume them once the manager
+reports them STOPPED (or after 2 s), never back to back; and if still no bytes 20 s after the
+resume, remove and add the same requests again (the partial file is re-fetched; `keep.stalled.readd`;
+once, until bytes have really flowed). The row says "Stalled · restarting", then "Stalled · will
+retry when the connection improves". The rate is the shown track's own, as are its bytes. The
+row's end icon on On this phone and on the home page's rows becomes Retry (and "Try again" heads
+the Downloads row's sheet), and the keep notification gains a "Try again" action only while an
+item is stalled; all of them restart the transfer at once (home goes through the keep job's
+`restart` action). The Downloads screen, the home page, the Browse header and Now playing's
+sheet read `LiveDownloads` (a subscription, not a poll of the index); the keep notification is
+re-posted from the same one-second tick, only while it is the foreground notification. Bytes
+past the most seen end the stall; a count that dips and climbs back does not. The old 30-minute stall check is gone.
 
 Failure reasons, one set everywhere: Gone from the library (404, permanent only after a
 fresh URL also got one), Home refused it (401/403), Home had a problem (5xx, retried), Home

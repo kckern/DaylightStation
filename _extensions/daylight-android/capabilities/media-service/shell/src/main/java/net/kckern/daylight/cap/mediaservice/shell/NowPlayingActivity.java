@@ -1960,7 +1960,7 @@ public class NowPlayingActivity extends Activity {
         org.json.JSONObject kept = !remote() && current != null && !current.mediaId.isEmpty() ? KeepStore.get(this).keptHolding(current.mediaId) : null;
         net.kckern.daylight.shellkit.ItemSheet sheet = net.kckern.daylight.shellkit.ItemSheet.of(this, "NowPlaying")
                 .item(cover, longForm() ? net.kckern.daylight.shellkit.CoverGlyph.Kind.BOOK : net.kckern.daylight.shellkit.CoverGlyph.Kind.TRACK,
-                        name, remote() ? "On " + targetName : by, kept == null ? "" : net.kckern.daylight.shellkit.KeptIndex.describe(kept));
+                        name, remote() ? "On " + targetName : by, kept == null ? "" : net.kckern.daylight.shellkit.KeptIndex.describeNow(kept));
         if (!remote() && (any || SleepTimer.isSet())) sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_timer, "Sleep timer", SleepTimer.isSet() ? SleepTimer.describeNow() : "", this::chooseSleep);
         if (!remote() && !chapters.isEmpty()) sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_progress_bar, "Progress bar",
                 barMode() == BarScope.Mode.BOOK ? "Whole book" : "Chapter", this::chooseBarMode);
@@ -1972,7 +1972,7 @@ public class NowPlayingActivity extends Activity {
                     note("download.retry.tap");
                     KeepStore.get(this).retry(kept.optString("contentId"), this::say);
                 });
-                sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_on_phone, "On this phone", net.kckern.daylight.shellkit.KeptIndex.describe(kept), () -> DownloadsActivity.open(this));
+                sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_on_phone, "On this phone", net.kckern.daylight.shellkit.KeptIndex.describeNow(kept), () -> DownloadsActivity.open(this));
             }
         }
         // Crossfade between songs: this phone's player only (a screen decides its own).

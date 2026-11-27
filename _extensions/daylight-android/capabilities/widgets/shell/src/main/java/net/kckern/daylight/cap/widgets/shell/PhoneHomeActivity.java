@@ -106,6 +106,7 @@ public class PhoneHomeActivity extends Activity {
         // Opened: kept downloads catch up (after an update, a reboot), kept lists re-sync online.
         keepJob("resync-open", "");
         if (mini != null) mini.start();
+        net.kckern.daylight.shellkit.LiveDownloads.listen(liveRedraw);
         if (keptBox != null) fillKept();   // a collection kept from Now playing shows on return (in place)
         if (continueBox != null && continueBox.getParent() != null) {
             // Redrawn from the last answer (the offline marks follow the network now), then asked
@@ -125,6 +126,7 @@ public class PhoneHomeActivity extends Activity {
         placements.prefs.unregisterOnSharedPreferenceChangeListener(placementChanged);
         timer.removeCallbacks(placementTimeout);
         timer.removeCallbacks(keptTick);
+        net.kckern.daylight.shellkit.LiveDownloads.unlisten(liveRedraw);
         super.onStop();
     }
 
@@ -649,6 +651,18 @@ public class PhoneHomeActivity extends Activity {
     private LinearLayout keptBox, continueBox;
     private final Runnable keptTick = this::fillKept;
 
+    /** Each second the keep store publishes live bytes: the downloading cards redraw their words, bar and Retry, nothing else. */
+    private void redrawLive() {
+        if (keptCards == null) return;
+        for (int i = 0; i < keptCards.getChildCount(); i++) {
+            View card = keptCards.getChildAt(i);
+            Object k = card.getTag(R.id.daylight_home_kept);
+            if (card.getTag() instanceof KeptCard && k instanceof JSONObject) bindKeptCard(card, (JSONObject) k);
+        }
+    }
+
+    private final Runnable liveRedraw = this::redrawLive;
+
     private void addKept() {
         keptBox = new LinearLayout(this);
         keptBox.setOrientation(LinearLayout.VERTICAL);
@@ -689,15 +703,10 @@ public class PhoneHomeActivity extends Activity {
         java.util.List<JSONObject> first = net.kckern.daylight.shellkit.KeptGroups.firstBlocks(
                 net.kckern.daylight.shellkit.KeptGroups.rows(index), 3, 3);
         // Moving, checking, queued or removing: refreshed every 3 s; waiting: every 30 s (a network or room may come).
-        // Downloading: every second (live bytes, in memory); the rest as above.
-        StringBuilder liveWords = new StringBuilder();
-        for (JSONObject k : index) {
-            net.kckern.daylight.shellkit.LiveDownload live = net.kckern.daylight.shellkit.LiveDownloads.get(k.optString("contentId"));
-            if (live != null) liveWords.append(k.optString("contentId")).append(live.words()).append(live.fraction());
-        }
-        if (busy) timer.postDelayed(keptTick, liveWords.length() > 0 ? 1000 : 3000);
+        // The live bytes come through LiveDownloads (liveRedraw), not from this poll.
+        if (busy) timer.postDelayed(keptTick, 3000);
         else if (!index.isEmpty()) timer.postDelayed(keptTick, 30_000);
-        String shown = first + "|" + room + "|" + over + "|" + index.isEmpty() + "|" + liveWords;
+        String shown = first + "|" + room + "|" + over + "|" + index.isEmpty();
         if (shown.equals(keptShown)) return;
         keptShown = shown;
         if (index.isEmpty()) {
@@ -743,6 +752,8 @@ public class PhoneHomeActivity extends Activity {
     private static final class KeptCard {
         ImageView cover;
         TextView name, sub, retry, side;
+        /** The item's progress inside its card while it downloads: filled, or sliding when its length is unknown. */
+        android.widget.ProgressBar bar;
     }
 
     private static boolean keptGroupRow(JSONObject k) {
@@ -794,6 +805,16 @@ public class PhoneHomeActivity extends Activity {
         h.sub.setMaxLines(1);
         h.sub.setEllipsize(android.text.TextUtils.TruncateAt.END);
         words.addView(h.sub);
+        h.bar = new android.widget.ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        h.bar.setMax(1000);
+        h.bar.setProgressTintList(android.content.res.ColorStateList.valueOf(t.primary));
+        h.bar.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(t.track));
+        h.bar.setIndeterminateTintList(android.content.res.ColorStateList.valueOf(t.primary));
+        h.bar.setVisibility(View.GONE);
+        h.bar.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        LinearLayout.LayoutParams barLp = new LinearLayout.LayoutParams(-1, dp(3));
+        barLp.topMargin = dp(6);
+        words.addView(h.bar, barLp);
         card.addView(words, new LinearLayout.LayoutParams(0, -2, 1));
         // A group's ⋮, or a unit's Remove (an icon button); none on a lone item.
         h.side = label("", Type.TITLE, t.inkMuted);
@@ -828,8 +849,9 @@ public class PhoneHomeActivity extends Activity {
         String title = k.optString("title");
         boolean group = keptGroupRow(k), unit = keptUnitRow(k);
         String cid = k.optString("contentId");
+        net.kckern.daylight.shellkit.LiveDownload live = group ? null : net.kckern.daylight.shellkit.LiveDownloads.get(cid);
         String line = group ? net.kckern.daylight.shellkit.KeptGroups.line(k)
-                : net.kckern.daylight.shellkit.KeptIndex.describe(k, net.kckern.daylight.shellkit.LiveDownloads.get(cid));
+                : net.kckern.daylight.shellkit.KeptIndex.describe(k, live);
         card.setPadding(unit ? dp(28) : dp(8), dp(8), dp(4), dp(8));
         h.side.setVisibility(group || unit ? View.VISIBLE : View.GONE);
         if (group) {
@@ -847,10 +869,21 @@ public class PhoneHomeActivity extends Activity {
         h.name.setText(title);
         h.sub.setText(line);
         loadCover(h.cover, k.optString("art"));
-        boolean retryable = net.kckern.daylight.shellkit.KeptIndex.retryable(k);
+        // A bar inside the card while it downloads: filled, sliding while the length is unknown, standing still when stalled.
+        if (live == null) h.bar.setVisibility(View.GONE);
+        else {
+            h.bar.setVisibility(View.VISIBLE);
+            float f = live.fraction();
+            boolean slides = f < 0 && !live.stalled();
+            if (h.bar.isIndeterminate() != slides) h.bar.setIndeterminate(slides);
+            if (!slides) h.bar.setProgress(Math.round(Math.max(0f, f) * 1000));
+        }
+        boolean stalled = live != null && live.stalled();
+        boolean retryable = net.kckern.daylight.shellkit.KeptIndex.retryable(k) || stalled;
         h.retry.setVisibility(retryable ? View.VISIBLE : View.GONE);
         h.retry.setContentDescription("Retry " + title);
-        h.retry.setOnClickListener(v -> { keepJob("retry", cid); toast("Trying again"); });
+        // A stalled transfer is restarted (media-service's remedy); a failed track is fetched again.
+        h.retry.setOnClickListener(v -> { keepJob(stalled ? "restart" : "retry", cid); toast("Trying again"); });
         card.setContentDescription(title + ". " + line);
         String id = "c:" + cid;
         // A group opens On this phone, where its units are; a part-kept collection plays too:

@@ -73,4 +73,26 @@ public class LiveDownloadTest {
         assertEquals("unsubscribed", 1, heard[0]);
         assertNull(LiveDownloads.get("plex:1"));
     }
+
+    @Test public void theRegistryKnowsWhichItemsAreStalled() {
+        LiveDownloads.clear();
+        java.util.Map<String, LiveDownload> m = new java.util.HashMap<>();
+        m.put("a", live(0, 1, 5, 10, 0, DownloadProgress.Phase.MOVING));
+        m.put("b", live(0, 1, 5, 10, 0, DownloadProgress.Phase.RESTARTING));
+        LiveDownloads.publish(m);
+        assertTrue(LiveDownloads.anyStalled());
+        assertEquals(java.util.Collections.singletonList("b"), LiveDownloads.stalledIds());
+        LiveDownloads.publish(java.util.Collections.singletonMap("a", live(0, 1, 5, 10, 0, DownloadProgress.Phase.MOVING)));
+        assertFalse(LiveDownloads.anyStalled());
+    }
+
+    @Test public void describeNowReadsTheRegistry() throws Exception {
+        LiveDownloads.clear();
+        JSONObject dl = new JSONObject().put("contentId", "plex:9").put("state", KeptIndex.DOWNLOADING).put("total", 1);
+        String idx = KeptIndex.describeNow(dl);
+        LiveDownloads.publish(java.util.Collections.singletonMap("plex:9", live(0, 1, 1_000_000, 2_000_000, 0, DownloadProgress.Phase.MOVING)));
+        assertEquals("1.0 of 2.0 MB", KeptIndex.describeNow(dl));
+        assertFalse(idx.equals(KeptIndex.describeNow(dl)));
+        LiveDownloads.clear();
+    }
 }
