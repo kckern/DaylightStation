@@ -500,7 +500,7 @@ targets are Media3 sessions behind one `MediaController`:
 
 | Piece | Installed (shell half) | Payload |
 |---|---|---|
-| `NowPlayingActivity` (not exported) | Laid out after Plexamp (ops:docs/superpowers/specs/2026-11-26-phone-player-parity-design.md). Top: close, the target (its icon and name, ▾ opens **Play on** with the current one checked) and, for a screen, the D-pad. The **stage** holds the cover (square, or 16:9 for a video still; swipe it left for next, right for previous, with a haptic tick), or the **lyrics** or the **queue** in its place (Back returns to the cover). Under it the **seek bar is the track's loudness** (Plex's analysis, as bars; a plain line when there is none), elapsed on the left and remaining on the right (tap: the length; remembered). Then artist, title (bold) and album (year), centred, and the audio quality ("FLAC · 24-bit · 96 kHz", "MP3 · 256 kbps · 44.1 kHz") when the backend knows it. One transport row: previous, play/pause in a disc of the cover's color, next; an item of 20 minutes or more adds back 10 / forward 10 at its ends. One icon row: queue, lyrics (enabled only when the track has lyrics), shuffle, ⋮ (the item sheet: Sleep timer, Progress bar for a book with chapters, Keep on this phone or its state, Crossfade on this phone, Stop; then Clear queue and Remove from this phone; the queue itself is in sections, see **The queue** below), repeat, output (opens **Play on**). A long item (a book, a talk, a course: `MediaKind.controls`) shows speed in shuffle's place and no repeat, lyrics or crossfade. The seek bar of an item of 10 minutes or more shows a time scale while it is touched (see **The seek bar's time scale**). The page takes its colors from the cover (`CoverColor`, `DaylightTheme.withAccent`) over a soft copy of it. With a screen as the target the volume keys set the screen's volume and show the level for a moment. The status line shows only when something is wrong, or a sleep timer is set. A control is enabled only when the target's player makes its command available. It opens as a sheet rising from the bottom, and the down chevron or Back drops it. **Play on** (the bottom sheet described under **Lookup and browse**) says what each player is doing (Off, Nothing playing, the title); off players are folded under **Off · N** and can't be picked. A screen with nothing on it shows **Play something on <screen>** in the stage: Continue listening and your playlists, one tap starting it there (the payload's `screen-command` `load`, i.e. `GET /api/v1/device/<id>/load?play|queue=…&deferredRetry=0`, as the web's Play on), and Browse on the screen through the D-pad. An off screen offers this phone or another screen instead. **Chapters** (a long item whose chapters the backend or the kept copy knows): a line under the album (with the bar on the chapter, "Canto 7 of 33 · 2 h 46 left in book"; on the whole book "Chapter 4 of 12 · 9 min left in chapter", or "4/12 · The Return · 9 min left" for a named one; time left at the play speed; the line is reserved blank for any long item so nothing jumps, and a tap opens the list), the seek bar on the current chapter or, by choice, the whole book with chapter notches only when they are 24 dp apart (see **The seek bar's time scale**; numbered in the press-and-hold zoom), Next / Previous by chapter (Previous restarts the chapter when more than 3 s in), the queue's place shows **Chapters · N** for a single-file book (number, name, length; a tap goes there), the sleep timer offers **End of chapter** (pauses at that chapter's end, fading over its last minute), and the session subtitle names the chapter (notification, lock screen, Android Auto). No chapters means none of this shows | Opens it on a `media/now-playing?target=` link (a `player:` action); `track-levels`, `track-lyrics` and `track-chapters` read `GET /api/v1/track/levels/<source>/<id>?samples=N`, `GET /api/v1/track/lyrics/<source>/<id>` and `GET /api/v1/track/chapters/<source>/<id>` (chapters: without home, the ones kept with the track, then the ones seen this session) (none, or an older backend's 404, is "none": the strip is a line and the button is off) |
+| `NowPlayingActivity` (not exported) | Laid out after Plexamp (ops:docs/superpowers/specs/2026-11-26-phone-player-parity-design.md). Top: close, the target (its icon and name, ▾ opens **Play on** with the current one checked) and, for a screen, the D-pad. The **stage** holds the cover (square, or 16:9 for a video still; swipe it left for next, right for previous, with a haptic tick), or the **lyrics** or the **queue** in its place (Back returns to the cover). Under it the **seek bar is the track's loudness** (Plex's analysis, as bars; a plain line when there is none), elapsed on the left and remaining on the right (tap: the length; remembered). Then artist, title (bold) and album (year), centred, and the audio quality ("FLAC · 24-bit · 96 kHz", "MP3 · 256 kbps · 44.1 kHz") when the backend knows it. One transport row: previous, play/pause in a disc of the cover's color, next; an item of 20 minutes or more adds back 10 / forward 10 at its ends. One icon row: queue, lyrics (enabled only when the track has lyrics), shuffle, ⋮ (the item sheet: Sleep timer, Progress bar for a book with chapters, Keep on this phone or its state, Crossfade on this phone, Stop; then Clear queue and Remove from this phone; the queue itself is in sections, see **The queue** below), repeat, output (opens **Play on**). A long item (a book, a talk, a course: `MediaKind.controls`) shows speed in shuffle's place and no repeat, lyrics or crossfade. The seek bar of an item of 10 minutes or more shows a time scale while it is touched (see **The seek bar's time scale**). The page takes its colors from the cover (`CoverColor`, `DaylightTheme.withAccent`) over a soft copy of it. With a screen as the target the volume keys set the screen's volume and show the level for a moment. The status line shows only when something is wrong, or a sleep timer is set. A control is enabled only when the target's player makes its command available. It opens as a sheet rising from the bottom, and the down chevron or Back drops it. **Play on** (the bottom sheet described under **Lookup and browse**) says what each player is doing (Off, Nothing playing, the title); off players are folded under **Off · N** and can't be picked. A screen with nothing on it shows **Play something on <screen>** in the stage: Continue listening and your playlists, one tap starting it there (the payload's `screen-command` `load`, i.e. `GET /api/v1/device/<id>/load?play|queue=…&deferredRetry=0`, as the web's Play on), and Browse on the screen through the D-pad. An off screen offers this phone or another screen instead. **Chapters** (a long item whose chapters the backend or the kept copy knows): a line under the album (with the bar on the chapter, "Canto 7 of 33 · 2 h 46 min left in book"; on the whole book "Chapter 4 of 12 · 9 min left in chapter", or "4/12 · The Return · 9 min left" for a named one; time left at 1×, whatever the speed (see **Time left** under Lookup and browse); the line is reserved blank for any long item so nothing jumps, and a tap opens the list), the seek bar on the current chapter or, by choice, the whole book with chapter notches only when they are 24 dp apart (see **The seek bar's time scale**; numbered in the press-and-hold zoom), Next / Previous by chapter (Previous restarts the chapter when more than 3 s in), the queue's place shows **Chapters · N** for a single-file book (number, name, length; a tap goes there), the sleep timer offers **End of chapter** (pauses at that chapter's end, fading over its last minute), and the session subtitle names the chapter (notification, lock screen, Android Auto). No chapters means none of this shows | Opens it on a `media/now-playing?target=` link (a `player:` action); `track-levels`, `track-lyrics` and `track-chapters` read `GET /api/v1/track/levels/<source>/<id>?samples=N`, `GET /api/v1/track/lyrics/<source>/<id>` and `GET /api/v1/track/chapters/<source>/<id>` (chapters: without home, the ones kept with the track, then the ones seen this session) (none, or an older backend's 404, is "none": the strip is a line and the button is off) |
 | `RemoteControlService`, a Media3 `MediaSessionService` (not exported, session id `screen-remote`) | A second session beside `DaylightMediaService`, holding a `ScreenPlayer`. Its notification and lock-screen card drive the screen; it reports remote playback (0–100), so the phone's volume keys set the screen's volume while it is the active session | — |
 | `ScreenPlayer`, a `SimpleBasePlayer` | The screen's snapshot as a Media3 player: its queue by `queueItemId`, its position carried forward while it plays. Every call becomes one command (`ScreenCommands`); its future completes after the session is read again, so the controls settle on what the screen did | `screens`, `screen-session`, `screen-command` (`ScreenRemote`): `GET /api/v1/device/config`, `GET /api/v1/device/<id>/session`, and the transport, queue, shuffle, repeat and volume routes of `__docs/reference/media/media-app-technical.md` §4 |
 
@@ -532,11 +532,16 @@ from the phone, under 2 s from home).
   instead of "Nothing playing". The seed is that target's own entry
   (`NowPlayingNote.forTarget`), never whichever entry is newer: a notification tap for this
   phone draws this phone's item even while a screen's entry is newer.
-- **Laid out once.** The Starting frame lays out exactly as the playing frame: the
-  waveform row is there (flat, off), the album and quality lines keep their place, the
-  chapter line is reserved only for a long item (a book or a talk, said by the tapping
-  screen with `starting.long`), and the cover box is the same size, so nothing moves
-  when the track lands.
+- **Laid out once.** The Starting frame lays out exactly as the playing frame of the
+  same kind (`StartFrame`): the waveform row is there (flat, off), the cover box is the
+  same size, and the lines and buttons are the kind's. Music: by-line above the title,
+  the album and quality lines kept, shuffle, repeat and lyrics in the row. A long item (a
+  book or a talk): the book's title, the book line kept, the author under it, the chapter
+  line reserved, ±10 s in the transport, and the row's speed (the book's remembered one)
+  in shuffle's place with no repeat, lyrics or quality line. The kind is `starting.long`,
+  set by every play path: a browse row by its own kind (a search row too), a page's
+  Play, Play on a screen, the phone home's cards, the idle panel's Resume (remembered
+  with the last item) and Continue, a kept item opened by a link, and the old play screen.
 - **Switching to a screen.** The picker reads each screen's session as it opens; that
   answer goes with the pick into Now playing and the remote (`ScreenPlayer` starts from
   it, greyed and with no commands, "Checking <screen>…", until its own first read).
@@ -613,6 +618,14 @@ of your queued items, so queued music never plays inside a book. Spec:
   "Added to the queue · 3rd", "Playing Snakes & Arrows · your 4 queued stay" (shown when
   Now playing opens). Each has Undo for 6 s; Undo of a new source puts the previous one
   back at its place (an Undo pressed before the new list arrived is applied when it does).
+- **The queue has the whole stage** (`QueueChrome`). Opening it hides the player's deck
+  (seek bar, names, quality, transport, icon row); the list runs from under the top bar
+  down to one strip: a thin progress line, the cover and name of what plays (a tap closes
+  the queue), play/pause, next, and the lit queue button (closes it). The full player
+  returns when the queue closes (the strip, the queue button or Back).
+- **What plays is never also queued.** When a Play-next or queued item becomes the one
+  playing (its turn came, or it was tapped in its list as a new source) it leaves Queued
+  by you; Undo of that new source puts the row back at its place.
 - **The queue screen** (Now playing → Queue): History collapsed ("History · 12", Show),
   Now playing, Queued by you with **Clear queued**, Next from <source>, Radio, and the end
   card. Drag the handle to reorder, within a section or between Queued by you and the
@@ -795,7 +808,11 @@ of your queued items, so queued music never plays inside a book. Spec:
   `continue.minListenedMin` (default 5), never one per part; the row is the book (Remove
   and Mark finished act on it) and resumes its current part. Its line is the author, the
   part and what is left in the book ("William Shakespeare · Part 2 of 5 · 1 h 30 min
-  left"), with the part's progress bar; a tap resumes it here. A home older than the route
+  left"), with the part's progress bar; a tap resumes it here. It is long audio only:
+  never video or music, never anything under 20 minutes in all (a standalone item by its
+  own length, a book by its parts' total when known). Home applies the rule
+  (`continueListening.judgeContinueGroup`, reason `short`), and the payload applies it
+  again to home's answer (`BrowseTree.listeningOnly`) so a phone ahead of home is right. A home older than the route
   is read the old way (`/recent`: audio, 20 minutes or more, 30 s in, under 97%). The tab
   asks again on every return, so a book marked finished or hidden leaves at once. **Your
   playlists**: the playlists already chosen for Drive, a widget or Driving Radio, as cover
@@ -1382,17 +1399,30 @@ screens (dimmed, not pickable). Off starts collapsed every time; the screen in u
 filed under Off (`PickerGroups`).
 
 **The author page is about the author.** The header is the portrait (info's
-`thumbnail`, cached), the name, a facts line ("Italy · 1 book · 3 h": country when known ·
-book count · total length; a music artist: "Iceland · Art Pop · 9 albums") and the
-summary clamped to four lines with **More** (opens in place). The book count, each book's
-length and progress, and which one to continue come from the `about` op: home's info and
-the author's tracks (`/api/v1/list/<id>/allLeaves`: each track's book and length) with the
-household's recent list. **A name is shown once**: on a detail page the top bar holds only
+`thumbnail`, cached) with the name and a facts line beside it, with the whole width
+("Italy · 1 book · 3 h": country when known · book count · total length; a music artist:
+"Iceland · Art Pop · 9 albums"; a number and its unit never break apart). Under it, a row
+of its own: the primary (the round play with "Continue <book>", Shuffle for an artist, or
+nothing) and ⋮. Then the summary clamped to four lines with **More** (opens in place).
+The name never breaks inside a word (`NameFit`): two lines at the title size, else one
+size down, else that size ending in "…". While home's answer is on its way the facts line,
+the action row and the summary keep their places (blank), so nothing moves when it lands;
+they close only when home never answers. The book count, the total, each book's length
+and progress, and which one to continue come from one source, the `about` op: home's
+info and every page of the author's tracks (`/api/v1/list/<id>/allLeaves`, 500 at a
+time: an author of 660 tracks has books past the first 500) with the household's recent
+list. Never the rows' or a search row's count.
+
+**An album page** says who and when under its name ("Rush · 2007"; `about` answers the
+album's `year` and its artist's id, `bylineId`); the line opens the artist's page. Its
+tracks show their number in place of the album's cover on every row, as a book's parts
+do; a compilation's track with its own picture (`ownArt`) keeps it. An album page shows
+no review. **A name is shown once**: on a detail page the top bar holds only
 Back while the header is on screen; the name fades into the bar when the header's name
 scrolls out of view.
 
 **Row second lines never repeat the page** (`RowLine`): under an author the book's year
-and, once started, what is left ("1998 · 2 h 10 min left"), or its length with no year;
+and, once started, what is left ("1998 · 2 h 10 min left": see **Time left**), or its length with no year;
 under a music artist year and track count ("2007 · 13 tracks"); on an album the track's
 length, with its artist only when it is not the album's; in search, lists and Continue the
 author or artist stays. Year, length, track count and artist are home's (the payload
@@ -1400,7 +1430,9 @@ passes them with each row).
 
 **Swipe through neighbours** (`Neighbours`). A detail page opened from a list pages left
 and right through exactly that list in its order: an author page through the library's
-authors, a book through its author's books, a search result through its search group.
+authors, a book through its author's books, a search result through its search group,
+only the entries of its own family (`Neighbours.family`: artists, authors and speakers;
+books and series; albums, playlists and stations), since a search group can mix them.
 Opened from Now playing's album line, the album pages through its artist's albums;
 opened by a link, there is no paging. The header shows the neighbours ("‹ Dante · Thomas
 More ›"; TalkBack hears Previous and Next buttons). Both neighbours' pages, their headers
@@ -1425,10 +1457,22 @@ opens a page. Long-press on a Play tab playlist tile opens its item sheet: **Ope
 this phone, Keep on this phone (or its state, and Remove from this phone).
 
 A **book** page shows how far in it is ("2 h 10 min left · 34 %", Finished, Not started:
-from the household's recent list) under its title; Speed is the book's remembered
+from the household's recent list, every part counted, a part with no place whole:
+`BookLeft`) under its title; Speed is the book's remembered
 long-form speed (the same key Now playing uses); Mark finished posts the web's
 mark-watched for each part. There is no Favourites row: the household's favourites list
 is empty.
+
+**Time left** has one rule on every surface (shell-kit `TimeLeft`): what remains of the
+whole book from its current place, at 1× whatever the speed, to the nearest minute, in
+one form ("1 h 38 min left", "36 min left", "Under a minute left"). The author's book row,
+the book page, Continue listening, the queue's book row and Now playing's chapter and
+"left in book" lines all use it, so one book reads one number everywhere. The countdown
+beside the seek bar is a clock of the part, not a "left" line.
+
+**Search** takes a typed space like any letter (the search runs 250 ms after the last
+key). Over adb, `input text` needs `%s` for a space: an unescaped space ends the
+argument, so only the first word arrives.
 
 **Continue listening's long-press** (the item sheet): Open (the book's page) · Keep on this phone (or its
 state) · Mark finished · Remove from Continue listening. Remove takes the card away at
