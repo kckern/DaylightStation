@@ -93,6 +93,68 @@ GET /api/v1/queue/plex-main/67890?shuffle=true&limit=10
 }
 ```
 
+### Order and `startIndex`
+
+What order a container comes back in depends on what it is
+(`QueueService.resolveQueue`, `__capabilities/playback/server/application/services/QueueService.mjs`):
+
+| Container | Order | `startIndex` | `shuffle` |
+|-----------|-------|--------------|-----------|
+| A program (`preserveOrder`) | The program's own order, resume positions attached | absent | shuffles |
+| An ordered work: a book, a talk series, a course heard as audio | The container's own order, never reordered | **present** | **ignored** (same order, same start) |
+| A show, a season, a music list, anything else | Unwatched first in order, then watched by recency. Songs are never resumable, so a music list keeps its own order | absent | shuffles both pools |
+
+An **ordered work** is a container whose items come from a library that the
+household media config names `books` or `talks`:
+
+```yaml
+# media config, play_on_demand
+library_kinds:        # library title or Plex section id -> books | talks | music
+  Audiobooks: books
+  Education: talks
+```
+
+A library not named is music. A list that mixes a book with songs is not an
+ordered work. A Plex album's tracks take the album's library
+(`PlexAdapter.getList` carries it to the children). Without `library_kinds`
+nothing is an ordered work and every container keeps the order above.
+
+`startIndex` is where to start, an index into `items`; that item's
+`resumePosition` is its place:
+
+- the part heard last (latest `lastPlayed`), at its place;
+- the part after it, when that part was heard to its end;
+- part 1 from its beginning (`resumePosition` cleared), when the last part
+  was heard to its end: a finished book plays again from the top;
+- with no listening times, the first part not finished; with nothing heard, 0.
+
+`?limit=N` on an ordered work starts its window at the start, so `?limit=1`
+answers the part to play and `startIndex` is 0 in that window.
+
+```json
+GET /api/v1/queue/plex/727787
+{ "count": 5, "startIndex": 2,
+  "items": [ {"contentId": "plex:p1"}, {"contentId": "plex:p2"},
+             {"contentId": "plex:p3", "resumable": true, "resumePosition": 600}, ... ] }
+```
+
+**Old clients keep working.** The order of a show or music list is unchanged
+and carries no `startIndex`. A client that ignores `startIndex` on a book
+starts at part 1 (at its saved place, if any) and plays the book in order;
+before 2026-11-26 the queue answered a book as unwatched parts first
+(`[p3,p4,p5,p1,p2]`), which replayed earlier parts after the last one.
+
+Who reads `startIndex`:
+
+| Caller | Behaviour |
+|--------|-----------|
+| Screens' Player (`useQueueController`, and `replaceQueue` for a play-now) | Plays from `startIndex`; earlier parts stay in the original queue for Previous; a prewarmed URL goes to the start item |
+| Web media app (`LocalSessionController` → `containerExpansion`) | Expands from the list route in list order; a play of an all-audio container asks `?limit=1` and makes the start item current. Appends do not ask |
+| `SinglePlayer` collection fallback (`?limit=1`) | Gets the start item, since the window begins there |
+| Transcode prewarm (`TranscodePrewarmService`) | Prepares `items[startIndex]` at its place |
+| Phone (`Resolver`, `QueueMapper.startIndex`) | Starts at the start item, found by id among the audio tracks |
+| Reading-session adoption, ambient music, piano Music, party games | Do not need it: they look items up by id or play music |
+
 Queues can contain items of **mixed formats**:
 ```json
 {
@@ -183,7 +245,7 @@ The format→component mapping lives in `frontend/src/modules/Player/lib/registr
 
 The `useQueueController` hook manages queue state independently of renderers:
 
-- **Queue initialization** from various input shapes (direct array, content ID, playlist reference)
+- **Queue initialization** from various input shapes (direct array, content ID, playlist reference); a fetched queue starts at its `startIndex` (see "Order and `startIndex`")
 - **Advancement** (forward/backward, continuous/non-continuous)
 - **Shader management** (visual overlay modes)
 - **Shuffle state**
