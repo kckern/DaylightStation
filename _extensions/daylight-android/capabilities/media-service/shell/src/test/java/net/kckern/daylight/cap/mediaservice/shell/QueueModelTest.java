@@ -117,6 +117,58 @@ public class QueueModelTest {
         assertEquals(Arrays.asList("a1", "A", "D", "B", "a2", "a3"), q.items());
     }
 
+    /** Every item at most once across Now playing and Queued by you (2026-11-27 real phone: "Spindrift" twice). */
+    private void nowNeverQueued() {
+        List<String> queued = region(Region.QUEUED);
+        assertFalse("now playing " + q.nowEntry().id + " is also queued " + queued, queued.contains(q.nowEntry().id));
+        List<QueueRows.Row> rows = QueueRows.build(q, true, java.util.Collections.emptySet());
+        int nowRows = 0;
+        for (QueueRows.Row r : rows) if (r.kind == QueueRows.Kind.ITEM && r.index == q.nowIndex()) nowRows++;
+        assertEquals(1, nowRows);
+    }
+
+    @Test public void threePlayNextItemsPlayedThroughEachLeaveTheQueuedRegion() {
+        playAlbum("a", 4);
+        q.add(Arrays.asList("A"), true, "");
+        q.add(Arrays.asList("B"), true, "");
+        q.add(Arrays.asList("C"), true, "");
+        assertEquals(Arrays.asList("A", "B", "C"), region(Region.QUEUED));
+        advance();
+        assertEquals("A", q.nowEntry().id);
+        assertEquals(Arrays.asList("B", "C"), region(Region.QUEUED));
+        nowNeverQueued();
+        advance();
+        assertEquals("B", q.nowEntry().id);
+        assertEquals(Arrays.asList("C"), region(Region.QUEUED));
+        nowNeverQueued();
+        advance();
+        assertEquals("C", q.nowEntry().id);
+        assertTrue(region(Region.QUEUED).isEmpty());
+        nowNeverQueued();
+        advance();
+        assertEquals("a2", q.nowEntry().id);
+        assertEquals(Arrays.asList("a1", "A", "B", "C"), region(Region.HISTORY));
+        assertEquals(Arrays.asList("a3", "a4"), region(Region.SOURCE));
+    }
+
+    @Test public void tappingAQueuedTrackInItsAlbumPlaysItOnceAndUndoPutsTheRowBack() {
+        // The real phone: Far Cry playing, Play next on Spindrift and The Larger Bowl, then
+        // Spindrift tapped in the album: it played and also stayed first in Queued by you.
+        playAlbum("a", 6);
+        q.add(Arrays.asList("a5"), true, "");
+        q.add(Arrays.asList("a4"), true, "");
+        QueueModel.Undo undo = q.replace(album("a", 6), 4, -1, 30_000, "a", "c:a", null, false);
+        same();
+        assertEquals("a5", q.nowEntry().id);
+        assertEquals(Arrays.asList("a4"), region(Region.QUEUED));
+        assertEquals(Arrays.asList("a6"), region(Region.SOURCE));
+        nowNeverQueued();
+        undo.undo();
+        same();
+        assertEquals("a1", q.nowEntry().id);
+        assertEquals(Arrays.asList("a5", "a4"), region(Region.QUEUED));
+    }
+
     @Test public void addToQueueGoesAfterPlayNextAndBeforeTheSource() {
         q.replace(album("p", 900), 0, -1, 0, "Big playlist", "c:p", null, false);
         q.add(Arrays.asList("N"), true, "");

@@ -416,6 +416,13 @@ final class QueueModel<T> {
         if (oldNow != null) { toHistory(oldNow); history.add(oldNow); }
         List<Entry<T>> queued = new ArrayList<>();
         for (int i = now + 1; i < list.size() && now >= 0; i++) if (list.get(i).region == Region.QUEUED) queued.add(list.get(i));
+        // The new item playing leaves Queued by you: tapping a track you had queued (Play
+        // next "Spindrift", then "Spindrift" in its album) plays it once, not now and again
+        // as the first queued row (2026-11-27, the phone's queue on shell 190).
+        String startId = idOf.apply(items.get(start));
+        for (int i = 0; i < queued.size(); i++) {
+            if (queued.get(i).id.equals(startId)) { before.dropped = queued.remove(i); before.droppedAt = i; break; }
+        }
         generation++;
         sourceAll.clear();
         sourceAll.addAll(items);
@@ -627,6 +634,9 @@ final class QueueModel<T> {
         Object tag;
         boolean sourceLong, shuffled;
         int generation;
+        /** The queued row the new source's first item replaced (Undo puts it back at its place). */
+        Entry<T> dropped;
+        int droppedAt = -1;
     }
 
     private Snapshot<T> snapshot(long positionMs) {
@@ -675,6 +685,7 @@ final class QueueModel<T> {
         }
         List<Entry<T>> queued = new ArrayList<>();
         for (int i = now + 1; i < list.size(); i++) if (list.get(i).region == Region.QUEUED) queued.add(list.get(i));
+        if (s.dropped != null) queued.add(Math.min(Math.max(0, s.droppedAt), queued.size()), s.dropped);
         List<Entry<T>> history = new ArrayList<>(s.history);
         Entry<T> back = s.now;
         back.region = Region.NOW;
