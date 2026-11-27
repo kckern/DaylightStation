@@ -198,6 +198,7 @@ export function phonePage(phone, view) {
       .map((it) => ({ ...it, status: keepStatus({ ...view, waiting: [], received: [], refused: [] }, target, { id: it.contentId }) }))
       .sort((a, b) => (b.bytes || 0) - (a.bytes || 0));
     const keptBytes = items.reduce((n, it) => n + (it.bytes || 0), 0);
+    const { groups, loose } = keptGroups(items);
     return {
       installId: i.installId,
       model: i.model,
@@ -206,6 +207,8 @@ export function phonePage(phone, view) {
       current: !!i.current,
       lastPollAt: i.lastPollAt ?? null,
       items,
+      groups,
+      loose,
       keptBytes,
       freeBytes: report?.freeBytes ?? null,
       limitBytes: report?.limitBytes ?? null,
@@ -219,6 +222,37 @@ export function phonePage(phone, view) {
   });
   const waiting = (view?.waiting ?? []).map((w) => ({ ...w, asked: clock(w.queuedAt) }));
   return { name, installs, waiting, refused: view?.refused ?? [], storeUnavailable: !!view?.storeUnavailable };
+}
+
+/**
+ * A kept artist or author (lifecycle spec §3.11): its units grouped under it, the group's
+ * total and line ("William Shakespeare · 12 books · 4.2 GB"), largest group first; every
+ * other kept item stays loose (largest first, as given).
+ * @param {Array<Object>} items reported items (each may carry `group`)
+ * @returns {{groups: Array<Object>, loose: Array<Object>}}
+ */
+export function keptGroups(items = []) {
+  const byId = new Map();
+  const loose = [];
+  for (const it of items) {
+    const g = it?.group;
+    if (!g || typeof g.id !== 'string' || !g.id) { loose.push(it); continue; }
+    if (!byId.has(g.id)) byId.set(g.id, { id: g.id, title: g.title || g.id, kind: g.kind === 'author' ? 'author' : 'artist', follow: !!g.follow, removeFinished: !!g.removeFinished, units: [], bytes: 0 });
+    const group = byId.get(g.id);
+    group.units.push(it);
+    group.bytes += it.bytes || 0;
+  }
+  const groups = [...byId.values()].sort((a, b) => b.bytes - a.bytes).map((g) => {
+    const n = g.units.length;
+    const noun = g.kind === 'author' ? (n === 1 ? 'book' : 'books') : (n === 1 ? 'album' : 'albums');
+    const ready = g.units.filter((u) => u.state === 'ready').length;
+    const switches = [g.follow ? 'keeps new ones' : null, g.removeFinished ? 'removes each when finished' : null].filter(Boolean).join(', ');
+    return {
+      ...g,
+      line: [`${n} ${noun}`, formatBytes(g.bytes) || null, ready < n ? `${ready} of ${n} ready` : null, switches || null].filter(Boolean).join(' · '),
+    };
+  });
+  return { groups, loose };
 }
 
 /**

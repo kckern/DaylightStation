@@ -614,11 +614,11 @@ public class PhoneHomeActivity extends Activity {
                 net.kckern.daylight.shellkit.KeptIndex.effectiveLimitBytes(cap, free, used), used);
         net.kckern.daylight.shellkit.KeptIndex.largestFirst(index);
         boolean busy = false;
-        java.util.List<JSONObject> first = new ArrayList<>();
-        for (JSONObject k : index) {
-            if (net.kckern.daylight.shellkit.KeptIndex.DOWNLOADING.equals(k.optString("state"))) busy = true;
-            if (first.size() < 3) first.add(k);   // the rest on On this phone
-        }
+        for (JSONObject k : index) if (net.kckern.daylight.shellkit.KeptIndex.DOWNLOADING.equals(k.optString("state"))) busy = true;
+        // The first three blocks (a kept artist or author is one block, its first units under
+        // it; spec §3.11); the rest on On this phone.
+        java.util.List<JSONObject> first = net.kckern.daylight.shellkit.KeptGroups.firstBlocks(
+                net.kckern.daylight.shellkit.KeptGroups.rows(index), 3, 3);
         // Moving: refreshed every 3 s; waiting: every 30 s (a network or room may come).
         if (busy) timer.postDelayed(keptTick, 3000);
         else if (!index.isEmpty()) timer.postDelayed(keptTick, 30_000);
@@ -646,7 +646,7 @@ public class PhoneHomeActivity extends Activity {
             keptCards.setOrientation(LinearLayout.VERTICAL);
             keptBox.addView(keptCards);
             keptRows = new net.kckern.daylight.shellkit.KeyedRows<>(keptCards, new net.kckern.daylight.shellkit.KeyedRows.Rows<JSONObject>() {
-                @Override public String key(JSONObject k) { return k.optString("contentId"); }
+                @Override public String key(JSONObject k) { return net.kckern.daylight.shellkit.KeptGroups.key(k); }
                 @Override public String signature(JSONObject k) { return k.toString(); }
                 @Override public View create(JSONObject k) { return keptCard(k); }
                 @Override public View update(View card, JSONObject k) { bindKeptCard(card, k); return card; }
@@ -667,7 +667,34 @@ public class PhoneHomeActivity extends Activity {
     /** A kept card's views, so a refresh changes its words and buttons without a new view. */
     private static final class KeptCard {
         ImageView cover;
-        TextView name, sub, retry;
+        TextView name, sub, retry, side;
+    }
+
+    private static boolean keptGroupRow(JSONObject k) {
+        return net.kckern.daylight.shellkit.KeptGroups.GROUP.equals(k.optString(net.kckern.daylight.shellkit.KeptGroups.ROW));
+    }
+
+    private static boolean keptUnitRow(JSONObject k) {
+        return net.kckern.daylight.shellkit.KeptGroups.UNIT.equals(k.optString(net.kckern.daylight.shellkit.KeptGroups.ROW));
+    }
+
+    /** A kept group's ⋮: Choose… (its sheet, on On this phone) and Remove all of <name> (confirmed). */
+    private void keptGroupMenu(View anchor, JSONObject g) {
+        JSONObject grp = g.optJSONObject("group");
+        String gid = grp == null ? "" : grp.optString("id"), title = g.optString("title");
+        net.kckern.daylight.shellkit.ItemSheet.of(this, "Home")
+                .heading(title, net.kckern.daylight.shellkit.KeptGroups.line(g))
+                .row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_tune, "Choose…", () -> {
+                    Intent i = new Intent().setClassName(this, DOWNLOADS).putExtra("choose", gid)
+                            .putExtra("chooseKind", g.optString("kind")).putExtra("chooseTitle", title);
+                    try { startActivity(i); } catch (RuntimeException absent) { toast("Downloads are not in this build"); }
+                })
+                .destructive(net.kckern.daylight.shellkit.R.drawable.daylight_ic_delete, "Remove all of " + title, () ->
+                    new AlertDialog.Builder(this, DaylightTheme.alert()).setTitle("Remove all of " + title + "?")
+                            .setMessage(net.kckern.daylight.shellkit.KeptGroups.line(g) + ". Anything also kept on its own stays.")
+                            .setPositiveButton("Remove", (dlg, w) -> { keepJob("group-remove", gid); toast("Removing " + title); })
+                            .setNegativeButton("Cancel", null).show())
+                .show();
     }
 
     private View keptCard(JSONObject k) {
@@ -693,10 +720,17 @@ public class PhoneHomeActivity extends Activity {
         h.sub.setEllipsize(android.text.TextUtils.TruncateAt.END);
         words.addView(h.sub);
         card.addView(words, new LinearLayout.LayoutParams(0, -2, 1));
+        // A group's ⋮, or a unit's Remove (an icon button); none on a lone item.
+        h.side = label("", Type.TITLE, t.inkMuted);
+        h.side.setGravity(Gravity.CENTER);
+        h.side.setMinWidth(dp(48));
+        h.side.setMinHeight(dp(48));
+        h.side.setBackground(t.pressable(null));
         h.retry = label("Retry", Type.LABEL, t.ink);
         h.retry.setPadding(dp(12), dp(10), dp(4), dp(10));
         net.kckern.daylight.shellkit.UiTelemetry.tag(h.retry, "play.kept.retry");
         card.addView(h.retry);
+        card.addView(h.side);
         net.kckern.daylight.shellkit.UiTelemetry.tag(card, "play.kept");
         // Long-press: the item sheet (Open on this phone, Remove).
         card.setOnLongClickListener(v -> {
@@ -716,8 +750,24 @@ public class PhoneHomeActivity extends Activity {
     private void bindKeptCard(View card, JSONObject k) {
         KeptCard h = (KeptCard) card.getTag();
         card.setTag(R.id.daylight_home_kept, k);
-        String title = k.optString("title"), line = net.kckern.daylight.shellkit.KeptIndex.describe(k);
+        String title = k.optString("title");
+        boolean group = keptGroupRow(k), unit = keptUnitRow(k);
+        String line = group ? net.kckern.daylight.shellkit.KeptGroups.line(k) : net.kckern.daylight.shellkit.KeptIndex.describe(k);
         String cid = k.optString("contentId");
+        card.setPadding(unit ? dp(28) : dp(8), dp(8), dp(4), dp(8));
+        h.side.setVisibility(group || unit ? View.VISIBLE : View.GONE);
+        if (group) {
+            h.side.setText("⋮");
+            h.side.setContentDescription("More for " + title);
+            h.side.setOnClickListener(v -> keptGroupMenu(v, k));
+        } else if (unit) {
+            h.side.setText("✕");
+            h.side.setContentDescription("Remove " + title);
+            h.side.setOnClickListener(v -> new AlertDialog.Builder(this, DaylightTheme.alert()).setTitle("Remove " + title + "?")
+                    .setMessage("The rest of the group stays, and it is not kept again by itself.")
+                    .setPositiveButton("Remove", (d, w) -> { keepJob("unit-remove", cid); toast("Removing " + title); })
+                    .setNegativeButton("Cancel", null).show());
+        }
         h.name.setText(title);
         h.sub.setText(line);
         loadCover(h.cover, k.optString("art"));
@@ -727,8 +777,10 @@ public class PhoneHomeActivity extends Activity {
         h.retry.setOnClickListener(v -> { keepJob("retry", cid); toast("Trying again"); });
         card.setContentDescription(title + ". " + line);
         String id = "c:" + cid;
-        // A part-kept collection plays too: online it streams the rest; offline, what is here.
-        if (k.optInt("total") > 0) card.setOnClickListener(v -> playHere(id, title, "", k.optString("art"), false));
+        // A group opens On this phone, where its units are; a part-kept collection plays too:
+        // online it streams the rest; offline, what is here.
+        if (group) card.setOnClickListener(v -> openDownloads(null));
+        else if (k.optInt("total") > 0) card.setOnClickListener(v -> playHere(id, title, "", k.optString("art"), false));
         else card.setOnClickListener(v -> toast(line));
     }
 

@@ -959,8 +959,13 @@ public final class BrowseActivity extends Activity {
                 default: break;
             }
         }
-        // A person's page keeps its ⋮ (another wave adds "Keep all…"); today it searches for them.
-        if (person) sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_search, "Search for " + title, () -> search(this, title, null));
+        // A person's page: Keep all… (their albums or books as a group, spec §3.11), then a search for them.
+        if (person) {
+            final String self = parent.startsWith("c:") ? parent : "c:" + contentIdOf(parent);
+            sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_download, "Keep all…",
+                    () -> GroupKeepFlow.start(this, self, kind.startsWith("author") ? "author" : "artist", title));
+            sheet.row(net.kckern.daylight.shellkit.R.drawable.daylight_ic_search, "Search for " + title, () -> search(this, title, null));
+        }
         sheet.show();
     }
 

@@ -50,8 +50,13 @@ final class FakeMediaApi implements MediaApi {
         if ("none".equals(responses.get(call))) { calls.add(call); return null; }
         return answer("chapters", call);
     }
+    /** GET info: answered when a response is set for "info <id>", none otherwise (as before). */
+    @Override public JSONObject info(String contentId) throws Exception {
+        String call = "info " + contentId;
+        if (!responses.containsKey(call)) return null;
+        return answer("info", call);
+    }
     @Override public JSONObject search(String text, int take) throws Exception { return answer("search", "search " + text + " " + take); }
-    @Override public JSONObject info(String contentId) throws Exception { return answer("info", "info " + contentId); }
     @Override public JSONObject audioLibraries() throws Exception { return answer("audio libraries", "audioLibraries"); }
     final List<String> hides = Collections.synchronizedList(new ArrayList<String>());
     volatile int hideStatus = 200;

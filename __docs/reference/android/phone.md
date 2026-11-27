@@ -1570,6 +1570,53 @@ removed.
   - **Telemetry** (`Downloads`, no titles): `keep.auto.started{kind, minutes, trigger,
     tracks}`, `keep.auto.ready{tracks, bytes}`, `keep.auto.skipped{reason: needs_room |
     mobile_data | music}`, `keep.auto.removed{reason: finished | stale | window | setting}`.
+- **Keeping an artist or an author** (spec §3.11; `GroupKeepFlow`, `GroupKeepRules`,
+  payload `GroupKeeps`, `KeptCollections.saveUnit/leaveGroup/removeGroup`, shell-kit
+  `KeptGroups`). A keep of an artist or author is never flattened into one item:
+  - **Units.** Each album (artist) or book (author) is its own kept collection carrying the
+    group's id (`group` in its record), with its own size, state, Remove, place and finished;
+    a book stays a book (parts in book order, chapters). The group is a record of its own in
+    `kept/groups.keep` (`{id, title, kind, follow, removeFinished, keptAt, excluded}`),
+    mirrored by the shell (`kept-groups-mirror.json`) like the kept list. Keeping a group
+    turns any automatic keep in it manual.
+  - **The sheet.** "Keep all…" is in the ⋮ of an artist's or author's page (the flat Keep is
+    gone there), and a Keep or a preview that lands on an artist (search, the web) opens the
+    same sheet. It is a modal bottom sheet: the units with size and a check (finished books
+    unchecked, "Include finished (n)"; units past the 5000-track cap unchecked and disabled,
+    with "Over 5000 tracks (n): the first N books can be kept"), the total and the room left
+    after ("4.2 GB · 9.8 GB left · on Wi-Fi"), **Keep new ones too** (on for an author, off
+    for an artist), **Remove each when finished** (books only, on), and one primary button
+    "Keep 12 books · 4.2 GB". Sizes come from `group-preview` (the payload lists the group
+    and queues each unit, four at a time) and the shell's HEAD sizes; a track already on the
+    phone counts nothing. When it does not fit: "1.2 GB more than there is room for" and
+    "Keep the 7 that fit" (in the sheet's order, skipping one too large).
+  - **Order.** The started book first, then the author's order (finished last); albums
+    newest first. Units are kept one after another in that order (`unitOrder`), each
+    through the usual size, room and network rules, so each is ready on its own.
+  - **On this phone.** The screen and the Play tab show a group row ("William Shakespeare ·
+    12 books · 4.2 GB", with "3 of 12 ready" while some are not) and its units indented
+    under it. A unit's Remove removes that unit only; the group then leaves it out
+    (`excluded`), so Keep new ones too never brings it back until it is kept by hand. The
+    group's ⋮ has **Choose…** (the sheet again, with what it holds checked; unchecking
+    removes) and **Remove all of <name>** (confirmed, with the total).
+  - **Shared copies.** A track's audio stays while any keep holds it (the payload's
+    tombstones name only tracks no kept item holds). An album kept on its own and through
+    its artist is one collection held twice (`alone`): leaving the group, or the group's
+    removal, keeps it on the phone. Remove's confirmation and its result say what is really
+    freed (`frees` in the kept index: the bytes of tracks only this item holds).
+  - **Follow and finishing.** At each daily re-sync a group that keeps new ones asks
+    `group-new` and keeps what home added (not what was unchecked or removed). With
+    Remove each when finished, a finished book (home says so, or its last part heard to
+    97 % here) goes a day later and is listed under "Not on this phone" with Keep again; a
+    debuggable build's `files/autokeep-debug.json` `graceMin` shortens the day.
+  - **Reported.** Each unit goes to home with `group: {id, title, kind, follow,
+    removeFinished}`; the web's phone page shows the groups. A web Keep of an artist keeps
+    it as a group with the defaults (unfinished units); a web Remove of the group's id
+    removes the group.
+  - **Telemetry** (`Downloads`): `keep.group.started{kind, units, bytes, follow}`,
+    `keep.group.unit_added{reason: initial | new, tracks}`, `keep.group.unit_removed{reason:
+    user | finished, units?}`, and the sheet's `keep.group.tap`, `keep.group.sheet`,
+    `keep.group.fit_chosen`, `keep.group.choose`.
 - **Location.** `media.downloadLocation: sd` keeps downloads on a removable card when the
   phone has one (takes effect on the next start; the kept items download again there). A
   card that is out makes every item Not available: nothing is reconciled, nothing deleted,

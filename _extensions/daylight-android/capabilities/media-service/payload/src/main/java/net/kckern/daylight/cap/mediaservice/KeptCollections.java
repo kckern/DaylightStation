@@ -54,11 +54,162 @@ final class KeptCollections {
         dir.mkdirs();
         JSONObject o = record(contentId, title, art, tracks, now, kind);
         if (autoScope != null) markAuto(o, autoScope);
+        else {
+            // A manual keep of a group's unit: it is kept on its own too, so leaving the
+            // group (or the group's removal) never takes its audio (spec §3.11).
+            JSONObject before = tombstoned(contentId) ? null : get(contentId);
+            String group = before == null ? "" : before.optString("group", "");
+            if (!group.isEmpty()) o.put("group", group).put("alone", true);
+        }
         write(new File(dir, fileName(contentId)), o.toString());
+        unexcludeEverywhere(contentId);
         clearQuarantine(contentId);
         // Kept again: its old removal no longer deletes anything.
         JSONObject tombs = tombstones();
         if (tombs.remove(contentId) != null) writeTombstones(tombs);
+    }
+
+    /**
+     * Kept as a unit of a group (an artist's album, an author's book; spec §3.11): its own
+     * collection, carrying the group's id. Kept by hand before (not automatically), it stays
+     * kept on its own as well ({@code alone}); kept automatically before, it is now a manual
+     * keep (never removed by the automatic rules).
+     */
+    synchronized void saveUnit(String contentId, String title, String art, JSONArray tracks, long now, String kind,
+                               String groupId) throws Exception {
+        if (!ContentId.valid(contentId) || !ContentId.valid(groupId)) throw new IllegalArgumentException("not a content id");
+        //noinspection ResultOfMethodCallIgnored
+        dir.mkdirs();
+        JSONObject before = tombstoned(contentId) ? null : get(contentId);
+        JSONObject o = record(contentId, title, art, tracks, before == null ? now : before.optLong("keptAt", now), kind);
+        o.put("group", groupId);
+        boolean alone = before != null && !auto(before)
+                && (before.optString("group", "").isEmpty() || before.optBoolean("alone", false));
+        if (alone) o.put("alone", true);
+        write(new File(dir, fileName(contentId)), o.toString());
+        clearQuarantine(contentId);
+        JSONObject tombs = tombstones();
+        if (tombs.remove(contentId) != null) writeTombstones(tombs);
+        JSONObject g = group(groupId);
+        if (g != null) {
+            unexclude(g, contentId);
+            putGroup(g);
+        }
+    }
+
+    /** The group a kept collection is a unit of, or "". */
+    static String groupOf(JSONObject collection) { return collection == null ? "" : collection.optString("group", ""); }
+
+    /**
+     * A unit leaves its group (its Remove under the group, unchecked in Choose…, finished and
+     * removed): the group leaves it out from now on. Kept on its own as well, it stays (no
+     * audio freed); otherwise it is removed. Answers the track ids whose audio may go.
+     */
+    synchronized List<String> leaveGroup(String contentId, long now) {
+        JSONObject k = get(contentId);
+        if (k == null) return new ArrayList<>();
+        String gid = groupOf(k);
+        JSONObject g = gid.isEmpty() ? null : group(gid);
+        if (g != null) { exclude(g, contentId); putGroup(g); }
+        if (k.optBoolean("alone", false)) {
+            k.remove("group");
+            k.remove("alone");
+            try { write(new File(dir, fileName(contentId)), k.toString()); } catch (Exception unwritten) { /* still kept */ }
+            return new ArrayList<>();
+        }
+        return remove(contentId, now);
+    }
+
+    // ── groups (spec §3.11): {id, title, art, kind, follow, removeFinished, keptAt, excluded} ──
+
+    private static final String GROUPS = "groups.keep";
+
+    synchronized List<JSONObject> groups() {
+        List<JSONObject> out = new ArrayList<>();
+        JSONObject all = read(new File(dir, GROUPS));
+        if (all == null) return out;
+        for (Iterator<String> k = all.keys(); k.hasNext(); ) {
+            JSONObject g = all.optJSONObject(k.next());
+            if (g != null && ContentId.valid(g.optString("id"))) out.add(g);
+        }
+        out.sort((a, b) -> Long.compare(b.optLong("keptAt"), a.optLong("keptAt")));
+        return out;
+    }
+
+    synchronized JSONObject group(String groupId) {
+        JSONObject all = read(new File(dir, GROUPS));
+        JSONObject g = all == null ? null : all.optJSONObject(groupId);
+        return g == null ? null : g;
+    }
+
+    /** Saves (or replaces) one group's record; its keptAt stays from the first save. */
+    synchronized void putGroup(JSONObject g) {
+        try {
+            String id = g.optString("id");
+            if (!ContentId.valid(id)) return;
+            JSONObject all = read(new File(dir, GROUPS));
+            if (all == null) all = new JSONObject();
+            JSONObject before = all.optJSONObject(id);
+            if (before != null && before.has("keptAt")) g.put("keptAt", before.optLong("keptAt"));
+            all.put(id, g);
+            //noinspection ResultOfMethodCallIgnored
+            dir.mkdirs();
+            write(new File(dir, GROUPS), all.toString());
+        } catch (Exception unwritten) { /* the next save */ }
+    }
+
+    /**
+     * The group goes: every unit leaves it (a unit kept on its own as well stays), then its
+     * record. Answers the track ids whose audio may go.
+     */
+    synchronized List<String> removeGroup(String groupId, long now) {
+        List<String> orphaned = new ArrayList<>();
+        for (JSONObject k : list()) {
+            if (!groupId.equals(groupOf(k))) continue;
+            for (String t : leaveGroup(k.optString("contentId"), now)) if (!orphaned.contains(t)) orphaned.add(t);
+        }
+        try {
+            JSONObject all = read(new File(dir, GROUPS));
+            if (all != null && all.remove(groupId) != null) write(new File(dir, GROUPS), all.toString());
+        } catch (Exception unwritten) { /* the record stays; it holds nothing */ }
+        return orphaned;
+    }
+
+    /** The units a group holds now. */
+    synchronized List<String> unitsOf(String groupId) {
+        List<String> out = new ArrayList<>();
+        for (JSONObject k : list()) if (groupId.equals(groupOf(k))) out.add(k.optString("contentId"));
+        return out;
+    }
+
+    static Set<String> excluded(JSONObject g) {
+        Set<String> out = new HashSet<>();
+        JSONArray a = g == null ? null : g.optJSONArray("excluded");
+        for (int i = 0; a != null && i < a.length(); i++) if (!a.optString(i).isEmpty()) out.add(a.optString(i));
+        return out;
+    }
+
+    private static void exclude(JSONObject g, String contentId) {
+        try {
+            Set<String> ex = excluded(g);
+            if (ex.add(contentId)) g.put("excluded", new JSONArray(new java.util.TreeSet<>(ex)));
+        } catch (Exception never) { /* unchanged */ }
+    }
+
+    private static void unexclude(JSONObject g, String contentId) {
+        try {
+            Set<String> ex = excluded(g);
+            if (ex.remove(contentId)) g.put("excluded", new JSONArray(new java.util.TreeSet<>(ex)));
+        } catch (Exception never) { /* unchanged */ }
+    }
+
+    /** Kept again by hand: no group leaves it out any more. */
+    private void unexcludeEverywhere(String contentId) {
+        for (JSONObject g : groups()) {
+            if (!excluded(g).contains(contentId)) continue;
+            unexclude(g, contentId);
+            putGroup(g);
+        }
     }
 
     /**
@@ -72,6 +223,7 @@ final class KeptCollections {
         o.put("refreshedAt", now);
         // A re-sync keeps how it was kept: automatically, and to which parts.
         if (auto(before)) markAuto(o, only(before));
+        keepMembership(before, o);
         write(new File(dir, fileName(contentId)), o.toString());
         return true;
     }
@@ -82,6 +234,13 @@ final class KeptCollections {
         if (art != null && !art.isEmpty()) o.put("art", art);
         if (kind != null && !kind.isEmpty()) o.put("kind", kind);
         return o;
+    }
+
+    /** A re-sync or restore keeps which group a unit is in, and whether it is kept on its own too. */
+    private static void keepMembership(JSONObject from, JSONObject to) throws Exception {
+        if (from == null || groupOf(from).isEmpty()) return;
+        to.put("group", groupOf(from));
+        if (from.optBoolean("alone", false)) to.put("alone", true);
     }
 
     /** Whether a kept record was kept automatically (spec §3.10). */
@@ -143,6 +302,10 @@ final class KeptCollections {
         List<String> orphaned = new ArrayList<>();
         JSONObject gone = get(contentId);
         if (gone == null) return orphaned;
+        // A group's unit removed (from the web, Remove all, the group's Remove): the group's
+        // re-sync does not bring it back (spec §3.11).
+        JSONObject g = groupOf(gone).isEmpty() ? null : group(groupOf(gone));
+        if (g != null) { exclude(g, contentId); putGroup(g); }
         //noinspection ResultOfMethodCallIgnored
         new File(dir, fileName(contentId)).delete();
         Set<String> still = new HashSet<>();
@@ -220,10 +383,23 @@ final class KeptCollections {
                 dir.mkdirs();
                 JSONObject o = record(cid, k.optString("title"), k.optString("art", ""), tracks, k.optLong("keptAt"), k.optString("kind", ""));
                 if (auto(k)) markAuto(o, only(k));
+                keepMembership(k, o);
                 write(new File(dir, fileName(cid)), o.toString());
                 clearQuarantine(cid);
                 n++;
             } catch (Exception skipped) { /* the next restore tries again */ }
+        }
+        return n;
+    }
+
+    /** Puts back group records the shell remembers and this list lost (none replaced). */
+    synchronized int restoreGroups(JSONArray groups) {
+        int n = 0;
+        for (int i = 0; groups != null && i < groups.length(); i++) {
+            JSONObject g = groups.optJSONObject(i);
+            if (g == null || !ContentId.valid(g.optString("id")) || group(g.optString("id")) != null) continue;
+            putGroup(g);
+            n++;
         }
         return n;
     }
