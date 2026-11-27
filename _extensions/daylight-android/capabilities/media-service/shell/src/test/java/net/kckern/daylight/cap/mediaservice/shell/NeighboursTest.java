@@ -35,4 +35,21 @@ public class NeighboursTest {
         assertFalse(Neighbours.fromRows(Arrays.asList(r("c:plex:1", "A")), "c:plex:9", "book").pages());
         assertEquals("", Neighbours.NONE.line());
     }
+
+    /** A search group that mixes kinds: an author's neighbours are people only (2026-11-27). */
+    @Test public void fromASearchOnlyTheSameFamily() throws Exception {
+        List<JSONObject> group = Arrays.asList(
+                r("c:plex:10", "Shakespeare: The Biography").put("kind", "book"),
+                r("c:plex:727362", "William Shakespeare").put("kind", "author"),
+                r("c:plex:11", "Nicholas Shakespeare").put("kind", "author"),
+                r("c:plex:12", "Shakespeare's Sister").put("kind", "artist"),
+                r("c:plex:13", "Shakespeare Sonnets").put("kind", "album"));
+        Neighbours n = Neighbours.fromRows(group, "c:plex:727362", "author");
+        assertEquals(3, n.entries.size());
+        assertNull(n.at(-1));
+        assertEquals("Nicholas Shakespeare", n.at(1).title);
+        for (Neighbours.Entry e : n.entries) assertEquals("people", Neighbours.family(e.kind));
+        Neighbours book = Neighbours.fromRows(group, "c:plex:10", "author");
+        assertFalse(book.pages());   // the only book in the group
+    }
 }

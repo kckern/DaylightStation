@@ -35,10 +35,16 @@ final class Neighbours {
 
     static final Neighbours NONE = new Neighbours(new ArrayList<>(), -1);
 
-    /** From a list's rows ({id, title, subtitle, artUrl, kind, browsable}): the ones that open a page; {@code at} is the opened one's id. */
+    /**
+     * From a list's rows ({id, title, subtitle, artUrl, kind, browsable}): the ones that open a
+     * page of the same family as the opened one; {@code at} is the opened one's id. A search
+     * group can mix kinds (2026-11-27: an author's neighbours were a book about him and
+     * another author): an author pages through artists and authors only, a book through
+     * books, an album through albums and playlists.
+     */
     static Neighbours fromRows(List<JSONObject> rows, String at, String defaultKind) {
-        List<Entry> out = new ArrayList<>();
-        int index = -1;
+        List<Entry> all = new ArrayList<>();
+        String atFamily = null;
         for (JSONObject r : rows) {
             String id = r.optString("id");
             boolean browsable = r.optBoolean("browsable", id.startsWith("c:") || id.startsWith("a:"));
@@ -46,11 +52,27 @@ final class Neighbours {
             String kind = r.optString("kind", "");
             if (kind.isEmpty()) kind = defaultKind;
             if (!MediaKind.detail(kind)) continue;
-            if (id.equals(at)) index = out.size();
-            out.add(new Entry(id, r.optString("title", ""), r.optString("subtitle", ""), r.optString("artUrl", ""), kind));
+            if (id.equals(at)) atFamily = family(kind);
+            all.add(new Entry(id, r.optString("title", ""), r.optString("subtitle", ""), r.optString("artUrl", ""), kind));
         }
-        if (index < 0) return NONE;
+        if (atFamily == null) return NONE;
+        List<Entry> out = new ArrayList<>();
+        int index = -1;
+        for (Entry e : all) {
+            if (!atFamily.equals(family(e.kind))) continue;
+            if (e.id.equals(at)) index = out.size();
+            out.add(e);
+        }
         return new Neighbours(out, index);
+    }
+
+    /** People (artists, authors, speakers), books (books, series) or music lists (albums, playlists, stations). */
+    static String family(String kind) {
+        switch (MediaKind.normal(kind)) {
+            case "artist": case "author": case "speaker": return "people";
+            case "book": case "series": return "books";
+            default: return "lists";
+        }
     }
 
     static Neighbours parse(String json, int index) {
