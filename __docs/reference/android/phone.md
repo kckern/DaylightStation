@@ -433,6 +433,20 @@ is not a `daylight://` link is treated as an unassigned slot. The one exception 
 `media:` action, which a widget button and a tile start through the play service
 with no window (see "Playing with no window" under `media-service`).
 
+Never a dead tap (audit): a tile with no action says "No action is set for this tile",
+and a launch Android refuses says "Could not open <label>. Open the app and try it from
+there". A tile, shortcut or widget still showing an action the list no longer has says
+"This action was removed from the phone's list. Its tile or shortcut now shows it is
+unavailable", and the payload publishes every surface again on the spot (the removed
+action's pinned shortcut is disabled, its tile drawn unavailable, the widget redrawn).
+`POST /actions/run` with an unknown id is still a 400.
+
+An `api:` action's outcome outlives its toast: one notification per action (the
+`general` channel, id `action-<id>`) says "Lights off: done", or the failure ("Lights
+off: no connection", "failed (500)") with **Retry**, which runs the action's keyed link
+again. An answer slower than the tap's wait (`apiWaitMs`) is waited for up to a minute
+more and then posted the same way, instead of being dropped after "sent, no answer yet".
+
 Unproven on a phone: whether `requestPinShortcut` works with no activity in
 front, the tile's launch on Android 14 and later (the code uses the
 `PendingIntent` overload by reflection there), and how the launcher rate-limits
@@ -467,7 +481,7 @@ natively and answers "Could not start playback"; it plays in the web view.
 |---|---|---|---|
 | `DaylightMediaService`, a Media3 `MediaLibraryService` | The ExoPlayer, the session, audio focus, "headphones unplugged", the media notification and the foreground state (type `mediaPlayback`) | What a browse level holds, which stream a media id resolves to, when progress is reported | Starts the shell service, which loads the payload. A browse of the root waits up to 4 s and then answers one tab, "Starting up…", with nothing under it; browsers of the root are told to ask again when a payload attaches (within two minutes). A play request fails. Nothing crashes and nothing runs on the main thread |
 | `PlayActivity` (not exported, no window) | Kept for a payload older than shell 134: opens Now playing with the id (Starting, "play it") and finishes at once. Nothing waits in it and nothing sits over Now playing | A current payload opens Now playing directly on a keyed `media` link (shell 134 and later, read from the installed version code; an older shell still gets `PlayActivity`) | Not reached: the link activity already waited for the payload |
-| `PlayActionService` (not exported, foreground service of type `mediaPlayback`) | Started by a widget button or a tile with one action id. Enters the foreground at once with a notice naming what starts ("Starting Morning Mix…": the widget's playlist by its saved name, an action by its label, else "Starting playback"), asks the payload for the action's media id, plays it through a media controller, and lets go once the media service holds the foreground state. One budget for the whole start (`PlayBudget`: 24 s warm, plus the loader's own wait when the payload was not up at the tap); each step waits only what is left of it | Answers `action` with the media id of a configured or pinned media action (and its label as `title`), or 404 | Starts the shell service and waits within the same budget; with no payload it says "Could not start <name>. Tap the button again to retry." The toast is not shown while Now playing is on screen showing a start |
+| `PlayActionService` (not exported, foreground service of type `mediaPlayback`) | Started by a widget button or a tile with one action id. Enters the foreground at once with a notice naming what starts ("Starting Morning Mix…": the widget's playlist by its saved name, an action by its label, else "Starting playback"), asks the payload for the action's media id, plays it through a media controller, and lets go once the media service holds the foreground state. One budget for the whole start (`PlayBudget`: 24 s warm, plus the loader's own wait when the payload was not up at the tap); each step waits only what is left of it | Answers `action` with the media id of a configured or pinned media action (and its label as `title`), or 404 | Starts the shell service and waits within the same budget; with no payload it says "Could not start <name>: still starting up. Tap the button again to retry.", and the cause on other failures ("offline", "home isn't answering", "home does not have it", "it took too long"; `PlayStart.failure(title, Why)`). A playlist widget sends its own label (`DirectPlayIntents.EXTRA_PLAYLIST_TITLE`), so the notice and the failure name it. The toast is not shown while Now playing is on screen showing a start |
 
 The installed service asks the payload through the `media` `PayloadPort`, in
 process, as JSON: `browse`, `resolve`, `event`, and, from the play service,

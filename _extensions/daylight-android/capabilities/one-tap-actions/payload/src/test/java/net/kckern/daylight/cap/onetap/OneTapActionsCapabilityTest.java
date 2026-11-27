@@ -197,7 +197,8 @@ public class OneTapActionsCapabilityTest {
     }
 
     @Test public void anUnknownActionIsABadRequest() throws Exception {
-        try { actionLink().handle("nope", NO_QUERY); fail("ran an unknown action"); } catch (IllegalArgumentException expected) { }
+        // A surface still showing a removed action says so (audit), rather than "cannot be opened here".
+        assertEquals(OneTapActionsCapability.REMOVED, actionLink().handle("nope", NO_QUERY).getString("message"));
         assertEquals(400, run("nope").getInt("_status"));
         assertEquals(400, run("").getInt("_status"));
     }
@@ -375,5 +376,44 @@ public class OneTapActionsCapabilityTest {
             try { core.settings().set("actions.4", bad); fail("accepted " + bad); }
             catch (RuntimeException expected) { assertTrue(expected.getMessage(), expected.getMessage().contains("actions.4")); }
         }
+    }
+
+    @Test public void aNoticeIdIsShortAndPlain() {
+        assertEquals("action-lights-off", OneTapActionsCapability.noticeId("Lights_Off"));
+        assertTrue(OneTapActionsCapability.noticeId("a-very-long-action-identifier-beyond-forty").length() <= 40);
+    }
+
+    private final List<String> notices = Collections.synchronizedList(new ArrayList<String>());
+
+    private void recordNotices() {
+        core.services().provide(net.kckern.daylight.core.spi.LocalNotices.class, new net.kckern.daylight.core.spi.LocalNotices() {
+            @Override public void post(String id, String channel, String title, String text, String linkUri) {
+                notices.add(id + "|" + text + "|");
+            }
+            @Override public void post(String id, String channel, String title, String text, String linkUri, String actionLabel, String actionUri) {
+                notices.add(id + "|" + text + "|" + actionLabel + " " + actionUri);
+            }
+            @Override public void cancel(String id) { }
+        });
+    }
+
+    @Test public void aSlowApiActionsAnswerGoesToANotification() throws Exception {
+        recordNotices();
+        cap.apiWaitMs = 100;
+        cap.start();
+        apiHold = new CountDownLatch(1);
+        assertEquals("Lights off: sent, no answer yet", actionLink().handle("lights", NO_QUERY).getString("message"));
+        apiHold.countDown();
+        long until = System.currentTimeMillis() + 5000;
+        while (notices.isEmpty() && System.currentTimeMillis() < until) Thread.sleep(20);
+        assertEquals(Collections.singletonList("action-lights|Lights off: done|"), notices);
+    }
+
+    @Test public void aFailedApiActionOffersRetryInANotification() throws Exception {
+        recordNotices();
+        cap.start();
+        apiDown = true;
+        assertEquals("Lights off: no connection", actionLink().handle("lights", NO_QUERY).getString("message"));
+        assertEquals(Collections.singletonList("action-lights|Lights off: no connection|Retry daylight://action/lights"), notices);
     }
 }

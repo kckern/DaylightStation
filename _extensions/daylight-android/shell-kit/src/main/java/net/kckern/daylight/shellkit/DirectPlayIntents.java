@@ -26,11 +26,18 @@ public final class DirectPlayIntents {
 
     public static final String EXTRA_PLAYLIST_SHUFFLE = "net.kckern.daylight.EXTRA_PLAYLIST_SHUFFLE";
     public static final String EXTRA_PLAYLIST_REVISION = "net.kckern.daylight.EXTRA_PLAYLIST_REVISION";
+    /** The widget's own name for its playlist, so a start and its failure name it (audit). */
+    public static final String EXTRA_PLAYLIST_TITLE = "net.kckern.daylight.EXTRA_PLAYLIST_TITLE";
 
     public static PendingIntent forPlaylistWidget(Context context, int widgetId, String mediaId, String revision, boolean shuffle) {
+        return forPlaylistWidget(context, widgetId, mediaId, revision, shuffle, "");
+    }
+
+    public static PendingIntent forPlaylistWidget(Context context, int widgetId, String mediaId, String revision, boolean shuffle,
+                                                  String title) {
         Intent play = new Intent(INTENT_ACTION_PREFIX + "playlist." + revision).setClassName(context, DirectPlay.SERVICE)
                 .putExtra(EXTRA_PLAYLIST, mediaId).putExtra(EXTRA_PLAYLIST_REVISION, revision)
-                .putExtra(EXTRA_PLAYLIST_SHUFFLE, shuffle);
+                .putExtra(EXTRA_PLAYLIST_SHUFFLE, shuffle).putExtra(EXTRA_PLAYLIST_TITLE, title == null ? "" : title);
         return PendingIntent.getForegroundService(context, widgetId, play,
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
     }

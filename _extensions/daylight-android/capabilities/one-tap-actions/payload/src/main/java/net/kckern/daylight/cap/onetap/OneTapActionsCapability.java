@@ -55,6 +55,7 @@ public final class OneTapActionsCapability implements Capability, ActionList {
     private static final String TILES = "actions.tiles";
     /** What "On my way" (location:share) answers, and all it does. */
     static final String LOCATION_NOT_BUILT = "Location sharing is not built yet";
+    static final String REMOVED = "This action was removed from the phone's list. Its tile or shortcut now shows it is unavailable";
 
     private CoreContext core;
     private Backend backend;
@@ -104,6 +105,13 @@ public final class OneTapActionsCapability implements Capability, ActionList {
             @Override public String kind() { return "action"; }
             @Override public JSONObject handle(String arg, Map<String, String> query) throws Exception {
                 // Only the id is read. The query is whatever the sender of the link wrote.
+                if (everything().find(arg == null ? "" : arg) == null && !SurfacePlan.unrecordedMediaId(arg)) {
+                    // A tile, shortcut or widget still showing an action the list no longer has
+                    // (audit): said so, and every surface is published again, so it shows unavailable.
+                    core.shell().note("ACTION", "a removed action was tapped");
+                    try { publish(new ArrayList<String>()); } catch (Exception notNow) { /* the next start publishes */ }
+                    return LinkEffect.toast(REMOVED);
+                }
                 return run(arg);
             }
         });
@@ -536,13 +544,57 @@ public final class OneTapActionsCapability implements Capability, ActionList {
                 return outcome;
             });
             try {
-                return pending.get(apiWaitMs, TimeUnit.MILLISECONDS);
+                String outcome = pending.get(apiWaitMs, TimeUnit.MILLISECONDS);
+                if (!"done".equals(outcome)) notifyOutcome(a, outcome);
+                return outcome;
             } catch (TimeoutException slow) {
+                // The answer still counts (audit): it goes to a notification when it comes.
+                Thread late = new Thread(() -> {
+                    String outcome;
+                    try { outcome = pending.get(LATE_WAIT_MS, TimeUnit.MILLISECONDS); }
+                    catch (TimeoutException never) { outcome = "no answer from home"; }
+                    catch (Exception stopped) { return; }
+                    core.shell().note("ACTION", a.id + " answered late: " + outcome);
+                    notifyOutcome(a, outcome);
+                }, "Daylight-action-late");
+                late.setDaemon(true);
+                late.start();
                 return "sent, no answer yet";
             }
         } catch (Exception stoppedOrInterrupted) {
             return "not sent";
         }
+    }
+
+    /** How long a slow API action's answer is waited for after the tap was answered. */
+    static final long LATE_WAIT_MS = 60_000;
+
+    /**
+     * An API action's outcome as a notification (one per action, replaced by the next), so it
+     * outlives the toast: "Lights off: done", or "Lights off: no connection" with Retry, which
+     * runs it again through its keyed link. Only the label and the outcome, never more.
+     */
+    void notifyOutcome(Action a, String outcome) {
+        net.kckern.daylight.core.spi.LocalNotices notices = core.services().find(net.kckern.daylight.core.spi.LocalNotices.class);
+        if (notices == null) return;
+        String noticeId = noticeId(a.id);
+        try {
+            if ("done".equals(outcome)) {
+                notices.post(noticeId, net.kckern.daylight.core.spi.LocalNotices.GENERAL, a.label, a.label + ": done", "");
+            } else {
+                notices.post(noticeId, net.kckern.daylight.core.spi.LocalNotices.GENERAL, a.label, a.label + ": " + outcome,
+                        "", "Retry", "daylight://action/" + a.id);
+            }
+        } catch (RuntimeException notShown) {
+            core.shell().note("ACTION", "could not post the outcome of " + a.id);
+        }
+    }
+
+    /** A notice id for an action: [a-z0-9-]{1,40}. */
+    static String noticeId(String actionId) {
+        String clean = (actionId == null ? "" : actionId).toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9-]", "-");
+        String id = "action-" + clean;
+        return id.length() > 40 ? id.substring(0, 40) : id;
     }
 
     private String post(String url) {

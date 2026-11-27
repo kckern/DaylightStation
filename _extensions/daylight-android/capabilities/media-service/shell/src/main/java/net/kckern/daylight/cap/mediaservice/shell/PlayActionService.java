@@ -121,6 +121,10 @@ public class PlayActionService extends Service {
                 actionId == null && intent.getBooleanExtra(DirectPlayIntents.EXTRA_PLAYLIST_SHUFFLE, true),
                 PlayBudget.giveUpMs(warm));
         requested.title = playlistTitle(playlist);
+        if (requested.title.isEmpty() && intent != null && intent.getStringExtra(DirectPlayIntents.EXTRA_PLAYLIST_TITLE) != null) {
+            requested.title = intent.getStringExtra(DirectPlayIntents.EXTRA_PLAYLIST_TITLE).trim();
+        }
+        why = PlayStart.Why.UNKNOWN;
         attempt = requested;
         if (!requested.title.isEmpty()) enterForeground(requested.title);
         PlaylistWidgetState.show(this, requested.playlist, Phase.STARTING);
@@ -136,6 +140,8 @@ public class PlayActionService extends Service {
                 }
             } catch (Throwable notReadyOrRefused) {
                 mediaId = null;
+                why = PlayStart.whyOf(notReadyOrRefused,
+                        net.kckern.daylight.shellkit.FailureWords.networkValidated(PlayActionService.this));
             }
             final String id = mediaId, title = named;
             main.post(() -> {
@@ -200,6 +206,9 @@ public class PlayActionService extends Service {
         }
     }
 
+    /** Why the current start failed, when its lookup said (main and lookup threads). */
+    private volatile PlayStart.Why why = PlayStart.Why.UNKNOWN;
+
     private void fail(PlayStart.Attempt requested) {
         if (attempt != requested) return;
         failed = true;
@@ -215,7 +224,13 @@ public class PlayActionService extends Service {
         PlayStart.Step next = PlayStart.next(elapsed, attempt.budgetMs, failed || DaylightMediaService.shortcutFailed(attempt),
                 attempt.played(), playing, DaylightMediaService.inForeground());
         switch (next) {
-            case FAIL: finish(PlayStart.failure(attempt.title), currentStartId); return;
+            case FAIL: {
+                PlayStart.Why cause = why != PlayStart.Why.UNKNOWN ? why
+                        : elapsed >= attempt.budgetMs ? PlayStart.Why.TOO_SLOW
+                        : net.kckern.daylight.shellkit.FailureWords.networkValidated(this) ? PlayStart.Why.UNKNOWN : PlayStart.Why.OFFLINE;
+                finish(PlayStart.failure(attempt.title, cause), currentStartId);
+                return;
+            }
             case RELEASE: finish(null, currentStartId); return;
             default: main.postDelayed(poll, attempt.played() ? POLL_MS : Math.max(50, Math.min(POLL_MS, attempt.budgetMs - elapsed)));
         }

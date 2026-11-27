@@ -238,4 +238,15 @@ public class PlayPathTest {
                 androidx.media3.common.Player.COMMAND_SEEK_TO_NEXT)).met(s));
         assertFalse("a failed read is not the answer", CommandSettle.of(ScreenCommands.shuffle("x", true)).met(ScreenSnapshot.unreachable()));
     }
+
+    @Test public void aFailedStartSaysItsCause() {
+        assertEquals("Could not start Morning Mix: offline. Tap the button again to retry.",
+                PlayStart.failure("Morning Mix", PlayStart.Why.OFFLINE));
+        assertEquals("Could not start playback: still starting up. Tap the button again to retry.",
+                PlayStart.failure("", PlayStart.Why.STARTING));
+        assertEquals(PlayStart.failure("Morning Mix"), PlayStart.failure("Morning Mix", PlayStart.Why.UNKNOWN));
+        assertEquals(PlayStart.Why.OFFLINE, PlayStart.whyOf(new java.io.IOException("unreachable"), false));
+        assertEquals(PlayStart.Why.HOME_SLOW, PlayStart.whyOf(new java.io.IOException("unreachable"), true));
+        assertEquals(PlayStart.Why.NOT_FOUND, PlayStart.whyOf(new IllegalStateException("not_found"), true));
+    }
 }

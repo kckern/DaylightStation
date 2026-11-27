@@ -204,7 +204,7 @@ public class ButtonWidgetProvider extends AppWidgetProvider {
             playlist.setContentDescription(R.id.playlist_widget, description);
             playlist.setOnClickPendingIntent(R.id.playlist_widget,
                     DirectPlayIntents.forPlaylistWidget(context, widgetId, actionId, state.revision,
-                            new PlacementStore(context).shuffle(actionId.substring(2))));
+                            new PlacementStore(context).shuffle(actionId.substring(2)), "Playlist".equals(label) ? "" : label));
             return playlist;
         }
         boolean known = SurfaceKeys.actionId(actionId);

@@ -51,7 +51,11 @@ public abstract class ActionTileService extends TileService {
     @Override
     public void onClick() {
         final TileFace face = face();
-        if (!face.available) return;
+        if (!face.available) {
+            // Never a dead tap (audit): an empty slot says so.
+            say("No action is set for this tile");
+            return;
+        }
         // Other actions change something, so a locked phone asks for the unlock first.
         // A voice or photo capture runs over the lock screen: capturing is the point of the tile.
         boolean overLock = "1".equals(SurfaceCache.get(this, SurfaceKeys.tile(slot(), SurfaceKeys.LOCK_OK)));
@@ -92,7 +96,13 @@ public abstract class ActionTileService extends TileService {
             startActivityAndCollapse(intent);
         } catch (RuntimeException e) {
             Log.w(TAG, "could not launch slot " + slot() + ": " + e.getClass().getSimpleName());
+            say("Could not open " + face().label + ". Open the app and try it from there");
         }
+    }
+
+    private void say(String line) {
+        try { android.widget.Toast.makeText(getApplicationContext(), line, android.widget.Toast.LENGTH_LONG).show(); }
+        catch (RuntimeException noWindow) { Log.w(TAG, "could not say: " + line); }
     }
 
     public static final class Tile1 extends ActionTileService { @Override protected int slot() { return 1; } }

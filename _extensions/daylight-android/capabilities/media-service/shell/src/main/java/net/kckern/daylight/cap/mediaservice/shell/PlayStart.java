@@ -95,6 +95,32 @@ final class PlayStart {
                 : "Could not start " + title.trim() + ". Tap the button again to retry.";
     }
 
+    /** Why a start failed, when it is known (audit: one line for every cause). */
+    enum Why { UNKNOWN, STARTING, OFFLINE, HOME_SLOW, NOT_FOUND, TOO_SLOW }
+
+    /** "Could not start Morning Mix: offline. Tap the button again to retry." */
+    static String failure(String title, Why why) {
+        String cause;
+        switch (why == null ? Why.UNKNOWN : why) {
+            case STARTING: cause = "still starting up"; break;
+            case OFFLINE: cause = "offline"; break;
+            case HOME_SLOW: cause = "home isn't answering"; break;
+            case NOT_FOUND: cause = "home does not have it"; break;
+            case TOO_SLOW: cause = "it took too long"; break;
+            default: return failure(title);
+        }
+        String what = title == null || title.trim().isEmpty() ? "playback" : title.trim();
+        return "Could not start " + what + ": " + cause + ". Tap the button again to retry.";
+    }
+
+    /** The cause of a failed action lookup: the payload not up, no network, not found, or home slow. */
+    static Why whyOf(Throwable failure, boolean networkValidated) {
+        if (failure instanceof net.kckern.daylight.api.PayloadPort.NotReadyException) return Why.STARTING;
+        String m = failure == null || failure.getMessage() == null ? "" : failure.getMessage();
+        if (m.contains("not_found") || m.contains("unknown")) return Why.NOT_FOUND;
+        return networkValidated ? Why.HOME_SLOW : Why.OFFLINE;
+    }
+
     /** The title an action's answer gives ({ok, mediaId, title?}), or "". */
     static String title(String answer) {
         if (answer == null) return "";
