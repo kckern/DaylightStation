@@ -70,6 +70,8 @@ public final class NowPlayingNote {
     public interface Listener { void changed(); }
 
     private static volatile Entry local, remote;
+    /** Per target: the title the player held when a start was tapped (its reports do not replace the start). */
+    private static final java.util.Map<String, String> startedOver = new java.util.concurrent.ConcurrentHashMap<>();
     private static final CopyOnWriteArrayList<Listener> listeners = new CopyOnWriteArrayList<>();
 
     private NowPlayingNote() { }
@@ -78,6 +80,10 @@ public final class NowPlayingNote {
     public static void report(Entry e) {
         if (e == null) return;
         Entry before = "local".equals(e.target) ? local : remote;
+        // A start was tapped: the player's reports of what it held before (or of nothing yet)
+        // never replace it, so the bar never shows the previous item after a new play.
+        if (holdsStart(before, e, startedOver.get(e.target))) return;
+        if (!e.starting) startedOver.remove(e.target);
         // A chapter line stays with its item across the service's reports (which do not know it).
         if (!e.starting && e.detail.isEmpty() && before != null && !before.detail.isEmpty() && before.title.equals(e.title)) {
             e = new Entry(e.target, e.targetName, e.title, e.artist, e.artworkUrl, e.playing, e.canNext, e.positionMs, e.durationMs,
@@ -100,9 +106,26 @@ public final class NowPlayingNote {
      */
     public static void starting(String target, String targetName, String title, String artist, String artworkUrl, long now) {
         Entry before = "local".equals(target) ? local : remote;
+        String t = title == null || title.trim().isEmpty() ? STARTING_TITLE : title.trim();
         // A player already reporting this item is newer than the tap.
-        if (before != null && !before.starting && before.title.equalsIgnoreCase(title == null ? "" : title)) return;
-        report(new Entry(target, targetName, title, artist, artworkUrl, false, false, 0, -1, now, null, true, ""));
+        if (before != null && !before.starting && before.title.equalsIgnoreCase(t)) return;
+        if (before != null && !before.starting) startedOver.put(target, before.title);
+        else if (before == null) startedOver.put(target, "");
+        report(new Entry(target, targetName, t, artist, artworkUrl, false, false, 0, -1, now, null, true, ""));
+    }
+
+    /** The title of a start known only by its id: the bar says just this. */
+    public static final String STARTING_TITLE = "Starting…";
+
+    /**
+     * Whether a report is held back because a start is showing: the start is fresh
+     * (MiniPlayerState.STARTING_MS), and the report is of the item the player held at the
+     * tap, or of nothing yet. Anything else (the tapped item, another start) goes through.
+     */
+    static boolean holdsStart(Entry before, Entry next, String over) {
+        if (before == null || !before.starting || next == null || next.starting || over == null) return false;
+        if (next.reportedAt - before.reportedAt > MiniPlayerState.STARTING_MS) return false;
+        return next.title.isEmpty() || next.title.equalsIgnoreCase(over);
     }
 
     /** A book's chapter title for {@code target}'s current item (Now playing knows it): the mini player's second line. */
@@ -138,7 +161,7 @@ public final class NowPlayingNote {
 
     public static void unlisten(Listener l) { listeners.remove(l); }
 
-    static void clearForTests() { local = null; remote = null; listeners.clear(); }
+    static void clearForTests() { local = null; remote = null; listeners.clear(); startedOver.clear(); }
 
     /** Same as far as the strip is concerned. Position is carried forward, so a report that only moved it is not news. */
     private static boolean same(Entry a, Entry b) {

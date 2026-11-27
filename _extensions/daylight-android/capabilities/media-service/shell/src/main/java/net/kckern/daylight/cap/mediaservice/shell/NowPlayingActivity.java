@@ -271,6 +271,7 @@ public class NowPlayingActivity extends Activity {
         if (saved == null && remote() && getIntent() != null && target.equals(getIntent().getStringExtra(EXTRA_TARGET))) {
             pickedSnapshot = getIntent().getStringExtra(RemoteControlService.EXTRA_SNAPSHOT);
         }
+        if (starting == null) starting = fromNote(target);
         if (starting == null) frame = openingFrame(target);
         loadScreens();
         // Opened as a screen's remote (the phone home's Connect tab): the pad, at once.
@@ -278,6 +279,18 @@ public class NowPlayingActivity extends Activity {
         render();
         openStageAsked(getIntent());
         Log.i(TAG, "now playing opened, target " + target + (frame != null ? ", first frame from " + frame.why : ""));
+    }
+
+    /**
+     * Opened while the mini player shows a start that has not landed (tapped elsewhere, then
+     * the bar tapped): Now playing shows that start too, never what played before it.
+     */
+    private static Starting fromNote(String target) {
+        NowPlayingNote.Entry e = NowPlayingNote.forTarget(target);
+        long now = SystemClock.elapsedRealtime();
+        if (e == null || !e.starting || !net.kckern.daylight.shellkit.MiniPlayerState.shown(e, "", now)) return null;
+        String title = NowPlayingNote.STARTING_TITLE.equals(e.title) ? "" : e.title;
+        return new Starting(target, "", title, e.artist, e.artworkUrl, e.reportedAt);
     }
 
     /** What to draw before the controller answers for {@code id}: the mini player's entry, else a screen's last answer. */
@@ -816,6 +829,8 @@ public class NowPlayingActivity extends Activity {
     private void takeStarting(Intent intent) {
         Starting s = Starting.from(intent, target, SystemClock.elapsedRealtime());
         if (s == null) return;
+        // The mini player switches to the tapped item at once too, never the previous one (NowPlayingNote holds it).
+        NowPlayingNote.starting(s.target, targetName, s.title, s.subtitle, s.art, s.askedAt);
         boolean play = intent.getBooleanExtra(Starting.EXTRA_PLAY, false);
         boolean shuffle = intent.getBooleanExtra(Starting.EXTRA_SHUFFLE, false);
         frame = null;
@@ -852,6 +867,7 @@ public class NowPlayingActivity extends Activity {
         String id = playId;
         boolean shuffle = playShuffle;
         playId = null;
+        notePrevious(c);
         Log.i(TAG, "now playing: starting the tapped item here" + (shuffle ? ", shuffled" : ""));
         note("player.play-here", "shuffle", shuffle);
         c.setMediaItem(playRequest(id, shuffle));
@@ -907,20 +923,27 @@ public class NowPlayingActivity extends Activity {
      * behind the starting item until then.
      */
     private boolean startedNow(MediaController c, MediaMetadata meta) {
-        // The tapped id itself, or the list the current item came from (a c: list, a p: track in its list).
-        String want = contentOf(starting.mediaId);
         MediaItem current = c.getCurrentMediaItem();
-        // This screen's own request, as its controller holds it until the session answers: a
-        // media id ("c:…", "p:…") with no title. Not the item yet, nor is its transition.
-        if (current != null && isRequest(current.mediaId)) return false;
-        if (!want.isEmpty() && current != null
-                && (want.equals(NodeItems.listId(current)) || want.equals(contentOf(current.mediaId)))) return true;
-        if (itemChangedAt >= starting.askedAt) return true;
-        for (CharSequence m : new CharSequence[] { meta.title, meta.albumTitle, meta.artist, meta.displayTitle }) {
-            if (m != null && m.toString().trim().equalsIgnoreCase(starting.title)) return true;
+        String currentId = current == null ? "" : current.mediaId;
+        boolean request = current != null && isRequest(current.mediaId);
+        boolean nameMatches = false;
+        if (!starting.title.isEmpty()) {
+            for (CharSequence m : new CharSequence[] { meta.title, meta.albumTitle, meta.artist, meta.displayTitle }) {
+                if (m != null && m.toString().trim().equalsIgnoreCase(starting.title)) nameMatches = true;
+            }
         }
-        // Connected after the change with nothing to match by name (a playlist's first track): playing is enough.
-        return itemChangedAt < 0 && c.isPlaying() && SystemClock.elapsedRealtime() - starting.askedAt > 1500;
+        // Connected after the change with nothing to match by name (a playlist's first track): playing is enough,
+        // unless it is still the item that played before the tap (Starting.landed).
+        boolean playingAWhile = itemChangedAt < 0 && c.isPlaying() && SystemClock.elapsedRealtime() - starting.askedAt > 1500;
+        return starting.landed(currentId, NodeItems.listId(current), request, itemChangedAt >= starting.askedAt,
+                nameMatches, playingAWhile);
+    }
+
+    /** Notes what the player held when the start was tapped (Starting.previous), once the controller says. */
+    private void notePrevious(MediaController c) {
+        if (starting == null || starting.previous != null || c == null || !c.isConnected()) return;
+        MediaItem current = c.getCurrentMediaItem();
+        starting.notePrevious(current == null || isRequest(current.mediaId) ? "" : current.mediaId);
     }
 
     /** A media id of the tree ("c:plex:1", "p:plex:2|plex:1"), as a play request names it; a played item has a content id. */
@@ -961,6 +984,7 @@ public class NowPlayingActivity extends Activity {
         boolean hasItem = c != null && c.getMediaItemCount() > 0;
         long nowMs = SystemClock.elapsedRealtime();
         if (starting != null && !starting.target.equals(target)) starting = null;
+        notePrevious(c);
         if (starting != null && hasItem && startedNow(c, meta)) {
             note("player.started", "ms", nowMs - starting.askedAt);
             starting = null;

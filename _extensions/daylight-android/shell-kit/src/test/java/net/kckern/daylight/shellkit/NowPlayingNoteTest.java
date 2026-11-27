@@ -47,4 +47,37 @@ public class NowPlayingNoteTest {
         assertEquals(10_000, paused.positionAt(60_000));
         assertEquals(-1f, paused.fractionAt(60_000), 0);
     }
+
+    @Test public void aNewStartIsNeverReplacedByThePreviousItemsReports() {
+        NowPlayingNote.update("local", "This phone", "Y", true, 1_000);
+        NowPlayingNote.starting("local", "This phone", "X", "by X", "", 2_000);
+        assertEquals("X", NowPlayingNote.forTarget("local").title);
+        // The player still reports Y, then nothing (our request), for a few seconds.
+        NowPlayingNote.update("local", "This phone", "Y", true, 3_000);
+        assertEquals("X", NowPlayingNote.forTarget("local").title);
+        NowPlayingNote.update("local", "This phone", "", false, 3_500);
+        assertEquals("X", NowPlayingNote.forTarget("local").title);
+        org.junit.Assert.assertTrue(NowPlayingNote.forTarget("local").starting);
+        // X lands: it replaces the start.
+        NowPlayingNote.update("local", "This phone", "X", true, 5_000);
+        assertEquals("X", NowPlayingNote.forTarget("local").title);
+        org.junit.Assert.assertFalse(NowPlayingNote.forTarget("local").starting);
+        // And Y's reports count again afterwards (the start is over).
+        NowPlayingNote.update("local", "This phone", "Y", true, 6_000);
+        assertEquals("Y", NowPlayingNote.forTarget("local").title);
+    }
+
+    @Test public void aStartThatNeverLandsLetsThePreviousItemBackAfterItsTime() {
+        NowPlayingNote.update("local", "This phone", "Y", true, 0);
+        NowPlayingNote.starting("local", "This phone", "X", "", "", 1_000);
+        NowPlayingNote.update("local", "This phone", "Y", true, 1_000 + MiniPlayerState.STARTING_MS + 1);
+        assertEquals("Y", NowPlayingNote.forTarget("local").title);
+    }
+
+    @Test public void aStartKnownOnlyByItsIdSaysStarting() {
+        NowPlayingNote.update("local", "This phone", "Y", true, 0);
+        NowPlayingNote.starting("local", "This phone", "", "", "", 1);
+        assertEquals(NowPlayingNote.STARTING_TITLE, NowPlayingNote.forTarget("local").title);
+        assertEquals("", MiniPlayerState.line(NowPlayingNote.forTarget("local")));
+    }
 }

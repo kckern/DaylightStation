@@ -542,6 +542,19 @@ from the phone, under 2 s from home).
   set by every play path: a browse row by its own kind (a search row too), a page's
   Play, Play on a screen, the phone home's cards, the idle panel's Resume (remembered
   with the last item) and Continue, a kept item opened by a link, and the old play screen.
+- **Never the previous item.** From the tap on, Now playing and the mini player show only
+  the tapped item: its title and cover, or "Starting…" for a start known only by its id
+  (`Starting.bare`; every intent with a `starting.id` makes one, title or not). The item
+  the player held at the tap is noted (`Starting.previous`) and, while it is still the
+  current one, the start has not landed, however long it plays or whatever event fires
+  (2026-11-27: a track tapped while another played showed the old cover, title, time and
+  waveform for 3 s, because "playing for 1.5 s" counted as landed and a tapped track's
+  `p:id|parent` never matched the player's id). `Starting.suppresses` and `landed` hold
+  the rule: a tapped list matches its own id, a tapped track its own id, never its
+  parent's other tracks. The mini player switches at the tap too: Now playing writes the
+  start to `NowPlayingNote`, which then holds back the player's reports of the previous
+  item, or of nothing yet, for up to 30 s (`NowPlayingNote.holdsStart`); Now playing
+  opened from a bar that shows a start shows that start.
 - **Switching to a screen.** The picker reads each screen's session as it opens; that
   answer goes with the pick into Now playing and the remote (`ScreenPlayer` starts from
   it, greyed and with no commands, "Checking <screen>…", until its own first read).
@@ -1514,7 +1527,7 @@ before an automatic keep of it is removed, and has Undo too.
 Search, the Library and every level and detail page, On this phone. Not on Now playing nor
 the capture screens. Each screen adds the same bar as the last child of its vertical
 root, so its list ends above it. It shows the cover, title, the by-line ("On <screen>"
-for a screen, "Starting…" while a tapped item starts after Now playing was closed, a
+for a screen, "Starting…" from the moment an item is tapped until it plays, a
 book's chapter while Now playing knows it), a progress line run by an animator to the
 item's end, Play/Pause (flips at once; the player's report corrects it) and Next. Tap or
 swipe up opens Now playing on that target, drawn from the same entry; swipe down hides it

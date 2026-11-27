@@ -34,7 +34,7 @@ public final class MiniPlayerState {
     /** "Starting…"; the chapter; "On <screen>" for a screen; else the by-line. */
     public static String line(NowPlayingNote.Entry e) {
         if (e == null) return "";
-        if (e.starting) return "Starting…";
+        if (e.starting) return NowPlayingNote.STARTING_TITLE.equals(e.title) ? "" : "Starting…";
         boolean screen = !"local".equals(e.target);
         if (screen) return "On " + (e.targetName.isEmpty() ? "a screen" : e.targetName);
         return e.detail.isEmpty() ? e.artist : e.detail;

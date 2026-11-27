@@ -58,13 +58,75 @@ final class Starting {
         this.askedAt = askedAt;
     }
 
+    /** A start known only by what was tapped (a link with no title, the mini player's entry): "Starting…" until it lands. */
+    static Starting bare(String target, String mediaId, long askedAt) {
+        return new Starting(target, mediaId, "", "", "", askedAt);
+    }
+
+    /**
+     * The content id that was playing when the tap happened (the previous item), once the
+     * controller has told it; null until then. While the player still holds it, the start
+     * has not landed, whatever its name or how long it has played (2026-11-27: a track
+     * tapped while another played showed the old one for 3 s, because "playing for 1.5 s"
+     * counted as landed).
+     */
+    String previous;
+
+    /** Notes the item the player held at the tap; only the first call counts. */
+    void notePrevious(String currentId) {
+        if (previous == null) previous = bareId(currentId);
+    }
+
+    /**
+     * True while {@code id} (a player's media id: "plex:1", "p:plex:1|plex:9", "c:plex:2")
+     * is not what was tapped: Now playing, the mini player and the queue then show only the
+     * tapped item, never this one. A tapped list ("c:") matches its own id; a tapped track
+     * ("p:id|parent") its own id, never its parent (another track of the same album is not it).
+     */
+    boolean suppresses(String id) {
+        String want = tappedId();
+        if (want.isEmpty() || id == null) return true;
+        for (String part : id.split("\\|")) if (want.equals(bareId(part))) return false;
+        return true;
+    }
+
+    /**
+     * Whether the player now holds the tapped item: never while it shows our own request or
+     * still holds the previous item; at once when its item or list is the tapped id; else on
+     * a change after the tap, a matching name, or (connected after the change) playing a while.
+     */
+    boolean landed(String currentId, String listId, boolean request, boolean changedSinceTap,
+                   boolean nameMatches, boolean playingAWhile) {
+        if (request) return false;
+        if (currentId != null && !currentId.isEmpty() && !suppresses(currentId)) return true;
+        if (listId != null && !listId.isEmpty() && mediaId.startsWith("c:") && !suppresses(listId)) return true;
+        if (previous != null && !previous.isEmpty() && previous.equals(bareId(currentId))) return false;
+        return changedSinceTap || nameMatches || playingAWhile;
+    }
+
+    /** The tapped item's own content id: "plex:2" for "c:plex:2" and for "p:plex:2|plex:1". */
+    String tappedId() {
+        String id = mediaId;
+        int bar = id.indexOf('|');
+        if (bar >= 0) id = id.substring(0, bar);
+        return bareId(id);
+    }
+
+    private static String bareId(String id) {
+        if (id == null) return "";
+        String t = id.trim();
+        return t.length() > 2 && t.charAt(1) == ':' && (t.charAt(0) == 'c' || t.charAt(0) == 'p') ? t.substring(2) : t;
+    }
+
     /** The starting item an intent carries for {@code target}, or null when it carries none. */
     static Starting from(Intent intent, String target, long now) {
         if (intent == null) return null;
         String title = intent.getStringExtra(EXTRA_TITLE);
         boolean play = intent.getBooleanExtra(EXTRA_PLAY, false);
-        // A start Now playing makes itself may come with only an id (a media link).
-        if ((title == null || title.trim().isEmpty()) && !play) return null;
+        // A start Now playing makes itself may come with only an id (a media link); any
+        // start with an id is shown starting, never as whatever played before it.
+        String id = intent.getStringExtra(EXTRA_ID);
+        if ((title == null || title.trim().isEmpty()) && !play && (id == null || id.trim().isEmpty())) return null;
         Starting s = new Starting(target, intent.getStringExtra(EXTRA_ID), title == null ? "" : title.trim(),
                 intent.getStringExtra(EXTRA_SUBTITLE), intent.getStringExtra(EXTRA_ART), now);
         s.longForm = intent.getBooleanExtra(EXTRA_LONG, false);
@@ -86,10 +148,10 @@ final class Starting {
         return id.isEmpty() ? null : new String[] { "play", id };
     }
 
-    /** Puts the starting item on a Now playing intent (title required; the rest may be empty). */
+    /** Puts the starting item on a Now playing intent (a title or an id; the rest may be empty). */
     static Intent put(Intent intent, String mediaId, String title, String subtitle, String art) {
-        if (title == null || title.trim().isEmpty()) return intent;
-        return intent.putExtra(EXTRA_ID, nz(mediaId)).putExtra(EXTRA_TITLE, title.trim())
+        if ((title == null || title.trim().isEmpty()) && (mediaId == null || mediaId.trim().isEmpty())) return intent;
+        return intent.putExtra(EXTRA_ID, nz(mediaId)).putExtra(EXTRA_TITLE, nz(title).trim())
                 .putExtra(EXTRA_SUBTITLE, nz(subtitle)).putExtra(EXTRA_ART, nz(art));
     }
 
@@ -101,6 +163,7 @@ final class Starting {
         out.putString(SAVED + "subtitle", subtitle);
         out.putString(SAVED + "art", art);
         out.putLong(SAVED + "at", askedAt);
+        if (previous != null) out.putString(SAVED + "previous", previous);
         out.putBoolean(SAVED + "failed", failed);
         out.putLong(SAVED + "budget", giveUpMs);
         out.putBoolean(SAVED + "long", longForm);
@@ -113,6 +176,7 @@ final class Starting {
         if (saved.getBoolean(SAVED + "failed")) s.fail();
         s.giveUpMs = saved.getLong(SAVED + "budget", GIVE_UP_MS);
         s.longForm = saved.getBoolean(SAVED + "long", false);
+        s.previous = saved.getString(SAVED + "previous");
         return s;
     }
 
