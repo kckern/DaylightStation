@@ -208,3 +208,40 @@ it('passes video-container overrides to video children without adding them to au
   expect(result[0]).toMatchObject({ contentId: 'plex:2', maxResolution: '720', maxVideoBitrate: 4000, adaptive: false });
   expect(result[1]).not.toHaveProperty('maxResolution');
 });
+
+describe('expandContainerInput — where an ordered work starts', () => {
+  const bookBodies = (queueBody) => ({
+    '/api/v1/list/plex/727787/expand': { items: [track(1), track(2), track(3)] },
+    '/api/v1/queue/plex/727787?limit=1': queueBody,
+  });
+
+  it('withStart: an audio container whose queue names a start carries startIndex', async () => {
+    const bodies = bookBodies({ items: [{ contentId: 'plex:3' }], startIndex: 0 });
+    const fetchImpl = vi.fn(async (url) => ok(bodies[url]));
+    const out = await expandContainerInput({ contentId: 'plex:727787', itemType: 'container' }, { fetchImpl, withStart: true });
+    expect(out.map((i) => i.contentId)).toEqual(['plex:1', 'plex:2', 'plex:3']);
+    expect(out.startIndex).toBe(2);
+  });
+
+  it('a queue answer without startIndex (music) leaves the start at 0', async () => {
+    const bodies = bookBodies({ items: [{ contentId: 'plex:1' }] });
+    const fetchImpl = vi.fn(async (url) => ok(bodies[url]));
+    const out = await expandContainerInput({ contentId: 'plex:727787', itemType: 'container' }, { fetchImpl, withStart: true });
+    expect(out.startIndex).toBeUndefined();
+  });
+
+  it('without withStart (an append) the queue route is not asked', async () => {
+    const bodies = bookBodies({ items: [{ contentId: 'plex:3' }], startIndex: 0 });
+    const fetchImpl = vi.fn(async (url) => ok(bodies[url]));
+    const out = await expandContainerInput({ contentId: 'plex:727787', itemType: 'container' }, { fetchImpl });
+    expect(out.startIndex).toBeUndefined();
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('a failing queue lookup still expands, from the first part', async () => {
+    const fetchImpl = vi.fn(async (url) => (url.includes('/queue/') ? notOk() : ok({ items: [track(1), track(2)] })));
+    const out = await expandContainerInput({ contentId: 'plex:727787', itemType: 'container' }, { fetchImpl, withStart: true });
+    expect(out.map((i) => i.contentId)).toEqual(['plex:1', 'plex:2']);
+    expect(out.startIndex).toBeUndefined();
+  });
+});

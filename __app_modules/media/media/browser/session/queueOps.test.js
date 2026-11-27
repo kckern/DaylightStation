@@ -259,6 +259,17 @@ describe('batch ops (playNowMany / playNextMany / addUpNextMany / addMany)', () 
     expect(next.queue.currentIndex).toBe(0);
   });
 
+  it('playNowMany startIndex: a book is queued whole, in order, current at its part in progress', () => {
+    const cleared = q.playNowMany(seed('a', 'b*', 'c'), batch, { clearRest: true, startIndex: 2 });
+    expect(cleared.queue.items.map((i) => i.contentId)).toEqual(['c:x', 'c:y', 'c:z']);
+    expect(cleared.queue.currentIndex).toBe(2);
+    expect(cleared.currentItem.contentId).toBe('c:z');
+    const inPlace = q.playNowMany(seed('a', 'b*', 'c'), batch, { startIndex: 1 });
+    expect(inPlace.queue.items.map((i) => i.contentId)).toEqual(['c:a', 'c:x', 'c:y', 'c:z', 'c:c']);
+    expect(inPlace.currentItem.contentId).toBe('c:y');
+    expect(q.playNowMany(seed('b*'), batch, { clearRest: true, startIndex: 9 }).queue.currentIndex).toBe(0);
+  });
+
   it('playNextMany: whole batch lands at the FRONT of the band, in order', () => {
     const next = q.playNextMany(seed('a*', ['u1', 'upNext'], 'b'), batch);
     expect(next.queue.items.map((i) => i.contentId))
