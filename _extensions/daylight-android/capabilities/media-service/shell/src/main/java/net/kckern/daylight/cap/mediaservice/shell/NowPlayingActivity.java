@@ -165,6 +165,8 @@ public class NowPlayingActivity extends Activity {
     static boolean showingStart() { return startShown; }
     /** When the player's current item last changed (elapsed ms), to tell a new item from the one before the tap. */
     private long itemChangedAt = -1;
+    /** When the controller connected (elapsed ms): what it saw from then on, it saw at that time or later. */
+    private long connectedAt = -1;
     private String volumeLine = "";
     private String shownArtwork;
 
@@ -733,6 +735,7 @@ public class NowPlayingActivity extends Activity {
                     MediaController c = mine.get();
                     if (!forTarget.equals(target) || isFinishing()) { c.release(); return; }
                     controller = c;
+                    connectedAt = SystemClock.elapsedRealtime();
                     frame = null;
                     connectionLine = "";
                     reconnectMs = 1000;
@@ -867,7 +870,11 @@ public class NowPlayingActivity extends Activity {
         String id = playId;
         boolean shuffle = playShuffle;
         playId = null;
-        notePrevious(c);
+        // What the player holds before this screen's own request is, by definition, the previous item.
+        if (starting != null) {
+            MediaItem held = c.getCurrentMediaItem();
+            starting.notePrevious(held == null || isRequest(held.mediaId) ? "" : held.mediaId, starting.askedAt);
+        }
         Log.i(TAG, "now playing: starting the tapped item here" + (shuffle ? ", shuffled" : ""));
         note("player.play-here", "shuffle", shuffle);
         c.setMediaItem(playRequest(id, shuffle));
@@ -939,11 +946,16 @@ public class NowPlayingActivity extends Activity {
                 nameMatches, playingAWhile);
     }
 
-    /** Notes what the player held when the start was tapped (Starting.previous), once the controller says. */
+    /**
+     * Notes what the player held when the start was tapped (Starting.previous), when this
+     * controller saw its current item before the tap: connected before it, with no change
+     * since. A controller that connected after the tap does not know (Starting.notePrevious).
+     */
     private void notePrevious(MediaController c) {
         if (starting == null || starting.previous != null || c == null || !c.isConnected()) return;
         MediaItem current = c.getCurrentMediaItem();
-        starting.notePrevious(current == null || isRequest(current.mediaId) ? "" : current.mediaId);
+        starting.notePrevious(current == null || isRequest(current.mediaId) ? "" : current.mediaId,
+                Math.max(connectedAt, itemChangedAt));
     }
 
     /** A media id of the tree ("c:plex:1", "p:plex:2|plex:1"), as a play request names it; a played item has a content id. */

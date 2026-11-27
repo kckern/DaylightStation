@@ -80,4 +80,21 @@ public class NowPlayingNoteTest {
         assertEquals(NowPlayingNote.STARTING_TITLE, NowPlayingNote.forTarget("local").title);
         assertEquals("", MiniPlayerState.line(NowPlayingNote.forTarget("local")));
     }
+
+    private static NowPlayingNote.Entry chapter(String id, long at) {
+        return new NowPlayingNote.Entry("local", "This phone", "Chapter 1", "", "", true, false, 0, -1, at, null, false, "", id);
+    }
+
+    @Test public void aNewBookWhoseFirstChapterHasTheOldTitleIsNotHeld() {
+        NowPlayingNote.report(chapter("plex:100", 1_000));
+        NowPlayingNote.starting("local", "This phone", "Paradise", "Dante", "", 2_000);
+        org.junit.Assert.assertTrue(NowPlayingNote.forTarget("local").starting);
+        // The old book's own report is still held...
+        NowPlayingNote.report(chapter("plex:100", 2_500));
+        org.junit.Assert.assertTrue(NowPlayingNote.forTarget("local").starting);
+        // ...but the new book's first chapter, the same title under another id, lands at once.
+        NowPlayingNote.report(chapter("plex:200", 3_000));
+        org.junit.Assert.assertFalse(NowPlayingNote.forTarget("local").starting);
+        assertEquals("plex:200", NowPlayingNote.forTarget("local").mediaId);
+    }
 }

@@ -1912,6 +1912,13 @@ public final class BrowseActivity extends Activity {
                 .putExtra(Starting.EXTRA_LONG, longItem)
                 .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP), mediaId, name, by, cover);
         if (stage != null) now.putExtra(NowPlayingActivity.EXTRA_STAGE, stage);
+        // What plays now, said at the tap: the player may hold the tapped item before Now playing connects (Starting).
+        MediaController held = controller;
+        boolean connected = held != null && held.isConnected();
+        MediaItem heldItem = connected ? held.getCurrentMediaItem() : null;
+        String previous = Starting.previousAt(connected, heldItem == null ? null : heldItem.mediaId,
+                net.kckern.daylight.shellkit.NowPlayingNote.forTarget(NowPlayingActivity.LOCAL));
+        if (previous != null) now.putExtra(Starting.EXTRA_PREVIOUS, previous);
         startActivity(now);
         // The queue's source: what "Next from …" names (queue spec §3).
         String source = QueueVerbs.label(mediaId, name, title, MODE_SEARCH.equals(mode) && field != null ? field.getText().toString() : "");
@@ -1932,7 +1939,11 @@ public final class BrowseActivity extends Activity {
         withController(c -> {
             MediaItem item = new MediaItem.Builder().setMediaId(mediaId).build();
             boolean empty = c.getMediaItemCount() == 0;
-            if (empty) { c.setMediaItem(item); c.prepare(); c.play(); }
+            if (empty) {
+                // It plays now: the mini player shows it at once, not "Nothing" until it lands.
+                NowPlayingNotes.starting(new String[] { name == null ? "" : name, "", "" });
+                c.setMediaItem(item); c.prepare(); c.play();
+            }
             else if (next) c.addMediaItem(c.getCurrentMediaItemIndex() + 1, item);
             else c.addMediaItem(item);
             // Nothing queued: it plays now, and says so (audit: it said "Plays next" and sat idle).

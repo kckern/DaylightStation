@@ -28,6 +28,8 @@ public final class NowPlayingNote {
         public final boolean starting;
         /** A book's chapter title when known, shown in place of the by-line; "" for none. */
         public final String detail;
+        /** The player's content id for the item ("plex:1"); "" when not known (a start, a screen's frame). */
+        public final String mediaId;
         final long at;
 
         public Entry(String target, String targetName, String title, String artist, String artworkUrl,
@@ -39,6 +41,13 @@ public final class NowPlayingNote {
         public Entry(String target, String targetName, String title, String artist, String artworkUrl,
                      boolean playing, boolean canNext, long positionMs, long durationMs, long reportedAt,
                      Transport transport, boolean starting, String detail) {
+            this(target, targetName, title, artist, artworkUrl, playing, canNext, positionMs, durationMs, reportedAt, transport, starting, detail, "");
+        }
+
+        public Entry(String target, String targetName, String title, String artist, String artworkUrl,
+                     boolean playing, boolean canNext, long positionMs, long durationMs, long reportedAt,
+                     Transport transport, boolean starting, String detail, String mediaId) {
+            this.mediaId = mediaId == null ? "" : mediaId;
             this.starting = starting;
             this.detail = detail == null ? "" : detail;
             this.target = target;
@@ -70,8 +79,11 @@ public final class NowPlayingNote {
     public interface Listener { void changed(); }
 
     private static volatile Entry local, remote;
-    /** Per target: the title the player held when a start was tapped (its reports do not replace the start). */
-    private static final java.util.Map<String, String> startedOver = new java.util.concurrent.ConcurrentHashMap<>();
+    /**
+     * Per target: what the player held when a start was tapped (its reports do not replace the
+     * start); {@link #NOTHING} when it held nothing.
+     */
+    private static final java.util.Map<String, Entry> startedOver = new java.util.concurrent.ConcurrentHashMap<>();
     private static final CopyOnWriteArrayList<Listener> listeners = new CopyOnWriteArrayList<>();
 
     private NowPlayingNote() { }
@@ -85,9 +97,10 @@ public final class NowPlayingNote {
         if (holdsStart(before, e, startedOver.get(e.target))) return;
         if (!e.starting) startedOver.remove(e.target);
         // A chapter line stays with its item across the service's reports (which do not know it).
-        if (!e.starting && e.detail.isEmpty() && before != null && !before.detail.isEmpty() && before.title.equals(e.title)) {
+        if (!e.starting && e.detail.isEmpty() && before != null && !before.detail.isEmpty() && before.title.equals(e.title)
+                && before.mediaId.equals(e.mediaId)) {
             e = new Entry(e.target, e.targetName, e.title, e.artist, e.artworkUrl, e.playing, e.canNext, e.positionMs, e.durationMs,
-                    e.reportedAt, e.transport, false, before.detail);
+                    e.reportedAt, e.transport, false, before.detail, e.mediaId);
         }
         Entry next = e.title.isEmpty() ? null : e;
         if (same(before, next)) return;
@@ -109,10 +122,13 @@ public final class NowPlayingNote {
         String t = title == null || title.trim().isEmpty() ? STARTING_TITLE : title.trim();
         // A player already reporting this item is newer than the tap.
         if (before != null && !before.starting && before.title.equalsIgnoreCase(t)) return;
-        if (before != null && !before.starting) startedOver.put(target, before.title);
-        else if (before == null) startedOver.put(target, "");
+        if (before != null && !before.starting) startedOver.put(target, before);
+        else if (before == null) startedOver.put(target, NOTHING);
         report(new Entry(target, targetName, t, artist, artworkUrl, false, false, 0, -1, now, null, true, ""));
     }
+
+    /** What the player held at a tap when it held nothing. */
+    private static final Entry NOTHING = new Entry("", "", "", "", "", false, false, 0, -1, 0, null);
 
     /** The title of a start known only by its id: the bar says just this. */
     public static final String STARTING_TITLE = "Starting…";
@@ -121,11 +137,21 @@ public final class NowPlayingNote {
      * Whether a report is held back because a start is showing: the start is fresh
      * (MiniPlayerState.STARTING_MS), and the report is of the item the player held at the
      * tap, or of nothing yet. Anything else (the tapped item, another start) goes through.
+     * The item is told by its content id: a new book whose first chapter has the old one's
+     * title ("Canto I") is a new item (2026-11-27: it was held for 30 s). Only when either id
+     * is unknown is it told by title.
      */
-    static boolean holdsStart(Entry before, Entry next, String over) {
+    static boolean holdsStart(Entry before, Entry next, Entry over) {
         if (before == null || !before.starting || next == null || next.starting || over == null) return false;
         if (next.reportedAt - before.reportedAt > MiniPlayerState.STARTING_MS) return false;
-        return next.title.isEmpty() || next.title.equalsIgnoreCase(over);
+        return next.title.isEmpty() || sameItem(next, over);
+    }
+
+    /** The same item: by content id when both are known, else by title; never the empty entry. */
+    static boolean sameItem(Entry a, Entry b) {
+        if (a == null || b == null || b.title.isEmpty()) return false;
+        if (!a.mediaId.isEmpty() && !b.mediaId.isEmpty()) return a.mediaId.equals(b.mediaId);
+        return a.title.equalsIgnoreCase(b.title);
     }
 
     /** A book's chapter title for {@code target}'s current item (Now playing knows it): the mini player's second line. */
@@ -134,7 +160,7 @@ public final class NowPlayingNote {
         String c = chapter == null ? "" : chapter;
         if (e == null || e.detail.equals(c)) return;
         report(new Entry(e.target, e.targetName, e.title, e.artist, e.artworkUrl, e.playing, e.canNext, e.positionMs, e.durationMs,
-                e.reportedAt, e.transport, e.starting, c));
+                e.reportedAt, e.transport, e.starting, c, e.mediaId));
     }
 
     /** What the strip shows: the one playing (the newer, if both are), else the newer paused one; null for none. */
@@ -169,7 +195,7 @@ public final class NowPlayingNote {
         if (!(a.target.equals(b.target) && a.title.equals(b.title) && a.playing == b.playing
                 && a.targetName.equals(b.targetName) && a.artist.equals(b.artist)
                 && a.artworkUrl.equals(b.artworkUrl) && a.canNext == b.canNext && a.durationMs == b.durationMs
-                && a.starting == b.starting && a.detail.equals(b.detail))) return false;
+                && a.starting == b.starting && a.detail.equals(b.detail) && a.mediaId.equals(b.mediaId))) return false;
         // Off by more than 2 s from where the strip thinks it is: a seek; worth redrawing.
         return Math.abs(a.positionAt(b.reportedAt) - b.positionMs) < 2000;
     }

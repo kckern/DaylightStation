@@ -62,7 +62,7 @@ public class StartingTest {
 
     @Test public void thePreviousItemPlayingOnIsNeverTheNewOne() {
         Starting s = new Starting("local", "p:plex:20|plex:9", "Track 3", "", "", 0);
-        s.notePrevious("plex:1");
+        s.notePrevious("plex:1", 0);
         // Still Y: playing for a while, even a change event, never counts.
         assertFalse(s.landed("plex:1", "", false, true, false, true));
         // Our own request, not the item yet.
@@ -71,7 +71,7 @@ public class StartingTest {
         assertTrue(s.landed("plex:20", "plex:9", false, false, false, false));
         // A first track of a tapped playlist (unknown id), after a change: landed.
         Starting list = new Starting("local", "c:plex:50", "Mix", "", "", 0);
-        list.notePrevious("plex:1");
+        list.notePrevious("plex:1", 0);
         assertTrue(list.landed("plex:77", "plex:50", false, false, false, false));
         assertTrue(list.landed("plex:77", "", false, true, false, false));
         assertFalse(list.landed("plex:1", "", false, true, true, true));
@@ -79,8 +79,50 @@ public class StartingTest {
 
     @Test public void thePreviousItemIsTheFirstOneSeen() {
         Starting s = Starting.bare("local", "c:plex:2", 0);
-        s.notePrevious("plex:1");
-        s.notePrevious("plex:2");
+        s.notePrevious("plex:1", 0);
+        s.notePrevious("plex:2", 0);
         assertEquals("plex:1", s.previous);
+    }
+
+    @Test public void anItemFirstSeenAfterTheTapIsNotThePreviousOne() {
+        // A kept album resolves at once: the player has X before Now playing's controller connects.
+        Starting s = new Starting("local", "c:plex:50", "Mix", "", "", 1_000);
+        s.notePrevious("plex:77", 1_200);
+        assertNull(s.previous);
+        assertTrue("playing a while is enough", s.landed("plex:77", "", false, false, false, true));
+        Starting fromNote = new Starting("local", "", "Mix", "", "", 1_000);
+        fromNote.notePrevious("plex:77", 1_200);
+        assertTrue(fromNote.landed("plex:77", "", false, false, true, true));
+    }
+
+    @Test public void thePreviousItemPassedAtTheTapIsNeverLanded() {
+        Starting s = new Starting("local", "c:plex:50", "Mix", "", "", 1_000);
+        s.previousAtTap("p:plex:9");
+        s.notePrevious("plex:77", 0); // the tap's answer wins
+        assertEquals("plex:9", s.previous);
+        assertFalse(s.landed("plex:9", "", false, true, true, true));
+        assertTrue(s.landed("plex:77", "", false, false, false, true));
+        Starting nothing = new Starting("local", "c:plex:50", "Mix", "", "", 1_000);
+        nothing.previousAtTap("");
+        assertEquals("nothing was playing at the tap", "", nothing.previous);
+        assertTrue(nothing.landed("plex:77", "", false, false, false, true));
+    }
+
+    private static net.kckern.daylight.shellkit.NowPlayingNote.Entry note(String id, boolean starting) {
+        return new net.kckern.daylight.shellkit.NowPlayingNote.Entry("local", "This phone", "Y", "", "", true, false, 0, -1, 0,
+                null, starting, "", id);
+    }
+
+    @Test public void theTappingScreenSaysWhatPlayedAtTheTap() {
+        // Its own connected controller first; a request still resolving is not an item.
+        assertEquals("plex:9", Starting.previousAt(true, "plex:9", note("plex:1", false)));
+        assertEquals("", Starting.previousAt(true, "c:plex:4", null));
+        assertEquals("", Starting.previousAt(true, null, note("plex:1", false)));
+        // Not connected yet: the mini player's last report, made before the tap.
+        assertEquals("plex:1", Starting.previousAt(false, null, note("plex:1", false)));
+        assertEquals("nothing loaded", "", Starting.previousAt(false, null, null));
+        // Another start in flight, or a report with no id: not known.
+        assertNull(Starting.previousAt(false, null, note("", true)));
+        assertNull(Starting.previousAt(false, null, note("", false)));
     }
 }

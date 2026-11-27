@@ -301,6 +301,11 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
             ids.add(item.mediaId);
             queries.add(item.requestMetadata == null ? null : item.requestMetadata.searchQuery);
         }
+        // The phone's mini player too (Now playing is not over a car's tap to say so).
+        if (controller != null && DrivingRadio.isCar(controller) && requested.size() == 1) {
+            final String[] face = NowPlayingNotes.face(requested.get(0));
+            main.post(() -> NowPlayingNotes.starting(face));
+        }
         // The car's now-playing card shows the tapped item at once, not the previous one.
         if (requested.size() == 1 && requested.get(0).mediaMetadata.title != null) {
             main.post(() -> {

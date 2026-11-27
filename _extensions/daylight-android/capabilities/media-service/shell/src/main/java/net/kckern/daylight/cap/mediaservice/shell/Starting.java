@@ -26,6 +26,12 @@ final class Starting {
     static final String EXTRA_SHUFFLE = "starting.shuffle";
     /** The tapped item is long (a book, a talk): its chapter line is reserved from the first frame. */
     static final String EXTRA_LONG = "starting.long";
+    /**
+     * What this phone's player held at the tap (its media id; "" for nothing), from the
+     * tapping screen when it knows (Browse's own controller). Without it, Now playing notes
+     * the previous item only from what its controller saw before the tap (notePrevious).
+     */
+    static final String EXTRA_PREVIOUS = "starting.previous";
     /** Beside Now playing's "target": the target's name, so no raw device id is ever shown. */
     static final String EXTRA_TARGET_NAME = "targetName";
     /** Session extra (elapsedRealtime ms): the player refused the last play request (LibraryCallback). */
@@ -64,17 +70,40 @@ final class Starting {
     }
 
     /**
-     * The content id that was playing when the tap happened (the previous item), once the
-     * controller has told it; null until then. While the player still holds it, the start
-     * has not landed, whatever its name or how long it has played (2026-11-27: a track
-     * tapped while another played showed the old one for 3 s, because "playing for 1.5 s"
-     * counted as landed).
+     * The content id that was playing when the tap happened (the previous item), once known;
+     * null until then. While the player still holds it, the start has not landed, whatever
+     * its name or how long it has played (2026-11-27: a track tapped while another played
+     * showed the old one for 3 s, because "playing for 1.5 s" counted as landed).
      */
     String previous;
 
-    /** Notes the item the player held at the tap; only the first call counts. */
-    void notePrevious(String currentId) {
-        if (previous == null) previous = bareId(currentId);
+    /** The tapping screen's answer (EXTRA_PREVIOUS): what the player held at the tap, "" for nothing. Wins over notePrevious. */
+    void previousAtTap(String id) {
+        previous = bareId(id);
+    }
+
+    /**
+     * What a tapping screen passes as EXTRA_PREVIOUS: its own connected controller's item
+     * ("" for none, or for a request still resolving), else this phone's mini player entry,
+     * which the service reported before the tap ("" when nothing is loaded). Null when it
+     * cannot know (another start in flight, an entry with no id): the extra is left off.
+     */
+    static String previousAt(boolean connected, String controllerId, net.kckern.daylight.shellkit.NowPlayingNote.Entry note) {
+        if (connected) return controllerId == null || NowPlayingActivity.isRequest(controllerId) ? "" : controllerId;
+        if (note == null) return "";
+        return note.starting || note.mediaId.isEmpty() ? null : note.mediaId;
+    }
+
+    /**
+     * Notes what a controller saw the player holding, as of {@code seenAt} (elapsedRealtime):
+     * only an item it held from before the tap is the previous one. A controller that
+     * connected after the tap may already see the tapped item (a kept album resolves on the
+     * phone at once, before Now playing connects); that is never "previous" (2026-11-27: it
+     * was, and the album showed "Starting…" over its own playing track). Only the first
+     * counted call counts.
+     */
+    void notePrevious(String currentId, long seenAt) {
+        if (previous == null && seenAt <= askedAt) previous = bareId(currentId);
     }
 
     /**
@@ -130,6 +159,7 @@ final class Starting {
         Starting s = new Starting(target, intent.getStringExtra(EXTRA_ID), title == null ? "" : title.trim(),
                 intent.getStringExtra(EXTRA_SUBTITLE), intent.getStringExtra(EXTRA_ART), now);
         s.longForm = intent.getBooleanExtra(EXTRA_LONG, false);
+        if (intent.hasExtra(EXTRA_PREVIOUS)) s.previousAtTap(intent.getStringExtra(EXTRA_PREVIOUS));
         return s;
     }
 

@@ -551,10 +551,25 @@ from the phone, under 2 s from home).
   waveform for 3 s, because "playing for 1.5 s" counted as landed and a tapped track's
   `p:id|parent` never matched the player's id). `Starting.suppresses` and `landed` hold
   the rule: a tapped list matches its own id, a tapped track its own id, never its
-  parent's other tracks. The mini player switches at the tap too: Now playing writes the
-  start to `NowPlayingNote`, which then holds back the player's reports of the previous
-  item, or of nothing yet, for up to 30 s (`NowPlayingNote.holdsStart`); Now playing
-  opened from a bar that shows a start shows that start.
+  parent's other tracks. The previous item is recorded **at the tap**: a browse page
+  passes what this phone's player holds as `starting.previous` (its own controller's
+  item, else the mini player's last report; `Starting.previousAt`), and Now playing
+  playing the item itself notes what its controller held just before its request.
+  Otherwise Now playing counts only what its controller saw from before the tap
+  (`Starting.notePrevious` with the time it saw it): a controller that connected after
+  the tap may already see the tapped item, since a kept album resolves on the phone at
+  once, and that is the start landing, never the previous item (2026-11-27: it was, and
+  the album showed "Starting…" with a blank cover over its own playing track until the
+  track changed or the start "failed"). With the previous item unknown, a change after
+  the tap, a matching name or playing for 1.5 s counts as landed. The mini player
+  switches at the tap too, on every play path: Now playing, a widget or tile
+  (`PlayActionService`), a play from Android Auto, and Play next or Add to queue on an
+  empty queue each write the start to `NowPlayingNote` (`NowPlayingNotes.starting`),
+  which then holds back the player's reports of the previous item, or of nothing yet,
+  for up to 30 s (`NowPlayingNote.holdsStart`). The previous item is told by its
+  content id, by title only when an id is unknown: a new book whose first part has the
+  old one's title ("Canto I", "Chapter 1") is not held. Now playing opened from a bar
+  that shows a start shows that start.
 - **Switching to a screen.** The picker reads each screen's session as it opens; that
   answer goes with the pick into Now playing and the remote (`ScreenPlayer` starts from
   it, greyed and with no commands, "Checking <screen>…", until its own first read).
