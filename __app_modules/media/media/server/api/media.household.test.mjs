@@ -155,3 +155,41 @@ describe('POST /media/household/watched without the mark use case', () => {
     await request(app).post('/api/v1/media/household/watched').send({ contentId: 'plex:1', watched: true }).expect(501);
   });
 });
+
+describe('Continue listening hide (/household/continue/hide)', () => {
+  const book = (lastPlayed) => [P('plex:part', {
+    playhead: 600, duration: 7200, lastPlayed, lastDevice: 'phone:abc',
+    spots: { 'phone:abc': { playhead: 600, duration: 7200, lastPlayed } },
+  })];
+
+  it('hides an item from recent and carry-on for the household, and Undo brings it back', async () => {
+    const { app } = makeApp({ records: book('2026-10-01 21:00:00') });
+    const hid = await request(app).post('/api/v1/media/household/continue/hide').send({ contentId: 'plex:part' }).expect(200);
+    expect(hid.body.contentId).toBe('plex:part');
+    expect(hid.body.hiddenAt).toMatch(/^2026-10-02/);
+    const recent = await request(app).get('/api/v1/media/household/recent').expect(200);
+    expect(recent.body.items.map((i) => i.contentId)).not.toContain('plex:part');
+    const carry = await request(app).get('/api/v1/media/household/carry-on').expect(200);
+    expect(carry.body.items.map((i) => i.contentId)).not.toContain('plex:part');
+    // The web's Remove reads the same list.
+    const removed = await request(app).get('/api/v1/media/household/removed').expect(200);
+    expect(removed.body.items.map((i) => i.id)).toContain('plex:part');
+    const undo = await request(app).delete('/api/v1/media/household/continue/hide/plex:part').expect(200);
+    expect(undo.body).toEqual({ contentId: 'plex:part', restored: true });
+    const back = await request(app).get('/api/v1/media/household/carry-on').expect(200);
+    expect(back.body.items.map((i) => i.contentId)).toContain('plex:part');
+  });
+
+  it('comes back by itself when played after the hide', async () => {
+    // Played at 23:59 on the 2nd: after the hide (stamped 23:00 that day).
+    const { app } = makeApp({ records: book('2026-10-02 23:59:00') });
+    await request(app).post('/api/v1/media/household/continue/hide').send({ contentId: 'plex:part' }).expect(200);
+    const carry = await request(app).get('/api/v1/media/household/carry-on').expect(200);
+    expect(carry.body.items.map((i) => i.contentId)).toContain('plex:part');
+  });
+
+  it('needs a content id', async () => {
+    const { app } = makeApp({ records: [] });
+    await request(app).post('/api/v1/media/household/continue/hide').send({}).expect(400);
+  });
+});

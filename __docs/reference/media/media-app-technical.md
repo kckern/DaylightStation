@@ -473,7 +473,7 @@ answers **501**.
 | Per-screen spots | `POST /api/v1/play/log` with a device | `spots` / `lastDevice` on the progress record (household `media/memory/**`) |
 | Play ledger | `POST /api/v1/play/log` with a device, on each playback **start** | `history/media-plays/<local YYYY-MM-DD>.yml`, 90-day retention |
 | Favourites | `POST/DELETE /household/favourites` | `media/favourites.yml` (`items: [...]`) |
-| Removed ids | `POST/DELETE /household/removed` | `media/removed.yml` (`items: {<id>: {removedAt}}`) |
+| Removed ids | `POST/DELETE /household/removed`, `POST/DELETE /household/continue/hide` (the phone) | `media/removed.yml` (`items: {<id>: {removedAt}}`) |
 | What is on a screen now | `device-state:<id>` broadcasts | in memory (`DeviceLivenessService`) |
 
 **Screen identity.** `play/log` keys a spot by an explicit body `deviceId`,
@@ -628,6 +628,26 @@ with no ledger wired).
 already present refreshes it (no duplicates). Missing `title`/`thumbnail` are
 filled from the catalog at add time. **400**: missing `id`, unknown `kind`.
 
+#### Audio libraries and their kinds (the phone)
+
+`GET /api/v1/queue/catalog/audio-libraries?profile=audio-only` answers the audio Plex
+libraries with what each holds: `{items: [{id, title, sectionId, kind}], default:
+"music"}`, `kind` one of `music`, `books`, `talks` (talks and courses). The kinds are the
+household media config's `play_on_demand.library_kinds`, keyed by library title or Plex
+section id; a library not named there is music:
+
+```yaml
+play_on_demand:
+  library_kinds:
+    Audiobooks: books
+    Education: talks
+```
+
+The phone's library, search groups, pages and Now playing controls follow it
+(`__docs/reference/android/phone.md`, Lookup and browse). The audio-lists catalog
+(`/catalog/audio-lists`) marks a radio-station playlist (one with a station sequence)
+`station: true`.
+
 #### Removal from the household list
 
 | Route | Body / query | Response |
@@ -635,6 +655,12 @@ filled from the catalog at add time. **400**: missing `id`, unknown `kind`.
 | `GET /household/removed` | — | `{ items: [{ id, removedAt }] }` |
 | `POST /household/removed` | `{ id }` | `{ id, removedAt }` |
 | `DELETE /household/removed` (undo) | `id` (body or query) | `{ id, restored: boolean }` |
+| `POST /household/continue/hide` | `{ contentId }` | `{ contentId, hiddenAt }` |
+| `DELETE /household/continue/hide/:contentId` (undo) | — | `{ contentId, restored: boolean }` |
+
+The phone's "Remove from Continue listening" (`continue/hide`) is the same removal: one
+list, so the web's carry on and every device's Continue honour it, and it comes back by
+itself when played after `hiddenAt`.
 
 A removal hides what was played **up to** `removedAt` from recent and carry
 on; playing the item again brings it back. Server-side suggestions (§2.9)
