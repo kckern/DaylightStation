@@ -8,4 +8,7 @@
     <!-- A Now playing control that drags by itself (seek bar, queue drag handle, D-pad):
          a downward drag that starts on it never closes the screen (DismissGesture). -->
     <item name="daylight_np_own_drag" type="id" />
+    <!-- The chapter rail's TalkBack actions (ChapterRailView). -->
+    <item name="daylight_rail_previous" type="id" />
+    <item name="daylight_rail_next" type="id" />
 </resources>

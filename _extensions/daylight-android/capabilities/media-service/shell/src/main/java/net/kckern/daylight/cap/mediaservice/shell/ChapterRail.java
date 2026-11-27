@@ -4,8 +4,8 @@ package net.kckern.daylight.cap.mediaservice.shell;
  * The chapter overview rail under a book's chapter-scoped seek bar: one small rounded
  * segment per chapter, all the same width (never proportional to length), finished ones
  * filled, the current one highlighted, the rest hollow. When the chapters are too many for
- * segments of the minimum width at the phone's width, they are grouped in tens (ten
- * chapters a segment, then twenty, …). Pure: sizes are pixels.
+ * segments of the minimum width at the phone's width, they are grouped by the smallest
+ * number that fits (two chapters a segment, then three, …). Pure: sizes are pixels.
  */
 final class ChapterRail {
     private ChapterRail() { }
@@ -13,9 +13,9 @@ final class ChapterRail {
     static final class Layout {
         /** Segments drawn. */
         final int segments;
-        /** Chapters per segment: 1, else a multiple of ten. */
+        /** Chapters per segment: the smallest that fits. */
         final int perSegment;
-        /** The segment the current chapter is in (-1 for none). */
+        /** The segment the current chapter is in (-1 for none): where the highlight rests. */
         final int current;
         /** One segment's width and the gap between two, in px. */
         final float segmentPx, gapPx;
@@ -33,8 +33,24 @@ final class ChapterRail {
         /** Segment {@code i} is finished: every chapter in it comes before the current one. */
         boolean done(int i) { return current >= 0 && i < current; }
 
-        /** The first chapter of segment {@code i}: where a tap on it goes. */
+        /** The first chapter of segment {@code i}. */
         int chapterOf(int i) { return Math.max(0, Math.min(chapters - 1, i * perSegment)); }
+
+        /**
+         * Where a tap on segment {@code seg} goes: that segment's first chapter, or -1 (nothing)
+         * off the rail or on the segment that holds the current chapter (a grouped rail never
+         * jumps back to the group's first chapter).
+         */
+        int tapTo(int seg) { return seg < 0 || seg >= segments || seg == current ? -1 : chapterOf(seg); }
+
+        /**
+         * The segment the highlight is drawn on, in segment units: {@code shown} while it slides
+         * between two segments, else (shown &lt; 0) exactly the current segment.
+         */
+        float drawnAt(float shown) { return shown < 0 ? current : Math.max(0, Math.min(segments - 1, shown)); }
+
+        /** The highlight's left edge for {@link #drawnAt}. */
+        float highlightLeft(float shown) { return drawnAt(shown) * (segmentPx + gapPx); }
 
         /** The left edge of segment {@code i}, from the rail's left. */
         float left(int i) { return i * (segmentPx + gapPx); }
@@ -56,10 +72,9 @@ final class ChapterRail {
      */
     static Layout layout(int count, int current, float widthPx, float minSegPx, float gapPx) {
         if (count <= 0 || widthPx <= 0) return new Layout(0, 1, -1, 0, gapPx, Math.max(0, count));
-        int per = 1;
-        while (segments(count, per) > 1 && segments(count, per) * (minSegPx + gapPx) - gapPx > widthPx) {
-            per = per == 1 ? 10 : per + 10;
-        }
+        // The most segments that fit, then the smallest group that brings the count under it.
+        int fit = Math.max(1, (int) Math.floor((widthPx + gapPx) / (minSegPx + gapPx)));
+        int per = Math.max(1, (count + fit - 1) / fit);
         int n = segments(count, per);
         float seg = (widthPx - gapPx * (n - 1)) / n;
         int at = current < 0 ? -1 : Math.min(n - 1, current / per);
@@ -67,6 +82,12 @@ final class ChapterRail {
     }
 
     private static int segments(int count, int per) { return (count + per - 1) / per; }
+
+    /** The chapter {@code by} (±1) from {@code current}, or -1 past either end: TalkBack's Previous / Next chapter. */
+    static int step(int current, int count, int by) {
+        int to = current + by;
+        return current < 0 || to < 0 || to >= count ? -1 : to;
+    }
 
     /** What TalkBack says: "Chapter 24 of 33". */
     static String said(int current, int count) {

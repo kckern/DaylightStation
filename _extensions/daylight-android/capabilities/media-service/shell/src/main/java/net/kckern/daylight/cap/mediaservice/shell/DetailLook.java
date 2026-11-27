@@ -117,29 +117,20 @@ final class DetailLook {
     static final class Slots {
         /** The by-line beside the cover (album, book): one line, ellipsized. */
         final int bylineLines;
-        /** A book's progress line ("3 h 30 min left · 16 %"). */
-        final int progressLines;
         /** The keep line ("Kept automatically · 142 MB"), kept even when empty. */
         final int keepLines;
-        /** The status-and-count row over the list: one line, the loading or failure words on the left, the count on the right. */
-        final int countLines;
         /** Placeholder rows, each the real row's height, until the first page lands. */
         final int rowsReserved;
-        /** Each list row's height in dp: a numbered compact row on a collection's page, else a cover row. */
-        final int rowDp;
 
-        Slots(int bylineLines, int progressLines, int keepLines, int countLines, int rowsReserved, int rowDp) {
+        Slots(int bylineLines, int keepLines, int rowsReserved) {
             this.bylineLines = bylineLines;
-            this.progressLines = progressLines;
             this.keepLines = keepLines;
-            this.countLines = countLines;
             this.rowsReserved = rowsReserved;
-            this.rowDp = rowDp;
         }
     }
 
-    /** The compact numbered row (a part, a track) and the cover row, in dp. */
-    static final int COMPACT_ROW_DP = 48, COVER_ROW_DP = 64;
+    /** The compact numbered row (a part, a track), in dp. */
+    static final int COMPACT_ROW_DP = 48;
 
     /**
      * What a page of {@code kind} reserves. {@code cached}: the page has a remembered answer
@@ -150,9 +141,8 @@ final class DetailLook {
         boolean person = MediaKind.aboutPerson(kind);
         boolean collection = !person && MediaKind.listsRows(kind);
         int byline = "album".equals(k) || "book".equals(k) ? 1 : 0;
-        int progress = "book".equals(k) ? 1 : 0;
         int keep = collection ? 1 : 0;
         int rows = cached ? 0 : 8;
-        return new Slots(byline, progress, keep, 1, rows, collection ? COMPACT_ROW_DP : COVER_ROW_DP);
+        return new Slots(byline, keep, rows);
     }
 }

@@ -1520,10 +1520,14 @@ public final class BrowseActivity extends Activity {
             for (int i = 0; items != null && i < items.length(); i++) list.add(items.optJSONObject(i));
             Neighbours n = Neighbours.fromRows(list, at, kind);
             main.post(() -> {
-                if (isFinishing() || !n.pages() || !at.equals(parent)) return;
-                neighbours = n;
+                if (isFinishing()) return;
+                // Answered either way: the held place goes (a failed fetch, or an artist with
+                // one album, leaves no blank block above the list).
+                neighboursPending = false;
+                if (!at.equals(parent)) return;
+                if (n.pages()) neighbours = n;
                 fillHeader();
-                prefetchNeighbours();
+                if (n.pages()) prefetchNeighbours();
             });
         });
     }
