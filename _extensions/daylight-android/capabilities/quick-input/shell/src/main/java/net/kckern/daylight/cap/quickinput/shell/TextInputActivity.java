@@ -255,8 +255,10 @@ public class TextInputActivity extends Activity {
         layout.addView(field, fieldParams);
         layout.addView(counter);
 
-        // One big button for the point of the screen. Back keeps the draft; Discard is a quiet link.
-        send = CaptureUi.pill(this, "Send", true);
+        // The point of the screen: one full-width filled Send at the bottom (D10). Back keeps
+        // the draft; Discard is a quiet link under it.
+        layout.addView(new android.view.View(this), new LinearLayout.LayoutParams(0, 0, 1));
+        send = CaptureUi.primary(this, "Send");
         send.setOnClickListener(v -> send());
         LinearLayout.LayoutParams sendParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         sendParams.topMargin = CaptureUi.dp(this, 12);
