@@ -69,6 +69,15 @@ final class PayloadMedia {
                 .put("finished", finished).toString(), waitMs);
     }
 
+    /**
+     * An author's, speaker's or artist's header: {about:{portrait?, summary?, countries,
+     * genres, styles, children, totalSec, books:{id:{seconds, playedSec, started, finished}},
+     * continue?}}. {@code books}: an author or a speaker (their books' lengths and progress).
+     */
+    String about(String contentId, boolean books, long waitMs) throws Exception {
+        return port.call(new JSONObject().put("op", "about").put("id", contentId).put("books", books).toString(), waitMs);
+    }
+
     /** The library's first level: the audio libraries and the household's list sources. */
     String library(long waitMs) throws Exception {
         return port.call(new JSONObject().put("op", "library").toString(), waitMs);

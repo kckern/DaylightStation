@@ -262,6 +262,7 @@ public class NowPlayingActivity extends Activity {
         // Opened as a screen's remote (the phone home's Connect tab): the pad, at once.
         if (saved == null && getIntent() != null && getIntent().getBooleanExtra(EXTRA_PAD, false) && remote()) showPad(true);
         render();
+        openStageAsked(getIntent());
         Log.i(TAG, "now playing opened, target " + target + (frame != null ? ", first frame from " + frame.why : ""));
     }
 
@@ -301,6 +302,18 @@ public class NowPlayingActivity extends Activity {
         else if (controller == null && pending == null && started) connect();
         takeStarting(intent);
         if (intent != null && intent.getBooleanExtra(EXTRA_PAD, false) && remote()) showPad(true);
+        openStageAsked(intent);
+    }
+
+    /** A book page's Chapters: Now playing opens on its chapter list. */
+    static final String EXTRA_STAGE = "np.stage";
+
+    private void openStageAsked(Intent intent) {
+        if (intent != null && "chapters".equals(intent.getStringExtra(EXTRA_STAGE))) {
+            intent.removeExtra(EXTRA_STAGE);
+            setStage(Stage.QUEUE);
+            note("player.open-chapters");
+        }
     }
 
     /** The target chosen here outlives a rotation; the opening intent's does not override it. */
@@ -339,6 +352,10 @@ public class NowPlayingActivity extends Activity {
     }
 
     @Override public void finish() {
+        // Closed while the tapped item still starts: the mini player below shows it, "Starting…".
+        if (starting != null) {
+            NowPlayingNote.starting(starting.target, targetName, starting.title, starting.subtitle, starting.art, SystemClock.elapsedRealtime());
+        }
         super.finish();
         overridePendingTransition(R.anim.daylight_np_hold, R.anim.daylight_np_fall);
     }
@@ -862,13 +879,17 @@ public class NowPlayingActivity extends Activity {
         // Lyrics to be had read as ink, not the muted grey of a toggle that is off.
         if (stage != Stage.LYRICS && !lyrics.isEmpty()) lyricsButton.setImageTintList(ColorStateList.valueOf(theme.ink));
         lyricsBadge.setText(lyrics.synced ? "Lyrics" : "Lyrics (text)");
-        lyricsBadge.setVisibility(hasItem && !lyrics.isEmpty() && stage == Stage.ART ? View.VISIBLE : View.GONE);
+        lyricsBadge.setVisibility(hasItem && !lyrics.isEmpty() && stage == Stage.ART && !jumps ? View.VISIBLE : View.GONE);
+        // A book, a talk or a course (MediaKind.SPOKEN): no repeat and no lyrics; speed, chapters, ±30 s and sleep stay.
+        MediaKind.Controls set = MediaKind.controls(jumps);
+        repeatButton.setVisibility(set.repeat ? View.VISIBLE : View.GONE);
+        lyricsButton.setVisibility(set.lyrics ? View.VISIBLE : View.GONE);
         toggle(outputButton, remote(), true, "Play on: " + targetName);
         // Tinted like the row's other icons when off (it has no on state); the drawable itself is black.
         moreButton.setImageTintList(ColorStateList.valueOf(theme.inkMuted));
         enable(moreButton, hasItem || (!remote() && SleepTimer.isSet()));
         // The lyrics stay up across a track change while the next track's are fetched; only "none" goes back to the cover.
-        if (stage == Stage.LYRICS && lyrics.isEmpty() && !lyricsLoading) setStage(Stage.ART);
+        if (stage == Stage.LYRICS && ((lyrics.isEmpty() && !lyricsLoading) || !set.lyrics)) setStage(Stage.ART);
         if (!hasItem && stage != Stage.ART) setStage(Stage.ART);
 
         padToggle.setVisibility(remote() ? View.VISIBLE : View.GONE);
@@ -1184,16 +1205,19 @@ public class NowPlayingActivity extends Activity {
         note("player.lookup", "kind", kind);
         if (cid.isEmpty() || io == null) { if (!words.isEmpty()) BrowseActivity.search(this, words, kind); return; }
         io.execute(() -> {
-            JSONObject page = null;
+            JSONObject page = null, artist = null;
             try {
                 JSONObject parents = new JSONObject(media.parents(cid, 6000)).optJSONObject("parents");
                 page = parents == null ? null : parents.optJSONObject("albums".equals(kind) ? "album" : "artist");
+                artist = parents == null ? null : parents.optJSONObject("artist");
             } catch (Exception unreachable) { /* the search on the name instead */ }
             JSONObject p = page;
+            // The album's page pages through its artist's albums (the parent's children).
+            String pagesIn = "albums".equals(kind) && artist != null ? artist.optString("id", null) : null;
             main.post(() -> {
                 if (isFinishing()) return;
                 if (p != null && !p.optString("id").isEmpty()) {
-                    BrowseActivity.open(this, "level", p.optString("id"), p.optString("kind"), p.optString("title"), "", "");
+                    BrowseActivity.open(this, "level", p.optString("id"), p.optString("kind"), p.optString("title"), "", "", pagesIn);
                 } else if (!words.isEmpty()) {
                     BrowseActivity.search(this, words, kind);
                 }
@@ -1333,6 +1357,8 @@ public class NowPlayingActivity extends Activity {
             chapterLine.setContentDescription(line + ". Opens the chapters");
         }
         chapterLine.setVisibility(View.VISIBLE);
+        // The mini player's second line on every screen: the chapter, while this book plays.
+        NowPlayingNote.detail(LOCAL, chapters.subtitle(position));
         int at = chapters.indexAt(position);
         wave.setMarks(chapters.marks(durationMs), at - 1, theme.inkMuted);
         if (stage == Stage.QUEUE && chapterList() && at != listedChapter) fillQueue();
@@ -1607,7 +1633,7 @@ public class NowPlayingActivity extends Activity {
         }
         final org.json.JSONObject keptNow = kept;
         // Crossfade between songs: this phone's player only (a screen decides its own).
-        if (!remote()) menu.getMenu().add(0, 11, 0, "Crossfade: " + crossfadeLabel(crossfadeSeconds()));
+        if (!remote() && MediaKind.controls(longForm()).crossfade) menu.getMenu().add(0, 11, 0, "Crossfade: " + crossfadeLabel(crossfadeSeconds()));
         if (can(Player.COMMAND_STOP) && any) menu.getMenu().add(0, 1, 0, remote() ? "Stop on " + targetName : "Stop");
         if (can(Player.COMMAND_CHANGE_MEDIA_ITEMS) && any) menu.getMenu().add(0, 2, 0, "Clear queue");
         menu.setOnMenuItemClickListener(item -> {
@@ -2069,12 +2095,16 @@ public class NowPlayingActivity extends Activity {
 
         // The seek bar is the track's loudness, with the times at its ends.
         LinearLayout seekRow = new LinearLayout(this);
-        seekRow.setGravity(Gravity.CENTER_VERTICAL);
+        // The times sit level with the bars, below the scale's band when there is one.
+        seekRow.setGravity(Gravity.BOTTOM);
         elapsed = new TextView(this);
         elapsed.setMinWidth(dp(44));
+        elapsed.setMinHeight(dp(48));
+        elapsed.setGravity(Gravity.CENTER_VERTICAL);
         remaining = new TextView(this);
         remaining.setMinWidth(dp(44));
-        remaining.setGravity(Gravity.END);
+        remaining.setMinHeight(dp(48));
+        remaining.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
         remaining.setOnClickListener(v -> {
             timeDisplay = timeDisplay.next();
             note("player.time-display", "mode", timeDisplay.name().toLowerCase(Locale.ROOT));
@@ -2107,7 +2137,8 @@ public class NowPlayingActivity extends Activity {
             }
         });
         seekRow.addView(elapsed);
-        seekRow.addView(wave, new LinearLayout.LayoutParams(0, dp(48), 1));
+        // Its own height: 48 dp, and the time scale's band above the bars for an item of 10 min or more.
+        seekRow.addView(wave, new LinearLayout.LayoutParams(0, -2, 1));
         seekRow.addView(remaining);
         LinearLayout.LayoutParams seekLp = new LinearLayout.LayoutParams(-1, -2);
         seekLp.topMargin = dp(16);
@@ -2348,6 +2379,7 @@ public class NowPlayingActivity extends Activity {
         elapsed.setFontFeatureSettings("tnum");
         remaining.setFontFeatureSettings("tnum");
         wave.setColors(t.primary, t.trackBuffered);
+        wave.setScaleColor(t.inkMuted);
         t.style(artistLine, Type.BODY, t.inkMuted, false);
         t.style(title, Type.HEADLINE, t.ink, true);
         t.style(albumLine, Type.BODY, t.inkMuted, false);

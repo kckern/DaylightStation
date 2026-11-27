@@ -12,6 +12,12 @@ final class MediaNode {
     final String artUrl;
     final boolean browsable;
     final boolean playable;
+    /**
+     * What a phone page's row says under its title instead of repeating the page (§8 of the
+     * lookup spec): year, durationSec, trackCount, artist, kind. Null for none; the car never
+     * reads them.
+     */
+    JSONObject facts;
 
     MediaNode(String id, String title, String subtitle, String artUrl, boolean browsable, boolean playable) {
         this.id = id;
@@ -27,6 +33,7 @@ final class MediaNode {
         JSONObject o = new JSONObject().put("id", id).put("title", title).put("browsable", browsable).put("playable", playable);
         if (subtitle != null && !subtitle.isEmpty()) o.put("subtitle", subtitle);
         if (artUrl != null) o.put("artUrl", artUrl);
+        if (facts != null) for (java.util.Iterator<String> k = facts.keys(); k.hasNext(); ) { String key = k.next(); o.put(key, facts.get(key)); }
         return o;
     }
 }

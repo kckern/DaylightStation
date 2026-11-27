@@ -43,4 +43,15 @@ interface MediaApi {
     default JSONObject libraries() throws Exception { return null; }
     /** Marks an item finished (or not) for the household: the web's "mark watched". */
     default void markWatched(String contentId, boolean watched) throws Exception { }
+    /**
+     * GET /api/v1/queue/catalog/audio-libraries?profile=audio-only: the audio libraries and
+     * what each holds, {items:[{id, title, sectionId, kind}]}. A home older than the route
+     * answers 404 (Refused).
+     */
+    default JSONObject audioLibraries() throws Exception { throw new Refused("audio libraries", 404); }
+    /**
+     * Continue listening's hide: POST /api/v1/media/household/continue/hide {contentId}, or
+     * (hidden false, Undo) DELETE /api/v1/media/household/continue/hide/<contentId>.
+     */
+    default void hideContinue(String contentId, boolean hidden) throws Exception { throw new Refused("continue hide", 404); }
 }

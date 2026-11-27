@@ -11,38 +11,53 @@ import java.util.Locale;
 /**
  * Lookup and browse for the phone (ops:docs/superpowers/specs/2026-11-26-phone-lookup-and-browse.md):
  * the library's first level and search results grouped by kind, audio only, from the same
- * endpoints the web uses. Lookup, not discovery: nothing here proposes anything. Pure.
+ * endpoints the web uses. Lookup, not discovery: nothing here proposes anything. What a
+ * library holds (music, books, talks and courses) is home's word (LibraryKinds), and every
+ * entry carries the kind of page or row it is: album, artist, playlist, track (music);
+ * author, book, part (books); speaker, series, lecture (talks and courses). Pure.
  */
 final class Lookup {
     private Lookup() { }
 
     /** The search groups, in the order the phone shows them. */
-    static final String[] GROUPS = { "books", "albums", "artists", "playlists", "tracks" };
-    static final String[] GROUP_TITLES = { "Books", "Albums", "Artists", "Playlists", "Tracks" };
+    static final String[] GROUPS = { "books", "talks", "albums", "artists", "playlists", "tracks" };
+    static final String[] GROUP_TITLES = { "Books", "Talks and courses", "Albums", "Artists", "Playlists", "Tracks" };
 
-    /** A Plex library whose albums are books (audiobooks, stories, talks), by its title. */
-    static boolean bookLibrary(String libraryTitle) {
-        String t = libraryTitle == null ? "" : libraryTitle.toLowerCase(Locale.ROOT);
-        return t.contains("book") || t.contains("stor") || t.contains("speech");
+    /** The kind of an album, an artist and a track in a library of {@code libraryKind}. */
+    static String albumKind(String libraryKind) {
+        return LibraryKinds.BOOKS.equals(libraryKind) ? "book" : LibraryKinds.TALKS.equals(libraryKind) ? "series" : "album";
+    }
+
+    static String artistKind(String libraryKind) {
+        return LibraryKinds.BOOKS.equals(libraryKind) ? "author" : LibraryKinds.TALKS.equals(libraryKind) ? "speaker" : "artist";
+    }
+
+    static String trackKind(String libraryKind) {
+        return LibraryKinds.BOOKS.equals(libraryKind) ? "part" : LibraryKinds.TALKS.equals(libraryKind) ? "lecture" : "track";
     }
 
     /**
-     * The library's first level: every audio Plex library (a Plex library of type artist),
-     * then the household's list sources (Plex's audio playlists as "Playlists", programs,
-     * watchlists, custom lists). Each entry is {id: a browse media id, title, kind}.
+     * The library's first level: every audio Plex library with its kind, from home's
+     * audio-libraries answer ({items:[{id, title, kind}]}; with {@code kinds} from a home
+     * without that route, the Plex libraries of type artist and the old title rule), then the
+     * household's list sources (Plex's audio playlists as "Playlists", programs, watchlists,
+     * custom lists). Each entry is {id: a browse media id, title, kind}.
      */
-    static JSONArray libraryRoot(JSONObject plexRoot, JSONObject audioSources) throws JSONException {
+    static JSONArray libraryRoot(JSONObject libraries, JSONObject audioSources, LibraryKinds kinds) throws JSONException {
         JSONArray out = new JSONArray();
-        JSONArray libs = plexRoot == null ? null : plexRoot.optJSONArray("items");
+        JSONArray libs = libraries == null ? null : libraries.optJSONArray("items");
         for (int i = 0; libs != null && i < libs.length(); i++) {
             JSONObject l = libs.optJSONObject(i);
             if (l == null) continue;
             JSONObject meta = l.optJSONObject("metadata");
             String type = Json.first(meta == null ? "" : Json.str(meta, "type"), Json.str(l, "type"));
             String id = Json.str(l, "id"), title = Json.str(l, "title");
-            if (!"artist".equals(type) || !ContentId.valid(id) || title.isEmpty()) continue;
+            // Home's audio libraries carry their kind; the list endpoint's are filtered to audio.
+            boolean audio = !Json.str(l, "kind").isEmpty() || "artist".equals(type);
+            if (!audio || !ContentId.valid(id) || title.isEmpty()) continue;
+            String kind = Json.str(l, "kind").isEmpty() ? kinds.of(title, LibraryKinds.sectionOf(id)) : Json.str(l, "kind");
             out.put(new JSONObject().put("id", MediaId.container(id)).put("title", title)
-                    .put("kind", bookLibrary(title) ? "library-books" : "library"));
+                    .put("kind", LibraryKinds.libraryTag(kind)));
         }
         JSONArray sources = audioSources == null ? null : audioSources.optJSONArray("items");
         for (int i = 0; sources != null && i < sources.length(); i++) {
@@ -56,31 +71,50 @@ final class Lookup {
         return out;
     }
 
-    /** Which group a search item belongs to, or null when the phone does not play it. */
-    static String groupOf(JSONObject item) {
+    /**
+     * The kind of a search item (album, author, lecture…), or null when the phone does not
+     * play it.
+     */
+    static String kindOf(JSONObject item, LibraryKinds kinds) {
         JSONObject meta = item.optJSONObject("metadata");
         String type = meta == null ? "" : Json.str(meta, "type");
-        String library = meta == null ? "" : Json.first(Json.str(meta, "librarySectionTitle"), Json.str(meta, "library"));
+        String library = kinds.ofItem(item);
         if ("container".equals(Json.str(item, "itemType"))) {
             switch (type) {
-                case "album": return bookLibrary(library) ? "books" : "albums";
-                case "artist": return "artists";
-                case "playlist": return "playlists";
+                case "album": return albumKind(library);
+                case "artist": return artistKind(library);
+                case "playlist": return "playlist";
                 default: return null;   // shows, seasons, films: not for this player
             }
         }
         String media = Json.first(Json.str(item, "mediaType"), type).toLowerCase(Locale.ROOT);
         if (Json.str(item, "mediaUrl").isEmpty() && !"track".equals(type)) return null;
         if (!media.isEmpty() && !media.equals("audio") && !media.equals("track")) return null;
-        return "tracks";
+        return trackKind(library);
     }
+
+    /** The search group of a kind: a book part is under Books and a lecture under Talks and courses, never Tracks. */
+    static String groupOfKind(String kind) {
+        if (kind == null) return null;
+        switch (kind) {
+            case "book": case "author": case "part": return "books";
+            case "series": case "speaker": case "lecture": return "talks";
+            case "album": return "albums";
+            case "artist": return "artists";
+            case "playlist": return "playlists";
+            default: return "tracks";
+        }
+    }
+
+    /** Which group a search item belongs to, or null when the phone does not play it. */
+    static String groupOf(JSONObject item, LibraryKinds kinds) { return groupOfKind(kindOf(item, kinds)); }
 
     /**
      * Search results by group: {groups:[{key, title, items:[{id, contentId, title,
      * subtitle?, artUrl?, kind, browsable, playable}], more}], offline:false}. At most
      * {@code perGroup} items each; "more" says how many were left out.
      */
-    static JSONObject groups(JSONObject response, Backend backend, int perGroup) throws JSONException {
+    static JSONObject groups(JSONObject response, Backend backend, int perGroup, LibraryKinds kinds) throws JSONException {
         JSONArray[] buckets = new JSONArray[GROUPS.length];
         int[] more = new int[GROUPS.length];
         for (int g = 0; g < GROUPS.length; g++) buckets[g] = new JSONArray();
@@ -89,15 +123,18 @@ final class Lookup {
             JSONObject item = items.optJSONObject(i);
             if (item == null) continue;
             String id = Json.str(item, "id"), title = Json.str(item, "title");
-            String group = groupOf(item);
+            String kind = kindOf(item, kinds);
+            String group = groupOfKind(kind);
             if (group == null || !ContentId.valid(id) || title.isEmpty()) continue;
             int g = java.util.Arrays.asList(GROUPS).indexOf(group);
             if (buckets[g].length() >= perGroup) { more[g]++; continue; }
             JSONObject meta = item.optJSONObject("metadata");
-            boolean track = "tracks".equals(group);
-            JSONObject o = new JSONObject().put("contentId", id).put("title", title).put("kind", group)
+            boolean track = !"container".equals(Json.str(item, "itemType"));
+            JSONObject o = new JSONObject().put("contentId", id).put("title", title).put("kind", kind)
                     .put("id", track ? MediaId.leaf(id, null) : MediaId.container(id))
                     .put("browsable", !track).put("playable", true);
+            String year = meta == null ? "" : Json.str(meta, "year");
+            if (!year.isEmpty() && !"0".equals(year)) o.put("year", year);
             String sub = Json.first(meta == null ? "" : Json.str(meta, "artist"),
                     meta == null ? "" : Json.str(meta, "parentTitle"), Json.str(item, "subtitle"));
             if (!sub.isEmpty()) o.put("subtitle", sub);
@@ -127,8 +164,10 @@ final class Lookup {
             String id = Json.str(c, "id"), title = Json.str(c, "title");
             if (!ContentId.valid(id) || title.isEmpty() || !"container".equals(Json.str(c, "itemType"))) continue;
             JSONObject o = new JSONObject().put("id", MediaId.container(id)).put("contentId", id).put("title", title)
-                    .put("kind", "books").put("browsable", true).put("playable", true);
+                    .put("kind", "book").put("browsable", true).put("playable", true);
             if (author != null && !author.isEmpty()) o.put("subtitle", author);
+            String year = Json.str(c, "year");
+            if (!year.isEmpty() && !"0".equals(year)) o.put("year", year);
             String art = backend == null ? null : BrowseTree.art(backend, Json.str(c, "thumbnail"));
             if (art != null) o.put("artUrl", art);
             out.put(o);
@@ -137,7 +176,7 @@ final class Lookup {
     }
 
     /** Authors (artists in a book library) among search results: their content ids and names. */
-    static java.util.List<String[]> authors(JSONObject response, int max) {
+    static java.util.List<String[]> authors(JSONObject response, int max, LibraryKinds kinds) {
         java.util.List<String[]> out = new java.util.ArrayList<>();
         JSONArray items = response == null ? null : response.optJSONArray("items");
         for (int i = 0; items != null && i < items.length() && out.size() < max; i++) {
@@ -145,8 +184,7 @@ final class Lookup {
             if (item == null || !"container".equals(Json.str(item, "itemType"))) continue;
             JSONObject meta = item.optJSONObject("metadata");
             if (meta == null || !"artist".equals(Json.str(meta, "type"))) continue;
-            String lib = Json.first(Json.str(meta, "librarySectionTitle"), Json.str(meta, "library"));
-            if (!bookLibrary(lib) || !ContentId.valid(Json.str(item, "id"))) continue;
+            if (!LibraryKinds.BOOKS.equals(kinds.ofItem(item)) || !ContentId.valid(Json.str(item, "id"))) continue;
             out.add(new String[] { Json.str(item, "id"), Json.str(item, "title") });
         }
         return out;
@@ -174,22 +212,23 @@ final class Lookup {
 
     /**
      * What a track belongs to, from its info: {album:{id, title, kind}, artist:{id, title, kind}}
-     * as browse media ids, a book library's being a book and an author.
+     * as browse media ids, a book library's being a book and an author, a talks library's a
+     * series and a speaker.
      */
-    static JSONObject parents(JSONObject info) throws JSONException {
+    static JSONObject parents(JSONObject info, LibraryKinds kinds) throws JSONException {
         JSONObject out = new JSONObject();
         JSONObject meta = info == null ? null : info.optJSONObject("metadata");
         if (meta == null) return out;
         String source = ContentId.source(Json.first(Json.str(info, "contentId"), Json.str(info, "id"), "plex:0"));
-        boolean books = bookLibrary(Json.str(meta, "librarySectionTitle"));
+        String library = kinds.ofItem(info);
         String album = Json.str(meta, "albumId"), artist = Json.str(meta, "artistId");
         if (!album.isEmpty() && ContentId.valid(source + ":" + album)) {
             out.put("album", new JSONObject().put("id", MediaId.container(source + ":" + album))
-                    .put("title", Json.first(Json.str(meta, "album"), Json.str(meta, "parentTitle"))).put("kind", books ? "book" : "album"));
+                    .put("title", Json.first(Json.str(meta, "album"), Json.str(meta, "parentTitle"))).put("kind", albumKind(library)));
         }
         if (!artist.isEmpty() && ContentId.valid(source + ":" + artist)) {
             out.put("artist", new JSONObject().put("id", MediaId.container(source + ":" + artist))
-                    .put("title", Json.first(Json.str(meta, "artist"), Json.str(meta, "grandparentTitle"))).put("kind", books ? "author" : "artist"));
+                    .put("title", Json.first(Json.str(meta, "artist"), Json.str(meta, "grandparentTitle"))).put("kind", artistKind(library)));
         }
         return out;
     }
