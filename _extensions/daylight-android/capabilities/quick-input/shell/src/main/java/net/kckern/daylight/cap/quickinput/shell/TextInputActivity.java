@@ -59,6 +59,8 @@ public class TextInputActivity extends Activity {
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // The screen's own heading names it; the dialog's title would say it a second time.
+        requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
         net.kckern.daylight.shellkit.UiTelemetry.install(this);
         setFinishOnTouchOutside(false);
         if (Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false);

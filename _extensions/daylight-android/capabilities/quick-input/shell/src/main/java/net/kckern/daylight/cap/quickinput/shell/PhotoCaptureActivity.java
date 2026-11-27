@@ -71,6 +71,8 @@ public class PhotoCaptureActivity extends Activity {
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
+        // The screen's own heading names it; the dialog's title would say it a second time.
+        requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
         net.kckern.daylight.shellkit.UiTelemetry.install(this);
         dest = MemoFiles.dest(getIntent().getStringExtra(MemoFiles.EXTRA_DEST));
         label = MemoFiles.label(getIntent().getStringExtra(MemoFiles.EXTRA_LABEL));
