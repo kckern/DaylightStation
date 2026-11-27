@@ -207,6 +207,19 @@
   font-size: 14px;
 }
 
+// A picked scope that came up empty: say so, then one action to widen.
+.search-mode-scope-empty {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--mantine-spacing-xs);
+  padding-bottom: var(--mantine-spacing-md);
+
+  .search-mode-hint { padding-bottom: 0; }
+  .search-mode-widen { margin-inline: var(--mantine-spacing-md); }
+}
+
 // Addendum item 4: pending results hold the list's shape.
 .search-mode-skeleton {
   list-style: none;

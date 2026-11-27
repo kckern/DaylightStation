@@ -1466,6 +1466,113 @@ describe('useContentCombobox', () => {
     });
   });
 
+  // ── A picked scope is honoured (2026-11-27) ──
+  // Books › Scripture searched "Nephi", settled empty, and rung 2 streamed an
+  // unscoped search on its own: the person saw unrelated results under the
+  // Scripture chip and concluded the filter did nothing. The 2026-08-21 case
+  // the widening was added for (a narrow scope settling empty, after a source
+  // error, read as "this doesn't exist") is kept: the retry still runs first,
+  // and the empty state names the scope and offers the wider search, so it
+  // never strands the person. Only `widenSearch()` widens.
+  describe("widenOnEmpty: 'offer' — a picked scope never widens on its own", () => {
+    const offer = (extra = {}) => setup({
+      searchParams: 'source=readalong', fallbackSearchParams: 'take=50',
+      scopeKey: 'books-scripture', scopeLabel: 'Scripture', widenOnEmpty: 'offer', ...extra,
+    });
+
+    it('an empty settle opens no wider search, reports scopeEmpty and logs search.scope-empty', async () => {
+      vi.stubGlobal('EventSource', MockEventSource);
+      vi.useFakeTimers();
+      const { result } = offer();
+
+      act(() => { result.current.handleInput('nephi'); });
+      await act(async () => { vi.advanceTimersByTime(350); });
+      act(() => { MockEventSource.instances[0].simulateMessage({ event: 'complete' }); });
+
+      expect(MockEventSource.instances).toHaveLength(1); // no silent widening
+      expect(result.current.fellBackToAll).toBe(false);
+      expect(result.current.scopeEmpty).toBe(true);
+      expect(mockLog.info).toHaveBeenCalledWith('search.scope-empty', {
+        textLength: 5, scopeKey: 'books-scripture', scopeLabel: 'Scripture', searchParams: 'source=readalong',
+      });
+      expect(mockLog.info).not.toHaveBeenCalledWith('search.fallback_to_all', expect.anything());
+    });
+
+    it('widenSearch() runs the same words everywhere once, logs search.widened-by-user, and does not loop', async () => {
+      vi.stubGlobal('EventSource', MockEventSource);
+      vi.useFakeTimers();
+      const { result } = offer();
+
+      act(() => { result.current.handleInput('nephi'); });
+      await act(async () => { vi.advanceTimersByTime(350); });
+      act(() => { MockEventSource.instances[0].simulateMessage({ event: 'complete' }); });
+      act(() => { result.current.widenSearch('keyboard'); });
+
+      expect(MockEventSource.instances).toHaveLength(2);
+      expect(MockEventSource.instances[1].url).toContain('text=nephi');
+      expect(MockEventSource.instances[1].url).toContain('take=50');
+      expect(MockEventSource.instances[1].url).not.toContain('source=readalong');
+      expect(result.current.fellBackToAll).toBe(true); // the widened notice explains the list
+      expect(result.current.scopeEmpty).toBe(false);
+      expect(mockLog.info).toHaveBeenCalledWith('search.widened-by-user', {
+        textLength: 5, scopeKey: 'books-scripture', scopeLabel: 'Scripture',
+        searchParams: 'source=readalong', fallbackSearchParams: 'take=50', via: 'keyboard',
+      });
+
+      act(() => { MockEventSource.instances[1].simulateMessage({ event: 'complete' }); });
+      act(() => { result.current.widenSearch('keyboard'); });
+      expect(MockEventSource.instances).toHaveLength(2);
+    });
+
+    it('2026-08-21 case: an errored source is retried in scope first, then the empty scope is offered (never stranded)', async () => {
+      vi.stubGlobal('EventSource', MockEventSource);
+      vi.useFakeTimers();
+      const { result } = offer({ searchParams: 'source=plex&plex.libraryId=21', scopeKey: 'music-ambient', scopeLabel: 'Ambient' });
+
+      act(() => { result.current.handleInput('bluey'); });
+      await act(async () => { vi.advanceTimersByTime(350); });
+      act(() => {
+        MockEventSource.instances[0].simulateMessage({ event: 'source_error', source: 'plex', error: 'timeout', pending: [] });
+        MockEventSource.instances[0].simulateMessage({ event: 'complete' });
+      });
+      expect(MockEventSource.instances).toHaveLength(2); // rung 1: same scope, failed source
+      expect(MockEventSource.instances[1].url).toContain('source=plex');
+      expect(result.current.scopeEmpty).toBe(false);
+
+      act(() => {
+        MockEventSource.instances[1].simulateMessage({ event: 'source_error', source: 'plex', error: 'timeout', pending: [] });
+        MockEventSource.instances[1].simulateMessage({ event: 'complete' });
+      });
+      expect(MockEventSource.instances).toHaveLength(2); // still no silent widening
+      expect(result.current.scopeEmpty).toBe(true); // explained, with the action to widen
+    });
+
+    it('new words clear scopeEmpty', async () => {
+      vi.stubGlobal('EventSource', MockEventSource);
+      vi.useFakeTimers();
+      const { result } = offer();
+
+      act(() => { result.current.handleInput('nephi'); });
+      await act(async () => { vi.advanceTimersByTime(350); });
+      act(() => { MockEventSource.instances[0].simulateMessage({ event: 'complete' }); });
+      expect(result.current.scopeEmpty).toBe(true);
+
+      act(() => { result.current.handleInput('alma'); });
+      expect(result.current.scopeEmpty).toBe(false);
+    });
+
+    it('the catalog-wide scope has nothing to offer', async () => {
+      vi.stubGlobal('EventSource', MockEventSource);
+      vi.useFakeTimers();
+      const { result } = offer({ searchParams: 'take=50', scopeKey: 'all', scopeLabel: 'All' });
+
+      act(() => { result.current.handleInput('nephi'); });
+      await act(async () => { vi.advanceTimersByTime(350); });
+      act(() => { MockEventSource.instances[0].simulateMessage({ event: 'complete' }); });
+      expect(result.current.scopeEmpty).toBe(false);
+    });
+  });
+
   // ── Final review, Important 3: a scope chip must actually re-run the search ──
   // Nothing watched `searchParams`. useStreamingSearch reads it only inside
   // search(), so tapping "Music" with results on screen changed the chip's

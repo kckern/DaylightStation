@@ -67,6 +67,11 @@ test.describe('MediaApp — search states', () => {
     await page.goto('/media');
     await page.getByRole('button', { name: 'Video', exact: true }).click();
     await page.getByRole('textbox', { name: 'Search media…' }).fill('not-in-video');
+    // The failed source is retried in Video first; Video stays picked until
+    // the person asks for everything (2026-11-27, "A picked scope is honoured").
+    await expect(page.getByTestId('combobox-scope-empty')).toContainText('Nothing for “not-in-video” in Video', { timeout: 20000 });
+    expect(requestCount).toBe(2);
+    await page.getByTestId('combobox-widen').click();
     await expect.poll(() => requestCount).toBe(3);
 
     const status = page.getByTestId('stream-status-line');

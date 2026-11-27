@@ -50,9 +50,10 @@ vi.mock("../shell/NavProvider.jsx", () => ({
 // that merely records a call. ──
 let comboState = { search: null, results: [] };
 let comboExtra = {};
+let comboArgs = null;
 const handleInputSpy = vi.fn();
 vi.mock("../../../../../__capabilities/content-catalog/browser/picker-controller.mjs", () => ({
-  useContentCombobox: (args) => ({
+  useContentCombobox: (args) => (comboArgs = args, {
     state: { search: comboState.search, results: comboState.results },
     handleInput: (text) => handleInputSpy(text),
     select: (item) => args.onChange(item.id, item),
@@ -60,6 +61,8 @@ vi.mock("../../../../../__capabilities/content-catalog/browser/picker-controller
     pendingSources: comboExtra.pendingSources ?? [],
     sourceErrors: comboExtra.sourceErrors ?? [],
     fellBackToAll: comboExtra.fellBackToAll ?? false,
+    scopeEmpty: comboExtra.scopeEmpty ?? false,
+    widenSearch: comboExtra.widenSearch ?? (() => {}),
   }),
 }));
 
@@ -433,6 +436,27 @@ describe('SearchMode', () => {
     it('stays hidden while the widened search is still in flight', async () => {
       await renderWidened({ results: [], isSearching: true });
       expect(screen.queryByTestId('search-mode-widening-notice')).toBeNull();
+    });
+
+    // 2026-11-27: a picked scope is honoured — the phone says the scope came
+    // up empty and offers the wider search; it never runs it unasked.
+    it('asks the hook to offer, not widen, for a picked scope', async () => {
+      await renderWidened({ results: [], fellBackToAll: false });
+      expect(comboArgs.widenOnEmpty).toBe('offer');
+    });
+
+    it('an empty picked scope names the words and the scope, with one Search everything action', async () => {
+      const widenSearch = vi.fn();
+      comboState = { search: 'nephi', results: [] };
+      comboExtra = { scopeEmpty: true, widenSearch };
+      render(<Harness />);
+      fireEvent.click(await screen.findByTestId('scope-chip-ambient'));
+
+      expect(screen.getByTestId('search-mode-scope-empty')).toHaveTextContent('Nothing for “nephi” in Ambient');
+      expect(screen.queryByTestId('search-mode-empty')).toBeNull();
+      expect(screen.getByTestId('search-mode-empty-announcement')).toHaveTextContent('Nothing for “nephi” in Ambient');
+      fireEvent.click(screen.getByTestId('search-mode-widen'));
+      expect(widenSearch).toHaveBeenCalledWith('tap');
     });
 
     it('renders no notice when the search never widened', async () => {

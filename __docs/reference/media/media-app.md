@@ -1261,6 +1261,16 @@ same wording and ordering on the dock, Search Mode and destination picker: a
 named source failure and its Retry action appear before any wider result claim,
 and a settled empty result cannot still present as loading.
 
+A scope the person picked is honoured (2026-11-27). When it settles empty the
+search stays in that scope: the list reads "Nothing for “words” in ‹scope›"
+with one action, **Search everything** (a row of the dock's keyboard model:
+Arrow onto it or just press Enter; a button in Search Mode). Only that action
+widens; the widened list then carries the "Not in ‹scope› — From everything"
+line. A source that errored is still retried in the scope first. Logs:
+`search.scope-empty {scopeKey}` and `search.widened-by-user {scopeKey, via}`.
+The combobox's `widenOnEmpty: 'offer'` does this; the music picker behind a
+slideshow keeps `'auto'` (a scope the app chose, widened on its own).
+
 At tablet-up widths the dock shows the persistent search bar (with inline
 scope chips), the aim line and the house indicator. On a laptop the aim label,
 chips and field get room to read in full (no clipped chip or truncated name).

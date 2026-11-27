@@ -264,8 +264,11 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus, keepScop
     value: '',
     onChange: handleChange,
     searchParams: currentScope?.params ?? '',
-    // D5: scopes[0] is the catalog-wide ("All") scope by convention.
+    // D5: scopes[0] is the catalog-wide ("All") scope by convention. A picked
+    // scope is honoured: empty reads "Nothing for … in ‹scope›" and offers
+    // Search everything (2026-11-27), it never widens on its own.
     fallbackSearchParams: scopes[0]?.params ?? '',
+    widenOnEmpty: 'offer',
     scopeKey: currentScopeKey,
     scopeLabel: currentScope?.label ?? null,
     appResults: true,
@@ -276,6 +279,7 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus, keepScop
   const {
     state, searchState, handleInput, isSearching, pendingSources, sourceErrors,
     streamError, retrySource = () => {}, fellBackToAll, searchSettled,
+    scopeEmpty = false, widenSearch = () => {},
   } = combo;
   const searchText = state.search ?? '';
   searchTextRef.current = searchText;
@@ -342,8 +346,12 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus, keepScop
   // Addendum item 4: until the words typed are the words searched, the list
   // holds its shape (skeleton rows) and never says "No results".
   const awaitingResults = searchText.trim().length >= 2 && searchSettled === false && !streamError;
-  const showEmpty = results.length === 0 && !isSearching && !awaitingResults && !streamError && !hasUnresolvedSourceFailures && searchText.trim().length >= 2 && !fellBackToAll;
-  const emptyMessage = `No results for “${searchText}”. Try a different word or change the scope.`;
+  // A picked scope that came up empty offers the wider search instead.
+  const showScopeEmpty = scopeEmpty && results.length === 0 && !isSearching && !streamError;
+  const showEmpty = !showScopeEmpty && results.length === 0 && !isSearching && !awaitingResults && !streamError && !hasUnresolvedSourceFailures && searchText.trim().length >= 2 && !fellBackToAll;
+  const emptyMessage = showScopeEmpty
+    ? `Nothing for “${searchText}” in ${currentScope?.label || 'this scope'}`
+    : `No results for “${searchText}”. Try a different word or change the scope.`;
   // D5 widening notice (Finding 2 of the final review). The hook widens a
   // scope that settled empty and ContentCombobox says so on desktop — but this
   // surface, the one the whole remediation exists for, rendered nothing: the
@@ -418,7 +426,7 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus, keepScop
       />
 
       <div className="media-sr-only" role="status" aria-live="polite" aria-atomic="true" data-testid="search-mode-empty-announcement">
-        {showEmpty ? emptyMessage : ''}
+        {showEmpty || showScopeEmpty ? emptyMessage : ''}
       </div>
 
       {streamError && (
@@ -437,6 +445,20 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus, keepScop
         {showEmpty && (
           <li className="search-mode-hint" data-testid="search-mode-empty">
             {emptyMessage}
+          </li>
+        )}
+        {showScopeEmpty && (
+          <li className="search-mode-scope-empty" data-testid="search-mode-scope-empty">
+            <span className="search-mode-hint">{emptyMessage}</span>
+            <Button
+              variant="default"
+              size="md"
+              className="search-mode-widen"
+              data-testid="search-mode-widen"
+              onClick={() => widenSearch('tap')}
+            >
+              Search everything
+            </Button>
           </li>
         )}
         {/* Smart long lists: the first eight, then Show all N (stays open

@@ -117,6 +117,9 @@ class PickerScrollAnchor extends Component {
  * @param {string} [props.scopeLabel] - human label for `scopeKey` (e.g. "Ambient"),
  *   used both in the hook's fallback log and in the D5 "Nothing in ‹label›…" notice
  *   rendered here once the hook reports `fellBackToAll`. Optional.
+ * @param {'auto'|'offer'} [props.widenOnEmpty] - passthrough (see the hook). 'offer':
+ *   an empty picked scope reads "Nothing for “words” in ‹label›" with one keyboard
+ *   row, "Search everything", instead of widening on its own.
  * @param {boolean} [props.appResults] - passthrough: merge app-registry matches
  * @param {string} [props.logApp] - app name stamped on this combobox's log events
  * @param {string} [props.dropdownClassName] - extra class on the dropdown.
@@ -179,6 +182,7 @@ export function ContentCombobox({
   fallbackSearchParams,
   scopeKey,
   scopeLabel,
+  widenOnEmpty = 'auto',
   appResults = false,
   renderValue = null,
   allowFreeform = true,
@@ -210,9 +214,9 @@ export function ContentCombobox({
     openWithSiblings, drill, goUp, goToCrumb, paginate, paginationWindow,
     handleClose, select, commit,
     resolvedTitle, isSearching, pendingSources, sourceErrors, streamError, retrySource, truncatedAt, fellBackToAll, searchState,
-    clearSearch, searchSettled,
+    clearSearch, searchSettled, scopeEmpty, widenSearch,
   } = useContentCombobox({
-    value, onChange, searchParams, fallbackSearchParams, scopeKey, scopeLabel,
+    value, onChange, searchParams, fallbackSearchParams, scopeKey, scopeLabel, widenOnEmpty,
     appResults, selectContainers, allowFreeform, logApp, retainQueryOnEscape, retainPlayableSelection, retainQueryOnClose,
   });
 
@@ -235,6 +239,9 @@ export function ContentCombobox({
     : allItems;
   const hiddenCount = collapsing ? allItems.length - items.length : 0;
   const showAllIdx = hiddenCount > 0 ? items.length : -1;
+  // A picked scope that came up empty ('offer'): one row, "Search everything",
+  // in the keyboard model like Show all. Arrow onto it, Enter widens.
+  const widenIdx = !isBrowse && scopeEmpty && items.length === 0 ? 0 : -1;
   const expandResults = (via) => {
     const shownIds = new Set(items.map((item) => item.id));
     const firstNew = allItems.findIndex((item) => !shownIds.has(item.id));
@@ -443,6 +450,10 @@ export function ContentCombobox({
       expandResults('pointer');
       return;
     }
+    if (val === '__widen__') {
+      widenSearch('pointer');
+      return;
+    }
     const item = items.find((r) => r.id === val);
     if (!item) return;
     if (isContainer(item) && !selectContainers) drill(item);
@@ -453,7 +464,7 @@ export function ContentCombobox({
   const handleKeyDown = (e) => {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
-      dispatch({ type: 'ARROW', dir: e.key === 'ArrowDown' ? 1 : -1, itemCount: items.length + (showAllIdx >= 0 ? 1 : 0) });
+      dispatch({ type: 'ARROW', dir: e.key === 'ArrowDown' ? 1 : -1, itemCount: items.length + (showAllIdx >= 0 ? 1 : 0) + (widenIdx >= 0 ? 1 : 0) });
       return;
     }
     if (e.key === 'ArrowRight') {
@@ -472,6 +483,13 @@ export function ContentCombobox({
         goUp();
       }
       // otherwise let the cursor move
+      return;
+    }
+    // With nothing else in the list, Enter on the empty scope searches
+    // everywhere whether or not the row is highlighted yet.
+    if (e.key === 'Enter' && widenIdx >= 0 && (highlightIdx === widenIdx || highlightIdx < 0)) {
+      e.preventDefault();
+      widenSearch('keyboard');
       return;
     }
     if (e.key === 'Enter' && showAllIdx >= 0 && highlightIdx === showAllIdx) {
@@ -1067,6 +1085,22 @@ export function ContentCombobox({
                 <Combobox.Empty>
                   <SearchSkeletonRows testId="combobox-loading" />
                 </Combobox.Empty>
+              ) : widenIdx >= 0 && !streamError ? (
+                <>
+                  <Combobox.Empty data-testid="combobox-scope-empty">
+                    Nothing for “{search}” in {scopeLabel || 'this scope'}
+                  </Combobox.Empty>
+                  <Combobox.Option
+                    value="__widen__"
+                    key="__widen__"
+                    data-testid="combobox-widen"
+                    data-highlighted={highlightIdx === widenIdx ? 'true' : 'false'}
+                    className={`${OPTION_CLASS} content-combobox-show-all${highlightIdx === widenIdx ? ' highlighted' : ''}`}
+                    aria-label={`Search everything for ${search}`}
+                  >
+                    <Text size="sm" fw={500}>Search everything</Text>
+                  </Combobox.Option>
+                </>
               ) : items.length === 0 && !streamError && !hasUnresolvedSourceFailures ? (
                 <Combobox.Empty>
                   {isBrowse

@@ -783,6 +783,9 @@ export class ContentQueryService extends IContentQueryPort {
    */
   #canHandle(source, query) {
     const caps = this.#contentCatalog.searchCapabilities(source);
+    // A source that searches the outside world (YouTube) answers only a
+    // search scoped to it, never an unscoped one.
+    if (caps.explicitOnly && !query.source) return false;
     const META_KEYS = ['source', 'take', 'skip', 'sort', 'withExif', 'withPeople'];
     const queryKeys = Object.keys(query).filter(k => !META_KEYS.includes(k));
 

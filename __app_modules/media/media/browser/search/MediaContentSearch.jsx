@@ -211,10 +211,12 @@ export function MediaContentSearch({ inputRef: suppliedInputRef, destinationWrap
             searchParams={currentScope?.params ?? ''}
             // D5: scopes[0] is the catalog-wide ("All") scope by convention
             // (SearchProvider seeds currentScopeKey from it and resetScope()
-            // returns to it) — that's what a scoped search settling empty
-            // silently widens to. scopeKey/scopeLabel are for observability
-            // and for naming the scope in the widened-search notice.
+            // returns to it). A scope chip is the person's choice, so an empty
+            // scoped search is offered the wider search ("Search everything")
+            // rather than widened for them (2026-11-27). scopeKey/scopeLabel
+            // are for observability and for naming the scope.
             fallbackSearchParams={scopes[0]?.params ?? ''}
+            widenOnEmpty="offer"
             scopeKey={currentScopeKey}
             scopeLabel={currentScope?.label ?? null}
             logApp="media"

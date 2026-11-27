@@ -112,6 +112,40 @@ export class YouTubeContentSource {
     return item;
   }
 
+  /**
+   * Text search through Piped. Explicit only: YouTube is the whole internet,
+   * so it answers a search scoped to it (Media's Video › YouTube) and never
+   * joins an unscoped one, where it would bury the household's own library.
+   */
+  getSearchCapabilities() {
+    return { canonical: ['text', 'mediaType'], specific: [], explicitOnly: true };
+  }
+
+  async search(query = {}) {
+    const text = query.text || query.query;
+    if (!text || !this.#piped?.search) return { items: [], total: 0 };
+    if (query.mediaType && !['video', 'videos'].includes(String(query.mediaType).toLowerCase())) {
+      return { items: [], total: 0 };
+    }
+    const results = await this.#piped.search(text, { take: query.take || 20 });
+    const items = results.map((r) => {
+      const item = new Item({
+        id: `youtube:${r.videoId}`,
+        source: 'youtube',
+        title: r.title,
+        type: 'video',
+        subtitle: r.uploader || undefined,
+        thumbnail: r.thumbnail || null,
+        metadata: { contentFormat: 'video', uploader: r.uploader || null, type: 'video' },
+      });
+      item.mediaType = 'video';
+      item.itemType = 'leaf';
+      item.duration = r.duration ?? null;
+      return item;
+    });
+    return { items, total: items.length };
+  }
+
   async resolvePlayables(id) {
     const item = await this.getItem(id);
     return item ? [item] : [];

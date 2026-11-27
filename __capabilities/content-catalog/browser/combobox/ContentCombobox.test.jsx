@@ -851,6 +851,57 @@ describe('ContentCombobox (hook wiring)', () => {
     expect(screen.queryByTestId('combobox-fallback-notice')).toBeNull();
   });
 
+  // 2026-11-27: a picked scope is honoured. Empty reads "Nothing for … in
+  // ‹scope›" with one keyboard row; only that row widens.
+  describe("widenOnEmpty 'offer'", () => {
+    const scopeEmpty = (highlight = { idx: -1, userNavigated: false }) => makeHook({
+      state: { ...initialState(''), mode: Modes.SEARCH, search: 'nephi', results: [], highlight },
+      scopeEmpty: true,
+      searchSettled: true,
+      widenSearch: vi.fn(),
+    });
+
+    it('threads widenOnEmpty into the hook', () => {
+      currentHook = makeHook({ state: { ...initialState(''), mode: Modes.SEARCH, search: 'x' } });
+      renderCombobox({ widenOnEmpty: 'offer' });
+      expect(hookArgs.widenOnEmpty).toBe('offer');
+    });
+
+    it('names the words and the scope, offers Search everything, and does not say "No results"', () => {
+      currentHook = scopeEmpty();
+      renderCombobox({ scopeLabel: 'Scripture', widenOnEmpty: 'offer' });
+      expect(screen.getByTestId('combobox-scope-empty')).toHaveTextContent('Nothing for “nephi” in Scripture');
+      expect(screen.getByTestId('combobox-widen')).toHaveTextContent('Search everything');
+      expect(screen.queryByText('No results')).toBeNull();
+      expect(screen.queryByTestId('combobox-fallback-notice')).toBeNull();
+    });
+
+    it('Search everything is a keyboard row: ArrowDown reaches it, Enter widens', () => {
+      currentHook = scopeEmpty({ idx: 0, userNavigated: true });
+      renderCombobox({ scopeLabel: 'Scripture', widenOnEmpty: 'offer' });
+      fireEvent.keyDown(screen.getByRole('textbox'), { key: 'ArrowDown' });
+      expect(currentHook.dispatch).toHaveBeenCalledWith({ type: 'ARROW', dir: 1, itemCount: 1 });
+      expect(screen.getByTestId('combobox-widen')).toHaveAttribute('data-highlighted', 'true');
+      fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+      expect(currentHook.widenSearch).toHaveBeenCalledWith('keyboard');
+      expect(currentHook.commit).not.toHaveBeenCalled();
+    });
+
+    it('Enter with nothing highlighted widens too (it is the only thing to do)', () => {
+      currentHook = scopeEmpty();
+      renderCombobox({ scopeLabel: 'Scripture', widenOnEmpty: 'offer' });
+      fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+      expect(currentHook.widenSearch).toHaveBeenCalledWith('keyboard');
+    });
+
+    it('clicking the row widens', () => {
+      currentHook = scopeEmpty();
+      renderCombobox({ scopeLabel: 'Scripture', widenOnEmpty: 'offer' });
+      fireEvent.click(screen.getByTestId('combobox-widen'));
+      expect(currentHook.widenSearch).toHaveBeenCalledWith('pointer');
+    });
+  });
+
   it('D5: no notice when fellBackToAll is false, even with zero results', () => {
     currentHook = makeHook({
       state: { ...initialState(''), mode: Modes.SEARCH, search: 'nomatch', results: [] },
