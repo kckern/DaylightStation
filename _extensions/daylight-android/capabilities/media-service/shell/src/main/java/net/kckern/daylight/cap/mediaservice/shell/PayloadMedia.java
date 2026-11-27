@@ -48,6 +48,16 @@ final class PayloadMedia {
         return port.call(request.toString(), waitMs);
     }
 
+    /** The phone's search: results grouped by kind, audio only; offline, what is kept. */
+    String lookup(String query, long waitMs) throws Exception {
+        return port.call(new JSONObject().put("op", "lookup").put("query", query == null ? "" : query).toString(), waitMs);
+    }
+
+    /** The library's first level: the audio libraries and the household's list sources. */
+    String library(long waitMs) throws Exception {
+        return port.call(new JSONObject().put("op", "library").toString(), waitMs);
+    }
+
     /** A car's voice search. The query goes to the payload as it came; the payload cuts and cleans it. */
     String search(String query, long waitMs) throws Exception {
         return port.call(new JSONObject().put("op", "search").put("query", query == null ? "" : query).toString(), waitMs);

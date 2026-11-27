@@ -777,6 +777,15 @@ public class NowPlayingActivity extends Activity {
 
     // ── the stage: cover, lyrics or queue ────────────────────────────────────
 
+    /** Opens the library on what a line names: the album (its year cut off) or the artist. */
+    private void lookupLine(TextView line, String kind) {
+        if (remote() || line.getVisibility() != View.VISIBLE) return;
+        String words = String.valueOf(line.getText()).replaceAll("\\s*\\(\\d{4}\\)\\s*$", "").trim();
+        if (words.isEmpty()) return;
+        note("player.lookup", "kind", kind);
+        BrowseActivity.search(this, words, kind);
+    }
+
     private void setStage(Stage s) {
         if (stage == s) return;
         stage = s;
@@ -1713,6 +1722,11 @@ public class NowPlayingActivity extends Activity {
         player.addView(title);
         albumLine = centred();
         player.addView(albumLine);
+        // The artist and the album open their pages (by name: a search led by that kind).
+        artistLine.setOnClickListener(v -> lookupLine(artistLine, "artists"));
+        albumLine.setOnClickListener(v -> lookupLine(albumLine, "albums"));
+        UiTelemetry.tag(artistLine, "player.artist");
+        UiTelemetry.tag(albumLine, "player.album");
         chapterLine = centred();
         chapterLine.setPadding(0, dp(4), 0, 0);
         chapterLine.setVisibility(View.GONE);

@@ -560,6 +560,28 @@ public class PhoneHomeActivity extends Activity {
 
     private static final String PLAY = "net.kckern.daylight.cap.mediaservice.shell.PlayActivity";
 
+    private static final String BROWSE = "net.kckern.daylight.cap.mediaservice.shell.BrowseActivity";
+
+    /** The search field at the top of the Play tab: a fixed-height box that opens the search. */
+    private void addLookup() {
+        TextView box = t.text(this, "Search books, albums, artists, playlists", Type.BODY, t.inkMuted, false);
+        box.setGravity(Gravity.CENTER_VERTICAL);
+        box.setPadding(dp(16), 0, dp(16), 0);
+        box.setBackground(t.pressable(t.round(t.surface, Radius.LARGE)));
+        box.setOnClickListener(v -> openBrowse("search"));
+        box.setContentDescription("Search");
+        net.kckern.daylight.shellkit.UiTelemetry.tag(box, "play.search");
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(52));
+        lp.topMargin = dp(4);
+        lp.bottomMargin = dp(8);
+        column.addView(box, lp);
+    }
+
+    private void openBrowse(String mode) {
+        try { startActivity(new Intent().setClassName(this, BROWSE).putExtra("mode", mode)); }
+        catch (RuntimeException absent) { toast("Not available in this build"); }
+    }
+
     private void addPlay() {
         // The player screen is media-service's (installed code in another capability), so
         // it is named, and offered only in a build that has it.
@@ -568,6 +590,7 @@ public class PhoneHomeActivity extends Activity {
         // Not a library to browse: what this phone is in the middle of, and the playlists
         // already chosen (Drive, widgets, Driving Radio), each one tap from playing here.
         if (player) {
+            addLookup();
             LinearLayout continuing = new LinearLayout(this);
             continuing.setOrientation(LinearLayout.VERTICAL);
             column.addView(continuing);
@@ -581,6 +604,7 @@ public class PhoneHomeActivity extends Activity {
             }
             section("Player");
             row("Now playing", "Control this phone or a screen", "play", "›", () -> startActivity(nowPlaying));
+            row("Browse library", "Audiobooks, music, playlists, talks", "play", "›", () -> openBrowse("library"));
         }
         row("Drive playlists", "The playlists on the car's Drive tab", "play", "›", this::showMediaChoices);
         row("Driving Radio", "Set the default and day rules", "play", "›", this::showDrivingRadio);

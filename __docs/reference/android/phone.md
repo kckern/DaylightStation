@@ -968,6 +968,42 @@ out of reach the last answer is served, however old; a level never loaded fails
 only when it is an https URL on the backend; anything else is left out, in the
 payload and again in the installed service.
 
+### Lookup and browse
+
+Lookup, not discovery (ops:docs/superpowers/specs/2026-11-26-phone-lookup-and-browse.md):
+anything the household has can be found in two taps; nothing is proposed. Audio only.
+One screen, `BrowseActivity` (not exported), in three modes:
+
+- **Search**: the box at the top of the Play tab. Results as you type (250 ms after the
+  last key), grouped Books · Albums · Artists · Playlists · Tracks, five each with "N
+  more". Books are albums in a library whose name holds "book", "stor" or "speech". The
+  last ten searches show under an empty box (kept on the phone; Clear recent searches).
+  No home: "Searching this phone", the kept collections whose title holds every word.
+- **Library** (Play tab → Browse library): every audio Plex library, then the household's
+  list sources (Plex's audio playlists as **Playlists**, programs, watchlists, custom
+  lists). Offline: what is kept, "Showing what's on this phone".
+- **A level** (a library, an artist, an album, a book, a playlist): rows of a fixed
+  64 dp height, the last answer drawn at once from the phone and replaced in place, fixed
+  placeholders the first time; a long level ends in **More**, which appends the next
+  50 in place. A collection has a header: cover, name, Play (a book: Resume), Shuffle,
+  Play on… (the live screens; the screen's load, as the web's Play on) and Keep (the
+  one Keep flow). A track's ⋮: Play here, Play next, Add to queue, Play on…, Keep.
+  Playing goes through the media session (the same media ids the car uses) and opens
+  Now playing.
+
+Now playing's artist and album lines open the search on that name, led by Artists or
+Albums. A link `daylight://media/open?kind=<book|album|artist|playlist>&id=<content id>`
+(through the link activity, with the install key) opens a collection's page.
+
+| Payload op | Answers | Endpoint |
+|---|---|---|
+| `lookup` `{query}` | `{groups:[{key, title, items, more}], offline}` | `GET /api/v1/content/query/search` |
+| `library` | `{items:[{id, title, kind}], offline}` | `GET /api/v1/list/plex`, `GET /api/v1/queue/catalog/audio-sources` |
+| `browse` `{parent}` | a level, as the car's | `GET /api/v1/list/…`, the audio-lists catalog |
+
+Telemetry: `browse.view` (kind), `search.query` (length, result count, offline: never
+the words), `browse.action` (verb, kind), and a tag on every row and button.
+
 ### Downloads: Keep on this phone
 
 A whole collection (a book, an album, a playlist, a household list) can be kept on the
