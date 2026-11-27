@@ -85,12 +85,18 @@ export function createPlaybackProgressOperations({ contentCatalog, mediaProgress
   return { updateContentProgress, recordPlaybackProgress, markContentWatched };
 }
 
-export function createPlaybackReadOperations({ contentCatalog, contentIdResolver, contentQueryService, playResponseService, logger }) {
+export function createPlaybackReadOperations({ contentCatalog, contentIdResolver, contentQueryService, playResponseService, configService = null, logger }) {
+  // Books ignore shuffle on the play route as they do in the queue: the same
+  // library-kinds rule (play_on_demand.library_kinds) decides what is a book.
+  const orderedWorks = new QueueService({
+    libraryKinds: () => configService?.getHouseholdAppConfig?.(null, 'media')?.play_on_demand?.library_kinds,
+  });
   const playbackReadService = new PlaybackReadService({
     contentCatalog,
     contentIdResolver,
     contentQueryService,
     playResponseService,
+    isOrderedWork: (playables) => orderedWorks.isOrderedWork(playables),
     logger,
   });
 

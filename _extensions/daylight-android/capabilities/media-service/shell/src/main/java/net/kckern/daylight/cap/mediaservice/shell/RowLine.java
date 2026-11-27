@@ -45,7 +45,7 @@ final class RowLine {
                 return len;
             }
             case "book": case "series":
-                return seconds > 0 ? length(seconds) : "";
+                return seconds > 0 ? spokenLength(seconds) : "";
             case "playlist": {
                 // Nothing else on screen names a playlist track's artist: it stays.
                 String artist = row.optString("artist", row.optString("subtitle", ""));
@@ -71,6 +71,32 @@ final class RowLine {
         if (seconds >= 3600) return (seconds / 3600) + " h " + (seconds % 3600) / 60 + " min";
         if (seconds >= 600) return seconds / 60 + " min";
         return seconds / 60 + ":" + String.format(java.util.Locale.ROOT, "%02d", seconds % 60);
+    }
+
+    /**
+     * A part's or lecture's length in one format: "9 min" (rounded, never "8:47"), "1 h 12 min"
+     * over an hour, "2 h" on the hour. Under a minute is "1 min".
+     */
+    static String spokenLength(long seconds) {
+        long minutes = Math.max(1, Math.round(seconds / 60.0));
+        if (minutes < 60) return minutes + " min";
+        long h = minutes / 60, m = minutes % 60;
+        return m == 0 ? h + " h" : h + " h " + m + " min";
+    }
+
+    /**
+     * The number a book's part shows in place of a cover: its place among the page's
+     * playable rows (1-based), or 0 when it is not one.
+     */
+    static int partNumber(java.util.List<JSONObject> rows, String id) {
+        int n = 0;
+        for (JSONObject r : rows) {
+            String rid = r.optString("id");
+            if (!rid.startsWith("p:")) continue;
+            n++;
+            if (rid.equals(id)) return n;
+        }
+        return 0;
     }
 
     /** An author's facts line: "United Kingdom · 12 books · 96 h"; an artist's: "United Kingdom · Rock · 9 albums". */

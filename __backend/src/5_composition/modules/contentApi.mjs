@@ -105,7 +105,7 @@ export function createApiRouters(config) {
 
   const { contentDiscovery, listBrowse, itemService } = createContentBrowseOperations({ contentCatalog, logger, contentIdResolver, contentQueryService, menuMemory });
 
-  const { playbackReadService } = createPlaybackReadOperations({ contentCatalog, contentIdResolver, contentQueryService, playResponseService, logger });
+  const { playbackReadService } = createPlaybackReadOperations({ contentCatalog, contentIdResolver, contentQueryService, playResponseService, configService, logger });
 
   const { proxyLogger, proxyMediaService, mintPlaybackStream, compositeHeroService, dynamicStreamService, remoteThumbnailService } = createCatalogProxyServices({ logger, mediaBasePath, registry, proxyService, configService, retroarchProxy });
   const passthroughHandlers = createProxyPassthroughHandlers(proxyService);

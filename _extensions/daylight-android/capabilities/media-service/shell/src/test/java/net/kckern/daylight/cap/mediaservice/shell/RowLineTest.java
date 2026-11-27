@@ -43,4 +43,23 @@ public class RowLineTest {
         assertEquals("Iceland · Art Pop · 9 albums", RowLine.facts("artist", artist, 9));
         assertEquals("1 book", RowLine.facts("author", new JSONObject().put("children", 1), 0));
     }
+
+    /** A book's parts: one format, minutes rounded, never "8:47". */
+    @Test public void aBookPartsLengthIsAlwaysMinutes() throws Exception {
+        assertEquals("9 min", RowLine.of("book", new JSONObject().put("durationSec", 527), "", null));
+        assertEquals("58 min", RowLine.of("book", new JSONObject().put("durationSec", 3480), "", null));
+        assertEquals("1 h 12 min", RowLine.of("books", new JSONObject().put("durationSec", 4320), "", null));
+        assertEquals("2 h", RowLine.of("series", new JSONObject().put("durationSec", 7200), "", null));
+        assertEquals("1 min", RowLine.spokenLength(20));
+    }
+
+    @Test public void aPartsNumberIsItsPlaceAmongThePlayableRows() throws Exception {
+        java.util.List<JSONObject> rows = java.util.Arrays.asList(
+                new JSONObject().put("id", "c:plex:1"),
+                new JSONObject().put("id", "p:plex:2"),
+                new JSONObject().put("id", "p:plex:3"));
+        assertEquals(1, RowLine.partNumber(rows, "p:plex:2"));
+        assertEquals(2, RowLine.partNumber(rows, "p:plex:3"));
+        assertEquals(0, RowLine.partNumber(rows, "c:plex:1"));
+    }
 }

@@ -930,7 +930,8 @@ public final class BrowseActivity extends Activity {
                 return b;
             }
             case CHAPTERS: {
-                ImageButton b = iconButton(R.drawable.daylight_np_queue, "Chapters");
+                // The chapters glyph, never the queue's: a book has no queue verbs (media kinds §8).
+                ImageButton b = iconButton(net.kckern.daylight.shellkit.R.drawable.daylight_ic_chapters, "Chapters of " + title);
                 b.setOnClickListener(v -> chapters());
                 UiTelemetry.tag(b, "browse.chapters");
                 return b;
@@ -1203,14 +1204,25 @@ public final class BrowseActivity extends Activity {
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setBackground(t.pressable(null));
         row.setTag(R.id.daylight_browse_row_id, id);
-        ImageView img = new ImageView(this);
-        img.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        img.setClipToOutline(true);
-        net.kckern.daylight.shellkit.CoverGlyph.behind(img, t, net.kckern.daylight.shellkit.CoverGlyph.of(browsable
-                ? (MediaKind.hasBooks(pageKind) ? "book" : rowKind.isEmpty() ? MediaKind.childKind(pageKind, id) : rowKind)
-                : MediaKind.spoken(pageKind) ? "book" : "track"), dp(48), dp(8));
-        row.addView(img, new LinearLayout.LayoutParams(dp(48), dp(48)));
-        loadCover(img, cover, 144);
+        // A book's or series' parts: the part's number in a quiet square, not the book's
+        // cover again on every row; a cover only where the part has its own picture.
+        int part = playable && !browsable && isPartPage(pageKind) && !n.optBoolean("ownArt") ? RowLine.partNumber(rows, id) : 0;
+        if (part > 0) {
+            TextView number = t.text(this, String.valueOf(part), Type.TITLE, t.inkMuted, false);
+            number.setGravity(Gravity.CENTER);
+            number.setBackground(DaylightTheme.round(t.surfaceVariant, dp(8)));
+            number.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            row.addView(number, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        } else {
+            ImageView img = new ImageView(this);
+            img.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            img.setClipToOutline(true);
+            net.kckern.daylight.shellkit.CoverGlyph.behind(img, t, net.kckern.daylight.shellkit.CoverGlyph.of(browsable
+                    ? (MediaKind.hasBooks(pageKind) ? "book" : rowKind.isEmpty() ? MediaKind.childKind(pageKind, id) : rowKind)
+                    : MediaKind.spoken(pageKind) ? "book" : "track"), dp(48), dp(8));
+            row.addView(img, new LinearLayout.LayoutParams(dp(48), dp(48)));
+            loadCover(img, cover, 144);
+        }
         LinearLayout words = new LinearLayout(this);
         words.setOrientation(LinearLayout.VERTICAL);
         words.setPadding(dp(12), 0, dp(4), 0);
@@ -1242,10 +1254,16 @@ public final class BrowseActivity extends Activity {
             }
         });
         UiTelemetry.tag(row, browsable ? "browse.row" : "browse.track");
-        row.setContentDescription(name + (line.isEmpty() ? "" : ", " + line));
+        row.setContentDescription((part > 0 ? "Part " + part + ", " : "") + name + (line.isEmpty() ? "" : ", " + line));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(ROW_DP));
         row.setLayoutParams(lp);
         return row;
+    }
+
+    /** A page whose playable rows are a book's parts or a series' lectures (numbered, not covered). */
+    private static boolean isPartPage(String pageKind) {
+        String k = MediaKind.normal(pageKind);
+        return "book".equals(k) || "series".equals(k);
     }
 
     /** A row's page, with the list it came from as the paging set (the level's rows, or its search group). */

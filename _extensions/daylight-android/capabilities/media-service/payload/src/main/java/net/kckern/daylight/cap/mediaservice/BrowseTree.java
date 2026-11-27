@@ -123,10 +123,23 @@ final class BrowseTree {
             if (count > 0) f.put("trackCount", count);
             String artist = Json.first(Json.str(item, "artist"), Json.str(item, "grandparentTitle"));
             if (!artist.isEmpty()) f.put("artist", artist);
+            if (ownArt(item)) f.put("ownArt", true);
             return f.length() == 0 ? null : f;
         } catch (JSONException impossible) {
             return null;
         }
+    }
+
+    /**
+     * Whether a leaf has its own picture, not its album's or book's: a book's parts all
+     * point at the book's thumb (/library/metadata/&lt;albumId&gt;/thumb/…), so a row shows the
+     * part's number instead of the same cover again. A leaf with no parent id keeps its art.
+     */
+    static boolean ownArt(JSONObject item) {
+        String thumb = Json.str(item, "thumbnail");
+        if (thumb.isEmpty() || "container".equals(Json.str(item, "itemType"))) return false;
+        String parent = Json.first(Json.str(item, "albumId"), Json.str(item, "parentId"));
+        return parent.isEmpty() || !thumb.contains("/metadata/" + parent + "/");
     }
 
     static List<MediaNode> audioListSources(JSONObject response) {

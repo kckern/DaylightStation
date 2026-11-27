@@ -1,10 +1,17 @@
 /** Resolve playback reads and build their public DTO without exposing adapters to HTTP. */
 export class PlaybackReadService {
-  constructor({ contentIdResolver, contentCatalog, contentQueryService = null, playResponseService, random = Math.random, now = () => new Date(), logger = console }) {
+  /**
+   * @param {Object} deps
+   * @param {(playables: Array) => boolean} [deps.isOrderedWork] - true for a book, a talk
+   *   series or a course heard as audio (QueueService.isOrderedWork, library kinds). Such a
+   *   work ignores shuffle here as it does in the queue. Absent = nothing is ordered.
+   */
+  constructor({ contentIdResolver, contentCatalog, contentQueryService = null, playResponseService, isOrderedWork = null, random = Math.random, now = () => new Date(), logger = console }) {
     this.contentIdResolver = contentIdResolver;
     this.contentCatalog = contentCatalog;
     this.contentQueryService = contentQueryService;
     this.playResponseService = playResponseService;
+    this.isOrderedWork = typeof isOrderedWork === 'function' ? isOrderedWork : null;
     this.random = random;
     this.now = now;
     this.logger = logger;
@@ -18,6 +25,14 @@ export class PlaybackReadService {
     const resolved = this.contentIdResolver.resolve(compoundId);
     if (!resolved) return { kind: 'unknown_source' };
     const { source, localId } = resolved;
+
+    // A book is never shuffled: a random part of it is not a place to start. The
+    // queue route already plays an ordered work in order (QueueService); the play
+    // route does the same, so Play with shuffle on starts where the listener is.
+    if (shuffle && await this.#orderedWork(resolved)) {
+      this.logger.info?.('play.shuffle.ignored_ordered_work', { compoundId });
+      shuffle = false;
+    }
 
     if (shuffle) {
       let selectedItem;
@@ -90,6 +105,17 @@ export class PlaybackReadService {
       startSec: this.playResponseService.startPositionFor(item, watchState),
       lastPlayedAt: watchState?.lastPlayed ? String(watchState.lastPlayed) : null,
     };
+  }
+
+  async #orderedWork(resolved) {
+    if (!this.isOrderedWork || typeof this.contentCatalog.resolvePlayables !== 'function') return false;
+    try {
+      const playables = await this.contentCatalog.resolvePlayables(resolved);
+      return Array.isArray(playables) && playables.length > 0 && this.isOrderedWork(playables) === true;
+    } catch (error) {
+      this.logger.warn?.('play.shuffle.ordered_check_failed', { error: error?.message });
+      return false;
+    }
   }
 
   async #response(item, resolution, options) {
