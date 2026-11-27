@@ -409,6 +409,7 @@ public final class MediaServiceCapability implements Capability {
                 }
                 return new Outcome(200, Replies.ok().put("marked", done));
             }
+            if ("save-playlist".equals(op)) return savePlaylist(request);
             if ("keep".equals(op)) return keep(request);
             if ("kept".equals(op)) return keptList();
             if ("kept-finished".equals(op)) {
@@ -605,6 +606,28 @@ public final class MediaServiceCapability implements Capability {
      * </ul>
      * The answer lists the tracks (id, url) and the kind (book, album, playlist).
      */
+    /**
+     * The phone's Queue → Save as playlist: the queue's content ids in order become a
+     * household list (POST /api/v1/media/household/playlists). Ids that are not content ids
+     * are left out; the words are a title and item titles only.
+     */
+    private Outcome savePlaylist(JSONObject request) throws Exception {
+        String title = Json.str(request, "title").trim();
+        JSONArray items = request.optJSONArray("items");
+        if (title.isEmpty() || title.length() > 80 || items == null) return failure(400, "bad_request");
+        JSONArray clean = new JSONArray();
+        for (int i = 0; i < items.length() && clean.length() < 1000; i++) {
+            JSONObject it = items.optJSONObject(i);
+            String cid = it == null ? "" : it.optString("id");
+            if (!ContentId.valid(cid)) continue;
+            clean.put(new JSONObject().put("id", cid).put("title", it.optString("title", "")));
+        }
+        if (clean.length() == 0) return failure(400, "bad_request");
+        JSONObject made = api.savePlaylist(title, clean);
+        return new Outcome(200, Replies.ok().put("id", made.optString("id")).put("title", made.optString("title", title))
+                .put("count", made.optInt("count", clean.length())));
+    }
+
     private Outcome keep(JSONObject request) throws Exception {
         String mode = Json.first(Json.str(request, "mode"), "keep");
         String raw = Json.str(request, "id");

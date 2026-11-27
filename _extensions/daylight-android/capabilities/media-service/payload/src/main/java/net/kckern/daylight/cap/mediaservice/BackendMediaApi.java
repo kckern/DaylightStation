@@ -108,6 +108,13 @@ final class BackendMediaApi implements MediaApi {
         if (!r.ok()) throw new Refused("watched", r.status);
     }
 
+    @Override public JSONObject savePlaylist(String title, org.json.JSONArray items) throws Exception {
+        Http.Reply r = http.postJson(backend.url("/api/v1/media/household/playlists"),
+                new JSONObject().put("title", title).put("items", items).toString());
+        if (!r.ok()) throw new Refused("playlists", r.status);
+        try { return new JSONObject(r.body); } catch (Exception notJson) { throw new Refused("playlists", 502); }
+    }
+
     @Override public JSONObject libraries() throws Exception { return get("libraries", "/api/v1/list/plex?take=60"); }
 
     private JSONObject get(String route, String path) throws Exception {

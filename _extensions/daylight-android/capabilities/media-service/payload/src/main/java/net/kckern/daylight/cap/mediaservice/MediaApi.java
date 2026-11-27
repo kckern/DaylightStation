@@ -43,4 +43,9 @@ interface MediaApi {
     default JSONObject libraries() throws Exception { return null; }
     /** Marks an item finished (or not) for the household: the web's "mark watched". */
     default void markWatched(String contentId, boolean watched) throws Exception { }
+    /**
+     * POST /api/v1/media/household/playlists: a queue saved as a household list, items in
+     * order ({id, title}). The backend's answer ({ok, id: "menu:<name>", title, count}).
+     */
+    default JSONObject savePlaylist(String title, org.json.JSONArray items) throws Exception { throw new Refused("playlists", 501); }
 }
