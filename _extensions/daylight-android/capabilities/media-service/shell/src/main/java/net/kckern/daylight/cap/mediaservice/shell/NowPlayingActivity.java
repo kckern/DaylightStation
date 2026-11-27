@@ -833,6 +833,8 @@ public class NowPlayingActivity extends Activity {
     private void takeStarting(Intent intent) {
         Starting s = Starting.from(intent, target, SystemClock.elapsedRealtime());
         if (s == null) return;
+        // No previous item from the tapping screen: the bar's entry, before this start replaces it.
+        if (!intent.hasExtra(Starting.EXTRA_PREVIOUS)) s.previousFromNote(NowPlayingNote.forTarget(s.target));
         // The mini player switches to the tapped item at once too, never the previous one (NowPlayingNote holds it).
         NowPlayingNote.starting(s.target, targetName, s.title, s.subtitle, s.art, s.askedAt, s.mediaId);
         boolean play = intent.getBooleanExtra(Starting.EXTRA_PLAY, false);
@@ -944,7 +946,7 @@ public class NowPlayingActivity extends Activity {
         // unless it is still the item that played before the tap (Starting.landed).
         boolean playingAWhile = itemChangedAt < 0 && c.isPlaying() && SystemClock.elapsedRealtime() - starting.askedAt > 1500;
         return starting.landed(currentId, NodeItems.listId(current), request, itemChangedAt >= starting.askedAt,
-                nameMatches, playingAWhile);
+                nameMatches, playingAWhile, starting.reloadedSinceAnswer(Math.max(connectedAt, itemChangedAt)));
     }
 
     /**

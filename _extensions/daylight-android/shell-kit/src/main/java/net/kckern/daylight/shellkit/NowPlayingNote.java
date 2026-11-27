@@ -30,6 +30,8 @@ public final class NowPlayingNote {
         public final String detail;
         /** The player's content id for the item ("plex:1"); "" when not known (a start, a screen's frame). */
         public final String mediaId;
+        /** The list the item plays from when the player knows it ("plex:50", "c:plex:50"); "" for none. */
+        public final String listId;
         final long at;
 
         public Entry(String target, String targetName, String title, String artist, String artworkUrl,
@@ -47,7 +49,15 @@ public final class NowPlayingNote {
         public Entry(String target, String targetName, String title, String artist, String artworkUrl,
                      boolean playing, boolean canNext, long positionMs, long durationMs, long reportedAt,
                      Transport transport, boolean starting, String detail, String mediaId) {
+            this(target, targetName, title, artist, artworkUrl, playing, canNext, positionMs, durationMs, reportedAt, transport, starting, detail,
+                    mediaId, "");
+        }
+
+        public Entry(String target, String targetName, String title, String artist, String artworkUrl,
+                     boolean playing, boolean canNext, long positionMs, long durationMs, long reportedAt,
+                     Transport transport, boolean starting, String detail, String mediaId, String listId) {
             this.mediaId = mediaId == null ? "" : mediaId;
+            this.listId = listId == null ? "" : listId;
             this.starting = starting;
             this.detail = detail == null ? "" : detail;
             this.target = target;
@@ -79,33 +89,51 @@ public final class NowPlayingNote {
     public interface Listener { void changed(); }
 
     private static volatile Entry local, remote;
+
+    /** A start showing for a target: what the player held at the tap ({@link #NOTHING} for nothing) and the tapped content id. */
+    static final class Over {
+        final Entry held;
+        final String tapped;
+        Over(Entry held, String tapped) { this.held = held; this.tapped = tapped == null ? "" : tapped; }
+    }
+
     /**
-     * Per target: what the player held when a start was tapped (its reports do not replace the
-     * start); {@link #NOTHING} when it held nothing.
+     * Per target: the start showing (its reports of the item held before do not replace it).
+     * Read and written only under the class lock (report, starting, detail, abandonStart:
+     * each is a check then an act); listeners are told outside it.
      */
-    private static final java.util.Map<String, Entry> startedOver = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.Map<String, Over> startedOver = new java.util.HashMap<>();
     private static final CopyOnWriteArrayList<Listener> listeners = new CopyOnWriteArrayList<>();
 
     private NowPlayingNote() { }
 
     /** A service's report. An entry with an empty title means nothing is loaded there: it goes. */
     public static void report(Entry e) {
-        if (e == null) return;
+        boolean changed;
+        synchronized (NowPlayingNote.class) { changed = apply(e); }
+        if (changed) tell();
+    }
+
+    private static void tell() { for (Listener l : listeners) l.changed(); }
+
+    /** Under the class lock: takes a report; true when the strip changed. */
+    private static boolean apply(Entry e) {
+        if (e == null) return false;
         Entry before = "local".equals(e.target) ? local : remote;
         // A start was tapped: the player's reports of what it held before (or of nothing yet)
         // never replace it, so the bar never shows the previous item after a new play.
-        if (holdsStart(before, e, startedOver.get(e.target))) return;
+        if (holdsStart(before, e, startedOver.get(e.target))) return false;
         if (!e.starting) startedOver.remove(e.target);
         // A chapter line stays with its item across the service's reports (which do not know it).
         if (!e.starting && e.detail.isEmpty() && before != null && !before.detail.isEmpty() && before.title.equals(e.title)
                 && before.mediaId.equals(e.mediaId)) {
             e = new Entry(e.target, e.targetName, e.title, e.artist, e.artworkUrl, e.playing, e.canNext, e.positionMs, e.durationMs,
-                    e.reportedAt, e.transport, false, before.detail, e.mediaId);
+                    e.reportedAt, e.transport, false, before.detail, e.mediaId, e.listId);
         }
         Entry next = e.title.isEmpty() ? null : e;
-        if (same(before, next)) return;
+        if (same(before, next)) return false;
         if ("local".equals(e.target)) local = next; else remote = next;
-        for (Listener l : listeners) l.changed();
+        return true;
     }
 
     /** Shorthand for a report without detail (and for clearing: an empty title). */
@@ -128,14 +156,46 @@ public final class NowPlayingNote {
      */
     public static void starting(String target, String targetName, String title, String artist, String artworkUrl, long now,
                                 String mediaId) {
-        Entry before = "local".equals(target) ? local : remote;
-        String t = title == null || title.trim().isEmpty() ? STARTING_TITLE : title.trim();
-        // A player already reporting this item is newer than the tap.
-        Entry tapped = new Entry(target, targetName, t, "", "", false, false, 0, -1, now, null, false, "", contentId(mediaId));
-        if (before != null && !before.starting && sameItem(tapped, before)) return;
-        if (before != null && !before.starting) startedOver.put(target, before);
-        else if (before == null) startedOver.put(target, NOTHING);
-        report(new Entry(target, targetName, t, artist, artworkUrl, false, false, 0, -1, now, null, true, ""));
+        boolean changed;
+        synchronized (NowPlayingNote.class) {
+            Entry before = "local".equals(target) ? local : remote;
+            String t = title == null || title.trim().isEmpty() ? STARTING_TITLE : title.trim();
+            String id = contentId(mediaId);
+            // A player already reporting this item, or a track of this list, is newer than the tap.
+            Entry tapped = new Entry(target, targetName, t, "", "", false, false, 0, -1, now, null, false, "", id);
+            if (before != null && !before.starting && (sameItem(tapped, before) || inList(before, mediaId))) return;
+            Over over = startedOver.get(target);
+            if (before != null && !before.starting) startedOver.put(target, new Over(before, id));
+            else if (before == null) startedOver.put(target, new Over(NOTHING, id));
+            else if (over != null) startedOver.put(target, new Over(over.held, id));
+            changed = apply(new Entry(target, targetName, t, artist, artworkUrl, false, false, 0, -1, now, null, true, ""));
+        }
+        if (changed) tell();
+    }
+
+    /**
+     * A start that failed (a widget's, the car's, a browse page's): the bar goes back to what
+     * the player held at the tap, or to nothing, at once, and its reports count again; not
+     * after 30 s of holding them back. Nothing changes when no start is showing.
+     */
+    public static void abandonStart(String target) {
+        boolean changed = false;
+        synchronized (NowPlayingNote.class) {
+            Entry now = "local".equals(target) ? local : remote;
+            Over over = startedOver.remove(target);
+            if (now != null && now.starting && now.target.equals(target)) {
+                Entry back = over == null || over.held == NOTHING ? null : over.held;
+                if ("local".equals(target)) local = back; else remote = back;
+                changed = true;
+            }
+        }
+        if (changed) tell();
+    }
+
+    /** {@code e} plays from the tapped list ({@code mediaId} "c:…"). */
+    static boolean inList(Entry e, String mediaId) {
+        if (e == null || mediaId == null || !mediaId.trim().startsWith("c:") || e.listId.isEmpty()) return false;
+        return contentId(e.listId).equals(contentId(mediaId));
     }
 
     /** What the player held at a tap when it held nothing. */
@@ -152,10 +212,15 @@ public final class NowPlayingNote {
      * title ("Canto I") is a new item (2026-11-27: it was held for 30 s). Only when either id
      * is unknown is it told by title.
      */
-    static boolean holdsStart(Entry before, Entry next, Entry over) {
+    static boolean holdsStart(Entry before, Entry next, Over over) {
         if (before == null || !before.starting || next == null || next.starting || over == null) return false;
         if (next.reportedAt - before.reportedAt > MiniPlayerState.STARTING_MS) return false;
-        return next.title.isEmpty() || sameItem(next, over);
+        if (next.title.isEmpty()) return true;
+        // The tapped item itself, or a track of the tapped list (a re-tapped album reloads the track that played): it landed.
+        if (!over.tapped.isEmpty() && (over.tapped.equals(contentId(next.mediaId)) || over.tapped.equals(contentId(next.listId)))) {
+            return false;
+        }
+        return sameItem(next, over.held);
     }
 
     /** A media id's own content id: "plex:2" for "c:plex:2", "p:plex:2|plex:1" and "plex:2". */
@@ -170,17 +235,22 @@ public final class NowPlayingNote {
     /** The same item: by content id when both are known, else by title; never the empty entry. */
     static boolean sameItem(Entry a, Entry b) {
         if (a == null || b == null || b.title.isEmpty()) return false;
-        if (!a.mediaId.isEmpty() && !b.mediaId.isEmpty()) return a.mediaId.equals(b.mediaId);
+        String ia = contentId(a.mediaId), ib = contentId(b.mediaId);
+        if (!ia.isEmpty() && !ib.isEmpty()) return ia.equals(ib);
         return a.title.equalsIgnoreCase(b.title);
     }
 
     /** A book's chapter title for {@code target}'s current item (Now playing knows it): the mini player's second line. */
     public static void detail(String target, String chapter) {
-        Entry e = "local".equals(target) ? local : remote;
-        String c = chapter == null ? "" : chapter;
-        if (e == null || e.detail.equals(c)) return;
-        report(new Entry(e.target, e.targetName, e.title, e.artist, e.artworkUrl, e.playing, e.canNext, e.positionMs, e.durationMs,
-                e.reportedAt, e.transport, e.starting, c, e.mediaId));
+        boolean changed;
+        synchronized (NowPlayingNote.class) {
+            Entry e = "local".equals(target) ? local : remote;
+            String c = chapter == null ? "" : chapter;
+            if (e == null || e.detail.equals(c)) return;
+            changed = apply(new Entry(e.target, e.targetName, e.title, e.artist, e.artworkUrl, e.playing, e.canNext, e.positionMs,
+                    e.durationMs, e.reportedAt, e.transport, e.starting, c, e.mediaId, e.listId));
+        }
+        if (changed) tell();
     }
 
     /** What the strip shows: the one playing (the newer, if both are), else the newer paused one; null for none. */
@@ -207,7 +277,7 @@ public final class NowPlayingNote {
 
     public static void unlisten(Listener l) { listeners.remove(l); }
 
-    static void clearForTests() { local = null; remote = null; listeners.clear(); startedOver.clear(); }
+    static synchronized void clearForTests() { local = null; remote = null; listeners.clear(); startedOver.clear(); }
 
     /** Same as far as the strip is concerned. Position is carried forward, so a report that only moved it is not news. */
     private static boolean same(Entry a, Entry b) {
@@ -215,7 +285,8 @@ public final class NowPlayingNote {
         if (!(a.target.equals(b.target) && a.title.equals(b.title) && a.playing == b.playing
                 && a.targetName.equals(b.targetName) && a.artist.equals(b.artist)
                 && a.artworkUrl.equals(b.artworkUrl) && a.canNext == b.canNext && a.durationMs == b.durationMs
-                && a.starting == b.starting && a.detail.equals(b.detail) && a.mediaId.equals(b.mediaId))) return false;
+                && a.starting == b.starting && a.detail.equals(b.detail) && a.mediaId.equals(b.mediaId)
+                && a.listId.equals(b.listId))) return false;
         // Off by more than 2 s from where the strip thinks it is: a seek; worth redrawing.
         return Math.abs(a.positionAt(b.reportedAt) - b.positionMs) < 2000;
     }

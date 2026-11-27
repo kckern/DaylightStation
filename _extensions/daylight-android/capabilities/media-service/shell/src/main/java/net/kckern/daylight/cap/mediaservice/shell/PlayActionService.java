@@ -232,6 +232,8 @@ public class PlayActionService extends Service {
                         : elapsed >= attempt.budgetMs ? PlayStart.Why.TOO_SLOW
                         : net.kckern.daylight.shellkit.FailureWords.networkValidated(this) ? PlayStart.Why.UNKNOWN : PlayStart.Why.OFFLINE;
                 finish(PlayStart.failure(attempt.title, cause), currentStartId);
+                // The mini player goes back to what played before, at once.
+                net.kckern.daylight.shellkit.NowPlayingNote.abandonStart("local");
                 return;
             }
             case RELEASE: finish(null, currentStartId); return;

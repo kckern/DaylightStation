@@ -3,6 +3,7 @@ package net.kckern.daylight.cap.mediaservice.shell;
 import android.os.SystemClock;
 
 import androidx.media3.common.C;
+import androidx.media3.common.MediaItem;
 import androidx.media3.common.MediaMetadata;
 import androidx.media3.common.Player;
 
@@ -20,7 +21,7 @@ final class NowPlayingNotes {
         long duration = p.getDuration();
         // A screen's player names the screen as its artist; the strip says where on its own.
         String artist = "local".equals(target) && m.artist != null ? m.artist.toString() : "";
-        androidx.media3.common.MediaItem item = any ? p.getCurrentMediaItem() : null;
+        MediaItem item = any ? p.getCurrentMediaItem() : null;
         return new NowPlayingNote.Entry(target, targetName,
                 m.title == null ? "" : m.title.toString(), artist,
                 m.artworkUri == null ? "" : m.artworkUri.toString(),
@@ -33,7 +34,19 @@ final class NowPlayingNotes {
                         p.play();
                     }
                     @Override public void next() { if (p.hasNextMediaItem()) p.seekToNext(); }
-                }, false, "", item == null ? "" : item.mediaId);
+                }, false, "", item == null ? "" : item.mediaId,
+                item == null ? "" : listOf(NodeItems.listId(item), item.localConfiguration == null ? null : item.localConfiguration.tag));
+    }
+
+    /**
+     * The list an item plays from: its own list id, else, for the start item of a tapped list,
+     * the list asked for (its QueueTag, in this process only). "" for none.
+     */
+    static String listOf(String listId, Object tag) {
+        if (listId != null && !listId.isEmpty()) return listId;
+        if (!(tag instanceof QueueTag)) return "";
+        String asked = ((QueueTag) tag).sourceId;
+        return asked.startsWith("c:") ? asked : "";
     }
 
     /**
@@ -48,7 +61,7 @@ final class NowPlayingNotes {
     }
 
     /** What a play request shows of itself (title, artist or album artist, cover); null when it has no title. */
-    static String[] face(androidx.media3.common.MediaItem request) {
+    static String[] face(MediaItem request) {
         if (request == null) return null;
         MediaMetadata m = request.mediaMetadata;
         String title = m.title == null ? "" : m.title.toString().trim();

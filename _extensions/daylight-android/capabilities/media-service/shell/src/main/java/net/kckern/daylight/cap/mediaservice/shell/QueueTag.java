@@ -50,6 +50,14 @@ final class QueueTag {
         return items;
     }
 
+    /** The id asked for, from the tagged start item; "" when it carries no tag. */
+    static String askedOf(List<MediaItem> items, int start) {
+        if (items == null || items.isEmpty()) return "";
+        MediaItem first = items.get(Math.max(0, Math.min(start, items.size() - 1)));
+        Object tag = first.localConfiguration == null ? null : first.localConfiguration.tag;
+        return tag instanceof QueueTag ? ((QueueTag) tag).sourceId : "";
+    }
+
     static String defaultLabel(MediaItem item) {
         CharSequence album = item.mediaMetadata.albumTitle;
         if (album != null && album.length() > 0) return album.toString();

@@ -553,22 +553,37 @@ from the phone, under 2 s from home).
   the rule: a tapped list matches its own id, a tapped track its own id, never its
   parent's other tracks. The previous item is recorded **at the tap**: a browse page
   passes what this phone's player holds as `starting.previous` (its own controller's
-  item, else the mini player's last report; `Starting.previousAt`), and Now playing
-  playing the item itself notes what its controller held just before its request.
-  Otherwise Now playing counts only what its controller saw from before the tap
+  item, else the mini player's last report; `Starting.previousAt`; nothing when its
+  controller still holds a request), and Now playing playing the item itself notes what
+  its controller held just before its request. An intent without `starting.previous`
+  takes the mini player's entry as it was before the start replaced it
+  (`Starting.previousFromNote`). Otherwise Now playing counts only what its controller
+  saw from before the tap
   (`Starting.notePrevious` with the time it saw it): a controller that connected after
   the tap may already see the tapped item, since a kept album resolves on the phone at
   once, and that is the start landing, never the previous item (2026-11-27: it was, and
   the album showed "Starting…" with a blank cover over its own playing track until the
   track changed or the start "failed"). With the previous item unknown, a change after
-  the tap, a matching name or playing for 1.5 s counts as landed. The mini player
+  the tap, a matching name or playing for 1.5 s counts as landed. Once the media service
+  has answered the tap (`Starting.answered`, in process) and the player has changed since,
+  what it holds is the answer, even the item that played before: a re-tapped album
+  reloads the track that was playing and lands at once (`Starting.reloadedSinceAnswer`).
+  The mini player
   switches at the tap too, on every play path: Now playing, a widget or tile
   (`PlayActionService`), a play from Android Auto, and Play next or Add to queue on an
   empty queue each write the start to `NowPlayingNote` (`NowPlayingNotes.starting`),
   which then holds back the player's reports of the previous item, or of nothing yet,
   for up to 30 s (`NowPlayingNote.holdsStart`). The previous item is told by its
   content id, by title only when an id is unknown: a new book whose first part has the
-  old one's title ("Canto I", "Chapter 1") is not held. Now playing opened from a bar
+  old one's title ("Canto I", "Chapter 1") is not held, and a start of another book's
+  "Chapter 1" still writes its note. A report of the tapped item, or of a track of the
+  tapped list (the entry's list id: the track's own, or the tapped list on its start
+  item), goes through at once, so a re-tapped album is not held; a tap of the list the
+  bar's item already plays from writes no start. A start that fails (a widget's, a
+  refused play from the car or a browse page, a browse page whose player did not answer)
+  gives the bar back what played before at once (`NowPlayingNote.abandonStart`). This
+  phone's entries carry the player's content id; a screen's carry the content id its
+  session reports, and a screen that reports none falls back to titles. Now playing opened from a bar
   that shows a start shows that start.
 - **Switching to a screen.** The picker reads each screen's session as it opens; that
   answer goes with the pick into Now playing and the remote (`ScreenPlayer` starts from

@@ -303,9 +303,8 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
         }
         // The phone's mini player too (Now playing is not over a car's tap to say so).
         if (controller != null && DrivingRadio.isCar(controller) && requested.size() == 1) {
-            final String[] face = NowPlayingNotes.face(requested.get(0));
-            final String tappedId = requested.get(0).mediaId;
-            main.post(() -> NowPlayingNotes.starting(tappedId, face));
+            // On the main thread already: the note is in before the new item's first report.
+            NowPlayingNotes.starting(requested.get(0).mediaId, NowPlayingNotes.face(requested.get(0)));
         }
         // The car's now-playing card shows the tapped item at once, not the previous one.
         if (requested.size() == 1 && requested.get(0).mediaMetadata.title != null) {
@@ -349,6 +348,8 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
     /** Hands the queue over; when the order was chosen, the player's shuffle goes off in the same step. */
     private void answer(MediaSession session, SettableFuture<MediaSession.MediaItemsWithStartPosition> future,
                         MediaSession.MediaItemsWithStartPosition items, boolean ownOrder) {
+        // Now playing showing this tap as starting: what the player holds from now on is the answer (Starting.reloadedSinceAnswer).
+        Starting.answered(QueueTag.askedOf(items.mediaItems, items.startIndex), android.os.SystemClock.elapsedRealtime());
         // With the queue, a new source sets its own shuffle (QueueTag); the old one is left as it was for Undo.
         if (!ownOrder || QueueController.live() != null) { future.set(items); return; }
         main.post(() -> {
@@ -362,6 +363,8 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
         main.post(() -> {
             androidx.media3.common.Player p = session.getPlayer();
             if (p instanceof QueuePlayer) ((QueuePlayer) p).clearStarting();
+            // The mini player goes back to what played before (a car's or a browse page's start).
+            net.kckern.daylight.shellkit.NowPlayingNote.abandonStart("local");
         });
         // Media3 drops a refused set without a player error: tell Now playing, which is
         // showing the tapped item as starting, so it says so now and not after 30 s.

@@ -84,14 +84,56 @@ final class Starting {
 
     /**
      * What a tapping screen passes as EXTRA_PREVIOUS: its own connected controller's item
-     * ("" for none, or for a request still resolving), else this phone's mini player entry,
-     * which the service reported before the tap ("" when nothing is loaded). Null when it
-     * cannot know (another start in flight, an entry with no id): the extra is left off.
+     * ("" for none), else this phone's mini player entry, which the service reported before
+     * the tap ("" when nothing is loaded). Null when it cannot know (a request still
+     * resolving, another start in flight, an entry with no id): the extra is left off.
      */
     static String previousAt(boolean connected, String controllerId, net.kckern.daylight.shellkit.NowPlayingNote.Entry note) {
-        if (connected) return controllerId == null || NowPlayingActivity.isRequest(controllerId) ? "" : controllerId;
+        if (connected) {
+            if (controllerId == null) return "";
+            return NowPlayingActivity.isRequest(controllerId) ? null : controllerId;
+        }
         if (note == null) return "";
         return note.starting || note.mediaId.isEmpty() ? null : note.mediaId;
+    }
+
+    /**
+     * With no EXTRA_PREVIOUS on the intent: the mini player's entry, read before this start
+     * replaced it, is what the player held at the tap (previousAt). A fresh Now playing
+     * connects after the tap, so without this the old track playing on through a slow
+     * resolve would count as landed after 1.5 s. Never replaces the tap's own answer.
+     */
+    void previousFromNote(net.kckern.daylight.shellkit.NowPlayingNote.Entry note) {
+        if (previous != null) return;
+        String p = previousAt(false, null, note);
+        if (p != null) previousAtTap(p);
+    }
+
+    /** The phone's last answered play request (LibraryCallback): its content id and when (elapsedRealtime). */
+    private static volatile String answeredId = "";
+    private static volatile long answeredAt = -1;
+
+    /** The media service answered a play request for {@code mediaId} at {@code at}; the player takes the items next. */
+    static void answered(String mediaId, long at) {
+        answeredId = bareId(cut(mediaId));
+        answeredAt = at;
+    }
+
+    /**
+     * Whether the service answered this tap and the player's state was seen at or after that
+     * ({@code seenAt}: the controller's last item change or its connection). Then what the
+     * player holds is the answer, even the item that played before the tap: a re-tapped
+     * album reloads the track that was playing (2026-11-27: it sat on "Starting…").
+     */
+    boolean reloadedSinceAnswer(long seenAt) {
+        long at = answeredAt;
+        return at >= askedAt && seenAt >= at && answeredId.equals(tappedId());
+    }
+
+    private static String cut(String id) {
+        if (id == null) return "";
+        int bar = id.indexOf('|');
+        return bar < 0 ? id : id.substring(0, bar);
     }
 
     /**
@@ -126,7 +168,14 @@ final class Starting {
      */
     boolean landed(String currentId, String listId, boolean request, boolean changedSinceTap,
                    boolean nameMatches, boolean playingAWhile) {
+        return landed(currentId, listId, request, changedSinceTap, nameMatches, playingAWhile, false);
+    }
+
+    /** As above; {@code reloaded}: the service answered this tap and the player changed since (reloadedSinceAnswer). */
+    boolean landed(String currentId, String listId, boolean request, boolean changedSinceTap,
+                   boolean nameMatches, boolean playingAWhile, boolean reloaded) {
         if (request) return false;
+        if (reloaded && currentId != null && !currentId.isEmpty()) return true;
         if (currentId != null && !currentId.isEmpty() && !suppresses(currentId)) return true;
         if (listId != null && !listId.isEmpty() && mediaId.startsWith("c:") && !suppresses(listId)) return true;
         if (previous != null && !previous.isEmpty() && previous.equals(bareId(currentId))) return false;

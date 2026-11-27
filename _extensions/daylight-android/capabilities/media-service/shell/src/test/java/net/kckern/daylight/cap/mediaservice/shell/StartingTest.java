@@ -116,7 +116,7 @@ public class StartingTest {
     @Test public void theTappingScreenSaysWhatPlayedAtTheTap() {
         // Its own connected controller first; a request still resolving is not an item.
         assertEquals("plex:9", Starting.previousAt(true, "plex:9", note("plex:1", false)));
-        assertEquals("", Starting.previousAt(true, "c:plex:4", null));
+        assertNull("a request still resolving: not known", Starting.previousAt(true, "c:plex:4", null));
         assertEquals("", Starting.previousAt(true, null, note("plex:1", false)));
         // Not connected yet: the mini player's last report, made before the tap.
         assertEquals("plex:1", Starting.previousAt(false, null, note("plex:1", false)));
@@ -126,16 +126,55 @@ public class StartingTest {
         assertNull(Starting.previousAt(false, null, note("", false)));
     }
 
-    @Test public void theIntentsPreviousExtraIsRead() {
+    @Test public void ofReadsThePreviousExtraAsFromPassesIt() {
         // Starting.from(Intent) reads its extras into Starting.of (Android's Intent is not available to JVM tests).
-        Starting s = Starting.of("local", 1_000, "c:plex:50", "Mix", "", "", false, false, "p:plex:9");
+        Starting s = Starting.of("local", 1_000, "c:plex:50", "Mix", "", "", /*play*/ false, /*longForm*/ false, "p:plex:9");
         assertEquals("plex:9", s.previous);
         assertFalse(s.landed("plex:9", "", false, true, true, true));
-        Starting none = Starting.of("local", 1_000, "c:plex:50", "Mix", "", "", false, false, "");
+        Starting none = Starting.of("local", 1_000, "c:plex:50", "Mix", "", "", /*play*/ false, /*longForm*/ false, "");
         assertEquals("", none.previous);
-        Starting absent = Starting.of("local", 1_000, "c:plex:50", "Mix", "", "", false, false, null);
+        Starting absent = Starting.of("local", 1_000, "c:plex:50", "Mix", "", "", /*play*/ false, /*longForm*/ false, null);
         assertNull("no extra: not known", absent.previous);
-        assertNull("nothing to show", Starting.of("local", 0, null, "  ", null, null, false, false, null));
-        assertTrue(Starting.of("local", 0, "c:plex:1", "Book", "", "", true, true, null).longForm);
+        assertNull("nothing to show", Starting.of("local", 0, null, "  ", null, null, /*play*/ false, /*longForm*/ false, null));
+        assertTrue(Starting.of("local", 0, "c:plex:1", "Book", "", "", /*play*/ true, /*longForm*/ true, null).longForm);
+    }
+
+    @Test public void withNoPreviousFromTheTapTheMiniPlayersReportIsIt() {
+        // A launcher that sets no starting.previous: the bar's report, read before the start replaced it.
+        Starting s = new Starting("local", "c:plex:50", "Mix", "", "", 1_000);
+        s.previousFromNote(note("plex:1", false));
+        assertEquals("plex:1", s.previous);
+        // The old track still plays at 2 s (a slow resolve): not landed.
+        assertFalse(s.landed("plex:1", "", false, false, false, true));
+        assertTrue(s.landed("plex:77", "", false, false, false, true));
+        // A start already showing on the bar: not known, so the timestamp rule stands.
+        Starting t = new Starting("local", "c:plex:50", "Mix", "", "", 1_000);
+        t.previousFromNote(note("", true));
+        assertNull(t.previous);
+        // The tap's own answer is never replaced.
+        Starting u = new Starting("local", "c:plex:50", "Mix", "", "", 1_000);
+        u.previousAtTap("plex:9");
+        u.previousFromNote(note("plex:1", false));
+        assertEquals("plex:9", u.previous);
+    }
+
+    @Test public void reTappingThePlayingAlbumLandsOnceThePlayerReloadedIt() {
+        Starting s = new Starting("local", "c:plex:50", "The Album", "", "", 1_000);
+        s.previousAtTap("plex:77"); // its first track was playing
+        assertFalse(s.landed("plex:77", "", false, true, true, true, false));
+        // The service answered the tap and the player changed after that: what it holds is the answer.
+        assertTrue(s.landed("plex:77", "", false, true, false, false, true));
+        assertFalse("never our own request", s.landed("c:plex:50", "", true, true, false, false, true));
+    }
+
+    @Test public void theAnswerToATapCountsOnlyForThatTapAndAfterIt() {
+        Starting.answered("c:plex:50", 1_200);
+        Starting s = new Starting("local", "c:plex:50", "The Album", "", "", 1_000);
+        assertTrue("seen after the answer", s.reloadedSinceAnswer(1_250));
+        assertFalse("seen before it", s.reloadedSinceAnswer(1_100));
+        Starting other = new Starting("local", "c:plex:60", "Another", "", "", 1_000);
+        assertFalse(other.reloadedSinceAnswer(1_250));
+        Starting later = new Starting("local", "c:plex:50", "The Album", "", "", 1_300);
+        assertFalse("an answer to an earlier tap", later.reloadedSinceAnswer(1_400));
     }
 }

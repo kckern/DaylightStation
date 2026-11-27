@@ -117,4 +117,46 @@ public class NowPlayingNoteTest {
         NowPlayingNote.starting("local", "This phone", "Chapter 1", "", "", 2_000);
         org.junit.Assert.assertFalse(NowPlayingNote.forTarget("local").starting);
     }
+
+    private static NowPlayingNote.Entry track(String title, String id, String listId, long at) {
+        return new NowPlayingNote.Entry("local", "This phone", title, "", "", true, false, 0, -1, at, null, false, "", id, listId);
+    }
+
+    @Test public void aFailedStartGivesBackWhatPlayedBefore() {
+        NowPlayingNote.report(track("Y", "plex:1", "", 1_000));
+        NowPlayingNote.starting("local", "This phone", "X", "", "", 2_000, "c:plex:2");
+        NowPlayingNote.abandonStart("local");
+        assertEquals("Y", NowPlayingNote.forTarget("local").title);
+        org.junit.Assert.assertFalse(NowPlayingNote.forTarget("local").starting);
+        // Y's reports count at once again (nothing is held).
+        NowPlayingNote.report(track("Y", "plex:1", "", 2_500));
+        assertEquals("Y", NowPlayingNote.forTarget("local").title);
+        // Nothing before: nothing after.
+        NowPlayingNote.clearForTests();
+        NowPlayingNote.starting("local", "This phone", "X", "", "", 1_000, "c:plex:2");
+        NowPlayingNote.abandonStart("local");
+        assertNull(NowPlayingNote.forTarget("local"));
+        // No start showing: nothing changes.
+        NowPlayingNote.report(track("Z", "plex:3", "", 3_000));
+        NowPlayingNote.abandonStart("local");
+        assertEquals("Z", NowPlayingNote.forTarget("local").title);
+    }
+
+    @Test public void reTappingThePlayingAlbumIsNotHeld() {
+        // Its track plays with no list id; the tap writes a start.
+        NowPlayingNote.report(track("Main title", "plex:77", "", 1_000));
+        NowPlayingNote.starting("local", "This phone", "The Album", "", "", 2_000, "c:plex:50");
+        org.junit.Assert.assertTrue(NowPlayingNote.forTarget("local").starting);
+        // The player reloads the same track, now as the start of the tapped list: it lands at once.
+        NowPlayingNote.report(track("Main title", "plex:77", "plex:50", 2_400));
+        org.junit.Assert.assertFalse(NowPlayingNote.forTarget("local").starting);
+        // Tapped again while the bar knows its list: no start at all.
+        NowPlayingNote.starting("local", "This phone", "The Album", "", "", 3_000, "c:plex:50");
+        org.junit.Assert.assertFalse(NowPlayingNote.forTarget("local").starting);
+    }
+
+    @Test public void theSameItemIsToldByItsContentIdOnBothSides() {
+        org.junit.Assert.assertTrue(NowPlayingNote.sameItem(track("A", "p:plex:1|plex:9", "", 0), track("B", "plex:1", "", 0)));
+        org.junit.Assert.assertFalse(NowPlayingNote.sameItem(track("A", "c:plex:1", "", 0), track("A", "plex:2", "", 0)));
+    }
 }

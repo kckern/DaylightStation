@@ -1881,7 +1881,11 @@ public final class BrowseActivity extends Activity {
         mine.addListener(() -> {
             if (isDestroyed() || mine != pending) { playGuard.done(); return; }
             try { controller = mine.get(); then.accept(controller); }
-            catch (Exception failed) { Toast.makeText(this, "This phone's player didn't answer. Try again", Toast.LENGTH_SHORT).show(); }
+            catch (Exception failed) {
+                Toast.makeText(this, "This phone's player didn't answer. Try again", Toast.LENGTH_SHORT).show();
+                // A start already shown on the mini player goes back to what played before.
+                net.kckern.daylight.shellkit.NowPlayingNote.abandonStart(NowPlayingActivity.LOCAL);
+            }
             finally { playGuard.done(); }
         }, main::post);
     }
