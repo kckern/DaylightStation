@@ -553,9 +553,9 @@ public class PhoneHomeActivity extends Activity {
                 section("Your playlists");
                 playlistTiles(mine);
             }
-            row("Browse library", "Audiobooks, music, playlists, talks", "play", "›", () -> openBrowse("library"));
+            flatRow("Browse library", "Audiobooks, music, playlists, talks", "play", "›", () -> openBrowse("library"));
             section("Player");
-            row("Now playing", "Control this phone or a screen", "play", "›", () -> {
+            flatRow("Now playing", "Control this phone or a screen", "play", "›", () -> {
                 // What plays now, where: Now playing opens on it (and draws it at once) rather than the last target.
                 Intent open = new Intent(nowPlaying).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
                 NowPlayingNote.Entry e = NowPlayingNote.current();
@@ -563,10 +563,10 @@ public class PhoneHomeActivity extends Activity {
                 startActivity(open);
             });
         }
-        row("Drive playlists", "The playlists on the car's Drive tab", "play", "›", this::showMediaChoices);
-        row("Driving Radio", "Set the default and day rules", "play", "›", this::showDrivingRadio);
+        flatRow("Drive playlists", "The playlists on the car's Drive tab", "play", "›", this::showMediaChoices);
+        flatRow("Driving Radio", "Set the default and day rules", "play", "›", this::showDrivingRadio);
         if (!canPinWidgets()) {
-            row("Widget on Home", "How to put a playlist on your home screen", "open", "›",
+            flatRow("Widget on Home", "How to put a playlist on your home screen", "open", "›",
                     () -> showManualWidgetPlacement(null));
         }
     }
@@ -1202,7 +1202,7 @@ public class PhoneHomeActivity extends Activity {
             loadRemotes(screensBox, remote);
             section("Devices");
         }
-        row("Freematics", "Manage Bluetooth connection", "open", "›",
+        flatRow("Freematics", "Manage Bluetooth connection", "open", "›",
                 () -> startActivity(new Intent(this, FreematicsActivity.class)));
     }
 
@@ -1240,7 +1240,7 @@ public class PhoneHomeActivity extends Activity {
                 String id = sc.optString("id"), name = sc.optString("name", id);
                 // A speaker or headset has no screen to move around: no remote for it.
                 if (id.isEmpty() || "speaker".equals(sc.optString("type"))) continue;
-                row(name, "Remote control for " + name, "remote", "›", () -> startActivity(new Intent(remote)
+                flatRow(name, "Arrows, OK and Back", "remote", "›", () -> startActivity(new Intent(remote)
                         .putExtra("target", id).putExtra("targetName", name).putExtra("pad", true)
                         .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP)));
             }
@@ -1783,6 +1783,54 @@ public class PhoneHomeActivity extends Activity {
         if (buttonRow.getChildCount() == 0) buttonParams.setMarginEnd(dp(6));
         buttonRow.addView(line, buttonParams);
         if (placementPanel != null) setupRows.add(line);
+    }
+
+    /**
+     * A flat row (rule 3, D4): full width, no box, 64 dp; a muted 24 dp glyph, the name as a
+     * title, what it does as a muted second line, and a chevron. For lists of places to go
+     * (Browse library, the Player rows, the screens to remote-control, devices).
+     */
+    private void flatRow(String name, String line, String glyph, String indicator, Runnable click) {
+        buttonRow = null;
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setMinimumHeight(dp(64));
+        row.setPaddingRelative(dp(4), dp(8), dp(4), dp(8));
+        row.setBackground(t.pressable(null));
+        row.setOnClickListener(v -> click.run());
+        row.setFocusable(true);
+        row.setContentDescription(line.equals(name) ? name : name + ", " + line);
+        row.setAccessibilityDelegate(new View.AccessibilityDelegate() {
+            @Override public void onInitializeAccessibilityNodeInfo(View host, AccessibilityNodeInfo info) {
+                super.onInitializeAccessibilityNodeInfo(host, info);
+                info.setClassName(Button.class.getName());
+            }
+        });
+        ImageView icon = new ImageView(this);
+        icon.setImageResource(drawable(glyph));
+        icon.setImageTintList(android.content.res.ColorStateList.valueOf(t.inkMuted));
+        icon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        row.addView(icon, dp(24), dp(24));
+        LinearLayout words = new LinearLayout(this);
+        words.setOrientation(LinearLayout.VERTICAL);
+        words.setPaddingRelative(dp(16), 0, dp(8), 0);
+        words.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        TextView title = t.text(this, name, Type.BODY, t.ink, true);
+        title.setMaxLines(1);
+        title.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        words.addView(title);
+        if (!line.equals(name)) {
+            TextView sub = label(line, Type.LABEL, t.inkMuted);
+            sub.setMaxLines(1);
+            sub.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            words.addView(sub);
+        }
+        row.addView(words, new LinearLayout.LayoutParams(0, -2, 1));
+        TextView cue = PlaylistPicker.glyph(this, indicator, 20, t.inkMuted);
+        cue.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        row.addView(cue);
+        column.addView(row, new LinearLayout.LayoutParams(-1, -2));
+        if (placementPanel != null) setupRows.add(row);
     }
 
     private Button actionButton(String text, String item, Runnable click) {
