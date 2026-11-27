@@ -332,7 +332,7 @@ final class BrowseTree {
         long left = row.has("remainingSec") ? row.optLong("remainingSec")
                 : Math.max(0, row.optLong("duration") - row.optLong("playhead"));
         // The phone's one form for "left" (shell-kit TimeLeft): the whole book from its place, at 1×.
-        long minutes = Math.max(0, left) / 60;
+        long minutes = (Math.max(0, left) + 30) / 60;   // to the nearest minute, as TimeLeft
         String leftText = minutes >= 60 ? (minutes / 60) + " h " + (minutes % 60) + " min left"
                 : minutes > 0 ? minutes + " min left" : "Under a minute left";
         int n = row.optInt("partIndex", 0), of = row.optInt("partCount", 0);

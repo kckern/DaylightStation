@@ -20,7 +20,7 @@ public class ChaptersTest {
         assertEquals(3, c.count());
         assertEquals("Chapter 2 of 3 · 9 min left in chapter", c.line(660_000, 1f));
         assertEquals("Chapter 2 of 3 · 9 min left in chapter", c.line(660_000, 1.5f));   // at 1×: TimeLeft
-        assertEquals("Chapter 3 of 3 · Under a minute left in chapter", c.line(1_770_000, 1f));
+        assertEquals("Chapter 3 of 3 · Under a minute left in chapter", c.line(1_780_000, 1f));
         assertEquals("Chapter 2 of 3", c.subtitle(660_000));
     }
 

@@ -788,7 +788,7 @@ public class MediaServiceCapabilityTest {
         java.util.List<MediaNode> nodes = BrowseTree.continueNodes(BrowseTree.continueItems(api.recent(50), null, 8), lists);
         assertEquals(2, nodes.size());
         assertEquals("p:plex:727120", nodes.get(0).toJson().getString("id"));
-        assertTrue(nodes.get(0).toJson().getString("subtitle").startsWith("4 h 53 min left"));
+        assertTrue(nodes.get(0).toJson().getString("subtitle").startsWith("4 h 54 min left"));   // 17622 s, to the nearest minute
         assertEquals("c:plex:900", nodes.get(1).toJson().getString("id"));
         assertTrue(nodes.get(1).toJson().getBoolean("playable"));
     }
