@@ -57,9 +57,14 @@ final class BackendMediaApi implements MediaApi {
      * path. No mediaType or capability filter is sent: the route's capability filter
      * would drop playlists and albums, and mediaType is handed to the adapters, not
      * applied to the merged result. What comes back is filtered by BrowseTree.fromSearch.
+     * Only Plex is asked (source=plex): unfiltered, the route waits for every source the
+     * household has (photos, files, sing-along, Audiobookshelf), 8 s on the real phone
+     * against 0.4 s for Plex alone, and none of the others is audio this player lists
+     * (Audiobookshelf mirrors the Plex audiobook folders; the list source finds nothing
+     * Plex does not).
      */
     @Override public JSONObject search(String text, int take) throws Exception {
-        return get("search", "/api/v1/content/query/search?text=" + URLEncoder.encode(text, "UTF-8") + "&take=" + take);
+        return get("search", "/api/v1/content/query/search?text=" + URLEncoder.encode(text, "UTF-8") + "&take=" + take + "&source=plex");
     }
 
     @Override public JSONObject log(JSONObject body) throws Exception {
