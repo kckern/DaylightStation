@@ -1346,8 +1346,12 @@ public final class BrowseActivity extends Activity {
             // None yet, or a finished one whose controller has gone: releasing the future releases that controller.
             if (pending != null) MediaController.releaseFuture(pending);
             controller = null;
-            SessionToken token = new SessionToken(this, new ComponentName(this, DaylightMediaService.class));
-            pending = new MediaController.Builder(this, token).buildAsync();
+            // The application's context: a play's tap often finishes this page (Now playing opens with
+            // CLEAR_TOP), and Android drops a finished activity's bindings itself; releasing a controller
+            // bound to it afterwards unbinds twice and crashed the app ("Service not registered").
+            android.content.Context app = getApplicationContext();
+            SessionToken token = new SessionToken(app, new ComponentName(app, DaylightMediaService.class));
+            pending = new MediaController.Builder(app, token).buildAsync();
         }
         final ListenableFuture<MediaController> mine = pending;
         mine.addListener(() -> {
@@ -1380,9 +1384,13 @@ public final class BrowseActivity extends Activity {
                 .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP), mediaId, name, by, cover);
         if (stage != null) now.putExtra(NowPlayingActivity.EXTRA_STAGE, stage);
         startActivity(now);
+        // The queue's source: what "Next from …" names (queue spec §3).
+        String source = QueueVerbs.label(mediaId, name, title, MODE_SEARCH.equals(mode) && field != null ? field.getText().toString() : "");
+        QueueVerbs.notePlay(source);
         withController(c -> {
-            if (atMs >= 0) c.setMediaItem(NowPlayingActivity.playRequest(mediaId, shuffle), atMs);
-            else c.setMediaItem(NowPlayingActivity.playRequest(mediaId, shuffle));
+            MediaItem request = QueueTag.request(NowPlayingActivity.playRequest(mediaId, shuffle), source);
+            if (atMs >= 0) c.setMediaItem(request, atMs);
+            else c.setMediaItem(request);
             c.prepare();
             c.play();
         });
@@ -1390,6 +1398,8 @@ public final class BrowseActivity extends Activity {
 
     private void enqueue(String mediaId, boolean next, String name) {
         action(next ? "play_next" : "add_to_queue");
+        // The queue's own verbs: Play next to the end of the next block, Add to queue before the source (QueueVerbs).
+        if (QueueVerbs.enqueue(this, mediaId, next, name)) return;
         withController(c -> {
             MediaItem item = new MediaItem.Builder().setMediaId(mediaId).build();
             if (c.getMediaItemCount() == 0) { c.setMediaItem(item); c.prepare(); }

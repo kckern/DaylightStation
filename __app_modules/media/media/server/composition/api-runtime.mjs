@@ -166,3 +166,17 @@ export async function createMediaApiRuntime({ configService, mediaProgressMemory
 
   return { householdMediaMemory, mediaHouse };
 }
+
+/**
+ * A player's queue saved as a household list (the phone's Queue → Save as playlist):
+ * POST /api/v1/media/household/playlists on the media router. Mounted from the app once
+ * the list management service exists (it is composed after the media runtime).
+ */
+export async function mountHouseholdPlaylists({ v1Routers, listManagementService, rootLogger }) {
+  if (!v1Routers?.media || !listManagementService) return;
+  const { createHouseholdPlaylistsRouter } = await import("../api/householdPlaylists.mjs");
+  v1Routers.media.use(createHouseholdPlaylistsRouter({
+    listManagementService,
+    logger: rootLogger.child({ module: 'media-api' }),
+  }));
+}

@@ -64,6 +64,11 @@ final class PayloadMedia {
     }
 
     /** Marks these items finished (or not) for the household. */
+    /** Save as playlist: {ok, id: "menu:<name>", title, count}. Items are {id: content id, title}. */
+    String savePlaylist(String title, JSONArray items, long waitMs) throws Exception {
+        return port.call(new JSONObject().put("op", "save-playlist").put("title", title).put("items", items).toString(), waitMs);
+    }
+
     String markFinished(java.util.List<String> contentIds, boolean finished, long waitMs) throws Exception {
         return port.call(new JSONObject().put("op", "mark-finished").put("ids", new org.json.JSONArray(contentIds))
                 .put("finished", finished).toString(), waitMs);

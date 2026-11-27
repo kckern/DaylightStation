@@ -287,7 +287,7 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
             queries.add(item.requestMetadata == null ? null : item.requestMetadata.searchQuery);
         }
         if (!shuffle && FirstTap.races(ids, queries, startPositionMs)) {
-            race(session, ids.get(0), order != null, future);
+            race(session, ids.get(0), order != null, requested, future);
             return future;
         }
         try {
@@ -296,7 +296,9 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
                     TrackAnswer r = resolve(requested, startIndex, startPositionMs, shuffle);
                     long defaultPosition = r.startPositionMs > 0 ? r.startPositionMs : C.TIME_UNSET;
                     long position = r.selectionResolved && startPositionMs >= 0 ? startPositionMs : defaultPosition;
-                    answer(session, future, new MediaSession.MediaItemsWithStartPosition(NodeItems.tracks(r.tracks), r.startIndex, position),
+                    // The start item carries the source's name to the queue (QueueTag).
+                    answer(session, future, new MediaSession.MediaItemsWithStartPosition(
+                            QueueTag.tag(NodeItems.tracks(r.tracks), r.startIndex, requested, shuffle), r.startIndex, position),
                             order != null);
                 } catch (Throwable e) {
                     refused(session, future, e);
@@ -319,7 +321,8 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
     /** Hands the queue over; when the order was chosen, the player's shuffle goes off in the same step. */
     private void answer(MediaSession session, SettableFuture<MediaSession.MediaItemsWithStartPosition> future,
                         MediaSession.MediaItemsWithStartPosition items, boolean ownOrder) {
-        if (!ownOrder) { future.set(items); return; }
+        // With the queue, a new source sets its own shuffle (QueueTag); the old one is left as it was for Undo.
+        if (!ownOrder || QueueController.live() != null) { future.set(items); return; }
         main.post(() -> {
             try { session.getPlayer().setShuffleModeEnabled(false); } catch (RuntimeException released) { /* gone */ }
             future.set(items);
@@ -338,7 +341,7 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
      * at once. The first useful answer plays; when the track alone came first, the list's
      * other tracks are put around it as soon as the list is in.
      */
-    private void race(MediaSession session, String leafId, boolean ownOrder,
+    private void race(MediaSession session, String leafId, boolean ownOrder, List<MediaItem> requested,
                       SettableFuture<MediaSession.MediaItemsWithStartPosition> future) {
         final FirstTap tap = new FirstTap();
         final long t0 = android.os.SystemClock.elapsedRealtime();
@@ -354,13 +357,13 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
                 TrackAnswer whole = list;
                 switch (use) {
                     case FULL:
-                        answer(session, future, items(whole), ownOrder);
+                        answer(session, future, items(whole, requested), ownOrder);
                         break;
                     case SPLICE:
                         main.post(() -> splice(session, whole));
                         break;
                     case SINGLE:
-                        answer(session, future, items(alone.get()), ownOrder);
+                        answer(session, future, items(alone.get(), requested), ownOrder);
                         break;
                     case FAIL:
                         refused(session, future, why == null ? new IllegalStateException("nothing to play") : why);
@@ -378,7 +381,7 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
                 FirstTap.Use use = tap.single(one != null, music);
                 Log.i(TAG, "first tap: the track alone in " + (android.os.SystemClock.elapsedRealtime() - t0) + " ms"
                         + (music ? "" : " (long or with a place: waits for the list)") + " -> " + use);
-                if (use == FirstTap.Use.SINGLE) answer(session, future, items(one), ownOrder);
+                if (use == FirstTap.Use.SINGLE) answer(session, future, items(one, requested), ownOrder);
                 else if (use == FirstTap.Use.FAIL) refused(session, future, new IllegalStateException("nothing to play"));
             });
         } catch (RuntimeException stopping) {
@@ -386,9 +389,10 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
         }
     }
 
-    private static MediaSession.MediaItemsWithStartPosition items(TrackAnswer r) {
+    private static MediaSession.MediaItemsWithStartPosition items(TrackAnswer r, List<MediaItem> requested) {
         long position = r.startPositionMs > 0 ? r.startPositionMs : C.TIME_UNSET;
-        return new MediaSession.MediaItemsWithStartPosition(NodeItems.tracks(r.tracks), r.startIndex, position);
+        return new MediaSession.MediaItemsWithStartPosition(
+                QueueTag.tag(NodeItems.tracks(r.tracks), r.startIndex, requested, false), r.startIndex, position);
     }
 
     /**
@@ -397,6 +401,17 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
      * Nothing is done when the queue has changed meanwhile (another tap, a skip).
      */
     private static void splice(MediaSession session, TrackAnswer list) {
+        QueueController queue = QueueController.live();
+        if (queue != null) {
+            // The queue keeps your queued items around the track: the list's rest becomes its source.
+            List<MediaItem> all = NodeItems.tracks(list.tracks);
+            List<String> listIds = new ArrayList<>();
+            for (MediaItem m : all) listIds.add(m.mediaId);
+            MediaItem playing = queue.model().nowEntry() == null ? null : queue.model().nowEntry().item;
+            int at = FirstTap.spliceAt(listIds, list.startIndex, playing == null ? null : playing.mediaId);
+            Log.i(TAG, "first tap: " + (at >= 0 && queue.splice(all, at) ? "the list's rest is the source" : "the queue changed; the list is not added"));
+            return;
+        }
         androidx.media3.common.Player p;
         try { p = session.getPlayer(); } catch (RuntimeException released) { return; }
         MediaItem current = p.getCurrentMediaItem();

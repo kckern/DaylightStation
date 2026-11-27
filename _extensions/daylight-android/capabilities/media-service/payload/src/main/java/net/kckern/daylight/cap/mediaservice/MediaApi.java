@@ -54,4 +54,9 @@ interface MediaApi {
      * (hidden false, Undo) DELETE /api/v1/media/household/continue/hide/<contentId>.
      */
     default void hideContinue(String contentId, boolean hidden) throws Exception { throw new Refused("continue hide", 404); }
+    /**
+     * POST /api/v1/media/household/playlists: a queue saved as a household list, items in
+     * order ({id, title}). The backend's answer ({ok, id: "menu:<name>", title, count}).
+     */
+    default JSONObject savePlaylist(String title, org.json.JSONArray items) throws Exception { throw new Refused("playlists", 501); }
 }

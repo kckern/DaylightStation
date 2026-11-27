@@ -145,4 +145,5 @@ final class QueueCache implements MediaApi {
     @Override public JSONObject info(String contentId) throws Exception { return home.info(contentId); }
     @Override public JSONObject libraries() throws Exception { return home.libraries(); }
     @Override public void markWatched(String contentId, boolean watched) throws Exception { home.markWatched(contentId, watched); }
+    @Override public JSONObject savePlaylist(String title, org.json.JSONArray items) throws Exception { return home.savePlaylist(title, items); }
 }

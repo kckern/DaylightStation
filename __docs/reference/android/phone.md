@@ -483,7 +483,7 @@ targets are Media3 sessions behind one `MediaController`:
 
 | Piece | Installed (shell half) | Payload |
 |---|---|---|
-| `NowPlayingActivity` (not exported) | Laid out after Plexamp (ops:docs/superpowers/specs/2026-11-26-phone-player-parity-design.md). Top: close, the target (its icon and name, ▾ opens **Play on** with the current one checked) and, for a screen, the D-pad. The **stage** holds the cover (square, or 16:9 for a video still; swipe it left for next, right for previous, with a haptic tick), or the **lyrics** or the **queue** in its place (Back returns to the cover). Under it the **seek bar is the track's loudness** (Plex's analysis, as bars; a plain line when there is none), elapsed on the left and remaining on the right (tap: the length; remembered). Then artist, title (bold) and album (year), centred, and the audio quality ("FLAC · 24-bit · 96 kHz", "MP3 · 256 kbps · 44.1 kHz") when the backend knows it. One transport row: previous, play/pause in a disc of the cover's color, next; an item of 20 minutes or more adds back 10 / forward 10 at its ends. One icon row: queue, lyrics (enabled only when the track has lyrics), shuffle, ⋮ (the item sheet: Sleep timer, Progress bar for a book with chapters, Keep on this phone or its state, Crossfade on this phone, Stop; then Clear queue and Remove from this phone), repeat, output (opens **Play on**). A long item (a book, a talk, a course: `MediaKind.controls`) shows speed in shuffle's place and no repeat, lyrics or crossfade. The seek bar of an item of 10 minutes or more shows a time scale while it is touched (see **The seek bar's time scale**). The page takes its colors from the cover (`CoverColor`, `DaylightTheme.withAccent`) over a soft copy of it. With a screen as the target the volume keys set the screen's volume and show the level for a moment. The status line shows only when something is wrong, or a sleep timer is set. A control is enabled only when the target's player makes its command available. It opens as a sheet rising from the bottom, and the down chevron or Back drops it. **Play on** (the bottom sheet described under **Lookup and browse**) says what each player is doing (Off, Nothing playing, the title); off players are folded under **Off · N** and can't be picked. A screen with nothing on it shows **Play something on <screen>** in the stage: Continue listening and your playlists, one tap starting it there (the payload's `screen-command` `load`, i.e. `GET /api/v1/device/<id>/load?play|queue=…&deferredRetry=0`, as the web's Play on), and Browse on the screen through the D-pad. An off screen offers this phone or another screen instead. **Chapters** (a long item whose chapters the backend or the kept copy knows): a line under the album (with the bar on the chapter, "Canto 7 of 33 · 2 h 46 left in book"; on the whole book "Chapter 4 of 12 · 9 min left in chapter", or "4/12 · The Return · 9 min left" for a named one; time left at the play speed; the line is reserved blank for any long item so nothing jumps, and a tap opens the list), the seek bar on the current chapter or, by choice, the whole book with chapter notches only when they are 24 dp apart (see **The seek bar's time scale**; numbered in the press-and-hold zoom), Next / Previous by chapter (Previous restarts the chapter when more than 3 s in), the queue's place shows **Chapters · N** for a single-file book (number, name, length; a tap goes there), the sleep timer offers **End of chapter** (pauses at that chapter's end, fading over its last minute), and the session subtitle names the chapter (notification, lock screen, Android Auto). No chapters means none of this shows | Opens it on a `media/now-playing?target=` link (a `player:` action); `track-levels`, `track-lyrics` and `track-chapters` read `GET /api/v1/track/levels/<source>/<id>?samples=N`, `GET /api/v1/track/lyrics/<source>/<id>` and `GET /api/v1/track/chapters/<source>/<id>` (chapters: without home, the ones kept with the track, then the ones seen this session) (none, or an older backend's 404, is "none": the strip is a line and the button is off) |
+| `NowPlayingActivity` (not exported) | Laid out after Plexamp (ops:docs/superpowers/specs/2026-11-26-phone-player-parity-design.md). Top: close, the target (its icon and name, ▾ opens **Play on** with the current one checked) and, for a screen, the D-pad. The **stage** holds the cover (square, or 16:9 for a video still; swipe it left for next, right for previous, with a haptic tick), or the **lyrics** or the **queue** in its place (Back returns to the cover). Under it the **seek bar is the track's loudness** (Plex's analysis, as bars; a plain line when there is none), elapsed on the left and remaining on the right (tap: the length; remembered). Then artist, title (bold) and album (year), centred, and the audio quality ("FLAC · 24-bit · 96 kHz", "MP3 · 256 kbps · 44.1 kHz") when the backend knows it. One transport row: previous, play/pause in a disc of the cover's color, next; an item of 20 minutes or more adds back 10 / forward 10 at its ends. One icon row: queue, lyrics (enabled only when the track has lyrics), shuffle, ⋮ (the item sheet: Sleep timer, Progress bar for a book with chapters, Keep on this phone or its state, Crossfade on this phone, Stop; then Clear queue and Remove from this phone; the queue itself is in sections, see **The queue** below), repeat, output (opens **Play on**). A long item (a book, a talk, a course: `MediaKind.controls`) shows speed in shuffle's place and no repeat, lyrics or crossfade. The seek bar of an item of 10 minutes or more shows a time scale while it is touched (see **The seek bar's time scale**). The page takes its colors from the cover (`CoverColor`, `DaylightTheme.withAccent`) over a soft copy of it. With a screen as the target the volume keys set the screen's volume and show the level for a moment. The status line shows only when something is wrong, or a sleep timer is set. A control is enabled only when the target's player makes its command available. It opens as a sheet rising from the bottom, and the down chevron or Back drops it. **Play on** (the bottom sheet described under **Lookup and browse**) says what each player is doing (Off, Nothing playing, the title); off players are folded under **Off · N** and can't be picked. A screen with nothing on it shows **Play something on <screen>** in the stage: Continue listening and your playlists, one tap starting it there (the payload's `screen-command` `load`, i.e. `GET /api/v1/device/<id>/load?play|queue=…&deferredRetry=0`, as the web's Play on), and Browse on the screen through the D-pad. An off screen offers this phone or another screen instead. **Chapters** (a long item whose chapters the backend or the kept copy knows): a line under the album (with the bar on the chapter, "Canto 7 of 33 · 2 h 46 left in book"; on the whole book "Chapter 4 of 12 · 9 min left in chapter", or "4/12 · The Return · 9 min left" for a named one; time left at the play speed; the line is reserved blank for any long item so nothing jumps, and a tap opens the list), the seek bar on the current chapter or, by choice, the whole book with chapter notches only when they are 24 dp apart (see **The seek bar's time scale**; numbered in the press-and-hold zoom), Next / Previous by chapter (Previous restarts the chapter when more than 3 s in), the queue's place shows **Chapters · N** for a single-file book (number, name, length; a tap goes there), the sleep timer offers **End of chapter** (pauses at that chapter's end, fading over its last minute), and the session subtitle names the chapter (notification, lock screen, Android Auto). No chapters means none of this shows | Opens it on a `media/now-playing?target=` link (a `player:` action); `track-levels`, `track-lyrics` and `track-chapters` read `GET /api/v1/track/levels/<source>/<id>?samples=N`, `GET /api/v1/track/lyrics/<source>/<id>` and `GET /api/v1/track/chapters/<source>/<id>` (chapters: without home, the ones kept with the track, then the ones seen this session) (none, or an older backend's 404, is "none": the strip is a line and the button is off) |
 | `RemoteControlService`, a Media3 `MediaSessionService` (not exported, session id `screen-remote`) | A second session beside `DaylightMediaService`, holding a `ScreenPlayer`. Its notification and lock-screen card drive the screen; it reports remote playback (0–100), so the phone's volume keys set the screen's volume while it is the active session | — |
 | `ScreenPlayer`, a `SimpleBasePlayer` | The screen's snapshot as a Media3 player: its queue by `queueItemId`, its position carried forward while it plays. Every call becomes one command (`ScreenCommands`); its future completes after the session is read again, so the controls settle on what the screen did | `screens`, `screen-session`, `screen-command` (`ScreenRemote`): `GET /api/v1/device/config`, `GET /api/v1/device/<id>/session`, and the transport, queue, shuffle, repeat and volume routes of `__docs/reference/media/media-app-technical.md` §4 |
 
@@ -565,6 +565,83 @@ from the phone, under 2 s from home).
   Media3 1.1.1 keeps the session's state until `onSetMediaItems` answers, Android Auto's
   request carries only the media id, and ExoPlayer cannot hold an item with no stream to
   stand in for it.
+
+### The queue
+
+This phone's queue is in **regions**, always in this order: History (what played this
+session, at most 100), Now playing, **Queued by you** (Play next and Add to queue only),
+**Next from <source>** (the rest of the list you started: an album, a playlist, a book, a
+search group) and, after the end, **Radio** (Keep playing). A book keeps its parts ahead
+of your queued items, so queued music never plays inside a book. Spec:
+`ops:docs/superpowers/specs/2026-11-26-phone-queue.md`.
+
+| Part | Does |
+|---|---|
+| `QueueModel` (pure) | The regions on Media3's one flat timeline. Every edit is an add, a move or a remove on the player; only a new source and its Undo replace the list (the item playing changes anyway), so an edit never restarts playback |
+| `QueueController` | In the media service: the model kept in step with the ExoPlayer (a change it did not make rebuilds the regions), the end of the queue, the offline skip, telemetry, and the saved copy |
+| `QueuePlayer` | The session's player: a controller's `setMediaItems` is a new source, its adds, moves and removes go through the model, and shuffle and Repeat All are the queue's (announced to every controller; ExoPlayer's own shuffle stays off) |
+| `QueueStage`, `QueueSnackbar`, `QueueVerbs` | Now playing → Queue (its row ⋮ and screen ⋮ are the shared `ItemSheet`: the row first, then Play next or Play again, Go to album, Go to artist, and Remove last; Save as playlist's name field sits in the same sheet), the one-line notice with Undo, and the verbs as Browse and Now playing call them (in process). Browse's Play next and Add to queue are the `MediaKind` row verbs, so a book's rows never have them |
+
+- **Where each verb lands.** A tap on a row plays it, and the rest of that list follows
+  ("Next from Snakes & Arrows", "Next from search: snakes"); tapping track 1 and pressing
+  Play build the same queue. **Play next** goes to the end of the next block at the top of
+  Queued by you, so three taps play in the order tapped; the block resets once one of them
+  has played. **Add to queue** goes to the end of Queued by you, before the source (never
+  behind a 900-track playlist). An added album is one group ("Snakes & Arrows · 13 tracks",
+  opened with a tap). A book's menu has neither. **A new source** (any tap, Play, Shuffle,
+  a shortcut, the car) replaces Now playing and the source; your queued stay.
+- **Feedback.** One snackbar, drawn in the tap's frame, naming the place: "Plays next",
+  "Added to the queue · 3rd", "Playing Snakes & Arrows · your 4 queued stay" (shown when
+  Now playing opens). Each has Undo for 6 s; Undo of a new source puts the previous one
+  back at its place (an Undo pressed before the new list arrived is applied when it does).
+- **The queue screen** (Now playing → Queue): History collapsed ("History · 12", Show),
+  Now playing, Queued by you with **Clear queued**, Next from <source>, Radio, and the end
+  card. Drag the handle to reorder, within a section or between Queued by you and the
+  source (a source row dropped in your section becomes yours); swipe left to remove, with
+  Undo; ⋮ on a row: Play next, Go to album, Go to artist, Remove (a history row: Play
+  again, Remove from history). A tap on an upcoming row plays it; a tap on a past row plays
+  it again alone, the queue after it unchanged. The screen's ⋮: **Save as playlist** and
+  **Clear all but now playing** (Undo). A book is one row ("Part 2 of 5 · 4 h 48 min
+  left"). Kept rows carry the offline mark; offline, rows that need a connection are
+  dimmed ("Needs a connection"). The list draws only the rows on screen, redraws in place
+  as the player moves and keeps its scroll; Now playing scrolls into view only on opening.
+  A screen's queue (the remote) shows Now playing and Up next, without regions.
+- **Shuffle** reorders only the source; your queued are never shuffled, and shuffle stays
+  available after you add. Off restores the source's order from the item playing. The
+  order is kept, so the screen shows what really plays next. **Repeat**: Off → All (the
+  source is queued again when it runs out; your queued play once) → One (ExoPlayer's);
+  a manual skip turns One back to the mode before it. A book has neither.
+- **The end card**: Then Stop, Keep playing similar (Driving Radio's continuation, only
+  when today's Driving Radio is set; its rows are marked Radio and always behind your
+  picks; a Clear never brings it back; a new source drops it) or Repeat. For a book: Stop,
+  or "Then: your N queued"; with Stop a book pauses where your queued begin. The choice is
+  remembered per kind (`daylight.queue` prefs, `end.music` / `end.spoken`); with none,
+  books and talks stop, and music stops, or keeps playing while a car is connected (what
+  Driving Radio did before). Ended: "Finished" with Play again.
+- **Saved and restored.** Every change (and the place every 10 s while playing) is
+  written to `files/queue/state.json`: every region, the source's label, id and order,
+  shuffle, repeat and the place. When the media service starts it comes back paused at
+  the place; it never plays by itself. Opening the app starts the media service when a saved
+  queue exists (`ShellStart.wakeSavedQueue`), so the mini player shows it at once. **Stop** (the notification's ×, the sleep timer,
+  Now playing's Stop) keeps the queue; only Clear removes it.
+- **Offline.** An item that is neither on this phone nor reachable is skipped with a line
+  ("Skipped 2 that need a connection"), never in a loop; with nothing left that plays,
+  the player pauses and says so.
+- **Play on a screen.** Picking a screen while this phone plays sends the screen the
+  source (its list through `load?queue=`, else the item through `load?play=`) and pauses
+  this phone with its queue as it was. The screen starts the list from its own start or
+  saved place: the load route has no start item.
+- **Save as playlist** makes a household list from Now playing, Queued by you and the
+  source, in that order, named "Queue <date>" (renamable in the sheet): payload
+  `save-playlist` → `POST /api/v1/media/household/playlists` `{title, items:[{id, title}]}`
+  → a `menus` list (`content/lists/menus/<name>.yml`, fixed order; a name taken gets a
+  number) answering `{ok, id: "menu:<name>", title, count}`. The new list is added to Your
+  playlists.
+- **Telemetry** (offline first, `UiTelemetry`, screen `Queue`, no titles): `queue.add`
+  {verb: next|end, kind, count, position}, `queue.remove` {region}, `queue.move` {from,
+  to}, `queue.clear` {scope}, `queue.undo` {verb}, `queue.replace` {kept}, `queue.shuffle`
+  {on}, `queue.repeat` {mode}, `queue.end` {choice}, `queue.restore` {items, ms},
+  `queue.save_playlist` {count}, `queue.handoff` {with}. Log tag `Daylight-Queue`.
 
 ### The screen remote
 

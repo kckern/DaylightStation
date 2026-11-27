@@ -29,6 +29,7 @@ public final class ItemSheet {
     private final DaylightTheme t;
     private final List<SheetRows.Row> rows = new ArrayList<>();
     private View header;
+    private View extra;
 
     public static ItemSheet of(Activity a, String screen) { return new ItemSheet(a, screen); }
 
@@ -77,6 +78,9 @@ public final class ItemSheet {
         return this;
     }
 
+    /** A view of the caller's under the header, before the rows (Save as playlist's name field). */
+    public ItemSheet body(View v) { extra = v; return this; }
+
     public ItemSheet row(int icon, String label, Runnable run) { return row(icon, label, null, run); }
 
     public ItemSheet row(int icon, String label, String detail, Runnable run) {
@@ -97,6 +101,7 @@ public final class ItemSheet {
         if (header != null) body.addView(header);
         View rule = divider();
         if (header != null) body.addView(rule);
+        if (extra != null) body.addView(extra);
         for (SheetRows.Slot s : SheetRows.layout(rows)) body.addView(s.divider() ? divider() : rowView(s.row));
         event("sheet.open", rows.size());
         sheet.show();

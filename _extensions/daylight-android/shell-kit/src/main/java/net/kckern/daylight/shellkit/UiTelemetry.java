@@ -132,6 +132,11 @@ public final class UiTelemetry {
         if (t != null) t.record(name, screen, data);
     }
 
+    /** The same, from a service with no screen open yet (the media service's queue): recorded, sent later. */
+    public static void event(Context context, String screen, String name, JSONObject data) {
+        get(context).record(name, screen, data);
+    }
+
     /** Names a control for telemetry, in place of its accessibility description. */
     public static void tag(View v, String control) { v.setTag(R.id.daylight_telemetry, control); }
 

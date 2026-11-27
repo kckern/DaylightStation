@@ -87,7 +87,6 @@ public class NowPlayingActivity extends Activity {
     /** Open with the D-pad shown (a screen target only): the Connect tab's remote rows. */
     static final String EXTRA_PAD = "pad";
     private static final String PREFS = "daylight.nowplaying";
-    private static final int QUEUE_ROWS = 100;
     private static final int WAVE_SAMPLES = 96;
 
     private enum Stage { ART, LYRICS, QUEUE }
@@ -199,6 +198,8 @@ public class NowPlayingActivity extends Activity {
     private ScrollView queueScroll;
     private LinearLayout queueBox;
     private LinearLayout queueList;
+    /** This phone's queue in sections, or a screen's queue (QueueStage). */
+    private QueueStage queueStage;
     private ImageButton close, playPause, prev, next, leftEdge, rightEdge, padToggle;
     private ImageButton queueButton, lyricsButton, shuffleButton, moreButton, repeatButton, outputButton;
     private TextView leftEdgeNumber, rightEdgeNumber, clearButton;
@@ -302,6 +303,7 @@ public class NowPlayingActivity extends Activity {
         takeStarting(intent);
         if (intent != null && intent.getBooleanExtra(EXTRA_PAD, false) && remote()) showPad(true);
         openStageAsked(intent);
+        if (queueStage != null) queueStage.onResume();
     }
 
     /** A book page's Chapters: Now playing opens on its chapter list. */
@@ -336,6 +338,7 @@ public class NowPlayingActivity extends Activity {
         connect();
         main.post(ticker);
         if (screens.isEmpty() || !screensProblem.isEmpty()) loadScreens();
+        if (queueStage != null) queueStage.onResume();
     }
 
     @Override protected void onStop() {
@@ -1287,65 +1290,17 @@ public class NowPlayingActivity extends Activity {
     }
 
     private void fillQueue() {
-        queueList.removeAllViews();
-        if (chapterList()) { fillChapters(); return; }
-        MediaController c = controller;
-        Timeline timeline = c == null ? Timeline.EMPTY : c.getCurrentTimeline();
-        int count = timeline.getWindowCount();
-        int current = c == null ? -1 : c.getCurrentMediaItemIndex();
-        boolean playing = active(c);
-        boolean jump = can(Player.COMMAND_SEEK_TO_MEDIA_ITEM), change = can(Player.COMMAND_CHANGE_MEDIA_ITEMS);
-        clearButton.setVisibility(change && count > 0 ? View.VISIBLE : View.GONE);
-        queueHeading.setText(count == 0 ? "Queue" : "Queue · " + count);
-        Timeline.Window window = new Timeline.Window();
-        if (count == 0) queueList.addView(theme.text(this, "The queue is empty", Type.BODY, theme.inkMuted, false));
-        for (int i = 0; i < count && i < QUEUE_ROWS; i++) {
-            final int index = i;
-            MediaItem item = timeline.getWindow(i, window).mediaItem;
-            CharSequence name = item.mediaMetadata.title != null ? item.mediaMetadata.title : item.mediaId;
-            CharSequence by = remote() ? null : item.mediaMetadata.artist;
-            boolean now = i == current;
-            LinearLayout row = new LinearLayout(this);
-            row.setGravity(Gravity.CENTER_VERTICAL);
-            row.setMinimumHeight(dp(56));
-            row.setBackground(theme.pressable(null));
-            ImageView mark = new ImageView(this);
-            if (now) {
-                mark.setImageResource(playing ? R.drawable.daylight_np_play : R.drawable.daylight_np_pause);
-                mark.setImageTintList(ColorStateList.valueOf(theme.primary));
-                mark.setContentDescription(playing ? "Playing" : "Paused");
-            }
-            row.addView(mark, new LinearLayout.LayoutParams(dp(28), dp(20)));
-            LinearLayout words = new LinearLayout(this);
-            words.setOrientation(LinearLayout.VERTICAL);
-            TextView label = theme.text(this, name.toString(), Type.BODY, now ? theme.primary : theme.ink, now);
-            label.setMaxLines(1);
-            label.setEllipsize(TextUtils.TruncateAt.END);
-            words.addView(label);
-            if (!TextUtils.isEmpty(by)) {
-                TextView who = theme.text(this, by, Type.LABEL, theme.inkMuted, false);
-                who.setMaxLines(1);
-                who.setEllipsize(TextUtils.TruncateAt.END);
-                words.addView(who);
-            }
-            row.addView(words, new LinearLayout.LayoutParams(0, -2, 1));
-            UiTelemetry.tag(row, now ? "queue.current" : "queue.row");
-            if (jump && !now) {
-                row.setOnClickListener(v -> { if (controller != null) controller.seekToDefaultPosition(index); });
-                row.setContentDescription("Play " + name);
-            }
-            if (change) {
-                ImageButton remove = icon(R.drawable.daylight_np_remove, "Remove " + name, theme.inkMuted,
-                        () -> controller.removeMediaItem(index));
-                UiTelemetry.tag(remove, "queue.remove");
-                row.addView(remove, new LinearLayout.LayoutParams(dp(44), dp(44)));
-            }
-            queueList.addView(row, new LinearLayout.LayoutParams(-1, -2));
-        }
-        if (count > QUEUE_ROWS) queueList.addView(theme.text(this, "and " + (count - QUEUE_ROWS) + " more", Type.LABEL, theme.inkMuted, false));
+        // Chapters of a single-file book use the old list; the queue is QueueStage's.
+        boolean chaptersShown = chapterList();
+        ((View) queueHeading.getParent()).setVisibility(chaptersShown ? View.VISIBLE : View.GONE);
+        queueScroll.setVisibility(chaptersShown ? View.VISIBLE : View.GONE);
+        queueStage.view().setVisibility(chaptersShown ? View.GONE : View.VISIBLE);
+        if (chaptersShown) { queueList.removeAllViews(); clearButton.setVisibility(View.GONE); fillChapters(); return; }
+        queueStage.fill(controller, remote());
     }
 
     private void scrollQueueToCurrent() {
+        if (!chapterList()) { queueStage.scrollToNow(); return; }
         int current = chapterList() && controller != null ? chapters.indexAt(controller.getCurrentPosition())
                 : controller == null ? 0 : controller.getCurrentMediaItemIndex();
         queueScroll.post(() -> {
@@ -1640,7 +1595,12 @@ public class NowPlayingActivity extends Activity {
         // Not loaded yet: the screens the phone home last saw; each row's own check tells if it is there.
         if (screens.isEmpty()) targets.addAll(cachedScreens(getSharedPreferences("daylight.home", MODE_PRIVATE).getString("screens", "")));
         TargetPicker.show(this, base, targets, target, screens.isEmpty() ? "" : screensProblem, media, main,
-                (id, label, snapshot) -> { if (!id.equals(target)) switchTo(id, label, snapshot); });
+                (id, label, snapshot) -> {
+                    if (id.equals(target)) return;
+                    // This phone to a screen while it plays: the screen gets the source; this queue stays, paused.
+                    if (!remote() && !LOCAL.equals(id)) QueueVerbs.handOff(this, id, media);
+                    switchTo(id, label, snapshot);
+                });
     }
 
     /** The phone home's cached screens list ({id, name, type} rows) as picker targets. */
@@ -2106,6 +2066,8 @@ public class NowPlayingActivity extends Activity {
         queueList.setOrientation(LinearLayout.VERTICAL);
         queueScroll.addView(queueList);
         queueBox.addView(queueScroll, new LinearLayout.LayoutParams(-1, 0, 1));
+        queueStage = new QueueStage(this, () -> theme);
+        queueBox.addView(queueStage.view(), new LinearLayout.LayoutParams(-1, 0, 1));
         queueBox.setVisibility(View.GONE);
         stageBox.addView(queueBox, new FrameLayout.LayoutParams(-1, -1));
         startBox = new ScrollView(this);

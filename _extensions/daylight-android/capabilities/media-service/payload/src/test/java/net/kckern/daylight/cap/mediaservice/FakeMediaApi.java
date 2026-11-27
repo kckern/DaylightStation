@@ -56,6 +56,13 @@ final class FakeMediaApi implements MediaApi {
         if (!responses.containsKey(call)) return null;
         return answer("info", call);
     }
+    /** The last Save as playlist body. */
+    volatile JSONObject savedPlaylist;
+    @Override public JSONObject savePlaylist(String title, org.json.JSONArray items) throws Exception {
+        if (down) throw new IOException("no route to host");
+        savedPlaylist = new JSONObject().put("title", title).put("items", items);
+        return new JSONObject().put("ok", true).put("id", "menu:queue").put("title", title).put("count", items.length());
+    }
     @Override public JSONObject search(String text, int take) throws Exception { return answer("search", "search " + text + " " + take); }
     @Override public JSONObject audioLibraries() throws Exception { return answer("audio libraries", "audioLibraries"); }
     final List<String> hides = Collections.synchronizedList(new ArrayList<String>());

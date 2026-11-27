@@ -192,6 +192,24 @@ public class MediaServiceCapabilityTest {
         assertTrue(cap.kinds().fromHome);
     }
 
+    /** Save as playlist: the content ids go home in order; anything else is dropped. */
+    @Test public void saveAsPlaylistSendsTheContentIdsInOrderAndDropsTheRest() throws Exception {
+        org.json.JSONArray items = new org.json.JSONArray()
+                .put(new JSONObject().put("id", "plex:3").put("title", "Third"))
+                .put(new JSONObject().put("id", "javascript:alert(1)"))
+                .put(new JSONObject().put("id", "plex:1").put("title", "First"));
+        MediaServiceCapability.Outcome made = cap.call(new JSONObject().put("op", "save-playlist")
+                .put("title", "Queue 2026-11-26").put("items", items));
+        assertEquals(200, made.status);
+        assertEquals("menu:queue", made.body.getString("id"));
+        org.json.JSONArray sent = api.savedPlaylist.getJSONArray("items");
+        assertEquals(2, sent.length());
+        assertEquals("plex:3", sent.getJSONObject(0).getString("id"));
+        assertEquals("plex:1", sent.getJSONObject(1).getString("id"));
+        assertEquals(400, cap.call(new JSONObject().put("op", "save-playlist").put("title", "")
+                .put("items", items)).status);
+    }
+
     @Test public void anIdThatIsNotOneOfTheTreesIsRefused() throws Exception {
         assertEquals(400, browse("https://evil.example/", 0, 50).getInt("_status"));
         assertEquals(400, browse("p:plex:11", 0, 50).getInt("_status"));

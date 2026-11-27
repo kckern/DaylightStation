@@ -57,6 +57,24 @@ public final class ShellStart {
         try { context.unbindService((android.content.ServiceConnection) held); } catch (RuntimeException alreadyGone) { }
     }
 
+    /** By name, as SERVICE: the media service and the queue it saves (media-service's QueueState). */
+    static final String MEDIA_SERVICE = "net.kckern.daylight.cap.mediaservice.shell.DaylightMediaService";
+    static final String SAVED_QUEUE = "queue/state.json";
+
+    /**
+     * A queue saved before the app was stopped comes back when the app opens (paused, never
+     * playing): the media service restores it when it is created, and its mini player and
+     * notification follow. Nothing happens when there is no saved queue or no media service.
+     */
+    static void wakeSavedQueue(Context context) {
+        try {
+            if (!new java.io.File(context.getFilesDir(), SAVED_QUEUE).isFile()) return;
+            context.startService(new Intent().setClassName(context, MEDIA_SERVICE));
+        } catch (RuntimeException refusedOrAbsent) {
+            // A background start refused, or a build without the media service: it comes back on the next play.
+        }
+    }
+
     /**
      * @return false when Android refused the start. From Android 12 a foreground
      *         service cannot be started from the background, so a tile or a widget
@@ -68,6 +86,7 @@ public final class ShellStart {
             Intent intent = new Intent().setClassName(context, SERVICE);
             // On demand (the phone): a plain start from a visible screen, with no foreground notice.
             if (persistent()) context.startForegroundService(intent); else context.startService(intent);
+            wakeSavedQueue(context);
             return true;
         } catch (RuntimeException refused) {
             Log.w("Daylight", "shell service start refused: " + refused);

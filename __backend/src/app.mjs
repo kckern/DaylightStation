@@ -36,7 +36,7 @@ import { registerLifeplanMaintenance } from "../../__app_modules/personal/life/s
 import {createMediaPlayLedger} from "../../__app_modules/media/media/server/composition/play-ledger.mjs";
 import {createMediaJobsRuntime} from "../../__app_modules/media/media/server/composition/jobs-runtime.mjs";
 import {createMediaMemoryValidator} from "../../__app_modules/media/media/server/composition/memory-validation.mjs";
-import { createMediaApiRuntime } from "../../__app_modules/media/media/server/composition/api-runtime.mjs";
+import { createMediaApiRuntime, mountHouseholdPlaylists } from "../../__app_modules/media/media/server/composition/api-runtime.mjs";
 import { createHomelineLease } from "../../__app_modules/household/homeline/server/composition.mjs";
 import { createAmbientScheduler } from "../../__app_modules/household/screens/server/ambient-runtime.mjs";
 import { createNutribotDestinationResolver } from "../../__app_modules/wellness/nutribot/server/composition/destinations.mjs";
@@ -4576,6 +4576,9 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     }),
     logger: adminApiLogger.child?.({ submodule: 'content' }) || adminApiLogger,
   });
+  // A player's queue saved as a household list (the phone's Queue → Save as playlist):
+  // /api/v1/media/household/playlists, on the media router, through the same list service.
+  await mountHouseholdPlaylists({ v1Routers, listManagementService, rootLogger });
   const adminArtService = createArtAdminService({ mediaBasePath, imgBasePath, configService, adminApiLogger });
   const adminImageService = new AdminImageService({
     store: new AdminImageFileStore({ mediaPath: mediaBasePath || imgBasePath }),
