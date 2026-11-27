@@ -132,6 +132,10 @@ public class NowPlayingActivity extends Activity {
     private ScrollView startBox;
     private LinearLayout startList;
     private String startShownFor = "";
+    /** What was just tapped, shown until the player has it (Starting); null when nothing is starting. */
+    private Starting starting;
+    /** When the player's current item last changed (elapsed ms), to tell a new item from the one before the tap. */
+    private long itemChangedAt = -1;
     private String volumeLine = "";
     private String shownArtwork;
 
@@ -206,6 +210,7 @@ public class NowPlayingActivity extends Activity {
         timeDisplay = TrackDetail.TimeDisplay.of(prefs().getString("time", ""));
         buildViews();
         chooseInitialTarget(getIntent(), saved);
+        if (saved == null) takeStarting(getIntent());
         loadScreens();
         // Opened as a screen's remote (the phone home's Connect tab): the pad, at once.
         if (saved == null && getIntent() != null && getIntent().getBooleanExtra(EXTRA_PAD, false) && remote()) showPad(true);
@@ -236,6 +241,7 @@ public class NowPlayingActivity extends Activity {
         String asked = intent == null ? "" : intent.getStringExtra(EXTRA_TARGET);
         if (asked != null && !asked.isEmpty() && !asked.equals(target)) switchTo(asked, nameOf(asked));
         else if (controller == null && pending == null && started) connect();
+        takeStarting(intent);
         if (intent != null && intent.getBooleanExtra(EXTRA_PAD, false) && remote()) showPad(true);
     }
 
@@ -413,7 +419,12 @@ public class NowPlayingActivity extends Activity {
                     connectionLine = "";
                     reconnectMs = 1000;
                     c.addListener(new Player.Listener() {
-                        @Override public void onEvents(Player player, Player.Events events) { render(); }
+                        @Override public void onEvents(Player player, Player.Events events) {
+                            if (events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION) || events.contains(Player.EVENT_TIMELINE_CHANGED)) {
+                                itemChangedAt = SystemClock.elapsedRealtime();
+                            }
+                            render();
+                        }
                     });
                     if (remote()) {
                         Bundle args = new Bundle();
@@ -493,10 +504,79 @@ public class NowPlayingActivity extends Activity {
         else controller.seekToNext();
     }
 
+    /** Shows what an opening intent says was just tapped, from the first frame (see Starting). */
+    private void takeStarting(Intent intent) {
+        Starting s = Starting.from(intent, target, SystemClock.elapsedRealtime());
+        if (s == null) return;
+        starting = s;
+        note("player.starting");
+        main.postDelayed(this::render, Starting.SLOW_MS + 50);
+        main.postDelayed(this::render, Starting.GIVE_UP_MS + 50);
+        render();
+    }
+
+    /**
+     * Whether the player now holds what was tapped: its item changed after the tap, or its
+     * title, album or artist is the tapped title (the same thing tapped again, or an item that
+     * arrived before this screen connected). Something already playing before the tap stays
+     * behind the starting item until then.
+     */
+    private boolean startedNow(MediaController c, MediaMetadata meta) {
+        if (itemChangedAt >= starting.askedAt) return true;
+        for (CharSequence m : new CharSequence[] { meta.title, meta.albumTitle, meta.artist, meta.displayTitle }) {
+            if (m != null && m.toString().trim().equalsIgnoreCase(starting.title)) return true;
+        }
+        // Connected after the change with nothing to match by name (a playlist's first track): playing is enough.
+        return itemChangedAt < 0 && c.isPlaying() && SystemClock.elapsedRealtime() - starting.askedAt > 1500;
+    }
+
+    private void retryStarting() {
+        Starting s = starting;
+        if (s == null || controller == null) return;
+        note("player.start-retry");
+        starting = new Starting(s.target, s.mediaId, s.title, s.subtitle, s.art, SystemClock.elapsedRealtime());
+        controller.setMediaItem(new MediaItem.Builder().setMediaId(s.mediaId).build());
+        controller.prepare();
+        controller.play();
+        main.postDelayed(this::render, Starting.SLOW_MS + 50);
+        main.postDelayed(this::render, Starting.GIVE_UP_MS + 50);
+        render();
+    }
+
     private void render() {
         MediaController c = controller;
         MediaMetadata meta = c == null ? MediaMetadata.EMPTY : c.getMediaMetadata();
         boolean hasItem = c != null && c.getMediaItemCount() > 0;
+        long nowMs = SystemClock.elapsedRealtime();
+        if (starting != null && !starting.target.equals(target)) starting = null;
+        if (starting != null && hasItem && startedNow(c, meta)) {
+            note("player.started", "ms", nowMs - starting.askedAt);
+            starting = null;
+        }
+        if (starting != null && c != null && c.getPlayerError() != null) starting.fail();
+        final Starting begun = starting;
+        if (begun != null) {
+            // The tapped item, from the first frame: its name, who by, its cover, and how starting is going.
+            title.setText(begun.title);
+            title.setTextColor(theme.ink);
+            show(artistLine, begun.subtitle);
+            show(albumLine, null);
+            showStart("");
+            String line = begun.line(nowMs, remote() ? targetName : "");
+            status.setText(line);
+            status.setVisibility(View.VISIBLE);
+            status.setContentDescription(line);
+            boolean retry = !remote() && begun.retryable(nowMs);
+            playPause.setImageResource(R.drawable.daylight_np_play);
+            playPause.setContentDescription(retry ? "Try again" : "Starting");
+            enable(playPause, retry);
+            enable(prev, false);
+            enable(next, false);
+            renderArtwork(begun.art.isEmpty() ? null : Uri.parse(begun.art), true);
+            renderTargets();
+            tickPosition();
+            return;
+        }
         CharSequence name = meta.title != null ? meta.title : meta.displayTitle;
         boolean idleScreen = remote() && !hasItem && "IDLE".equals(remoteReach);
         boolean offScreen = remote() && !hasItem && ("OFF".equals(remoteReach) || "NOT_ON".equals(remoteReach));
@@ -1004,7 +1084,7 @@ public class NowPlayingActivity extends Activity {
                 String id = contentOf(item.optString("id")), title = item.optString("title");
                 if (id.isEmpty()) continue;
                 startList.addView(startRow(0, title, item.optString("subtitle"), "start.continue",
-                        () -> startOnScreen("play", id, false, title), item.optString("art")));
+                        () -> startOnScreen("play", id, false, title, item.optString("art")), item.optString("art")));
             }
         } catch (Exception unreadable) { /* the Play tab fills this cache; without it the list is shorter */ }
         java.util.List<net.kckern.daylight.shellkit.DrivingRadioSettings.Staple> mine =
@@ -1013,7 +1093,7 @@ public class NowPlayingActivity extends Activity {
         for (net.kckern.daylight.shellkit.DrivingRadioSettings.Staple p : mine) {
             String id = contentOf(p.id);
             startList.addView(startRow(0, p.title, null, "start.playlist",
-                    () -> startOnScreen("queue", id, true, p.title), p.art));
+                    () -> startOnScreen("queue", id, true, p.title, p.art), p.art));
         }
         startList.addView(startHeading("Or"));
         startList.addView(startRow(R.drawable.daylight_np_dpad, "Browse on " + targetName,
@@ -1071,9 +1151,11 @@ public class NowPlayingActivity extends Activity {
     }
 
     /** One tap starts it on the screen (the web's Play on); the player then follows what the screen does. */
-    private void startOnScreen(String how, String contentId, boolean shuffle, String title) {
+    private void startOnScreen(String how, String contentId, boolean shuffle, String title, String art) {
         final String device = target, name = targetName;
-        volumeLine = "Starting " + title + " on " + name + "…";
+        starting = new Starting(device, "", title, "", art, SystemClock.elapsedRealtime());
+        main.postDelayed(this::render, Starting.SLOW_MS + 50);
+        main.postDelayed(this::render, Starting.GIVE_UP_MS + 50);
         render();
         note("player.start", "how", how);
         io.execute(() -> {
@@ -1094,6 +1176,7 @@ public class NowPlayingActivity extends Activity {
             String said = line;
             main.post(() -> {
                 if (!device.equals(target)) return;
+                if (!said.isEmpty()) starting = null;   // refused: say why instead of "Starting…"
                 volumeLine = said;
                 render();
                 if (!said.isEmpty()) main.postDelayed(() -> { if (said.equals(volumeLine)) { volumeLine = ""; render(); } }, 6000);
@@ -1684,6 +1767,7 @@ public class NowPlayingActivity extends Activity {
         rightEdgeBox = edgeBox(false);
         prev = icon(R.drawable.daylight_np_previous, "Previous", 0, () -> { if (!chapterSkip(false)) controller.seekToPrevious(); clock.reset(); });
         playPause = icon(R.drawable.daylight_np_play, "Play", 0, () -> {
+            if (starting != null && !remote()) { if (starting.retryable(SystemClock.elapsedRealtime())) retryStarting(); return; }
             if (active(controller)) controller.pause();
             else { if (controller.getPlaybackState() == Player.STATE_IDLE) controller.prepare(); controller.play(); }
         });

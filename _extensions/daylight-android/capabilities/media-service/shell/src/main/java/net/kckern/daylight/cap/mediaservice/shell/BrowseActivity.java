@@ -549,8 +549,8 @@ public final class BrowseActivity extends Activity {
         boolean book = kind.startsWith("book");
         // The collection itself, as the player and Keep take it (c:<id>), whatever id reached this page.
         final String self = parent.startsWith("c:") ? parent : "c:" + contentIdOf(parent);
-        actions.addView(button(book ? "Resume" : "Play", "browse.play", () -> play(self, false)));
-        if (!book) actions.addView(button("Shuffle", "browse.shuffle", () -> play(self, true)));
+        actions.addView(button(book ? "Resume" : "Play", "browse.play", () -> play(self, false, title, subtitle, art)));
+        if (!book) actions.addView(button("Shuffle", "browse.shuffle", () -> play(self, true, title, subtitle, art)));
         actions.addView(button("Play on…", "browse.play_on", () -> playOn(self, title)));
         actions.addView(button("Keep", "browse.keep", () -> KeepFlow.start(this, self)));
         android.widget.HorizontalScrollView actionScroll = new android.widget.HorizontalScrollView(this);
@@ -622,7 +622,7 @@ public final class BrowseActivity extends Activity {
                 String k = rowKind.isEmpty() ? childKind(kind, id) : rowKind;
                 UiTelemetry.tag(row, "browse.open");
                 open(this, "level", id, k, name, sub, cover);
-            } else if (playable) play(id, false);
+            } else if (playable) play(id, false, name, sub, cover);
         });
         UiTelemetry.tag(row, browsable ? "browse.row" : "browse.track");
         row.setContentDescription(name + (sub.isEmpty() ? "" : ", " + sub));
@@ -671,7 +671,7 @@ public final class BrowseActivity extends Activity {
         menu.getMenu().add(0, 5, 0, "Keep on this phone");
         menu.setOnMenuItemClickListener(item -> {
             switch (item.getItemId()) {
-                case 1: play(id, false); break;
+                case 1: play(id, false, name, "", ""); break;
                 case 2: enqueue(id, true, name); break;
                 case 3: enqueue(id, false, name); break;
                 case 4: playOn(id, name); break;
@@ -696,15 +696,20 @@ public final class BrowseActivity extends Activity {
         }, main::post);
     }
 
-    /** Plays here and opens Now playing. A container plays whole (a book resumes); a track plays from itself in its list. */
-    private void play(String mediaId, boolean shuffle) {
+    /**
+     * Plays here and opens Now playing. A container plays whole (a book resumes); a track plays
+     * from itself in its list. Now playing opens on the tapped item at once (Starting), not on
+     * "Nothing playing" while the player fetches it.
+     */
+    private void play(String mediaId, boolean shuffle, String name, String by, String cover) {
         action(shuffle ? "shuffle" : "play");
+        startActivity(Starting.put(new Intent(this, NowPlayingActivity.class)
+                .putExtra(NowPlayingActivity.EXTRA_TARGET, NowPlayingActivity.LOCAL), mediaId, name, by, cover));
         withController(c -> {
             c.setShuffleModeEnabled(shuffle);
             c.setMediaItem(new MediaItem.Builder().setMediaId(mediaId).build());
             c.prepare();
             c.play();
-            startActivity(new Intent(this, NowPlayingActivity.class).putExtra(NowPlayingActivity.EXTRA_TARGET, NowPlayingActivity.LOCAL));
         });
     }
 
@@ -740,7 +745,7 @@ public final class BrowseActivity extends Activity {
             main.post(() -> {
                 if (isFinishing()) return;
                 TargetPicker.show(this, t, targets, "", note, media, io, main, (id, label) -> {
-                    if (TargetPicker.LOCAL.equals(id)) play(mediaId, false);
+                    if (TargetPicker.LOCAL.equals(id)) play(mediaId, false, name, subtitle, art);
                     else startOn(id, label, mediaId, name);
                 });
             });

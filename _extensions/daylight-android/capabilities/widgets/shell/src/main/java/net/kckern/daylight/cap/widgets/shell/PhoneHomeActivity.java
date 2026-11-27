@@ -708,7 +708,7 @@ public class PhoneHomeActivity extends Activity {
         net.kckern.daylight.shellkit.UiTelemetry.tag(card, "play.kept");
         String id = "c:" + cid;
         // A part-kept collection plays too: online it streams the rest; offline, what is here.
-        if (playable) card.setOnClickListener(v -> playHere(id));
+        if (playable) card.setOnClickListener(v -> playHere(id, title, "", k.optString("art")));
         else card.setOnClickListener(v -> toast(line));
         // Long-press: On this phone (state, Pause, Retry, Remove, room).
         card.setOnLongClickListener(v -> { openDownloads(null); return true; });
@@ -805,9 +805,17 @@ public class PhoneHomeActivity extends Activity {
     private static final String DOWNLOADS = "net.kckern.daylight.cap.mediaservice.shell.DownloadsActivity";
     private static final int KEEP_ACTION_BASE = 7_300, KEEP_ACTION_SLOTS = 100;
 
-    /** Opens Now playing on this phone and starts {@code mediaId} there (p: resumes a track, c: plays a list). */
-    private void playHere(String mediaId) {
+    /**
+     * Opens Now playing on this phone and starts {@code mediaId} there (p: resumes a track, c:
+     * plays a list). Now playing shows the tapped item from its first frame (media-service's
+     * Starting extras, set by name: that class is another capability's).
+     */
+    private void playHere(String mediaId, String title, String subtitle, String art) {
         Intent now = new Intent().setClassName(this, NOW_PLAYING).putExtra("target", "local");
+        if (title != null && !title.isEmpty()) {
+            now.putExtra("starting.id", mediaId).putExtra("starting.title", title)
+                    .putExtra("starting.subtitle", subtitle == null ? "" : subtitle).putExtra("starting.art", art == null ? "" : art);
+        }
         Intent play = new Intent().setClassName(this, PLAY).putExtra("id", mediaId);
         try { startActivities(new Intent[] { now, play }); }
         catch (RuntimeException absent) { toast("Could not start playback"); }
@@ -899,7 +907,7 @@ public class PhoneHomeActivity extends Activity {
         if (!reachable) card.setAlpha(0.45f);
         card.setOnClickListener(v -> {
             if (!here && !online()) { toast("Needs a connection: this is not kept on the phone"); return; }
-            playHere(id);
+            playHere(id, title, sub, item.optString("art"));
         });
         // Press and hold: Keep the book on this phone (or see it there when it is kept).
         String cidOf = item.optString("contentId");
@@ -946,7 +954,7 @@ public class PhoneHomeActivity extends Activity {
             tile.setContentDescription("Play " + p.title);
             net.kckern.daylight.shellkit.UiTelemetry.tag(tile, "play.playlist");
             String id = p.id;
-            tile.setOnClickListener(v -> playHere("c:" + id));
+            tile.setOnClickListener(v -> playHere("c:" + id, p.title, "", p.art));
             tile.setOnLongClickListener(v -> keepMenu(tile, "c:" + id, id, "playlist", p.title, p.art));
             LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(0, -2, 1);
             if (pair.getChildCount() < 2) tp.setMarginEnd(dp(6));
