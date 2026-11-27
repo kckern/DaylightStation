@@ -304,7 +304,7 @@ public final class BrowseActivity extends Activity {
         io.execute(() -> {
             JSONObject answer;
             try {
-                answer = new JSONObject(MODE_LIBRARY.equals(mode) ? media.library(WAIT_MS) : media.browse(parent, page, 50, WAIT_MS));
+                answer = new JSONObject(MODE_LIBRARY.equals(mode) ? media.library(WAIT_MS) : media.browse(browseId(kind, parent), page, 50, WAIT_MS));
             } catch (Exception failed) {
                 answer = null;
                 Log.w(TAG, "browse failed: " + failed.getClass().getSimpleName());
@@ -370,7 +370,9 @@ public final class BrowseActivity extends Activity {
     private void drawStrip() {
         azStrip.removeAllViews();
         if (rows.size() < 40) return;
-        java.util.LinkedHashMap<Character, Integer> first = new java.util.LinkedHashMap<>();
+        // Letters in A–Z order whatever order the level comes in (a library may list by date added);
+        // each goes to the first row under it.
+        java.util.TreeMap<Character, Integer> first = new java.util.TreeMap<>();
         for (int i = 0; i < rows.size(); i++) {
             String id = rows.get(i).optString("id");
             if (id.startsWith("m:")) continue;
@@ -491,10 +493,21 @@ public final class BrowseActivity extends Activity {
         recreate();
     }
 
+    /**
+     * The id a level is read by. A playlist reached by its own id (a tile, a link) is read
+     * through the list catalog (a:0|<id>), as the car reads it: as a container it lists itself.
+     */
+    static String browseId(String kind, String parent) {
+        if (kind != null && kind.startsWith("playlist") && parent != null && parent.startsWith("c:")) return "a:0|" + contentIdOf(parent);
+        return parent;
+    }
+
     /** The content id inside a media id: c:<id>, p:<id>|<list>, or the id itself. */
     static String contentIdOf(String mediaId) {
         if (mediaId == null) return "";
         String s = mediaId;
+        // a:<skip>|<id> and s:<skip>|<id> (the list catalog) carry the id after the bar.
+        if ((s.startsWith("a:") || s.startsWith("s:") || s.startsWith("m:")) && s.indexOf('|') > 0) return s.substring(s.indexOf('|') + 1);
         if (s.startsWith("c:") || s.startsWith("p:")) s = s.substring(2);
         int bar = s.indexOf('|');
         return bar >= 0 ? s.substring(0, bar) : s;
@@ -534,10 +547,12 @@ public final class BrowseActivity extends Activity {
         LinearLayout actions = new LinearLayout(this);
         actions.setPadding(0, dp(12), 0, 0);
         boolean book = kind.startsWith("book");
-        actions.addView(button(book ? "Resume" : "Play", "browse.play", () -> play(parent, false)));
-        if (!book) actions.addView(button("Shuffle", "browse.shuffle", () -> play(parent, true)));
-        actions.addView(button("Play on…", "browse.play_on", () -> playOn(parent, title)));
-        actions.addView(button("Keep", "browse.keep", () -> KeepFlow.start(this, parent)));
+        // The collection itself, as the player and Keep take it (c:<id>), whatever id reached this page.
+        final String self = parent.startsWith("c:") ? parent : "c:" + contentIdOf(parent);
+        actions.addView(button(book ? "Resume" : "Play", "browse.play", () -> play(self, false)));
+        if (!book) actions.addView(button("Shuffle", "browse.shuffle", () -> play(self, true)));
+        actions.addView(button("Play on…", "browse.play_on", () -> playOn(self, title)));
+        actions.addView(button("Keep", "browse.keep", () -> KeepFlow.start(this, self)));
         android.widget.HorizontalScrollView actionScroll = new android.widget.HorizontalScrollView(this);
         actionScroll.setHorizontalScrollBarEnabled(false);
         actionScroll.addView(actions);
@@ -618,7 +633,10 @@ public final class BrowseActivity extends Activity {
 
     /** What a row opened from a level is: a library's authors or artists, their books or albums, a list source's playlists. */
     static String childKind(String parentKind, String id) {
-        if (id.startsWith("s:") || id.startsWith("a:")) return "lists";
+        // A list source's entries are playlists (reached as a:<skip>|<id>); a source is a list of lists.
+        if (id.startsWith("s:")) return "lists";
+        if ("lists".equals(parentKind)) return "playlist";
+        if (id.startsWith("a:")) return "lists";
         switch (parentKind) {
             case "library-books": return "author";
             case "library": return "artist";

@@ -996,13 +996,13 @@ playing track's own `albumId`/`artistId` (`parents` op over `/api/v1/info`); onl
 them does the line open the search on the name. A link
 `daylight://media/<book|album|artist|playlist>/<content id>` (or
 `daylight://media/open?kind=…&id=…`; through the link activity, with the install key)
-opens a page. Long-press on a Play tab playlist tile or Continue card offers **Open**.
+opens a page. Long-press on a Play tab playlist tile offers **Open** (its page).
 
 A **book** page also shows how far in it is ("2 h 10 min left · 34 %", Finished, Not
 started: from the household's recent list), **Speed** (the book's remembered long-form
 speed, the same key Now playing uses) and **Mark finished** (the web's mark-watched for
 each part). An album or playlist page offers **Add to Your playlists** (the Play tab's
-tiles and the widget picker's list). A level of 40 rows or more gets an **A–Z** strip.
+tiles and the widget picker's list). A level of 40 rows or more gets an **A–Z** strip, letters in A–Z order whatever order the level comes in (a library may list by date added). A playlist is read through the list catalog (`a:0|<id>`), as the car reads it.
 Search adds an author's books (Plex finds "Boethius" the author, not the book) to the top
 of Books. There is no Favourites row: the household's favourites list is empty.
 

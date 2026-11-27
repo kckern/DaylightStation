@@ -13,6 +13,7 @@ public class BrowseKindTest {
         assertEquals("album", BrowseActivity.childKind("artist", "c:plex:2"));
         assertEquals("lists", BrowseActivity.childKind("library", "s:0|plex:playlists"));
         assertEquals("playlist", BrowseActivity.childKind("lists", "c:plex:758161"));
+        assertEquals("playlist", BrowseActivity.childKind("lists", "a:0|plex:321212"));
     }
 
     @Test public void letterSkipsTheAndA() {
@@ -37,5 +38,12 @@ public class BrowseKindTest {
         assertEquals("plex:731396", BrowseActivity.contentIdOf("c:plex:731396"));
         assertEquals("plex:5", BrowseActivity.contentIdOf("p:plex:5|plex:9"));
         assertEquals("plex:5", BrowseActivity.contentIdOf("plex:5"));
+        assertEquals("plex:321212", BrowseActivity.contentIdOf("a:0|plex:321212"));
+    }
+
+    @Test public void aPlaylistIsReadThroughTheListCatalog() {
+        assertEquals("a:0|plex:321212", BrowseActivity.browseId("playlist", "c:plex:321212"));
+        assertEquals("a:0|plex:321212", BrowseActivity.browseId("playlist", "a:0|plex:321212"));
+        assertEquals("c:plex:731396", BrowseActivity.browseId("album", "c:plex:731396"));
     }
 }

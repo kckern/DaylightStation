@@ -763,11 +763,11 @@ public class PhoneHomeActivity extends Activity {
 
     /** Long-press on something playable: Keep it on this phone, or see it there when it is kept. */
     private boolean keepMenu(View anchor, String mediaId, String contentId) {
-        return keepMenu(anchor, mediaId, contentId, null, null);
+        return keepMenu(anchor, mediaId, contentId, null, null, null);
     }
 
     /** Keep, or its state; and Open (the collection's page) when {@code openKind} is given. */
-    private boolean keepMenu(View anchor, String mediaId, String contentId, String openKind, String title) {
+    private boolean keepMenu(View anchor, String mediaId, String contentId, String openKind, String title, String art) {
         android.widget.PopupMenu menu = new android.widget.PopupMenu(this, anchor);
         if (openKind != null && mediaId.startsWith("c:")) menu.getMenu().add(0, 3, 0, "Open");
         JSONObject kept = null;
@@ -783,7 +783,7 @@ public class PhoneHomeActivity extends Activity {
                 net.kckern.daylight.shellkit.UiTelemetry.event("Browse", "browse.open_from_tile", new JSONObject());
                 try {
                     startActivity(new Intent().setClassName(this, BROWSE).putExtra("mode", "level").putExtra("parent", mediaId)
-                            .putExtra("kind", openKind).putExtra("title", title == null ? "" : title));
+                            .putExtra("kind", openKind).putExtra("title", title == null ? "" : title).putExtra("art", art == null ? "" : art));
                 } catch (RuntimeException absent) { toast("Not available in this build"); }
                 return true;
             }
@@ -947,7 +947,7 @@ public class PhoneHomeActivity extends Activity {
             net.kckern.daylight.shellkit.UiTelemetry.tag(tile, "play.playlist");
             String id = p.id;
             tile.setOnClickListener(v -> playHere("c:" + id));
-            tile.setOnLongClickListener(v -> keepMenu(tile, "c:" + id, id, "playlist", p.title));
+            tile.setOnLongClickListener(v -> keepMenu(tile, "c:" + id, id, "playlist", p.title, p.art));
             LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(0, -2, 1);
             if (pair.getChildCount() < 2) tp.setMarginEnd(dp(6));
             pair.addView(tile, tp);
