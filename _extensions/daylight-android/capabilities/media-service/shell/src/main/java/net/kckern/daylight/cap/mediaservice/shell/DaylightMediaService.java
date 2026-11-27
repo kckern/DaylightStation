@@ -287,6 +287,9 @@ public class DaylightMediaService extends MediaLibraryService {
 
             @Override public void onIsPlayingChanged(boolean playing) {
                 if (playing) {
+                    // Playing makes the app foreground: bring the shell (and its inbox long poll)
+                    // back if Android stopped it while the app sat in the background.
+                    ShellStart.ensure(DaylightMediaService.this);
                     playedQueue = true;
                     radio.remember(player.getCurrentMediaItem());
                 }

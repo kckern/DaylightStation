@@ -157,7 +157,9 @@ export function createDeviceRouter({ fleetService, presenceService, sessionServi
     }
     let gone = false;
     req.on('close', () => { if (!res.writableEnded) gone = true; });
-    const commands = await phoneInbox.poll(deviceId, wait, { installId, model });
+    // background=1: the phone's app is closed and its job checks in; it is not listening.
+    const background = req.query.background === '1';
+    const commands = await phoneInbox.poll(deviceId, wait, { installId, model, background });
     if (gone) {
       phoneInbox.putBack(deviceId, commands);
       return undefined;

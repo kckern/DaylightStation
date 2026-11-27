@@ -255,6 +255,7 @@ public final class MediaServiceCapability implements Capability {
         port.attach(onCall);
         if (Boolean.TRUE.equals(core.settings().get(PLAY_ON_TARGET)) && inbox != null) {
             inbox.start();
+            scheduleInboxJob();
             // Which inbox this install answers (an emulator never the phone's); never the token.
             core.shell().note("MEDIA", "inbox: polling as " + inbox.deviceId() + ", token " + (inboxToken().isEmpty() ? "absent" : "present"));
         }
@@ -383,6 +384,19 @@ public final class MediaServiceCapability implements Capability {
             if ("keeps-report".equals(op)) {
                 if (inbox != null) inbox.reportKeeps(request.optJSONArray("items") == null ? new JSONArray() : request.optJSONArray("items"));
                 return new Outcome(200, Replies.ok());
+            }
+            if ("inbox-once".equals(op)) {
+                // The background job's check with the app closed (KeepJob.INBOX_ID, every 15 min).
+                if (inbox == null || !Boolean.TRUE.equals(core.settings().get(PLAY_ON_TARGET))) {
+                    return new Outcome(200, Replies.ok().put("status", "off"));
+                }
+                String result;
+                try { inbox.checkOnce(); result = "checked"; }
+                catch (PlayInbox.Unauthorized refused) { result = "unauthorized"; }
+                catch (PlayInbox.NotServed none) { result = "not served"; }
+                catch (Exception unreachable) { result = "unreachable"; health.failed(clock.getAsLong()); }
+                core.shell().note("MEDIA", "inbox: background check " + result);
+                return new Outcome(200, Replies.ok().put("status", result));
             }
             if ("inbox".equals(op)) {
                 return new Outcome(200, Replies.ok().put("status", inbox == null ? "none" : inbox.status())
@@ -917,6 +931,33 @@ public final class MediaServiceCapability implements Capability {
     /** Kept collections changed from here (the inbox): the shell's keeper downloads or deletes to match. */
     static final String KEEP_JOB = "net.kckern.daylight.cap.mediaservice.shell.KeepJob";
     static final int KEEP_JOB_SYNC_ID = 7_204;
+
+    /** The shell's background inbox check (KeepJob.INBOX_ID); keep in step. */
+    static final int INBOX_JOB_ID = 7_211;
+    static final long INBOX_JOB_EVERY_MS = 15 * 60_000L;
+
+    /**
+     * Every 15 min with any network, persisted over reboots: the inbox checked with the app
+     * closed, so a keep from the web lands without opening the app. Scheduled once; a pending
+     * job is left as it is. (setPersisted needs RECEIVE_BOOT_COMPLETED, which the shell holds.)
+     */
+    @android.annotation.SuppressLint("MissingPermission")
+    private void scheduleInboxJob() {
+        Object context = core == null ? null : core.shell().context();
+        if (context == null) return;
+        try {
+            android.content.Context c = (android.content.Context) context;
+            android.app.job.JobScheduler js = (android.app.job.JobScheduler) c.getSystemService(android.content.Context.JOB_SCHEDULER_SERVICE);
+            if (js.getPendingJob(INBOX_JOB_ID) != null) return;
+            js.schedule(new android.app.job.JobInfo.Builder(INBOX_JOB_ID,
+                    new android.content.ComponentName(c.getPackageName(), KEEP_JOB))
+                    .setPeriodic(INBOX_JOB_EVERY_MS)
+                    .setRequiredNetworkType(android.app.job.JobInfo.NETWORK_TYPE_ANY)
+                    .setPersisted(true).build());
+        } catch (Throwable noJob) {
+            core.shell().note("MEDIA", "inbox: background check not scheduled (" + noJob.getClass().getSimpleName() + ")");
+        }
+    }
 
     private void signalKeeper() {
         Object context = core == null ? null : core.shell().context();

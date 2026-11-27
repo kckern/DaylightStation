@@ -282,7 +282,7 @@ export class PhoneInboxService {
 
   #live(box) {
     const now = this.#clock.now();
-    return [...box.installs.values()].filter((i) => now - i.lastPollAt < INSTALL_FRESH_MS);
+    return [...box.installs.values()].filter((i) => now - (i.listenAt ?? 0) < INSTALL_FRESH_MS);
   }
 
   /** Whether {@code installId} may take this envelope. */
@@ -293,7 +293,7 @@ export class PhoneInboxService {
     return true;
   }
 
-  #seen(deviceId, box, installId, model) {
+  #seen(deviceId, box, installId, model, background = false) {
     if (!installId) return;
     const now = this.#clock.now();
     const prior = box.installs.get(installId);
@@ -303,6 +303,8 @@ export class PhoneInboxService {
       model: typeof model === 'string' && model ? model.slice(0, 80) : (prior?.model ?? ''),
       firstSeenAt: prior?.firstSeenAt ?? now,
       lastPollAt: now,
+      // When it last listened (a long poll, the app open or playing): what "live" means.
+      listenAt: background ? (prior?.listenAt ?? 0) : now,
     });
     let changed = !prior;
     if (!prior) {
@@ -586,7 +588,7 @@ export class PhoneInboxService {
         firstSeenAt: i.firstSeenAt ? new Date(i.firstSeenAt).toISOString() : null,
         lastPollAt: i.lastPollAt ? new Date(i.lastPollAt).toISOString() : null,
         current: current?.installId === i.installId,
-        live: now - i.lastPollAt < INSTALL_FRESH_MS,
+        live: now - (i.listenAt ?? 0) < INSTALL_FRESH_MS,
         gone: now - i.lastPollAt >= INSTALL_GONE_MS,
       }));
     const waiting = box.durable.map((d) => ({
@@ -619,18 +621,22 @@ export class PhoneInboxService {
    * @param {string} deviceId
    * @param {number} waitSeconds 0..MAX_WAIT_S
    */
-  async poll(deviceId, waitSeconds, { installId = null, model = null } = {}) {
+  async poll(deviceId, waitSeconds, { installId = null, model = null, background = false } = {}) {
     const box = this.#box(deviceId);
     const install = PhoneInboxService.installIdOf(installId);
-    box.lastPollAt = this.#clock.now();
-    this.#seen(deviceId, box, install, model);
-    for (const w of [...box.waiters]) {
+    // A background check (the phone's app closed, its 15-minute job) collects keeps but is
+    // not listening: it makes the phone neither present nor live, so Play on is not offered.
+    if (!background) box.lastPollAt = this.#clock.now();
+    this.#seen(deviceId, box, install, model, background);
+    // A background check neither supersedes a listening poll nor says the phone is online.
+    for (const w of background ? [] : [...box.waiters]) {
       if (w.install === install) {
         this.#logger.info?.('phone-inbox.poll.superseded', { deviceId, installId: install });
         w.finish([]);
       }
     }
-    this.heartbeat(deviceId);
+    if (!background) this.heartbeat(deviceId);
+    else this.#logger.info?.('phone-inbox.poll.background', { deviceId, installId: install });
     const ready = this.take(deviceId, install);
     const wait = Math.max(0, Math.min(MAX_WAIT_S, Number(waitSeconds) || 0));
     if (ready.length || wait === 0) return ready;
@@ -663,7 +669,7 @@ export class PhoneInboxService {
       });
     } finally {
       box.holding--;
-      box.lastPollAt = this.#clock.now();
+      if (!background) box.lastPollAt = this.#clock.now();
     }
   }
 

@@ -92,7 +92,8 @@ export function keepStatus(view, target, item) {
     const asked = clock(waiting.queuedAt);
     return {
       state: 'asked',
-      line: `Waiting for ${name}${asked ? ` · asked ${asked}` : ''}`,
+      // Not yet picked up: a closed app checks in every 15 min, an open one at once.
+      line: `Waiting for ${name}${asked ? ` · asked ${asked}` : ''}${waiting.handedOver ? '' : ' · usually within 15 min'}`,
       kept: true,
       ...(waiting.handedOver ? {} : { cancel: waiting.commandId }),
     };

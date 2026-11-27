@@ -123,6 +123,28 @@ describe('PhoneInboxService: installs, auth and durable keeps', () => {
     });
   });
 
+  describe('background checks (the app closed)', () => {
+    it('collect a waiting keep, but leave the phone neither present nor live', async () => {
+      await inbox.poll('phone', 0, { installId: A, model: 'SM-S921U' });
+      t.advance(INSTALL_FRESH_MS + 60_000);
+      expect(inbox.isPresent('phone')).toBe(false);
+      const env = await inbox.queueKeep('phone', { command: 'keep', contentId: 'plex:9', title: 'A book' });
+      const got = await inbox.poll('phone', 0, { installId: A, background: true });
+      expect(got.map((e) => e.commandId)).toEqual([env.commandId]);
+      expect(inbox.isPresent('phone')).toBe(false);
+      expect(inbox.liveInstalls('phone')).toEqual([]);
+      expect(inbox.keeps('phone').installs[0]).toMatchObject({ installId: A, live: false });
+    });
+
+    it('a listening poll makes it present and live again', async () => {
+      await inbox.poll('phone', 0, { installId: A, background: true });
+      expect(inbox.isPresent('phone')).toBe(false);
+      await inbox.poll('phone', 0, { installId: A });
+      expect(inbox.isPresent('phone')).toBe(true);
+      expect(inbox.liveInstalls('phone').map((i) => i.installId)).toEqual([A]);
+    });
+  });
+
   describe('keeps', () => {
     it('are durable: survive a restart and go only when acked; then read "received" until reported', async () => {
       await inbox.poll('phone', 0, { installId: A, model: 'SM-S921U' });

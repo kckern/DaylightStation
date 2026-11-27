@@ -157,6 +157,11 @@ final class PayloadMedia {
         return port.call(new JSONObject().put("op", "kept-restore").put("items", items).toString(), waitMs);
     }
 
+    /** The background job's inbox check with the app closed: {ok, status: checked|off|unauthorized|not served|unreachable}. */
+    String inboxOnce(long waitMs) throws Exception {
+        return port.call(new JSONObject().put("op", "inbox-once").toString(), waitMs);
+    }
+
     /** The whole kept list with each one's state, for the web (through the inbox). */
     String keepsReport(org.json.JSONArray items, long waitMs) throws Exception {
         return port.call(new JSONObject().put("op", "keeps-report").put("items", items).toString(), waitMs);

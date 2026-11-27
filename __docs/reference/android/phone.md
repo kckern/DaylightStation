@@ -1170,6 +1170,19 @@ install (`PlayInbox`): `GET /api/v1/device/<id>/commands?wait=20&installId=&mode
 `Authorization: Bearer <device token>`. The full contract and the backend side are in
 `__docs/reference/media/media-app-technical.md`.
 
+- **What reaches a closed app, and how fast.** Android stops the phone's shell service
+  about a minute after the app leaves the screen, and the long poll stops with it. So:
+  - **Listening** (the long poll runs): while any Daylight screen is open, and while the
+    phone plays (playing makes the app foreground; the media service brings the shell back
+    if Android stopped it). A Play on Phone or a keep arrives within a second or two.
+  - **Closed:** a background job (`KeepJob.INBOX_ID`, every 15 min, Android's shortest
+    period, any network, persisted across reboots, scheduled by the payload when the inbox
+    starts) boots the shell and checks once: `wait=0&background=1`. It collects waiting
+    keeps and removes (acked as usual; the download job then runs on its own) and sends the
+    kept list. A background check does not make the phone present or live at home, so the
+    web never offers Play on to a closed app: its row reads "Open Daylight to play here"
+    and is disabled, and a waiting keep reads "Waiting for Phone · asked 12:04 · usually
+    within 15 min". Logcat: `inbox job: checked` (or off, unauthorized, unreachable).
 - **Which install.** Each install makes an install id once (random, in the payload state's
   `install-id`; a reinstall or a cleared app is a new install) and sends it with
   `Build.MODEL` on every poll, ack and report. A command addressed to another install is
