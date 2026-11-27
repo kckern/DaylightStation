@@ -99,7 +99,8 @@ for (const branch of ['comes back', 'stays refused']) {
         await expect(page.getByTestId('mini-player-open-nowplaying')).toContainText('Arrival');
         await expect(page.getByTestId('mini-problem')).toHaveCount(0);
         await expect(waiting).toHaveCount(0);
-        await expect(page.getByTestId('dispatch-tray')).not.toContainText('file unavailable');
+        // (No tray at all is fine too: assert on rows, not on the tray's text.)
+        await expect(page.locator('[data-testid^="dispatch-row-"]').filter({ hasText: 'file unavailable' })).toHaveCount(0);
       } else {
         // Media's 60 s limit holds the video: it is never skipped, before or after.
         const firstWaitAt = firstCheck.at;
@@ -109,7 +110,8 @@ for (const branch of ['comes back', 'stays refused']) {
         expect(heldAfter).toBeLessThan(75000);
         await page.waitForTimeout(5000);
         await expect(page.getByTestId('mini-player-open-nowplaying')).toContainText('Arrival');
-        await expect(page.getByTestId('dispatch-tray')).not.toContainText('file unavailable');
+        // (No tray at all is fine too: assert on rows, not on the tray's text.)
+        await expect(page.locator('[data-testid^="dispatch-row-"]').filter({ hasText: 'file unavailable' })).toHaveCount(0);
         await expect(waiting).toBeVisible();
         await expect(page.getByTestId('mini-problem')).toHaveAccessibleName(/waiting for the file of Arrival/);
         // The person decides: Skip now moves on to the next item.
