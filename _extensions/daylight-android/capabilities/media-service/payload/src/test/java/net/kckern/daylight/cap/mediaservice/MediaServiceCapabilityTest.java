@@ -116,6 +116,82 @@ public class MediaServiceCapabilityTest {
         assertEquals("unreachable", library.body.getString("reason"));
     }
 
+    private static String recentWith(String... ids) throws Exception {
+        org.json.JSONArray items = new org.json.JSONArray();
+        for (String id : ids) items.put(new JSONObject().put("contentId", id).put("title", "Book " + id).put("type", "track")
+                .put("playhead", 600).put("duration", 7200));
+        return new JSONObject().put("items", items).toString();
+    }
+
+    /** Remove from Continue listening: gone at once, sent home, and offline it holds and goes out later. */
+    @Test public void aContinueHideHoldsOfflineAndIsSentWhenHomeAnswers() throws Exception {
+        api.responses.put("recent 50", recentWith("plex:1", "plex:2"));
+        api.down = true;
+        MediaServiceCapability.Outcome hid = cap.call(new JSONObject().put("op", "continue-hide").put("contentId", "plex:1").put("hidden", true));
+        assertEquals(200, hid.status);
+        assertFalse(hid.body.getBoolean("sent"));
+        // Home answers the list but not yet the hide: the card stays away here.
+        api.down = false;
+        api.hideStatus = 503;
+        org.json.JSONArray items = cap.call(new JSONObject().put("op", "continue")).body.getJSONArray("items");
+        assertEquals(1, items.length());
+        assertEquals("plex:2", items.getJSONObject(0).getString("contentId"));
+        assertTrue(api.hides.isEmpty());
+        // Home takes it; from then on its own list leaves the item out.
+        api.hideStatus = 200;
+        api.responses.put("recent 50", recentWith("plex:2"));
+        assertEquals(1, cap.call(new JSONObject().put("op", "continue")).body.getJSONArray("items").length());
+        assertEquals(java.util.Arrays.asList("+plex:1"), api.hides);
+        // Undo: a request of its own once home has the hide.
+        cap.call(new JSONObject().put("op", "continue-hide").put("contentId", "plex:1").put("hidden", false));
+        assertEquals(java.util.Arrays.asList("+plex:1", "-plex:1"), api.hides);
+    }
+
+    /** A home without the route keeps the hide waiting on the phone (the card stays gone) until it is updated. */
+    @Test public void aHomeWithoutTheHideRouteKeepsItWaiting() throws Exception {
+        api.responses.put("recent 50", recentWith("plex:1"));
+        api.hideStatus = 404;
+        cap.call(new JSONObject().put("op", "continue-hide").put("contentId", "plex:1").put("hidden", true));
+        assertEquals(0, cap.call(new JSONObject().put("op", "continue")).body.getJSONArray("items").length());
+        api.hideStatus = 200;
+        cap.call(new JSONObject().put("op", "continue"));
+        assertEquals(java.util.Arrays.asList("+plex:1"), api.hides);
+    }
+
+    /** Mark finished from a Continue card marks every part of its book, by the book's id. */
+    @Test public void markFinishedFromContinueMarksTheWholeBook() throws Exception {
+        api.responses.put("info plex:12", new JSONObject().put("metadata", new JSONObject().put("albumId", "10")).toString());
+        api.responses.put("list plex:10 200 0", new JSONObject().put("items", new org.json.JSONArray()
+                .put(new JSONObject().put("id", "plex:11").put("itemType", "leaf"))
+                .put(new JSONObject().put("id", "plex:12").put("itemType", "leaf"))).toString());
+        MediaServiceCapability.Outcome out = cap.call(new JSONObject().put("op", "book-finished").put("contentId", "plex:12"));
+        assertEquals(2, out.body.getInt("marked"));
+        assertEquals("plex:10", out.body.getString("book"));
+        assertEquals(java.util.Arrays.asList("plex:11=true", "plex:12=true"), api.marked);
+        assertEquals(java.util.Arrays.asList("+plex:12"), api.hides);
+    }
+
+    /** Undo of Mark finished: the parts are not finished again and the card's place is put back. */
+    @Test public void undoOfMarkFinishedPutsThePlaceBack() throws Exception {
+        api.responses.put("info plex:12", new JSONObject().put("metadata", new JSONObject().put("albumId", "10")).toString());
+        api.responses.put("list plex:10 200 0", new JSONObject().put("items", new org.json.JSONArray()
+                .put(new JSONObject().put("id", "plex:12").put("itemType", "leaf"))).toString());
+        cap.call(new JSONObject().put("op", "book-finished").put("contentId", "plex:12").put("finished", false)
+                .put("restoreSeconds", 600).put("durationSeconds", 6000).put("title", "Part"));
+        assertEquals(java.util.Arrays.asList("plex:12=false"), api.marked);
+        assertEquals(1, api.logged.size());
+        assertEquals(600, api.logged.get(0).getLong("seconds"));
+        assertEquals("plex:12", api.logged.get(0).getString("assetId"));
+    }
+
+    /** The kinds are asked of home; a home without the route falls back to the title rule. */
+    @Test public void libraryKindsComeFromHome() throws Exception {
+        api.responses.put("audioLibraries", new JSONObject().put("items", new org.json.JSONArray()
+                .put(new JSONObject().put("id", "plex:library/sections/9/all").put("title", "Audiobooks").put("kind", "talks"))).toString());
+        assertEquals("talks", cap.kinds().of("Audiobooks", "9"));
+        assertTrue(cap.kinds().fromHome);
+    }
+
     @Test public void anIdThatIsNotOneOfTheTreesIsRefused() throws Exception {
         assertEquals(400, browse("https://evil.example/", 0, 50).getInt("_status"));
         assertEquals(400, browse("p:plex:11", 0, 50).getInt("_status"));

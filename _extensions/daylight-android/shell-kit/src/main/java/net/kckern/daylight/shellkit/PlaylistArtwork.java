@@ -24,7 +24,21 @@ public final class PlaylistArtwork {
     private PlaylistArtwork() {}
 
     /** Where kept covers live (files/kept-art). Every screen that shows covers sets it. */
-    public static void useKept(File dir) { keptDir = dir; }
+    public static void useKept(File dir) {
+        keptDir = dir;
+        // The disk cache sits in the app's cache folder beside files/ (files/kept-art → cache/covers).
+        File app = dir == null ? null : dir.getParentFile() == null ? null : dir.getParentFile().getParentFile();
+        if (diskDir == null && app != null) diskDir = new File(new File(app, "cache"), "covers");
+    }
+
+    /**
+     * Every cover fetched is also written to a bounded folder in the app's cache (design
+     * sweep rule 7, D5): a cold start draws covers from disk instead of starting blank. The
+     * oldest go first past {@link DiskCovers#BUDGET_BYTES}; Android may clear it any time.
+     */
+    private static volatile File diskDir;
+
+    public static void useDisk(File dir) { diskDir = dir; }
 
     /**
      * The cover at {@code thumbnail}, at most {@code maxSide} pixels on its long side: from
@@ -37,6 +51,7 @@ public final class PlaylistArtwork {
         Bitmap hit = cached(thumbnail, maxSide);
         if (hit != null) return hit;
         byte[] encoded = keptBytes(thumbnail);
+        if (encoded == null) encoded = diskBytes(thumbnail);
         if (encoded == null) {
             long now = System.currentTimeMillis();
             long[] f = FAILED.get(thumbnail);
@@ -47,6 +62,7 @@ public final class PlaylistArtwork {
                 return null;
             }
             FAILED.remove(thumbnail);
+            toDisk(thumbnail, encoded);
         }
         Bitmap b = decode(encoded, maxSide);
         if (b != null) remember(thumbnail, maxSide, b);
@@ -230,6 +246,42 @@ public final class PlaylistArtwork {
         File f = new File(dir, name(url));
         try { return f.isFile() && f.length() <= MAX_BYTES ? Files.readAllBytes(f.toPath()) : null; }
         catch (java.io.IOException unreadable) { return null; }
+    }
+
+    private static byte[] diskBytes(String url) {
+        File dir = diskDir;
+        if (dir == null) return null;
+        File f = new File(dir, name(url));
+        try {
+            if (!f.isFile() || f.length() > MAX_BYTES) return null;
+            //noinspection ResultOfMethodCallIgnored
+            f.setLastModified(System.currentTimeMillis());   // used: the last to go
+            return Files.readAllBytes(f.toPath());
+        } catch (java.io.IOException | SecurityException unreadable) { return null; }
+    }
+
+    private static int writes;
+
+    private static void toDisk(String url, byte[] encoded) {
+        File dir = diskDir;
+        if (dir == null) return;
+        try {
+            //noinspection ResultOfMethodCallIgnored
+            dir.mkdirs();
+            File target = new File(dir, name(url)), tmp = new File(dir, target.getName() + ".tmp");
+            Files.write(tmp.toPath(), encoded);
+            if (!tmp.renameTo(target)) Files.write(target.toPath(), encoded);
+            if (++writes % 20 == 1) trimDisk(dir);
+        } catch (java.io.IOException | SecurityException notSaved) { /* the network next time */ }
+    }
+
+    private static void trimDisk(File dir) {
+        File[] files = dir.listFiles();
+        if (files == null) return;
+        java.util.List<DiskCovers.Entry> all = new java.util.ArrayList<>();
+        for (File f : files) all.add(new DiskCovers.Entry(f.getName(), f.length(), f.lastModified()));
+        for (String gone : DiskCovers.evict(all, DiskCovers.BUDGET_BYTES)) //noinspection ResultOfMethodCallIgnored
+            new File(dir, gone).delete();
     }
 
     private static byte[] fetch(String thumbnail) {

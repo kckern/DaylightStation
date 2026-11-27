@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Material icon "download_done" (Apache 2.0): kept on this phone. Tinted in code. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="#FF000000" android:pathData="M5,18h14v2H5V18zM9.6,15.6L4,10l2,-2 3.6,3.6L18,3.2l2,2L9.6,15.6z" />
+</vector>

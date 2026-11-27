@@ -3,6 +3,7 @@ package net.kckern.daylight.cap.mediaservice;
 import net.kckern.daylight.core.backend.Backend;
 
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
@@ -87,15 +88,45 @@ final class BrowseTree {
             if (title.isEmpty()) continue;
             String subtitle = Json.first(Json.str(item, "artist"), Json.str(item, "grandparentTitle"), Json.str(item, "parentTitle"));
             String art = art(backend, Json.str(item, "thumbnail"));
+            MediaNode n = null;
             if ("container".equals(Json.str(item, "itemType"))) {
-                out.add(new MediaNode(MediaId.container(id), title, subtitle, art, true, false));
+                n = new MediaNode(MediaId.container(id), title, subtitle, art, true, false);
             } else if (item.optJSONObject("play") != null && !NOT_AUDIO.contains(mediaType(item))) {
                 // The route gives an item a play object only when it has a stream.
-                out.add(new MediaNode(MediaId.leaf(id, parentContentId), title, subtitle, art, false, true));
+                n = new MediaNode(MediaId.leaf(id, parentContentId), title, subtitle, art, false, true);
             }
+            if (n == null) continue;
+            n.facts = facts(item);
+            out.add(n);
         }
         int total = response != null && response.opt("total") instanceof Number ? response.optInt("total", -1) : -1;
         return new Level(out, received, total);
+    }
+
+    /**
+     * A list item's facts for a phone row (year, durationSec, trackCount, artist), so the
+     * shell never guesses them; null when it has none. The list route copies metadata onto
+     * the item.
+     */
+    static JSONObject facts(JSONObject item) {
+        try {
+            JSONObject f = new JSONObject();
+            String year = Json.str(item, "year");
+            if (!year.isEmpty() && !"0".equals(year)) f.put("year", year);
+            else {
+                String released = Json.str(item, "originallyAvailableAt");
+                if (released.length() >= 4 && !released.startsWith("0000")) f.put("year", released.substring(0, 4).replaceFirst("^0+(?=\\d)", ""));
+            }
+            long duration = item.optLong("duration", 0);
+            if (duration > 0) f.put("durationSec", duration);
+            int count = item.optInt("childCount", item.optInt("leafCount", 0));
+            if (count > 0) f.put("trackCount", count);
+            String artist = Json.first(Json.str(item, "artist"), Json.str(item, "grandparentTitle"));
+            if (!artist.isEmpty()) f.put("artist", artist);
+            return f.length() == 0 ? null : f;
+        } catch (JSONException impossible) {
+            return null;
+        }
     }
 
     static List<MediaNode> audioListSources(JSONObject response) {
@@ -122,8 +153,12 @@ final class BrowseTree {
             String id = Json.str(item, "id");
             String title = Json.str(item, "title");
             if (ContentId.valid(id) && !title.isEmpty()) {
-                nodes.add(new MediaNode(MediaId.audioList(id, 0), title, "",
-                        art(backend, Json.str(item, "thumbnail")), true, false));
+                MediaNode n = new MediaNode(MediaId.audioList(id, 0), title, "", art(backend, Json.str(item, "thumbnail")), true, false);
+                // A radio-station playlist (sequenced at home: station IDs between songs) plays whole; its tracks are not listed.
+                if (item.optBoolean("station")) {
+                    try { n.facts = new JSONObject().put("kind", "station"); } catch (JSONException impossible) { }
+                }
+                nodes.add(n);
             }
         }
         int next = response.optInt("nextCursor", -1);

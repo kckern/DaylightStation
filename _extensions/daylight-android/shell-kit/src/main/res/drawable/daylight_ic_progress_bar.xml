@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Material icon "progress_bar" (Apache 2.0). Tinted in code (ItemSheet rows, BottomSheet, CoverGlyph). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="#FF000000" android:pathData="M4,11h16v2H4zM4,7h2v10H4zM18,7h2v10h-2z" />
+</vector>

@@ -66,7 +66,14 @@ public final class DownloadsActivity extends Activity {
         column.setOrientation(LinearLayout.VERTICAL);
         column.setPadding(dp(16), dp(12), dp(16), dp(24));
         scroll.addView(column);
-        setContentView(scroll);
+        // The mini player below the list (shell-kit MiniPlayer), as on every browse screen.
+        LinearLayout page = new LinearLayout(this);
+        page.setOrientation(LinearLayout.VERTICAL);
+        page.setBackgroundColor(t.background);
+        page.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+        mini = net.kckern.daylight.shellkit.MiniPlayer.attach(this, "Downloads");
+        page.addView(mini.view(), new LinearLayout.LayoutParams(-1, -2));
+        setContentView(page);
         UiTelemetry.event("Downloads", "keep.screen", new JSONObject());
         String keep = getIntent() == null ? null : getIntent().getStringExtra(EXTRA_KEEP);
         if (keep != null && !keep.isEmpty() && saved == null) KeepFlow.start(this, keep);
@@ -91,6 +98,18 @@ public final class DownloadsActivity extends Activity {
     @Override protected void onPause() {
         super.onPause();
         main.removeCallbacks(tick);
+    }
+
+    private net.kckern.daylight.shellkit.MiniPlayer mini;
+
+    @Override protected void onStart() {
+        super.onStart();
+        mini.start();
+    }
+
+    @Override protected void onStop() {
+        mini.stop();
+        super.onStop();
     }
 
     @Override public boolean onOptionsItemSelected(MenuItem item) {
@@ -257,7 +276,7 @@ public final class DownloadsActivity extends Activity {
         h.cover = new ImageView(this);
         h.cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
         h.cover.setClipToOutline(true);
-        h.cover.setBackground(t.round(t.tile, Radius.SMALL));
+        net.kckern.daylight.shellkit.CoverGlyph.behind(h.cover, t, net.kckern.daylight.shellkit.CoverGlyph.Kind.ALBUM, dp(56), t.radius(Radius.SMALL));
         top.addView(h.cover, new LinearLayout.LayoutParams(dp(52), dp(52)));
         LinearLayout text = new LinearLayout(this);
         text.setOrientation(LinearLayout.VERTICAL);
@@ -371,6 +390,7 @@ public final class DownloadsActivity extends Activity {
     private int dp(int v) { return Math.round(v * getResources().getDisplayMetrics().density); }
 
     @Override protected void onDestroy() {
+        mini.release();
         covers.shutdownNow();
         super.onDestroy();
     }

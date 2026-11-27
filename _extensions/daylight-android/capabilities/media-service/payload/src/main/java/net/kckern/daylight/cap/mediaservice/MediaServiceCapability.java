@@ -389,7 +389,7 @@ public final class MediaServiceCapability implements Capability {
             if ("parents".equals(op)) {
                 String cid = Json.str(request, "id");
                 if (!ContentId.valid(cid)) return failure(400, "bad_request");
-                return new Outcome(200, Replies.ok().put("parents", Lookup.parents(api.info(cid))));
+                return new Outcome(200, Replies.ok().put("parents", Lookup.parents(api.info(cid), kinds())));
             }
             if ("progress".equals(op)) {
                 JSONArray ids = request.optJSONArray("ids");
@@ -461,10 +461,18 @@ public final class MediaServiceCapability implements Capability {
                 return new Outcome(200, Replies.ok().put("orphaned", orphaned));
             }
             if ("continue".equals(op)) {
-                JSONArray items = BrowseTree.continueItems(api.recent(50), backend, Math.max(1, Math.min(20, request.optInt("limit", 8))));
+                int limit = Math.max(1, Math.min(20, request.optInt("limit", 8)));
+                flushHides();
+                // A hide home has not heard yet keeps its card away here (offline, or just tapped).
+                JSONArray items = hides().filter(BrowseTree.continueItems(api.recent(50), backend, limit + 4));
+                JSONArray cut = new JSONArray();
+                for (int i = 0; i < items.length() && i < limit; i++) cut.put(items.get(i));
                 health.answered();
-                return new Outcome(200, Replies.ok().put("items", items));
+                return new Outcome(200, Replies.ok().put("items", cut));
             }
+            if ("continue-hide".equals(op)) return continueHide(request);
+            if ("about".equals(op)) return about(request);
+            if ("book-finished".equals(op)) return bookFinished(request);
             if ("track-levels".equals(op)) return trackDetail(request, true);
             if ("track-lyrics".equals(op)) return trackDetail(request, false);
             if ("track-chapters".equals(op)) return trackChapters(request);
@@ -1206,10 +1214,11 @@ public final class MediaServiceCapability implements Capability {
         String reason = null;
         try {
             JSONObject found = api.search(text, 60);
-            body = Lookup.groups(found, backend, 5);
+            LibraryKinds kinds = kinds();
+            body = Lookup.groups(found, backend, 5, kinds);
             health.answered();
             // An author found by name shows their books too (at most two authors, eight books each).
-            for (String[] a : Lookup.authors(found, 2)) {
+            for (String[] a : Lookup.authors(found, 2, kinds)) {
                 try { Lookup.prependBooks(body, Lookup.booksOf(api.list(a[0], 8, 0), a[1], backend, 8)); }
                 catch (Exception oneAuthor) { /* the author row still leads to them */ }
             }
@@ -1227,10 +1236,147 @@ public final class MediaServiceCapability implements Capability {
         return new Outcome(200, out);
     }
 
+    private volatile LibraryKinds kinds;
+    private volatile long kindsAt;
+    static final long KINDS_MS = 10 * 60_000L;
+
+    /**
+     * What each audio library holds, as home says (asked at most every 10 minutes); the last
+     * answer while home is away; the title rule only when home has no such route (404).
+     */
+    LibraryKinds kinds() {
+        LibraryKinds k = kinds;
+        long now = clock.getAsLong();
+        if (k != null && k.fromHome && now - kindsAt < KINDS_MS) return k;
+        try {
+            k = LibraryKinds.of(api.audioLibraries());
+            kinds = k;
+            kindsAt = now;
+            return k;
+        } catch (MediaApi.Refused refused) {
+            if (refused.status == 404) {
+                if (core != null) core.shell().note("MEDIA", "home has no audio-libraries route: library kinds by title until it is updated");
+                kinds = LibraryKinds.legacy();
+                kindsAt = now;
+                return kinds;
+            }
+        } catch (Exception unreachable) { /* the last answer, below */ }
+        return k != null ? k : LibraryKinds.legacy();
+    }
+
+    private ContinueHides hides;
+
+    synchronized ContinueHides hides() {
+        if (hides == null) hides = new ContinueHides(new java.io.File(stateDir(), "continue-hides.json"));
+        return hides;
+    }
+
+    /**
+     * Remove from (or, Undo, back into) Continue listening: applied on the phone at once and
+     * sent to home now or when it answers. {contentId, hidden}.
+     */
+    private Outcome continueHide(JSONObject request) throws Exception {
+        String id = Json.str(request, "contentId");
+        if (!ContentId.valid(id)) return failure(400, "bad_request");
+        boolean hidden = request.optBoolean("hidden", true);
+        if (hidden) hides().hide(id, clock.getAsLong()); else hides().unhide(id, clock.getAsLong());
+        boolean sent = flushHides();
+        return new Outcome(200, Replies.ok().put("hidden", hidden).put("sent", sent));
+    }
+
+    /** Sends the hides home has not heard, oldest first; false when one is still waiting. */
+    private boolean flushHides() {
+        for (JSONObject w : hides().waiting()) {
+            String id = w.optString("contentId"), op = w.optString("op");
+            try {
+                api.hideContinue(id, "hide".equals(op));
+                hides().sent(id, op);
+            } catch (MediaApi.Refused refused) {
+                // 4xx: never accepted (a 404 from a home without the route waits for the update instead).
+                if (refused.status == 404) return false;
+                if (refused.status < 500) { hides().sent(id, op); continue; }
+                return false;
+            } catch (Exception offline) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * An author's, speaker's or artist's header (About): home's info, and for an author or a
+     * speaker their books' lengths and progress. {id: content id, books: true for an author}.
+     */
+    private Outcome about(JSONObject request) throws Exception {
+        String id = Json.str(request, "id");
+        if (!ContentId.valid(id)) return failure(400, "bad_request");
+        JSONObject info = api.info(id);
+        JSONObject leaves = null, recent = null;
+        if (request.optBoolean("books")) {
+            String local = ContentId.local(id);
+            if (local.matches("\\d+")) {
+                try { leaves = api.list(ContentId.source(id) + ":library/metadata/" + local + "/allLeaves", 500, 0); }
+                catch (Exception none) { /* the header without lengths */ }
+            }
+            try { recent = api.recent(200); } catch (Exception none) { /* without progress */ }
+        }
+        health.answered();
+        return new Outcome(200, Replies.ok().put("about", About.of(info, leaves, recent, backend)));
+    }
+
+    /**
+     * Mark finished from Continue listening: every part of the book a part belongs to (its
+     * info's albumId), then the item leaves Continue. {contentId: a part}.
+     */
+    private Outcome bookFinished(JSONObject request) throws Exception {
+        String id = Json.str(request, "contentId");
+        if (!ContentId.valid(id)) return failure(400, "bad_request");
+        boolean finished = request.optBoolean("finished", true);
+        JSONObject info = api.info(id);
+        JSONObject meta = info == null ? null : info.optJSONObject("metadata");
+        String album = meta == null ? "" : Json.str(meta, "albumId");
+        String book = album.isEmpty() ? "" : ContentId.source(id) + ":" + album;
+        List<String> parts = new ArrayList<>();
+        if (ContentId.valid(book)) {
+            JSONArray items = api.list(book, 200, 0).optJSONArray("items");
+            for (int i = 0; items != null && i < items.length(); i++) {
+                String part = Json.str(items.optJSONObject(i), "id");
+                if (ContentId.valid(part) && !"container".equals(Json.str(items.optJSONObject(i), "itemType"))) parts.add(part);
+            }
+        }
+        if (parts.isEmpty()) parts.add(id);
+        int done = 0;
+        for (String part : parts) { api.markWatched(part, finished); done++; }
+        if (finished) hides().hide(id, clock.getAsLong()); else hides().unhide(id, clock.getAsLong());
+        // Undo: home's "not finished" starts a part over; the card's place is put back.
+        long place = request.optLong("restoreSeconds", -1), length = request.optLong("durationSeconds", 0);
+        if (!finished && place > 0) {
+            try {
+                api.log(new ProgressReporter.Report(id, Json.str(request, "title"), null, place,
+                        length > 0 ? Math.min(99.0, place * 100.0 / length) : 0, false).toBody());
+            } catch (Exception notNow) { /* the part starts over; nothing else is lost */ }
+        }
+        flushHides();
+        health.answered();
+        JSONArray all = new JSONArray();
+        for (String part : parts) all.put(part);
+        return new Outcome(200, Replies.ok().put("marked", done).put("book", book).put("parts", all));
+    }
+
     /** The library's first level: the audio Plex libraries, then the household's list sources; offline, what is kept. */
     private Outcome library() throws Exception {
         try {
-            JSONArray items = Lookup.libraryRoot(api.libraries(), api.audioSources());
+            JSONObject libraries;
+            try {
+                libraries = api.audioLibraries();
+                kinds = LibraryKinds.of(libraries);
+                kindsAt = clock.getAsLong();
+            } catch (MediaApi.Refused older) {
+                if (older.status != 404) throw older;
+                // A home older than the audio-libraries route: the list endpoint's libraries.
+                libraries = api.libraries();
+            }
+            JSONArray items = Lookup.libraryRoot(libraries, api.audioSources(), kinds());
             health.answered();
             return new Outcome(200, Replies.ok().put("items", items).put("offline", false));
         } catch (Exception unreachable) {

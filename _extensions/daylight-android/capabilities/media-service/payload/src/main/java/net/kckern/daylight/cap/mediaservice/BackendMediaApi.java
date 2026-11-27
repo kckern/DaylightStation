@@ -110,6 +110,18 @@ final class BackendMediaApi implements MediaApi {
 
     @Override public JSONObject libraries() throws Exception { return get("libraries", "/api/v1/list/plex?take=60"); }
 
+    @Override public JSONObject audioLibraries() throws Exception {
+        return get("audio libraries", "/api/v1/queue/catalog/audio-libraries?profile=audio-only");
+    }
+
+    @Override public void hideContinue(String contentId, boolean hidden) throws Exception {
+        ContentId.checked(contentId);
+        Http.Reply r = hidden
+                ? http.postJson(backend.url("/api/v1/media/household/continue/hide"), new JSONObject().put("contentId", contentId).toString())
+                : http.delete(backend.url("/api/v1/media/household/continue/hide/" + ContentPath.encode(contentId)));
+        if (!r.ok()) throw new Refused("continue hide", r.status);
+    }
+
     private JSONObject get(String route, String path) throws Exception {
         Http.Reply r = http.get(backend.url(path));
         if (!r.ok()) throw new Refused(route, r.status);

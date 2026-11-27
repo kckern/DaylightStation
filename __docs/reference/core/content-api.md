@@ -280,6 +280,10 @@ Scripture info requests accept short refs via the resolver:
 - `/api/v1/info/scripture/dc88` (reference)
 
 When the resolver returns a volume container (e.g., `scripture/nt`), the info response returns a container item (no chapter listing). Volume titles can be overridden via `volumeTitles` in the scripture manifest.
+
+A Plex artist or album's info carries Plex's Country, Genre and Style tags as string
+arrays, `metadata.countries`, `metadata.genres` and `metadata.styles` (each left out when
+empty): the phone's author and artist pages read them for their facts line.
 | `/api/v1/display/:source/:id` | Displayable image | Image redirect or stream |
 | `/api/v1/play/:source/:id` | Play info with resume | Playable with resume position |
 | `/api/v1/list/:source/:id` | List container contents | Children array |

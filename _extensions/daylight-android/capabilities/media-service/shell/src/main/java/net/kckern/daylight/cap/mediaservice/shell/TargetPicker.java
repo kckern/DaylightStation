@@ -1,7 +1,6 @@
 package net.kckern.daylight.cap.mediaservice.shell;
 
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.res.ColorStateList;
 import android.os.Handler;
 import android.text.TextUtils;
@@ -22,11 +21,12 @@ import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 
 /**
- * The one "Play on" picker (Now playing's target button, a library page's Play on…): this
- * phone first, then every screen with what it is doing, checked as the list opens ("Off",
- * "Nothing playing", the title). An off screen is greyed and cannot be picked, except the
- * one in use, which stays so it can be seen. Rows reserve their state line, so nothing
- * jumps when the answers arrive.
+ * The one "Play on" picker (Now playing's target button, a library page's Play on…), a
+ * bottom sheet (design sweep D18): this phone first, then Available (playing, then idle),
+ * each screen with what it is doing, checked as the sheet opens ("Off", "Nothing playing",
+ * the title); off screens fold under one "Off · N" row and cannot be picked, except the
+ * one in use, which stays in Available. Rows reserve their state line, so nothing jumps
+ * when the answers arrive.
  */
 final class TargetPicker {
     static final String LOCAL = "local";
@@ -89,29 +89,74 @@ final class TargetPicker {
 
     interface Runnable2<A, B> { void run(A a, B b); }
 
+    /** The sheet's sections: This phone, Available (playing, then idle), and the collapsed Off row with its list. */
+    private static final class Sections {
+        LinearLayout local, available, offList;
+        TextView offRow;
+        final java.util.List<PickerGroups.Group> availableGroups = new java.util.ArrayList<>();
+        int off;
+        boolean open;
+    }
+
     /**
-     * Shows the picker at once. {@code targets} is this phone first, then the screens (the
-     * last known list is enough: a screen's own check says whether it is there). Every
-     * screen is checked at the same time, on the picker's own threads; a row reads
-     * "Checking…" until its answer. A tap on a row still being checked waits for that row
-     * (PickRow). {@code current} is checked; {@code note} shows under the list.
+     * Shows the picker at once, as a bottom sheet (design sweep D18). {@code targets} is this
+     * phone first, then the screens (the last known list is enough: a screen's own check
+     * says whether it is there). Every screen is checked at the same time, on the picker's
+     * own threads; a row reads "Checking…" in Available until its answer, then moves to its
+     * place (animated). A tap on a row still being checked waits for that row (PickRow).
+     * {@code current} is checked; {@code note} shows under the list.
      */
     static Shown show(Activity a, DaylightTheme base, List<Target> targets, String current, String note,
                       PayloadMedia media, Handler main, Picked picked) {
         float density = a.getResources().getDisplayMetrics().density;
         java.util.function.IntUnaryOperator dp = v -> Math.round(v * density);
+        net.kckern.daylight.shellkit.BottomSheet sheet = new net.kckern.daylight.shellkit.BottomSheet(a);
         LinearLayout col = new LinearLayout(a);
         col.setOrientation(LinearLayout.VERTICAL);
-        col.setPadding(dp.applyAsInt(8), dp.applyAsInt(8), dp.applyAsInt(8), dp.applyAsInt(8));
-        LinearLayout rows = new LinearLayout(a);
-        rows.setOrientation(LinearLayout.VERTICAL);
-        col.addView(rows);
+        TextView title = base.text(a, "Play on", Type.TITLE, base.ink, true);
+        title.setAccessibilityHeading(true);
+        title.setPaddingRelative(dp.applyAsInt(20), 0, dp.applyAsInt(20), dp.applyAsInt(8));
+        col.addView(title);
+        Sections sec = new Sections();
+        sec.local = section(a);
+        col.addView(sec.local);
+        TextView availableHead = base.text(a, "Available", Type.LABEL, base.inkMuted, true);
+        availableHead.setPaddingRelative(dp.applyAsInt(20), dp.applyAsInt(12), dp.applyAsInt(20), dp.applyAsInt(4));
+        col.addView(availableHead);
+        sec.available = section(a);
+        col.addView(sec.available);
+        sec.offRow = base.text(a, "", Type.BODY, base.inkMuted, false);
+        sec.offRow.setMinHeight(dp.applyAsInt(48));
+        sec.offRow.setGravity(Gravity.CENTER_VERTICAL);
+        sec.offRow.setPaddingRelative(dp.applyAsInt(60), 0, dp.applyAsInt(20), 0);
+        sec.offRow.setBackground(base.pressable(null));
+        sec.offRow.setVisibility(View.GONE);
+        sec.offRow.setCompoundDrawablesRelativeWithIntrinsicBounds(0, 0, net.kckern.daylight.shellkit.R.drawable.daylight_ic_expand, 0);
+        sec.offRow.setCompoundDrawableTintList(ColorStateList.valueOf(base.inkMuted));
+        sec.offRow.setOnClickListener(v -> {
+            sec.open = !sec.open;
+            sec.offList.setVisibility(sec.open ? View.VISIBLE : View.GONE);
+            v.setContentDescription(PickerGroups.offLabel(sec.off) + (sec.open ? ", shown" : ", hidden. Show them"));
+            UiTelemetry.event("PlayOn", "play-on.off-toggle", new JSONObject());
+        });
+        UiTelemetry.tag(sec.offRow, "play-on.off");
+        col.addView(sec.offRow);
+        sec.offList = section(a);
+        sec.offList.setVisibility(View.GONE);   // collapsed by default, every time
+        col.addView(sec.offList);
         TextView noteLine = base.text(a, "", Type.LABEL, base.inkMuted, false);
-        noteLine.setPaddingRelative(dp.applyAsInt(12), dp.applyAsInt(8), dp.applyAsInt(12), 0);
+        noteLine.setPaddingRelative(dp.applyAsInt(20), dp.applyAsInt(8), dp.applyAsInt(20), 0);
         col.addView(noteLine);
-        AlertDialog dialog = new AlertDialog.Builder(a, DaylightTheme.alert()).setTitle("Play on").setView(col).create();
+        android.widget.ScrollView scroll = new android.widget.ScrollView(a) {
+            @Override protected void onMeasure(int w, int h) {
+                int max = Math.round(a.getResources().getDisplayMetrics().heightPixels * 0.75f);
+                super.onMeasure(w, View.MeasureSpec.makeMeasureSpec(max, View.MeasureSpec.AT_MOST));
+            }
+        };
+        scroll.addView(col);
+        sheet.body().addView(scroll, new LinearLayout.LayoutParams(-1, -2));
         ExecutorService checks = java.util.concurrent.Executors.newCachedThreadPool(r -> {
-            Thread t = new Thread(r, "Daylight-play-on-check");
+            Thread t = new Thread(r, "play-on-check");
             t.setDaemon(true);
             return t;
         });
@@ -122,13 +167,20 @@ final class TargetPicker {
             if (words != null) setNote(noteLine, words);
             for (Target target : more) {
                 if (!shown.add(target.id)) continue;
-                addRow(a, base, dp, rows, target, current, media, main, checks, dialog, picked, picking, openedAt);
+                addRow(a, base, dp, sec, target, current, media, main, checks, sheet, picked, picking, openedAt);
             }
         };
         add.run(targets, note == null ? "" : note);
-        dialog.setOnDismissListener(d -> checks.shutdownNow());
-        dialog.show();
+        sheet.onDismiss(checks::shutdownNow);
+        sheet.show();
         return new Shown(add);
+    }
+
+    private static LinearLayout section(Activity a) {
+        LinearLayout l = new LinearLayout(a);
+        l.setOrientation(LinearLayout.VERTICAL);
+        l.setLayoutTransition(new android.animation.LayoutTransition());
+        return l;
     }
 
     private static void setNote(TextView line, String words) {
@@ -136,26 +188,50 @@ final class TargetPicker {
         line.setVisibility(words.isEmpty() ? View.GONE : View.VISIBLE);
     }
 
-    private static void addRow(Activity a, DaylightTheme base, java.util.function.IntUnaryOperator dp, LinearLayout rows,
+    /** Moves an answered screen's row to its group: Available (playing first) or under Off. */
+    private static void file(Sections sec, View row, PickerGroups.Group g) {
+        int was = sec.available.indexOfChild(row);
+        // An idle answer for a row already in Available: it stays where it is (no move, no jump).
+        if (was >= 0 && g == PickerGroups.Group.IDLE) { sec.availableGroups.set(was, g); return; }
+        if (was >= 0) {
+            sec.available.removeViewAt(was);
+            sec.availableGroups.remove(was);
+            // The layout transition keeps a removed view's parent until its fade ends; end it to move the row now.
+            sec.available.endViewTransition(row);
+        }
+        if (g == PickerGroups.Group.OFF) {
+            sec.offList.addView(row);
+            sec.off++;
+            sec.offRow.setText(PickerGroups.offLabel(sec.off));
+            sec.offRow.setContentDescription(PickerGroups.offLabel(sec.off) + (sec.open ? ", shown" : ", hidden. Show them"));
+            sec.offRow.setVisibility(View.VISIBLE);
+            return;
+        }
+        int at = PickerGroups.insertAt(sec.availableGroups, g);
+        sec.available.addView(row, at);
+        sec.availableGroups.add(at, g);
+    }
+
+    private static void addRow(Activity a, DaylightTheme base, java.util.function.IntUnaryOperator dp, Sections sec,
                                Target target, String current, PayloadMedia media, Handler main, ExecutorService checks,
-                               AlertDialog dialog, Picked picked, boolean[] picking, long openedAt) {
+                               net.kckern.daylight.shellkit.BottomSheet dialog, Picked picked, boolean[] picking, long openedAt) {
         final String id = target.id, label = target.name;
         final boolean on = id.equals(current), local = LOCAL.equals(id);
         final PickRow state = new PickRow(local, on);
         final String[] answer = new String[1];
         LinearLayout row = new LinearLayout(a);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setMinimumHeight(dp.applyAsInt(52));
-        row.setPaddingRelative(dp.applyAsInt(12), 0, dp.applyAsInt(12), 0);
+        row.setMinimumHeight(dp.applyAsInt(56));
+        row.setPaddingRelative(dp.applyAsInt(20), 0, dp.applyAsInt(20), 0);
         row.setBackground(base.pressable(null));
         ImageView kind = new ImageView(a);
         kind.setImageResource(local ? R.drawable.daylight_np_phone : iconFor(target.type, label));
-        kind.setImageTintList(ColorStateList.valueOf(on ? base.primary : base.ink));
+        kind.setImageTintList(ColorStateList.valueOf(on ? base.primary : base.inkMuted));
         row.addView(kind, new LinearLayout.LayoutParams(dp.applyAsInt(24), dp.applyAsInt(24)));
         LinearLayout words = new LinearLayout(a);
         words.setOrientation(LinearLayout.VERTICAL);
         words.setPaddingRelative(dp.applyAsInt(16), 0, 0, 0);
-        TextView name = base.text(a, label, Type.BODY, on ? base.primary : base.ink, on);
+        TextView name = base.text(a, label, Type.BODY, base.ink, on);
         words.addView(name);
         TextView line = base.text(a, local ? "Ready" : "Checking…", Type.LABEL, base.inkMuted, false);
         line.setMaxLines(1);
@@ -186,8 +262,8 @@ final class TargetPicker {
                 default: break;
             }
         });
-        rows.addView(row);
-        if (local) return;
+        if (local) { sec.local.addView(row); return; }
+        file(sec, row, PickerGroups.Group.IDLE);   // Checking…: in Available until it answers
         try {
             checks.execute(() -> {
                 JSONObject reply = null;
@@ -206,9 +282,11 @@ final class TargetPicker {
                     if (next == PickRow.Answer.DISABLE) {
                         row.setAlpha(0.45f);
                         row.setContentDescription(name.getText() + ", off");
-                    } else if (next == PickRow.Answer.PICK && dialog.isShowing()) {
+                    } else if (next == PickRow.Answer.PICK && dialog.showing()) {
                         pick.run();
+                        return;
                     }
+                    file(sec, row, PickerGroups.of(got.reach, on));
                 });
             });
         } catch (java.util.concurrent.RejectedExecutionException closed) { /* the picker is gone */ }

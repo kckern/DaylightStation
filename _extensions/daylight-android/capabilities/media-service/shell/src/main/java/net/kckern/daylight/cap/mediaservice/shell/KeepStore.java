@@ -654,6 +654,10 @@ final class KeepStore {
             case "remove-finished": removeFinished(done); break;
             case "mobile-once": useMobileDataOnce(); if (then != null) then.run(); break;
             case "undo": keep("c:" + contentId, done); break;
+            case "finished-check":
+                // A book marked finished from Continue listening: its removal clock (a day) starts now, not at the next re-sync.
+                local.execute(() -> { checkFinished(System.currentTimeMillis()); if (then != null) main.post(then); });
+                break;
             case "resync-open": {
                 // Opened online: kept lists re-synced, at most once an hour.
                 long now = System.currentTimeMillis();

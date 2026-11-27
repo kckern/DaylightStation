@@ -93,6 +93,10 @@ public final class BackendHttp implements Http {
         return sendJson("POST", url, json, headers);
     }
 
+    @Override public Reply delete(String url) throws IOException {
+        return finish(open(url, "DELETE", readMs));
+    }
+
     @Override public Reply putJson(String url, String json) throws IOException {
         return sendJson("PUT", url, json, null);
     }

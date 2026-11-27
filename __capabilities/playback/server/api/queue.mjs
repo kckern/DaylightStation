@@ -120,6 +120,12 @@ export function createQueueRouter(config) {
     return res.json({ items: contentAccessService.audioListSources() });
   }));
 
+  // The audio libraries with their kinds (music, books, talks): the phone's library and search.
+  router.get('/catalog/audio-libraries', asyncHandler(async (req, res) => {
+    if (req.query.profile !== 'audio-only') return res.status(400).json({ error: 'Unknown playback profile' });
+    return res.json({ items: await contentAccessService.audioLibraries(), default: 'music' });
+  }));
+
   router.get('/catalog/audio-lists', asyncHandler(async (req, res) => {
     const { source, profile } = req.query;
     const skip = Number(req.query.skip ?? 0);
