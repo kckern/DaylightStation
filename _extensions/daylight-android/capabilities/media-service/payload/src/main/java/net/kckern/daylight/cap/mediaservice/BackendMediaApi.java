@@ -97,6 +97,8 @@ final class BackendMediaApi implements MediaApi {
         }
     }
 
+    @Override public JSONObject libraries() throws Exception { return get("libraries", "/api/v1/list/plex?take=60"); }
+
     private JSONObject get(String route, String path) throws Exception {
         Http.Reply r = http.get(backend.url(path));
         if (!r.ok()) throw new Refused(route, r.status);
