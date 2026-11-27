@@ -85,6 +85,30 @@ export class ContentQueryService extends IContentQueryPort {
   }
 
   /**
+   * Build every source's search index in the background (boot calls this and
+   * does not wait). Without it the first search after a restart paid for the
+   * build and could miss its source budget. Logs each source's build time.
+   * @returns {Promise<Array<{source: string, ok: boolean, buildMs: number}>>}
+   */
+  prepareSearch() {
+    const sources = this.#contentCatalog.searchPreparableSources?.() ?? [];
+    this.#logger.info?.('content-query.search-index.building', { sources });
+    return Promise.all(sources.map(async (source) => {
+      const startedAt = performance.now();
+      try {
+        const result = await this.#contentCatalog.prepareSearch(source);
+        const buildMs = Math.round(performance.now() - startedAt);
+        this.#logger.info?.('content-query.search-index.ready', { source, buildMs, entries: result?.entries ?? null });
+        return { source, ok: true, buildMs };
+      } catch (error) {
+        const buildMs = Math.round(performance.now() - startedAt);
+        this.#logger.warn?.('content-query.search-index.failed', { source, buildMs, error: error?.message || String(error) });
+        return { source, ok: false, buildMs };
+      }
+    }));
+  }
+
+  /**
    * Resolve the search timeout budget for a source.
    * Per-source overrides (slow local-scan sources like abs/singalong) win over
    * the default.

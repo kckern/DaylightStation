@@ -36,6 +36,11 @@ const DEFAULT_SEARCH_EXCLUDED_PATHS = ['video/fitness/', 'fitness/'];
 // is built behind it. Names added on disk show up within this window.
 const SEARCH_INDEX_TTL_MS = 10 * 60 * 1000;
 
+// The very first index (the boot build, see prepareSearch) takes seconds on the
+// real tree. A search that arrives before it is done waits this long for it,
+// then matches the names walked so far rather than miss its own budget.
+const SEARCH_INDEX_COLD_WAIT_MS = 1500;
+
 const MIME_TYPES = {
   '.mp3': 'audio/mpeg',
   '.m4a': 'audio/mp4',
@@ -887,7 +892,7 @@ export class FileAdapter extends IContentSource {
 
     if (!includeExcluded) {
       // The everyday path: match names in the shared index (no disk walk).
-      const entries = await this._searchIndex();
+      const { entries, partial } = await this._searchIndexWithin(SEARCH_INDEX_COLD_WAIT_MS);
       let scanned = 0;
       for (const entry of entries) {
         if (results.length >= take) break;
@@ -905,7 +910,9 @@ export class FileAdapter extends IContentSource {
         if (item.id) seenIds.add(item.id);
         results.push(item);
       }
-      return { items: results, total: results.length };
+      return partial
+        ? { items: results, total: results.length, partial: true }
+        : { items: results, total: results.length };
     }
 
     // Asked for the excluded footage too (rare, explicit): walk the tree.
@@ -945,22 +952,57 @@ export class FileAdapter extends IContentSource {
     const fresh = state.entries && Date.now() - state.builtAt < SEARCH_INDEX_TTL_MS;
     if (fresh) return Promise.resolve(state.entries);
     if (!state.building) {
-      const building = this._buildSearchIndex().then((entries) => {
-        this._searchIndexState = { entries, builtAt: Date.now(), building: null };
+      const pending = [];
+      const building = this._buildSearchIndex(pending).then((entries) => {
+        this._searchIndexState = { entries, builtAt: Date.now(), building: null, pending: null };
         return entries;
       }, (error) => {
-        this._searchIndexState = { ...this._searchIndexState, building: null };
+        this._searchIndexState = { ...this._searchIndexState, building: null, pending: null };
         throw error;
       });
-      this._searchIndexState = { ...state, building };
+      this._searchIndexState = { ...state, building, pending };
       return state.entries ? Promise.resolve(state.entries) : building;
     }
     return state.entries ? Promise.resolve(state.entries) : state.building;
   }
 
-  /** @private */
-  async _buildSearchIndex() {
-    const entries = [];
+  /**
+   * The index for one search: the built one (fresh or stale), or — while the
+   * first build is still running past `waitMs` — the names walked so far.
+   * @param {number} waitMs
+   * @returns {Promise<{entries: Array, partial: boolean}>}
+   * @private
+   */
+  async _searchIndexWithin(waitMs) {
+    const ready = this._searchIndex();
+    let timer;
+    const late = new Promise((resolve) => { timer = setTimeout(resolve, waitMs, null); });
+    try {
+      const entries = await Promise.race([ready, late]);
+      if (entries) return { entries, partial: false };
+    } finally {
+      clearTimeout(timer);
+    }
+    ready.catch(() => {});
+    return { entries: (this._searchIndexState?.pending ?? []).slice(), partial: true };
+  }
+
+  /**
+   * Build the search index ahead of the first search (called once at boot,
+   * not awaited by it).
+   * @returns {Promise<{entries: number}>}
+   */
+  async prepareSearch() {
+    const entries = await this._searchIndex();
+    return { entries: entries.length };
+  }
+
+  /**
+   * @param {Array} [entries] - Filled in place as the walk goes (read by a
+   *   search that cannot wait for the first build).
+   * @private
+   */
+  async _buildSearchIndex(entries = []) {
     const budget = { ops: 0 };
     for (const prefix of MEDIA_PREFIXES) {
       const searchPath = prefix ? path.join(this.mediaBasePath, prefix) : this.mediaBasePath;

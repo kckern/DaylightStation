@@ -314,6 +314,11 @@ export class RegistryContentCatalogGateway extends IContentCatalogGateway {
     return this.isSearchable ? this.isSearchable(source) : typeof source?.search === 'function';
   }
   async search(sourceName, query) { return this.registry.get(sourceName).search(query); }
+  /** Sources that can build their search index ahead of the first search. */
+  searchPreparableSources() {
+    return this.sourceNames().filter((name) => typeof this.registry.get(name)?.prepareSearch === 'function');
+  }
+  async prepareSearch(sourceName) { return this.registry.get(sourceName).prepareSearch(); }
   async listSource(sourceName, query) { return this.registry.get(sourceName).getList(query); }
 
   async findAlternates(contentId) {

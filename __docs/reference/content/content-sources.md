@@ -110,7 +110,7 @@ Tiers let the frontend get fast results first and defer expensive work until the
 |--------|--------|--------|------------|
 | **plex** | `hubSearch()` only → filter to show/movie/artist/album/collection → return without hydration (~300ms) | Full: hubSearch + `_searchPlaylists` + `_searchCollections` + `getItem()` per result (~8-18s) | 30-80x fewer API calls |
 | **immich** | Same as tier 2 | 4 parallel searches (assets, people, tags, albums) (~50-200ms) | No difference — already fast |
-| **audiobookshelf** | Same as tier 2 | Library scan + author detail fetch (~100-500ms) | No difference — already fast |
+| **audiobookshelf** | Same as tier 2 | One native search per library, in parallel (books + authors, ~5-200ms) | No difference — already fast |
 | **filesystem** | Same as tier 2 | Local file scan (~<50ms) | No difference — local I/O |
 
 Adapters that are already fast (<500ms) ignore the tier parameter and always do their full search. Only adapters with expensive multi-phase search need to differentiate.
@@ -192,6 +192,7 @@ Connects to an Audiobookshelf server. A single ABS instance can produce both pla
 - **Config**: host, API key
 - **Resume**: Audiobooks use seconds-based playhead. Ebooks use EPUB CFI (Canonical Fragment Identifiers). 90% = complete.
 - **Container aliases**: `libraries`, `authors`, `series`, `narrators`
+- **Search**: one `/api/libraries/:id/search` per library, in parallel; it answers books and authors together. The library list is cached for 10 minutes. Only an author with no picture is fetched (`/api/authors/:id?include=items`) to borrow a book cover. Never download a library's author list per search: it is ~13 MB here and cost 1.4 s alone, 6 s (the `abs` budget) beside the other sources.
 
 ### komga
 
@@ -228,6 +229,8 @@ Reads files from the local filesystem. Behavior varies by `content_format` confi
   searches never walk the tree per keystroke — per-search walks of ~450k entries starved the other sources (photo libraries
   timed out at 3 s only while a walk ran). Excluded by default: `video/fitness/` and `fitness/` (workout footage and session
   snapshots); `files.includeExcluded=true` searches them with a direct walk. Override the list with `mediaSearchExcludePaths`.
+- **Index at boot**: boot calls `ContentQueryService.prepareSearch()` without waiting; every adapter with a `prepareSearch()` (`files`, `singalong`) builds its index then, logged as `content-query.search-index.ready` `{source, buildMs, entries}` (or `.failed`). A `files` search that arrives during the first build waits up to 1.5 s, then matches the names walked so far and returns `partial: true` — never a timeout.
+- **Search (`singalong` source)**: matches titles and numbers in an index of `{collection, number, title}` (TTL 10 minutes, stale served while rebuilding); only the matches are built with `getItem`, each once per index. Building every song per search (~650 YAML + audio scans + MP3 header reads) took ~1 s alone and 8 s (its budget) beside the other sources.
 
 #### Data/Media Path Split
 

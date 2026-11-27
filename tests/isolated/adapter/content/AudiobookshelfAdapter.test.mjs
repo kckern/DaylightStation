@@ -510,10 +510,9 @@ describe('AudiobookshelfAdapter', () => {
     });
 
     test('search filters by text query', async () => {
-      // Production with text query routes through three high-level client
-      // calls — getLibraries, getAuthors (per library), and searchLibrary
-      // (returns { book: [{libraryItem}] }). Drive them via httpClient.get
-      // routed by URL.
+      // A text query: the (cached) libraries, then one native searchLibrary
+      // per library (returns { book: [{libraryItem}], authors }). Drive them
+      // via httpClient.get routed by URL.
       mockHttpClient.get.mockImplementation(async (url) => {
         if (url.endsWith('/api/libraries')) {
           return { data: { libraries: [{ id: 'lib-1', name: 'Books' }] } };
@@ -549,6 +548,52 @@ describe('AudiobookshelfAdapter', () => {
 
       expect(result.total).toBe(1);
       expect(result.items[0].title).toBe('The Magic Garden');
+    });
+
+    // 2026-11-27: every text search downloaded each library's whole author
+    // list (~13 MB, 11k+ names) to filter it here: 1.4 s alone, 6 s (the abs
+    // budget) beside the other sources, so "hymn" timed out. Authors now come
+    // from the native search, the libraries from a cache.
+    test('text search takes authors from the native search, never the author list', async () => {
+      mockHttpClient.get.mockImplementation(async (url) => {
+        if (url.endsWith('/api/libraries')) {
+          return { data: { libraries: [{ id: 'lib-1' }, { id: 'lib-2' }] } };
+        }
+        if (url.includes('/search')) {
+          const lib = url.includes('lib-1') ? 'lib-1' : 'lib-2';
+          return {
+            data: {
+              book: [],
+              authors: lib === 'lib-1'
+                ? [{ id: 'a-1', name: 'Hymn Writer', imagePath: '/img.jpg', numBooks: 3 }]
+                : [{ id: 'a-2', name: 'Another Hymnist', numBooks: 1 }],
+            },
+          };
+        }
+        if (url.includes('/api/authors/a-2')) {
+          return { data: { id: 'a-2', name: 'Another Hymnist', libraryItems: [{ id: 'book-9' }] } };
+        }
+        throw new Error(`unexpected ${url}`);
+      });
+
+      const adapter = new AudiobookshelfAdapter(
+        { host: 'http://localhost:13378', token: 'test-token' },
+        { httpClient: mockHttpClient }
+      );
+
+      const first = await adapter.search({ text: 'hymn' });
+      await adapter.search({ text: 'hymn' });
+
+      const urls = mockHttpClient.get.mock.calls.map(([url]) => url);
+      expect(urls.some((url) => /\/libraries\/[^/]+\/authors/.test(url))).toBe(false);
+      expect(urls.filter((url) => url.endsWith('/api/libraries'))).toHaveLength(1);
+      // Only the author with no picture is fetched (for a book cover).
+      expect(urls.filter((url) => url.includes('/api/authors/'))).toEqual([
+        'http://localhost:13378/api/authors/a-2?include=items',
+        'http://localhost:13378/api/authors/a-2?include=items',
+      ]);
+      expect(first.items.map((i) => i.title)).toEqual(['Hymn Writer', 'Another Hymnist']);
+      expect(first.items[1].thumbnail).toBe('/api/v1/proxy/abs/items/book-9/cover');
     });
   });
 });

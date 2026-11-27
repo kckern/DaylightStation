@@ -432,6 +432,38 @@ describe('FileAdapter search walk', () => {
     expect(b.items.map(i => i.id)).toContain('files:audio/sonic/green-hill.mp3');
   });
 
+  // 2026-11-27: the first search after a restart paid for the index build
+  // (seconds on the real tree) and missed the files budget. A search during the
+  // first build waits briefly, then matches the names walked so far.
+  test('a search during the first build answers from the names walked so far', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      let finish;
+      vi.spyOn(adapter, '_buildSearchIndex').mockImplementation((entries = []) => {
+        entries.push({ rel: 'audio/sonic', nameLower: 'sonic', baseLower: 'sonic', isDirectory: true, mediaType: null });
+        return new Promise((resolve) => { finish = () => resolve(entries); });
+      });
+      const pending = adapter.search({ text: 'sonic', take: 50 });
+      await vi.advanceTimersByTimeAsync(1500);
+      const result = await pending;
+      expect(result.partial).toBe(true);
+      expect(result.items.map(i => i.id)).toEqual(['files:audio/sonic']);
+      finish();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('prepareSearch builds the index the next search reads', async () => {
+    const build = vi.spyOn(adapter, '_buildSearchIndex');
+    const { entries } = await adapter.prepareSearch();
+    expect(entries).toBeGreaterThan(0);
+    const { items, partial } = await adapter.search({ text: 'sonic', take: 50 });
+    expect(build).toHaveBeenCalledTimes(1);
+    expect(partial).toBeUndefined();
+    expect(items.map(i => i.id)).toContain('files:audio/sonic');
+  });
+
   test('the workout snapshots under fitness/ are not searched by default', async () => {
     fs.mkdirSync(path.join(root, 'fitness', 'sessions', 's1'), { recursive: true });
     fs.writeFileSync(path.join(root, 'fitness', 'sessions', 's1', 'sonic-snap.jpg'), '');

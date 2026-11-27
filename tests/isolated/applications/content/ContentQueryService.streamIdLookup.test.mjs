@@ -188,3 +188,21 @@ describe('search() direct id', () => {
     expect(result.items[0]).toMatchObject({ id: 'plex:697495', matchReason: 'id-lookup' });
   });
 });
+
+// 2026-11-27: the first search after a restart paid for the file-name index
+// build and could miss the files budget. Boot asks every source that has an
+// index to build it, in the background, and logs each build's time.
+describe('prepareSearch', () => {
+  it('builds each preparable source and logs its build time', async () => {
+    const files = stub('files', { prepareSearch: vi.fn().mockResolvedValue({ entries: 42 }) });
+    const broken = stub('singalong', { prepareSearch: vi.fn().mockRejectedValue(new Error('disk gone')) });
+    const plain = stub('plex');
+    const { svc, logger } = build([files, broken, plain]);
+    const results = await svc.prepareSearch();
+    expect(results.map((r) => [r.source, r.ok])).toEqual([['files', true], ['singalong', false]]);
+    expect(logger.info).toHaveBeenCalledWith('content-query.search-index.ready',
+      expect.objectContaining({ source: 'files', entries: 42, buildMs: expect.any(Number) }));
+    expect(logger.warn).toHaveBeenCalledWith('content-query.search-index.failed',
+      expect.objectContaining({ source: 'singalong', error: 'disk gone' }));
+  });
+});

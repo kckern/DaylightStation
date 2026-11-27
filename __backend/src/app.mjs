@@ -1315,6 +1315,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     libbyCoverService: libbyRuntime?.coverService,
     logger: rootLogger.child({ module: 'content' })
   });
+  // Search indexes (media file names, sing-along titles) build now, in the
+  // background, so the first search after a restart does not pay for them.
+  contentServices.contentQueryService?.prepareSearch?.().catch(() => {});
 
   // Keep live Plex sessions alive, and end the ones whose surface went quiet.
   //

@@ -8,7 +8,8 @@ import {
   fileExists,
   dirExists,
   listDirs,
-  listYamlFiles
+  listYamlFiles,
+  loadYamlFromPathAsync
 } from '#system/utils/FileIO.mjs';
 import { PlayableItem } from "../../../domain/capabilities/Playable.mjs";
 
@@ -17,6 +18,16 @@ const SINGALONG_COLLECTION_TITLES = {
   hymn: 'Hymns',
   primary: 'Primary Songs',
 };
+
+// Search matches titles in an in-memory index instead of building every song.
+// It used to call getItem for each of the ~650 songs per search (a directory
+// scan to find the YAML, the YAML, the manifest, a scan for the audio file and
+// an MP3 header read for its length, per song): ~1 s alone, 8 s (its budget)
+// beside the other sources, so "hymn" timed out. The index holds each song's
+// collection, number and title; only the matches are built, and built songs
+// are kept until the index is rebuilt. Reused this long; an older index is
+// served while the next one builds. Songs added on disk show up within it.
+const SEARCH_INDEX_TTL_MS = 10 * 60 * 1000;
 
 /**
  * Adapter for participatory sing-along content (hymns, primary songs).
@@ -338,40 +349,89 @@ export class SingalongAdapter {
     const searchText = (text || '').toLowerCase();
     const items = [];
 
-    // Get collections to search
-    const collections = collection
-      ? [collection]
-      : listDirs(this.dataPath);
+    const index = await this._searchIndex();
+    for (const entry of index.entries) {
+      if (collection && entry.collection !== collection) continue;
+      const titleMatch = entry.titleLower.includes(searchText);
+      const numMatch = entry.number.includes(searchText);
+      if (!(titleMatch || numMatch || !searchText)) continue;
 
-    for (const coll of collections) {
-      const collectionPath = path.join(this.dataPath, coll);
-      if (!dirExists(collectionPath)) continue;
-
-      const files = listYamlFiles(collectionPath);
-      for (const file of files) {
-        // Skip manifest files
-        if (file === 'manifest.yml') continue;
-
-        const match = file.match(/^0*(\d+)/);
-        if (!match) continue;
-
-        const itemNum = match[1];
-        const item = await this.getItem(`${coll}/${itemNum}`);
-        if (!item) continue;
-
-        // Match on title or number
-        const titleMatch = item.title?.toLowerCase().includes(searchText);
-        const numMatch = itemNum.includes(searchText);
-
-        if (titleMatch || numMatch || !searchText) {
-          items.push(item);
-          if (items.length >= take) break;
-        }
-      }
+      const item = await this._indexedItem(index, entry);
+      if (!item) continue;
+      items.push(item);
       if (items.length >= take) break;
     }
 
     return { items, total: items.length };
+  }
+
+  /**
+   * Build the search index ahead of the first search (called once at boot).
+   * @returns {Promise<{entries: number}>}
+   */
+  async prepareSearch() {
+    const index = await this._searchIndex();
+    return { entries: index.entries.length };
+  }
+
+  /**
+   * The search index (see SEARCH_INDEX_TTL_MS). One build at a time, shared by
+   * every caller; a stale index is served while its replacement builds.
+   * @returns {Promise<{entries: Array<{collection: string, number: string, titleLower: string}>, items: Map}>}
+   * @private
+   */
+  _searchIndex() {
+    const state = this._searchIndexState ?? {};
+    if (state.index && Date.now() - state.builtAt < SEARCH_INDEX_TTL_MS) {
+      return Promise.resolve(state.index);
+    }
+    if (!state.building) {
+      const building = this._buildSearchIndex().then((index) => {
+        this._searchIndexState = { index, builtAt: Date.now(), building: null };
+        return index;
+      }, (error) => {
+        this._searchIndexState = { ...this._searchIndexState, building: null };
+        throw error;
+      });
+      this._searchIndexState = { ...state, building };
+      return state.index ? Promise.resolve(state.index) : building;
+    }
+    return state.index ? Promise.resolve(state.index) : state.building;
+  }
+
+  /** @private */
+  async _buildSearchIndex() {
+    const entries = [];
+    for (const coll of listDirs(this.dataPath)) {
+      const collectionPath = path.join(this.dataPath, coll);
+      if (!dirExists(collectionPath)) continue;
+      const songs = [];
+      for (const file of listYamlFiles(collectionPath, { stripExtension: false })) {
+        const match = file.match(/^0*(\d+)/);
+        if (!match) continue;
+        songs.push({ file, number: match[1] });
+      }
+      const metadata = await Promise.all(songs.map(({ file }) =>
+        loadYamlFromPathAsync(path.join(collectionPath, file))
+      ));
+      songs.forEach(({ number }, i) => {
+        const title = metadata[i]?.title || `${coll} ${number}`;
+        entries.push({ collection: coll, number, titleLower: String(title).toLowerCase() });
+      });
+    }
+    return { entries, items: new Map() };
+  }
+
+  /**
+   * A matched song, built once per index.
+   * @private
+   */
+  async _indexedItem(index, entry) {
+    const key = `${entry.collection}/${entry.number}`;
+    if (!index.items.has(key)) {
+      index.items.set(key, this.getItem(key).catch(() => null));
+    }
+    return index.items.get(key);
   }
 
   // ---------------------------------------------------------------------------
