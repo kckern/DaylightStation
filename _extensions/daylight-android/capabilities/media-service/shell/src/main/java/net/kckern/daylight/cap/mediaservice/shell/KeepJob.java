@@ -24,7 +24,7 @@ import net.kckern.daylight.shellkit.ShellStart;
  * <li>{@link #RESUME_ID}: Media3's downloads, run here while their network and storage hold
  *   ({@link KeepScheduler}); never a foreground-service start from the background;</li>
  * <li>{@link #INBOX_ID}: every 15 min (Android's shortest) with any network, the app closed:
- *   one check of the phone's inbox, so a keep or remove sent from the web lands without
+ *   one check of the phone's inbox, then any held telemetry batches sent, so a keep or remove sent from the web lands without
  *   opening the app (a Play on still needs the app open: plays are only queued while the
  *   phone is listening);</li>
  * <li>{@link #AUTO_SWEEP_ID}: when an automatic keep's removal falls due (spec §3.10);</li>
@@ -84,6 +84,11 @@ public final class KeepJob extends JobService {
                 status = reply.has("status") ? reply.optString("status") : "no status: " + reply.optString("error", reply.toString());
             } catch (Exception failed) { status = failed.getClass().getSimpleName(); }
             Log.i(TAG, "inbox job: " + status);
+            // The same run sends the phone's held telemetry: with the app closed nothing else
+            // does once the one-shot telemetry job has given up, and the payload is up now.
+            net.kckern.daylight.shellkit.TelemetryDrain.Result sent =
+                    net.kckern.daylight.shellkit.UiTelemetry.flushWithPayloadUp(this, 30_000);
+            Log.i(TAG, "inbox job telemetry: " + (sent == null ? "not finished in time" : sent.toString()));
             done(params, false);
             return;
         }

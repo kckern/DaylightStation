@@ -110,6 +110,9 @@ public final class UiTelemetry {
     static final String JOB_CLASS = "net.kckern.daylight.cap.widgets.shell.TelemetryJob";
     private static final int JOB_ID = 7102;
 
+    /** Runs of the job (or flushes) in a row that left batches: the next try waits longer (TelemetrySchedule). */
+    private volatile int failedRuns;
+
     private void scheduleJob() {
         try {
             android.content.ComponentName job = new android.content.ComponentName(app, JOB_CLASS);
@@ -118,8 +121,8 @@ public final class UiTelemetry {
             if (scheduler == null) return;
             scheduler.schedule(new android.app.job.JobInfo.Builder(JOB_ID, job)
                     .setRequiredNetworkType(android.app.job.JobInfo.NETWORK_TYPE_ANY)
-                    .setMinimumLatency(60_000L)
-                    .setBackoffCriteria(5 * 60_000L, android.app.job.JobInfo.BACKOFF_POLICY_EXPONENTIAL)
+                    .setMinimumLatency(TelemetrySchedule.retryMs(failedRuns))
+                    .setBackoffCriteria(TelemetrySchedule.retryMs(failedRuns), android.app.job.JobInfo.BACKOFF_POLICY_LINEAR)
                     .build());
         } catch (Exception notInThisBuild) {
             // No job: the batches go when a screen next opens or a network returns.
@@ -159,7 +162,8 @@ public final class UiTelemetry {
                 try { if (at instanceof Long) d.put("visibleMs", SystemClock.elapsedRealtime() - (Long) at); } catch (Exception ignored) { }
                 record("ui.screen.hidden", screen(a), d);
                 if (--started <= 0) { started = 0; main.removeCallbacks(tick); }
-                flush();
+                // The last screen closed: send now, and whatever is left goes to the job.
+                flush(false, null);
             }
             @Override public void onActivityResumed(Activity a) { }
             @Override public void onActivityPaused(Activity a) { }
@@ -291,7 +295,8 @@ public final class UiTelemetry {
             boolean left = true;
             try { left = flushNow(mayStartPayload); }
             finally {
-                if (left) scheduleJob();
+                int held = left ? Math.max(1, safeWaiting()) : 0;
+                if (TelemetrySchedule.needsJob(held, started > 0) || (left && mayStartPayload)) scheduleJob();
                 if (done != null) done.accept(left);
             }
         });
@@ -299,54 +304,60 @@ public final class UiTelemetry {
 
     /** True when something is still waiting afterwards. On the telemetry thread. */
     private boolean flushNow(boolean mayStartPayload) {
-        int sent = 0;
         try {
             store.seal();
             if (store.waiting() == 0) return false;
-            // While a screen is open, or from the job, the payload may be started for this.
-            if (started > 0 || mayStartPayload) { try { ShellStart.ensure(app); } catch (RuntimeException refused) { /* sent later */ } }
-            for (TelemetryStore.Batch b = store.next(); b != null; b = store.next()) {
-                int answer = send(b.events, mayStartPayload ? 15_000 : 4000);
-                if (answer == LATER) {
-                    backoffMs = Math.min(MAX_BACKOFF_MS, backoffMs * 2);
-                    Log.i(TAG, "telemetry kept for later: " + store.waiting() + " batch(es) waiting");
-                    return true;
-                }
-                // Refused for good (a 4xx the backend will always give this batch): dropped,
-                // so one bad batch never holds back the ones after it.
-                if (answer == REFUSED) Log.w(TAG, "telemetry batch refused by home; dropped");
-                store.ack(b);
-                sent++;
-            }
-            backoffMs = FLUSH_MS;
-            if (sent > 0) Log.i(TAG, "telemetry sent: " + sent + " batch(es)");
-            return false;
         } catch (Exception failed) {
             Log.w(TAG, "telemetry flush: " + failed.getClass().getSimpleName());
             return true;
         }
+        // While a screen is open, or from the job, the payload may be started for this.
+        if (started > 0 || mayStartPayload) { try { ShellStart.ensure(app); } catch (RuntimeException refused) { /* sent later */ } }
+        return drained(TelemetryDrain.drain(store, TelemetryDrain.port(mayStartPayload ? 15_000 : 4000)));
     }
 
-    static final int SENT = 0, LATER = 1, REFUSED = 2;
-
-    /** What a relay answer means for a batch: sent, try later (no network, home down, busy), or refused for good. */
-    static int outcome(JSONObject reply) {
-        if (reply.optBoolean("ok", false)) return SENT;
-        int status = reply.optInt("status", 0);
-        boolean forGood = status >= 400 && status < 500 && status != 408 && status != 429;
-        return forGood ? REFUSED : LATER;
+    private int safeWaiting() {
+        try { return store.waiting(); } catch (RuntimeException unreadable) { return 1; }
     }
 
-    private int send(JSONArray events, long waitMs) {
+    private boolean drained(TelemetryDrain.Result r) {
+        if (r.refused > 0) Log.w(TAG, "telemetry: " + r.refused + " batch(es) refused by home; dropped");
+        failedRuns = r.left ? failedRuns + 1 : 0;
+        if (r.left) {
+            backoffMs = Math.min(MAX_BACKOFF_MS, backoffMs * 2);
+            Log.i(TAG, "telemetry kept for later: " + r.waiting + " batch(es) waiting");
+            return true;
+        }
+        backoffMs = FLUSH_MS;
+        if (r.sent > 0) Log.i(TAG, "telemetry sent: " + r.sent + " batch(es)");
+        return false;
+    }
+
+    /**
+     * For a background job that already holds the shell up and has waited for its payload
+     * (the media service's 15-minute inbox job): send every batch that waits, on the
+     * telemetry thread so it never races a screen's flush, and wait for it up to
+     * {@code waitMs}. Answers what was done, or null when it did not finish in time
+     * (the batches stay on disk). Never throws. Batches are tiny, so any network will do.
+     */
+    public static TelemetryDrain.Result flushWithPayloadUp(Context context, long waitMs) {
+        UiTelemetry t = get(context);
+        java.util.concurrent.Future<TelemetryDrain.Result> f = t.io.submit(() -> {
+            TelemetryDrain.Result r = TelemetryDrain.drain(t.store, TelemetryDrain.port(Math.min(waitMs, 15_000)));
+            if (t.drained(r) && TelemetrySchedule.needsJob(r.waiting, t.started > 0)) t.scheduleJob();
+            return r;
+        });
         try {
-            String reply = PayloadPort.named(PORT).call(new JSONObject().put("source", "android").put("events", events).toString(), waitMs);
-            return outcome(new JSONObject(reply));
-        } catch (PayloadPort.NotReadyException notYet) {
-            return LATER;
-        } catch (Exception failed) {
-            return LATER;
+            return f.get(waitMs, java.util.concurrent.TimeUnit.MILLISECONDS);
+        } catch (Exception notInTime) {
+            return null;
         }
     }
+
+    static final int SENT = TelemetryDrain.SENT, LATER = TelemetryDrain.LATER, REFUSED = TelemetryDrain.REFUSED;
+
+    /** What a relay answer means for a batch (TelemetryDrain.outcome). */
+    static int outcome(JSONObject reply) { return TelemetryDrain.outcome(reply); }
 
     private static String iso(long ms) {
         return new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX", Locale.US).format(new Date(ms));
