@@ -29,6 +29,9 @@ import { displayDeviceName } from "../fleet/deviceDisplay.js";
 import { presentTitle } from "../browse/tilePresentation.js";
 import { handleStateLabel } from "./stateCopy.js";
 import { heldForFileRepair } from "../cast/castCopy.js";
+import { miniBarVisible } from "./nowPlayingModel.js";
+import { stopLocalSession } from "./handleStop.js";
+import { DispatchContext } from "../cast/DispatchProvider.jsx";
 import "./NowPlaying.scss";
 import "./SessionControls.scss";
 
@@ -85,14 +88,16 @@ export function MiniPlayer() {
   const problem = useLocalProblem(controller);
   const sleepLeft = useSleepLeft();
   const identity = useContext(ClientIdentityContext);
+  const outcomes = useContext(DispatchContext);
   const { push, view } = useNav();
   const item = snapshot?.currentItem;
   const queueItems = Array.isArray(snapshot?.queue?.items) ? snapshot.queue.items : [];
   const queueCount = queueItems.length;
   const displayItem = item ?? queueItems[0] ?? null;
-  // The handle hides when the full local controls own Now Playing.
+  // One status (Now Playing ruling 2026-11-27): the handle never repeats the
+  // hero, so it hides on Now Playing whatever the session holds.
   const isNowPlayingOpen = view === 'nowPlaying';
-  const hasActiveFullLocalControls = isNowPlayingOpen && !!item;
+  const hasActiveFullLocalControls = !miniBarVisible({ view, hasItem: !!item, queueCount });
   const [guardStop, stopGuardDialog] = useSlideshowStopGuard('local', null, {
     available: Boolean(displayItem) && !hasActiveFullLocalControls,
   });
@@ -135,8 +140,7 @@ export function MiniPlayer() {
     : null;
 
   // Keep the host hook mounted (host priority/renderer lifetime stay exactly
-  // as before), but do not render a second handle over active full controls.
-  // A stopped ready queue has no active item and remains reopenable here.
+  // as before), but do not render a second handle over the Now Playing hero.
   if (hasActiveFullLocalControls) return null;
 
   return (
@@ -230,8 +234,8 @@ export function MiniPlayer() {
           data-testid="mini-stop"
           className="np-icon-btn"
           aria-label="Stop"
-          title="Stop playback and keep the queue"
-          onClick={event => guardStop((opts) => transport.stop(opts), event.currentTarget)}
+          title="Stop and clear what is playing here"
+          onClick={event => guardStop((opts) => stopLocalSession(controller, { outcomes, opts }), event.currentTarget)}
         >
           <IconPlayerStopFilled size={18} />
         </button>

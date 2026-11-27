@@ -129,3 +129,18 @@ describe('resume names its point (jellyfin study rec 10, owner-approved 2026-11-
     expect(itemMenuEntries({ surface: 'detail', kind: 'leaf' }).map((e) => e.kind)).not.toContain('fromStart');
   });
 });
+
+describe('itemMenuEntries: a queue row ⋯ (Now Playing ruling 2026-11-27)', () => {
+  const kinds = (entries) => entries.map((e) => (e.divider ? '|' : e.kind));
+  it('a later row: Play Now, move up / down, remove, then its detail', () => {
+    const entries = itemMenuEntries({ surface: 'queue', queue: { current: false, first: false, last: false } });
+    expect(kinds(entries)).toEqual(['playNow', 'moveUp', 'moveDown', 'remove', '|', 'details']);
+    expect(entries.map((e) => e.label).filter(Boolean)).toEqual(['Play Now', 'Move up', 'Move down', 'Remove from queue', 'Open detail']);
+  });
+  it('the current row has no Play Now; the ends cannot move past the ends', () => {
+    expect(kinds(itemMenuEntries({ surface: 'queue', queue: { current: true, first: true, last: false } })))
+      .toEqual(['moveDown', 'remove', '|', 'details']);
+    expect(kinds(itemMenuEntries({ surface: 'queue', queue: { current: false, first: false, last: true } })))
+      .toEqual(['playNow', 'moveUp', 'remove', '|', 'details']);
+  });
+});

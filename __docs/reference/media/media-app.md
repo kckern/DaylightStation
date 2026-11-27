@@ -154,11 +154,18 @@ never touched.
 ## Steering: the handle and the one controls surface
 
 This device's Now Playing and every screen's Remote show the **same controls
-in the same layout**; a control a screen can't offer is shown unavailable
-with a short reason, never hidden. Every control is a 44 px button that
-wraps at phone width, so nothing is lost to a narrow screen.
+in the same layout** (`shell/TransportBar.jsx`): one bar under the seek bar,
+in three zones aligned to the picture — the title (expanded video only), the
+transport in the centre (prev · back 10 s · amber play/pause · forward 10 s ·
+next), and at the end volume (a short slider on a pointer device, −/+ steps on
+touch, never both; the level is a tooltip and aria value), Subtitles / Audio
+chips, ⚙ (Speed, which cycles 1× → 1.25× → 1.5× → 2× → 0.75×, and Quality…),
+**Play on…** (a screen's Remote: Move to…) and **More ⋯** (Stop, then the
+session settings below). The bar shows speed only when it is not 1×. A
+control a screen can't offer is shown unavailable with a short reason (inside
+its menu), never hidden. Targets are 40 px on a pointer device, 44 px on touch.
 
-- **Sleep timer.** Stop in 15/30/45/60/90 minutes, or at the end of this
+- **Sleep timer** (More ⋯; its choices open in place). Stop in 15/30/45/60/90 minutes, or at the end of this
   item. The time left shows on the controls and on the handle (the mini
   player). A minutes timer fades out over its last 10 s. Afterwards the
   controls offer **Continue where it stopped** (this device pauses, so it is
@@ -216,13 +223,13 @@ wraps at phone width, so nothing is lost to a narrow screen.
   in the playing session and the selected view stays in place. The outcome
   tray keeps the move pending until the source stop resolves.
 - **Play on a screen** (fling). While something plays (or is paused) on this
-  device, the handle and Now Playing's transport carry one cast icon: **Play
-  on a screen**. It opens a short list of screens (the Move to… list: content
+  device, the handle carries one cast icon: **Play on a screen** (Now Playing
+  has its one **Play on…** button, which opens the full picker instead). It opens a short list of screens (the Move to… list: content
   screens, never browsers); one tap on a screen starts the same item there —
   no search, no menus. The screen starts **from the beginning**. Once this
   device is past 10% of the item, the panel also offers **Start where I am
   (m:ss)**; the beginning stays first and selected. Live items never ask. It
-  is the same hand-off as Now Playing's "Send to another device": the screen
+  is the same hand-off as Now Playing's **Play on…**: the screen
   adopts first (waking it if it is idle), and only then does this device
   stop, so there are never two copies. If the screen does not confirm, this
   device keeps playing and the panel says so ("Office TV did not confirm.
@@ -976,12 +983,22 @@ than Home); artwork-less rows show a quiet centred initial.
 
 **One destination, one title.** The header's destination control is the only
 place the aim is shown; Browse lists and Now Playing do not repeat "Playing on
-<name>" (a phone keeps one line inside Now Playing, where the header is out of
-thumb reach). Now Playing carries one title block (title, then the show/album and
-position), shows a video's own poster in the video area until it plays, shows no
-art box when there is no artwork, and lists Shuffle and Repeat once, in the queue
-header. A disabled Add only is a quiet text button; its reason is its tooltip and
-accessible description. Browse rows without artwork lead with a real icon per
+<name>" (a phone keeps one aim line inside Now Playing, after the queue, where
+the header is out of thumb reach). **Now Playing is one hero** (ruling
+2026-11-27, `shell/NowPlayingView.jsx`, `shell/nowPlayingModel.js`): the video
+inline (Expand fills the view; Esc shrinks) or the art, the title once, a
+subtitle (show · S1 E3, or artist · album) and where it plays ("on This
+device"); the state word only when it is not simply playing. A video shows its
+own poster until it plays. On a wide screen the queue sits beside the hero; on a
+phone the hero sticks with its transport and the queue scrolls under it. The
+bottom bar never shows on Now Playing (one status). ← / → seek 10 s unless a
+field or a control owns the arrows; Space per the Space rule. Expanded and
+playing, the controls fade after 3 s without a pointer move (held while a bar
+menu is open) and come back on any move, touch or key. Add only appears as
+**Queue what others send** in More ⋯, with its one-line explanation; on this
+device it is unavailable ("This device only plays what you start on it").
+Played earlier is not on this device's Now Playing (Home's Recent lists plays
+per screen); a screen's Remote keeps its own. Browse rows without artwork lead with a real icon per
 source (`browse/sourceIcons.jsx`), never a letter tile, and two source roots that
 read the same are one row.
 
@@ -1236,12 +1253,22 @@ Below the canvas, at every width, the shell stacks:
 - the **mini player** — current local item, live progress strip, queue
   position counter, play/pause/next/stop, **Play on a screen** while
   something plays here (a small live picture for video);
-  tapping the title opens Now Playing. Stop retains a ready handle while the
-  queue has items so the queue can be opened or restarted; clear/reset removes
-  the handle once both the current item and queue are empty.
+  tapping the title opens Now Playing. **Stop on the bar clears the item**
+  (ruling 2026-11-27, `shell/handleStop.js`): the spot is saved, the session
+  ends, the bar leaves at once and a reload restores nothing; the tray says
+  "Stopped <title>" with Undo for 5 s (restores it paused). The screen
+  handle's Stop is optimistic: it hides at once, stays hidden while the screen
+  still reports the stopped item, and comes back as "Couldn't stop on
+  <screen>" with Retry if the stop fails. Now Playing's own Stop (More ⋯) keeps
+  the queue.
 
 Local Now Playing and a remote Peek use the same ordered controller frame:
-seek, transport, then queue. Capability differences do not remove controls;
+seek, transport, then queue. The queue is the whole play order: what already
+played folds into one "N played ›" row that opens in place, the current row
+reads **Now**, then the next five and More (k). A row opens the item's info
+view; its ⋯ holds Play Now, Move up / down, Remove from queue and Open detail
+(`actions/itemMenuTable.js` surface `queue`). "When the queue ends" is one
+compact segmented control under the queue. Capability differences do not remove controls;
 the control stays visible and states the receiver-provided reason it is
 unavailable. Stop retains the queue and Clear remains a separate action.
 

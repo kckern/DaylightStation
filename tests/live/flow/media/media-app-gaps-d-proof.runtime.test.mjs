@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { closeMenus, moreItem, pressStop } from './lib/playerBar.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -319,9 +320,10 @@ test('[STEER.10a/AC2] a minutes sleep timer shows its time left on the handle, f
   await expect(np.getByTestId('np-volume-level')).toBeVisible();
   const shown = Number((await np.getByTestId('np-volume-level').innerText()).replace('%', ''));
   expect(baseVolume).toBeCloseTo(shown / 100, 2);
-  await np.getByTestId('sleep-timer-button').click();
+  await (await moreItem(np, 'sleep-timer-button')).click();
   await page.getByTestId('sleep-option-15').click();
-  await expect(np.getByTestId('sleep-timer-left')).toHaveText(/^Sleep in (15:00|14:5\d)$/, { timeout: 15000 });
+  await expect(await moreItem(np, 'sleep-timer-left')).toHaveText(/^Sleep in (15:00|14:5\d)$/, { timeout: 15000 });
+  await closeMenus(page);
   // The handle shows the time left too.
   await np.getByTestId('now-playing-back').click();
   const sleep = page.getByTestId('mini-sleep');
@@ -411,9 +413,10 @@ test('[STEER.13b/AC3] next-episode behaviour lives in the controls; carry on lis
   await page.getByTestId('mini-player-open-nowplaying').click();
   const np = page.getByTestId('now-playing-view');
   await expect(np).toBeVisible({ timeout: 40000 });
-  await expect(np.getByTestId('stop-after-current')).toBeVisible({ timeout: 30000 });
+  await expect(await moreItem(np, 'stop-after-current')).toBeVisible({ timeout: 30000 });
+  await closeMenus(page);
   await shot(page, 'now-playing-next-episode-controls-laptop');
-  await np.getByTestId('np-stop').click();
+  await pressStop(np);
   await context.close();
 });
 

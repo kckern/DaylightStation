@@ -122,6 +122,7 @@ describe('PeekPanel shared target controls', () => {
   });
   it('shows the kept queue only after Stop is acknowledged and the receiver reports ready with no item', async () => {
     const view = renderPeekPanel();
+    fireEvent.click(screen.getByTestId('np-more'));
     fireEvent.click(screen.getByTestId('np-stop'));
     expect(screen.queryByTestId('peek-queue-kept')).toBeNull();
 
@@ -140,6 +141,7 @@ describe('PeekPanel shared target controls', () => {
   it('does not show a kept-queue receipt after Stop is rejected', async () => {
     transport.stop.mockRejectedValueOnce(new Error('ack timeout'));
     const view = renderPeekPanel();
+    fireEvent.click(screen.getByTestId('np-more'));
     fireEvent.click(screen.getByTestId('np-stop'));
     await screen.findByTestId('np-command-feedback');
 
@@ -150,6 +152,7 @@ describe('PeekPanel shared target controls', () => {
 
   it('does not retain a Stop receipt when its receiver becomes stale or the target switches', async () => {
     const view = renderPeekPanel();
+    fireEvent.click(screen.getByTestId('np-more'));
     fireEvent.click(screen.getByTestId('np-stop'));
     state.snapshot = { ...state.snapshot, state: 'ready', currentItem: null };
     await act(async () => { await Promise.resolve(); });
@@ -243,6 +246,7 @@ describe('PeekPanel shared target controls', () => {
     expect(screen.getByRole('heading', { name: /Living Room TV/ })).toBeInTheDocument();
     expect(screen.getByTestId('np-target-label')).toHaveTextContent('Living Room TV');
     expect(screen.getByTestId('np-toggle')).toBeDisabled();
+    fireEvent.click(screen.getByTestId('np-more'));
     expect(screen.getByTestId('np-stop')).toBeDisabled();
     expect(screen.getByTestId('np-volume')).toBeDisabled();
     expect(screen.getByText(reason)).toBeInTheDocument();
@@ -257,18 +261,21 @@ describe('PeekPanel shared target controls', () => {
       expect(screen.getByTestId('queue-shuffle')).toBeDisabled();
       expect(screen.getByTestId('queue-repeat')).toBeDisabled();
       expect(screen.getByTestId('queue-clear')).toBeDisabled();
+      // A row's edits are in its ⋯; unavailable there too.
+      fireEvent.click(screen.getByTestId('queue-menu-q2'));
       expect(screen.getByTestId('queue-jump-q2')).toBeDisabled();
-      expect(screen.getByTestId('queue-movedown-q1')).toBeDisabled();
       expect(screen.getByTestId('queue-moveup-q2')).toBeDisabled();
+      fireEvent.click(screen.getByTestId('queue-jump-q2'));
+      fireEvent.click(screen.getByTestId('queue-moveup-q2'));
+      fireEvent.click(screen.getByTestId('queue-menu-q1'));
+      expect(screen.getByTestId('queue-movedown-q1')).toBeDisabled();
       expect(screen.getByTestId('queue-remove-q1')).toBeDisabled();
+      fireEvent.click(screen.getByTestId('queue-movedown-q1'));
+      fireEvent.click(screen.getByTestId('queue-remove-q1'));
       fireEvent.keyDown(screen.getByTestId('np-seek'), { key: 'ArrowRight' });
       fireEvent.click(screen.getByTestId('queue-shuffle'));
       fireEvent.click(screen.getByTestId('queue-repeat'));
       fireEvent.click(screen.getByTestId('queue-clear'));
-      fireEvent.click(screen.getByTestId('queue-jump-q2'));
-      fireEvent.click(screen.getByTestId('queue-movedown-q1'));
-      fireEvent.click(screen.getByTestId('queue-moveup-q2'));
-      fireEvent.click(screen.getByTestId('queue-remove-q1'));
       expect(transport.seekAbs).not.toHaveBeenCalled();
       expect(config.setShuffle).not.toHaveBeenCalled();
       expect(config.setRepeat).not.toHaveBeenCalled();
@@ -312,6 +319,7 @@ describe('PeekPanel screen switcher (STEER.1b/AC3)', () => {
 describe('PeekPanel Stop feedback (STEER.3a/AC3)', () => {
   it('marks the screen\'s state pending the moment Stop is pressed', () => {
     render(<PeekTestProviders />);
+    fireEvent.click(screen.getByTestId('np-more'));
     fireEvent.click(screen.getByTestId('np-stop'));
     expect(transport.stop).toHaveBeenCalled();
     expect(pending).toHaveBeenCalledWith('tv-1', ['state']);

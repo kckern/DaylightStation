@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { closeMenus, openMore, pressStop, queueVerb, rateControl, volumeLevel, volumeStep } from './lib/playerBar.mjs';
 import { resetHouseholdAt } from './lib/household.mjs';
 import { installFakeClock } from './lib/fakeClock.mjs';
 import { scriptReceiver, SCRIPTED } from './lib/scriptedReceiver.mjs';
@@ -29,7 +30,8 @@ test.setTimeout(420000);
 test.beforeAll(async ({ browser }) => { test.setTimeout(300000); await warmMedia(browser); });
 test.beforeEach(async ({ request, baseURL }) => { await resetHouseholdAt(request, baseURL); });
 
-const TRANSPORT_IDS = ['np-prev', 'np-rew', 'np-toggle', 'np-ffw', 'np-next', 'np-rate', 'np-volume', 'np-stop'];
+// Speed sits behind ⚙ and Stop in More ⋯ (Now Playing ruling 2026-11-27).
+const TRANSPORT_IDS = ['np-prev', 'np-rew', 'np-toggle', 'np-ffw', 'np-next', 'np-settings', 'np-volume', 'np-more'];
 const queueTitles = (scope) => scope.locator('[data-testid^="queue-item-"] .queue-item-title');
 const queueIds = async (request, id = A) => (await receiverState(request, id))?.queue?.items?.map((i) => i.contentId) ?? [];
 
@@ -106,7 +108,7 @@ test('[STEER.1b/AC1] the Remote lays its controls out like the local ones (same 
   await playHere(page, vp, ITEM.FAITH);
   await page.getByTestId('mini-player-open-nowplaying').click();
   await expect(page.getByTestId('now-playing-view')).toBeVisible({ timeout: 30000 });
-  const order = (scope) => scope.getByTestId('np-transport').locator('[data-testid^="np-"]').evaluateAll((els) => els.map((e) => e.dataset.testid).filter((t) => !['np-transport', 'np-target-label', 'np-command-feedback'].includes(t)));
+  const order = (scope) => scope.getByTestId('np-transport').locator('[data-testid^="np-"]').evaluateAll((els) => els.map((e) => e.dataset.testid).filter((t) => !['np-transport', 'np-target-label', 'np-command-feedback', 'np-play-on', 'np-expand', 'np-rate-chip'].includes(t)));
   await expect(page.getByTestId('now-playing-view').getByTestId('np-rew')).toBeVisible({ timeout: 60000 });
   const local = await order(page.getByTestId('now-playing-view'));
   await openRemote(page, A, vp);
@@ -130,8 +132,8 @@ test('[STEER.1b/AC2] controls a screen cannot support are shown as unavailable w
   await expect(panel.getByText('LIVE', { exact: false }).first()).toBeVisible({ timeout: 30000 });
   await expect(panel.getByTestId('np-seek')).toHaveCount(0);
   await expect(panel.locator('.np-control-unavailable').filter({ hasText: /Live playback has no seekable position/ }).first()).toBeVisible();
-  // Speed: present, disabled, and says why.
-  await expect(panel.getByTestId('np-rate')).toBeDisabled();
+  // Speed (in ⚙): present, disabled, and says why.
+  await expect(await rateControl(panel)).toBeDisabled();
   await expect(panel.locator('.np-control-unavailable').filter({ hasText: /speed is not supported/i }).first()).toBeVisible();
   await context.close();
 });
@@ -221,7 +223,7 @@ test('[STEER.7a/AC3][STEER.7a/AC5] another screen\'s queue shows what is playing
   await expect(panel.locator('.queue-item--current, [aria-current="true"]').first()).toContainText('Disclosure Day');
   const initial = await titles();
   expect(initial.indexOf('Hospital')).toBeLessThan(initial.indexOf('Faith'));
-  // What played earlier on this screen (the seeded ledger) closes the queue.
+  // What played earlier on this screen (the seeded ledger) closes a screen's queue (its Remote keeps it).
   const earlier = panel.getByTestId('played-earlier');
   await earlier.scrollIntoViewIfNeeded();
   await expect(earlier).toBeVisible();
@@ -245,7 +247,7 @@ test('[STEER.8a/AC1] I can move an item up or down on another screen and the new
   await expect(panel.locator('.queue-count')).toContainText('3 items', { timeout: 30000 });
   const faithRow = panel.locator('[data-testid^="queue-item-"]').filter({ hasText: 'Faith' });
   const faithId = (await faithRow.getAttribute('data-testid')).replace('queue-item-', '');
-  await panel.getByTestId(`queue-moveup-${faithId}`).click();
+  await (await queueVerb(panel, 'moveup', faithId)).click();
   await expect.poll(titles, { timeout: 15000 }).toEqual(['Disclosure Day', 'Faith', 'Hospital']);
   await expect.poll(async () => (await receiverState(request, A)).queue.items.map((i) => i.contentId), { timeout: 30000 }).toEqual([ITEM.DISCLOSURE, ITEM.FAITH, ITEM.HOSPITAL]);
   await stopReceiver(request, A);
@@ -271,7 +273,7 @@ test('(STEER.8a/AC3, remote) removing an item or clearing the queue on another s
   const { page, panel, done } = await remoteQueueSetup(browser, request, false);
   const faithRow = panel.locator('[data-testid^="queue-item-"]').filter({ hasText: 'Faith' });
   const faithId = (await faithRow.getAttribute('data-testid')).replace('queue-item-', '');
-  await panel.getByTestId(`queue-remove-${faithId}`).click();
+  await (await queueVerb(panel, 'remove', faithId)).click();
   await expect.poll(() => queueIds(request), { timeout: 30000 }).toEqual([ITEM.DISCLOSURE, ITEM.HOSPITAL]);
   await expect(page.getByTestId('item-action-undo').last()).toBeVisible({ timeout: 30000 });
   await page.getByTestId('item-action-undo').last().click();
@@ -292,7 +294,7 @@ for (const edit of ['clear', 'remove']) {
     else {
       const faithRow = panel.locator('[data-testid^="queue-item-"]').filter({ hasText: 'Faith' });
       const faithId = (await faithRow.getAttribute('data-testid')).replace('queue-item-', '');
-      await panel.getByTestId(`queue-remove-${faithId}`).click();
+      await (await queueVerb(panel, 'remove', faithId)).click();
     }
     const undo = page.getByTestId('item-action-undo');
     await expect(undo.last()).toBeVisible({ timeout: 30000 });
@@ -363,7 +365,7 @@ test('[STEER.9a/AC1][STEER.9a/AC2][STEER.9a/AC4] on this device repeat and shuff
   await queue.getByTestId('queue-repeat').click();
   await expect(queue.getByTestId('queue-repeat')).toContainText('Repeat off');
   expect(await node.evaluate((v) => v.isConnected && !v.paused), 'none of it interrupted playback').toBe(true);
-  await page.getByTestId('np-stop').click();
+  await pressStop(page);
   await context.close();
 });
 
@@ -401,7 +403,7 @@ test('[STEER.9a/AC3] shuffle and repeat behave the same for another screen: they
 });
 
 for (const [label, vp] of Object.entries(VIEWPORTS)) {
-  test(`[STEER.5a/AC1] ${label}: volume changes in steps with big targets and shows its level`, async ({ browser }) => {
+  test(`[STEER.5a/AC1] ${label}: volume changes in steps (a slider on a pointer device, −/+ on touch) and keeps its level`, async ({ browser }) => {
     const { context, page } = await newAppPage(browser, vp);
     await gotoMedia(page);
     const input = await openSearch(page, vp);
@@ -411,21 +413,20 @@ for (const [label, vp] of Object.entries(VIEWPORTS)) {
     const view = page.getByTestId('now-playing-view');
     const video = view.getByTestId('now-playing-host').locator('video');
     await expect.poll(() => video.evaluate((v) => v.readyState >= 2), { timeout: 120000 }).toBe(true);
-    const level = async () => Number((await view.getByTestId('np-volume-level').innerText()).replace('%', ''));
-    const up = view.getByRole('button', { name: 'Increase volume' });
-    const down = view.getByRole('button', { name: 'Decrease volume' });
-    for (const b of [up, down]) {
-      const box = await b.boundingBox();
-      expect(Math.min(box.width, box.height), 'large tap target').toBeGreaterThanOrEqual(36);
-    }
+    const level = () => volumeLevel(view);
+    // Never both: a pointer device has the slider and no −/+.
+    expect(await view.getByRole('button', { name: 'Decrease volume' }).count() > 0
+      && await view.getByRole('slider', { name: 'Volume' }).count() > 0, 'slider and steps together').toBe(false);
+    const box = await view.getByTestId('np-volume').boundingBox();
+    expect(box.height, 'large target').toBeGreaterThanOrEqual(36);
     const before = await level();
-    await down.click();
+    await volumeStep(view, -1);
     await expect.poll(level).toBeLessThan(before);
     const lowered = await level();
     await expect.poll(() => video.evaluate((v) => Math.round(v.volume * 100))).toBe(lowered);
-    await up.click();
+    await volumeStep(view, +1);
     await expect.poll(level).toBeGreaterThan(lowered);
-    await view.getByTestId('np-stop').click();
+    await pressStop(view);
     await context.close();
   });
 }
@@ -439,7 +440,7 @@ test('[STEER.5a/AC3] volume on another screen changes that screen, not this devi
   await gotoMedia(page);
   await openRemote(page, A, vp);
   const before = (await receiverState(request, A)).config.volume;
-  await page.getByTestId('peek-panel').getByRole('button', { name: 'Decrease volume' }).click();
+  await volumeStep(page.getByTestId('peek-panel'), -1);
   await expect.poll(async () => (await receiverState(request, A)).config.volume, { timeout: 15000 }).toBeLessThan(before);
   const after = (await receiverState(request, A)).config.volume;
   // It is the screen's own video that got quieter, and nothing played on this device.
@@ -534,6 +535,7 @@ test('(STEER.3a/AC3, transport) after a press on another screen\'s transport con
   await reflects('Play', panel.getByTestId('np-toggle'));
   await reflects('Forward 10 seconds', panel.getByTestId('np-ffw'));
   await reflects('Next', panel.getByTestId('np-next'));
+  await openMore(panel);
   await reflects('Stop', panel.getByTestId('np-stop'));
   await stopReceiver(request, A);
   await context.close();
@@ -559,9 +561,10 @@ test('[STEER.5a/AC2] speed can be changed for video and for audio on this device
     await expect.poll(playingIndex, { timeout: 180000, message: `one rendered ${kind} node must be actual local playback` }).toBeGreaterThanOrEqual(0);
     const media = nodes.nth(await playingIndex());
     const before = await media.evaluate((m) => m.playbackRate);
-    await page.getByTestId('now-playing-view').getByTestId('np-rate').click();
+    await (await rateControl(page.getByTestId('now-playing-view'))).click();
+    await closeMenus(page);
     await expect.poll(() => media.evaluate((m) => m.playbackRate), { timeout: 10000 }).not.toBe(before);
-    await page.getByTestId('np-stop').click();
+    await pressStop(page);
     await gotoMedia(page);
     await openSearch(page, vp);
   }
@@ -569,7 +572,7 @@ test('[STEER.5a/AC2] speed can be changed for video and for audio on this device
   const receiver = await openReceiver(browser, request, A);
   await startOn(request, A, ITEM.HOSPITAL);
   await openRemote(page, A, vp);
-  await expect(page.getByTestId('peek-panel').getByTestId('np-rate')).toBeDisabled();
+  await expect(await rateControl(page.getByTestId('peek-panel'))).toBeDisabled();
   await expect(page.getByTestId('peek-panel').locator('.np-control-unavailable').filter({ hasText: /speed/i }).first()).toBeVisible();
   await stopReceiver(request, A);
   await context.close();

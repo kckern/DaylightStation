@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { stopHere } from './lib/playerBar.mjs';
 import { markFirstUseDone } from './lib/firstUse.mjs';
 import { SEED, resetHouseholdAt, recordHouseholdRequests, captureProgressLogs, pinBrowserIdentity, household } from './lib/household.mjs';
 import { openDetailMore } from './lib/search.mjs';
@@ -81,9 +82,7 @@ async function expandMenuMore(page, testId) {
 
 async function stopLocal(page) {
   if (page.isClosed()) return;
-  const expandedStop = page.getByTestId('np-stop');
-  const stop = await expandedStop.isVisible().catch(() => false) ? expandedStop : page.getByTestId('mini-stop');
-  if (await stop.isVisible().catch(() => false)) await stop.click();
+  await stopHere(page);
 }
 
 for (const [size, viewport] of Object.entries(VIEWPORTS)) {
@@ -370,31 +369,18 @@ test.describe('Played earlier (FIND.11a)', () => {
       test.use({ viewport, actionTimeout: 15000 });
       test.afterEach(async ({ page }) => stopLocal(page));
 
-      test(`[FIND.11a/AC1][FIND.11a/AC2][FIND.11a/AC3] ${size}: this screen's queue lists what played earlier, newest first, with picture, title and time, and every verb`, async ({ page }) => {
+      test(`[FIND.11a] ${size}: Played earlier left this device's Now Playing (owner ruling 2026-11-27); what played here is on Home's Recent`, async ({ page }) => {
         test.setTimeout(180000);
-        // This browser is the seeded "Acceptance browser", whose own ledger holds Faith (minutes ago) and Hospital (an hour ago).
         await pinBrowserIdentity(page);
-        const state = await installHousehold(page);
+        await installHousehold(page);
         await openHome(page);
         await page.getByTestId(`home-tile-recent-${FAITH}-play`).click();
         await expect(page.getByTestId('media-mini-player')).toContainText('Faith', { timeout: 30000 });
         await page.getByTestId('mini-player-open-nowplaying').click();
-        const earlier = page.getByTestId('played-earlier');
-        await earlier.scrollIntoViewIfNeeded();
-        await expect(earlier).toBeVisible({ timeout: 30000 });
-        const self = state.requests.find(r => r.path.endsWith('/suggestions')).query.deviceId;
-        expect(state.requests.some(r => r.path === `/api/v1/media/screens/${encodeURIComponent(self)}/played-earlier`
-          || r.path === `/api/v1/media/screens/${self}/played-earlier`)).toBe(true);
-        await expect(earlier.getByTestId('played-earlier-0')).toContainText('Faith');
-        await expect(earlier.getByTestId('played-earlier-0-when')).toContainText(/Calvin Harris · Today/);
-        await expect(earlier.getByTestId('played-earlier-1')).toContainText('Hospital');
-        await expect.poll(() => earlier.locator('[data-testid="played-earlier-0"] img').evaluate(img => img.naturalWidth), { timeout: 30000 }).toBeGreaterThan(0);
-        await earlier.getByTestId('played-earlier-1-more').click();
-        await expandMenuMore(page, 'played-earlier-1');
-        await page.getByTestId('played-earlier-1-verb-favourite').click();
-        await expect(page.locator('[data-testid^="dispatch-row-"]').filter({ hasText: 'Added Hospital to favourites' })).toBeVisible();
-        expect(state.requests.some(r => r.method === 'POST' && r.path.endsWith('/household/favourites') && r.body.id === HOSPITAL)).toBe(true);
-        await earlier.scrollIntoViewIfNeeded();
+        await expect(page.getByTestId('queue-panel').or(page.getByTestId('queue-empty'))).toBeVisible({ timeout: 30000 });
+        await expect(page.getByTestId('now-playing-view').getByTestId('played-earlier')).toHaveCount(0);
+        await page.getByTestId('now-playing-back').click();
+        await expect(page.getByTestId(`home-tile-recent-${FAITH}`).or(page.getByTestId(`home-tile-recent-${FAITH}-play`)).first()).toBeVisible({ timeout: 30000 });
         await shot(page, `played-earlier-${size}`);
       });
     });

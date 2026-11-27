@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { openPlayOn, pressStop, stopHere } from './lib/playerBar.mjs';
 import { playResultHere } from './lib/search.mjs';
 
 test.use({ viewport: { width: 1440, height: 900 }, trace: 'retain-on-failure', actionTimeout: 10000 });
@@ -76,11 +77,7 @@ test.describe('Media M0 Move safety', () => {
     // Stop path; never manipulate controller/store state directly.
     if (page.isClosed()) return;
     if (await page.getByRole('listbox').isVisible().catch(() => false)) await page.keyboard.press('Escape');
-    const expandedStop = page.getByTestId('np-stop');
-    const stop = await expandedStop.isVisible().catch(() => false)
-      ? expandedStop
-      : page.getByTestId('mini-stop');
-    if (await stop.isVisible().catch(() => false)) await stop.click();
+    await stopHere(page);
   });
 
   test('idle Arrival offers no Move, and the tile tap sends it (device call guarded)', async ({ page }) => {
@@ -127,7 +124,7 @@ test.describe('Media M0 Move safety', () => {
     expect(nativeNode, 'a real media element is required for continuity proof').toBeTruthy();
     const timeBeforePicker = await media.evaluate((node) => node.currentTime);
 
-    const handoffPicker = page.getByTestId('handoff-section').getByTestId('dispatch-target-picker');
+    const handoffPicker = (await openPlayOn(page)).getByTestId('dispatch-target-picker');
     await expect(handoffPicker).toBeVisible();
     // Move (Stop it here on), then a tap on the screen sends.
     await setStopHere(handoffPicker, true);
@@ -150,7 +147,7 @@ test.describe('Media M0 Move safety', () => {
 
     // Stop intentionally retains the queue. Assert the existing contract:
     // native media is paused/ended and the retained queue remains reachable.
-    await page.getByTestId('np-stop').click();
+    await pressStop(page);
     await expect.poll(() => page.locator('video, audio')
       .evaluateAll((nodes) => nodes.every((node) => node.paused || node.ended))).toBe(true);
     await expect(page.getByTestId('mini-player-open-nowplaying')).toBeVisible();
@@ -194,7 +191,7 @@ test.describe('Media M0 Move safety', () => {
       await expect.poll(() => sourceNative.evaluate(node => node.paused && !node.seeking)).toBe(true);
       const pausedAt = await sourceNative.evaluate(node => node.currentTime);
 
-      const picker = page.getByTestId('handoff-section').getByTestId('dispatch-target-picker');
+      const picker = (await openPlayOn(page)).getByTestId('dispatch-target-picker');
       // Move (Stop it here on); the screen is busy, so its row asks "Replace …?" first.
       await setStopHere(picker, true);
       await picker.getByTestId('picker-device-acceptance-media').click();

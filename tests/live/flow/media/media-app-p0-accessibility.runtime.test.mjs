@@ -474,10 +474,11 @@ for (const [size, viewport] of SIZES) {
 
       // A screen's Remote, with the sleep timer menu open (a portalled menu of options).
       await page.locator('[data-testid^="fleet-peek-"]').first().click();
-      await expect(page.getByTestId('session-controls-panel')).toBeVisible({ timeout: 20000 });
+      await expect(page.getByTestId('peek-panel').getByTestId('np-transport')).toBeVisible({ timeout: 20000 });
       await check('remote');
       await page.getByTestId('mini-player-open-nowplaying').click();
       await expect(page.getByTestId('queue-panel')).toBeVisible({ timeout: 15000 });
+      await page.locator('[data-testid="np-more"]:visible').first().click();
       await page.locator('[data-testid="sleep-timer-button"]:visible').first().click();
       await expect(page.getByTestId('sleep-timer-menu')).toBeVisible();
       const sleep = await smallTargets(page, { scope: '[data-testid="sleep-timer-menu"]' });

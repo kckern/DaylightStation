@@ -23,6 +23,6 @@ test.describe('MediaApp — P5 peek', () => {
     // previous/next and stop — peek-play/peek-pause were never separate controls here.
     await expect(page.getByTestId('np-transport')).toBeVisible();
     await expect(page.getByTestId('np-toggle')).toBeVisible();
-    await expect(page.getByTestId('np-stop')).toBeVisible();
+    await expect(page.getByTestId('np-more')).toBeVisible();
   });
 });

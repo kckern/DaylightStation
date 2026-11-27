@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { queueVerb } from './lib/playerBar.mjs';
 import { resetHouseholdAt } from './lib/household.mjs';
 import { scriptReceiver, failWake, SCRIPTED } from './lib/scriptedReceiver.mjs';
 import {
@@ -64,10 +65,12 @@ for (const [label, vp] of Object.entries(VIEWPORTS)) {
     else await page.getByTestId('mini-player-open-nowplaying').click();
     const queue = page.getByTestId('queue-panel');
     await expect(queue).toBeVisible({ timeout: 30000 });
-    const removeButtons = queue.locator('[data-testid^="queue-remove-"]');
-    const countBefore = await removeButtons.count();
+    // A row's edits are in its ⋯ (Now Playing ruling 2026-11-27).
+    const rowMenus = queue.locator('[data-testid^="queue-menu-"]');
+    const countBefore = await rowMenus.count();
     expect(countBefore).toBeGreaterThanOrEqual(3);
-    await removeButtons.last().click();
+    const lastId = (await rowMenus.last().getAttribute('data-testid')).replace('queue-menu-', '');
+    await (await queueVerb(queue, 'remove', lastId)).click();
     await expect(rowWith(page, /Removed .* from the queue here/)).toBeVisible({ timeout: 15000 });
     await page.getByTestId('item-action-undo').last().click();
     await expect(removeButtons).toHaveCount(countBefore, { timeout: 15000 });

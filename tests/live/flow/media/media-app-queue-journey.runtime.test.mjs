@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { stopHere } from './lib/playerBar.mjs';
 import { markFirstUseDone } from './lib/firstUse.mjs';
 import { installFakeClock } from './lib/fakeClock.mjs';
 import { playResultHere } from './lib/search.mjs';
@@ -48,9 +49,7 @@ test.afterEach(async ({ page }) => {
   // Release only this test's local playback through the ordinary UI.
   if (page.isClosed()) return;
   if (await page.getByRole('listbox').isVisible().catch(() => false)) await page.keyboard.press('Escape');
-  const expandedStop = page.getByTestId('np-stop');
-  const stop = await expandedStop.isVisible().catch(() => false) ? expandedStop : page.getByTestId('mini-stop');
-  if (await stop.isVisible().catch(() => false)) await stop.click();
+  await stopHere(page);
 });
 
 test('[FIND.1a/AC5] keyboard opens row actions and adds without clearing search or starting playback', async ({ page }) => {

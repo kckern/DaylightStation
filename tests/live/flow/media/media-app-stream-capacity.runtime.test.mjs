@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { stopHere } from './lib/playerBar.mjs';
 import { playResultHere } from './lib/search.mjs';
 
 // Explicit operational probe, not a short movie seek or full story verdict.
@@ -108,8 +109,7 @@ test('verified 60fps source sustains virtual playback under the selected branch 
       body: JSON.stringify({ samples, events, mints, requests, deviceCommands }, null, 2),
       contentType: 'application/json',
     });
-    const stop = page.getByTestId('np-stop');
-    if (await stop.isVisible().catch(() => false)) await stop.click().catch(() => {});
+    await stopHere(page);
     if (process.env.MEDIA_EXPECT_HLS === '1' && hlsSessions.size) {
       await expect.poll(() => [...hlsSessions].every(id => {
         const status = stoppedSessions.get(id);

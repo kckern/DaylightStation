@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { openPlayOn, pressStop } from './lib/playerBar.mjs';
 import { randomUUID } from 'node:crypto';
 import { resetHouseholdAt } from './lib/household.mjs';
 import { scriptReceiver, SCRIPTED } from './lib/scriptedReceiver.mjs';
@@ -69,7 +70,7 @@ test('[PLACE.7a/AC2] Move to this device from another screen\'s controls: this d
   await expect(moved).toBeVisible({ timeout: 30000 });
   // PLACE.7a/AC3 "and from where": it names the screen it came from.
   await expect(moved).toContainText(`from ${A_NAME}`);
-  await page.getByTestId('np-stop').click();
+  await pressStop(page);
   await context.close();
   await receiver.context.close();
 });
@@ -118,7 +119,7 @@ async function handoffSetup(browser, request) {
   await page.getByTestId('mini-player-open-nowplaying').click();
   const local = page.getByTestId('now-playing-host').locator('video');
   await expect.poll(() => local.evaluate((v) => !v.paused && v.readyState >= 2 && v.currentTime > 5), { timeout: 120000 }).toBe(true);
-  const picker = page.getByTestId('handoff-section').getByTestId('dispatch-target-picker');
+  const picker = (await openPlayOn(page)).getByTestId('dispatch-target-picker');
   await expect(picker).toBeVisible();
   return { receiver, context, page, local, picker };
 }

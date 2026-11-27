@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { pressStop } from './lib/playerBar.mjs';
 import { markFirstUseDone } from './lib/firstUse.mjs';
 import { aimHere } from './lib/aim.mjs';
 import { detailVerb } from './lib/search.mjs';
@@ -480,7 +481,7 @@ test.describe('Music behind a slideshow (PLAY.9a)', () => {
     await expect.poll(async () => (await musicAudio(receiver))?.paused, { timeout: 15000 }).toBe(false);
 
     // AC3: stopping the slideshow asks whether to keep the music.
-    await sender.getByTestId('np-stop').click();
+    await pressStop(sender);
     await expect(sender.getByTestId('pf-stop-guard')).toContainText('Keep the music playing?');
     await shot(sender, 'play9a-stop-asks-keep-music');
     await sender.getByTestId('pf-stop-keep-music').click();
@@ -508,7 +509,7 @@ test.describe('Music behind on a phone (PLAY.9a)', () => {
     await expect.poll(async () => (await state(request))?.controls?.musicBehind?.state, { timeout: 60000 }).toBe('playing');
     await expect(sender.getByTestId('pf-music-stop')).toBeVisible();
     await shot(sender, 'play9a-phone-music-controls');
-    await sender.getByTestId('np-stop').click();
+    await pressStop(sender);
     await sender.getByTestId('pf-stop-both').click();
     await expect.poll(async () => (await state(request))?.controls?.musicBehind ?? null, { timeout: 15000 }).toBeNull();
     await expect.poll(async () => (await state(request))?.state, { timeout: 15000 }).toMatch(/^(ready|idle)$/);

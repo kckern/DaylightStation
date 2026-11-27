@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { closeMenus, queueVerb, stopControl } from './lib/playerBar.mjs';
 
 test.use({ viewport: { width: 1440, height: 900 }, trace: 'retain-on-failure' });
 test.setTimeout(45000);
@@ -49,7 +50,8 @@ test('[STEER.1b/AC2] an offline retained session cannot seek or change its queue
   await page.getByTestId(`fleet-peek-${deviceId}`).click();
   const panel = page.getByTestId('peek-panel');
   await expect(panel.getByRole('heading', { name: /Offline test screen/ })).toBeVisible();
-  await expect(panel.getByTestId('queue-jump-two')).toBeEnabled();
+  await expect(await queueVerb(panel, 'jump', 'two')).toBeEnabled();
+  await closeMenus(page);
   broadcast({ reason: 'offline' });
   await expect(panel.getByText('Offline', { exact: true })).toBeVisible();
   const seek = panel.getByTestId('np-seek');
@@ -59,9 +61,15 @@ test('[STEER.1b/AC2] an offline retained session cannot seek or change its queue
   // cannot satisfy this test if keyboard input still submits a command.
   expect(commands, 'Offline keyboard seek must not dispatch').toEqual([]);
   await expect(seek).toHaveAttribute('aria-disabled', 'true');
-  for (const id of ['np-stop', 'queue-jump-two', 'queue-remove-one', 'queue-clear', 'queue-shuffle', 'queue-repeat']) {
+  for (const id of ['queue-clear', 'queue-shuffle', 'queue-repeat']) {
     await expect(panel.getByTestId(id)).toBeDisabled();
   }
+  // Stop (More ⋯) and a row's edits (its ⋯) are there, unavailable.
+  await expect(await stopControl(panel)).toBeDisabled();
+  await closeMenus(page);
+  await expect(await queueVerb(panel, 'jump', 'two')).toBeDisabled();
+  await closeMenus(page);
+  await expect(await queueVerb(panel, 'remove', 'one')).toBeDisabled();
   expect(commands).toEqual([]);
   await expect(page.locator('video, audio')).toHaveCount(0);
 });

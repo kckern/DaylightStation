@@ -1,6 +1,16 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { act, render, screen, fireEvent } from '@testing-library/react';
+import { act, render as rtlRender, screen, fireEvent } from '@testing-library/react';
+import { MantineProvider } from '@mantine/core';
+
+const render = (ui) => rtlRender(ui, { wrapper: MantineProvider });
+const openMore = (i = 0) => fireEvent.click(screen.getAllByTestId('np-more')[i]);
+const openSettings = (i = 0) => fireEvent.click(screen.getAllByTestId('np-settings')[i]);
+function withPointer(coarse, run) {
+  const original = window.matchMedia;
+  window.matchMedia = (query) => ({ matches: coarse && query.includes('coarse'), media: query, addEventListener() {}, removeEventListener() {} });
+  try { return run(); } finally { window.matchMedia = original; }
+}
 
 const transport = {
   play: vi.fn(),
@@ -63,12 +73,21 @@ beforeEach(() => {
 });
 
 describe('TransportBar', () => {
-  it('offers the fling only on local playback, never on a remote screen\'s transport', () => {
-    const { unmount } = render(<TransportBar target="local" />);
-    expect(screen.getByTestId('fling-stub').closest('.np-transport-secondary')).not.toBeNull();
+  it('has no device control of its own: Play on… / Move to… is the caller\'s slot, in the end group', () => {
+    const { unmount } = render(<TransportBar target="local" playOn={<span data-testid="play-on-slot" />} />);
+    expect(screen.getByTestId('play-on-slot').closest('.np-bar-end')).not.toBeNull();
+    expect(screen.queryByTestId('fling-stub')).toBeNull();
     unmount();
     render(<TransportBar target={{ deviceId: 'den-tv' }} />);
-    expect(screen.queryByTestId('fling-stub')).toBeNull();
+    expect(screen.queryByTestId('play-on-slot')).toBeNull();
+  });
+
+  it('three zones: the title lead (when given), the transport centre, the settings end', () => {
+    render(<TransportBar target="local" lead={<span data-testid="lead" />} />);
+    expect(screen.getByTestId('lead').closest('.np-bar-lead')).not.toBeNull();
+    expect(screen.getByTestId('np-toggle').closest('.np-bar-centre')).not.toBeNull();
+    expect(screen.getByTestId('np-more').closest('.np-bar-end')).not.toBeNull();
+    expect(screen.getByTestId('np-settings').closest('.np-bar-end')).not.toBeNull();
   });
 
   it('pauses while playing and plays while paused', () => {
@@ -96,6 +115,8 @@ describe('TransportBar', () => {
     expect(transport.skipPrev).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByTestId('np-next'));
     expect(transport.skipNext).toHaveBeenCalledTimes(1);
+    // Stop lives in More ⋯ (Now Playing ruling 2026-11-27).
+    openMore();
     fireEvent.click(screen.getByTestId('np-stop'));
     expect(transport.stop).toHaveBeenCalledTimes(1);
   });
@@ -162,18 +183,41 @@ describe('TransportBar', () => {
     expect(config.setVolume).toHaveBeenCalledWith(55);
   });
 
-  it('shows the volume level and changes the selected target by large steps', () => {
-    render(<TransportBar target="local" />);
+  it('on touch: −/+ steps and no slider; the level is for assistive tech, not printed', () => {
+    withPointer(true, () => {
+      render(<TransportBar target="local" />);
+      expect(screen.queryByRole('slider')).toBeNull();
+      expect(screen.getByTestId('np-volume-level')).toHaveTextContent('80%');
+      expect(screen.getByTestId('np-volume-level')).toHaveClass('media-sr-only');
+      fireEvent.click(screen.getByRole('button', { name: 'Decrease volume' }));
+      expect(config.setVolume).toHaveBeenCalledWith(70);
+      fireEvent.click(screen.getByRole('button', { name: 'Increase volume' }));
+      expect(config.setVolume).toHaveBeenCalledWith(90);
+    });
+  });
 
-    expect(screen.getByTestId('np-volume-level')).toHaveTextContent('80%');
-    fireEvent.click(screen.getByRole('button', { name: 'Decrease volume' }));
-    expect(config.setVolume).toHaveBeenCalledWith(70);
-    fireEvent.click(screen.getByRole('button', { name: 'Increase volume' }));
-    expect(config.setVolume).toHaveBeenCalledWith(90);
+  it('on a pointer device: a slider and no −/+ (never both)', () => {
+    withPointer(false, () => {
+      render(<TransportBar target="local" />);
+      expect(screen.getByRole('slider', { name: 'Volume' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Decrease volume' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Increase volume' })).toBeNull();
+    });
+  });
+
+  it('speed sits behind ⚙; the bar shows it only when it is not 1×', () => {
+    const { unmount } = render(<TransportBar target="local" />);
+    expect(screen.queryByTestId('np-rate')).toBeNull();
+    expect(screen.queryByTestId('np-rate-chip')).toBeNull();
+    unmount();
+    state.snapshot = makeSnapshot({ playbackRate: 1.5 });
+    render(<TransportBar target="local" />);
+    expect(screen.getByTestId('np-rate-chip')).toHaveTextContent('1.5');
   });
 
   it('changes rate through selected controller config, never a media element', () => {
     render(<TransportBar target="local" />);
+    openSettings();
     fireEvent.click(screen.getByTestId('np-rate'));
     expect(config.setPlaybackRate).toHaveBeenCalledWith(1.25);
   });
@@ -185,6 +229,7 @@ describe('TransportBar', () => {
     };
     render(<TransportBar target={{ deviceId: 'tv-1' }} />);
 
+    openSettings();
     expect(screen.getByTestId('np-rate')).toBeDisabled();
     expect(screen.getByText('Playback speed is not supported by Office TV')).toBeInTheDocument();
   });
@@ -266,7 +311,8 @@ describe('TransportBar', () => {
 
   it('labels every control for assistive tech', () => {
     render(<TransportBar target="local" />);
-    for (const label of ['Previous', 'Next', 'Pause', 'Back 10 seconds', 'Forward 10 seconds', 'Stop', 'Volume']) {
+    openMore();
+    for (const label of ['Previous', 'Next', 'Pause', 'Back 10 seconds', 'Forward 10 seconds', 'Stop', 'Volume', 'More', 'Playback settings']) {
       expect(screen.getByLabelText(label)).toBeInTheDocument();
     }
   });

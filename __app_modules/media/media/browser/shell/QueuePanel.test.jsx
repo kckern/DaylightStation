@@ -10,6 +10,7 @@ import { DispatchProgressTray } from "../cast/DispatchProgressTray.jsx";
 import { FleetContext } from "../fleet/FleetProvider.jsx";
 import { createFleetStore } from "../fleet/fleetStore.js";
 import { PeekContext } from "../peek/PeekContext.js";
+import { NavContext } from "./navContext.js";
 
 vi.mock("./NavProvider.jsx", () => ({ useNav: () => ({ push: vi.fn() }) }));
 vi.mock("../household/PlayedEarlier.jsx", async () => {
@@ -72,7 +73,9 @@ it('removes a queue entry, reports it through the outcome tray, and restores it 
       </LocalSessionContext.Provider>
     </MantineProvider>,
   );
-  fireEvent.click(screen.getByRole('button', { name: 'Remove item 2, Two from queue' }));
+  // A row's edits are in its ⋯ (the row itself opens the info view).
+  fireEvent.click(screen.getByRole('button', { name: 'More for item 2, Two' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Remove from queue: item 2, Two' }));
   expect(controller.getSnapshot().queue.items).toHaveLength(1);
   expect(await screen.findByTestId('dispatch-tray')).toHaveTextContent('Removed Two from the queue here');
   fireEvent.click(await screen.findByTestId('item-action-undo'));
@@ -123,7 +126,7 @@ it('shows no queue for a live channel (no Shuffle, Repeat or Clear), but keeps a
   expect(screen.getByTestId('queue-panel')).toBeInTheDocument();
 });
 
-it('a long queue shows the current item and the next five; the rest, before and after, under More in play order', () => {
+it('the whole play order: what played folds into "3 played", the current row reads Now, the next five, then More', () => {
   const items = Array.from({ length: 12 }, (_, i) => ({ queueItemId: `q${i}`, contentId: `c${i}`, title: `Song ${i}` }));
   const snapshot = { state: 'playing', currentItem: { contentId: 'c3' }, queue: { items, currentIndex: 3 }, config: {} };
   const controller = { getSnapshot: () => snapshot, subscribe: () => () => {}, queue: {}, config: {} };
@@ -139,8 +142,38 @@ it('a long queue shows the current item and the next five; the rest, before and 
   const shown = () => screen.getAllByTestId(/^queue-item-q/).map((el) => el.dataset.testid.replace('queue-item-', ''));
   expect(shown()).toEqual(['q3', 'q4', 'q5', 'q6', 'q7', 'q8']);
   expect(screen.getByTestId('queue-item-q3')).toHaveAttribute('aria-current', 'true');
-  expect(screen.getByTestId('queue-more')).toHaveTextContent('More (6)');
+  expect(screen.getByTestId('queue-item-q3')).toHaveTextContent('Now');
+  // Earlier items are not lost: one row says how many, and opens in place, in order.
+  expect(screen.getByTestId('queue-earlier')).toHaveTextContent('3 played');
+  fireEvent.click(screen.getByTestId('queue-earlier'));
+  expect(screen.getByTestId('queue-earlier')).toHaveAttribute('aria-expanded', 'true');
+  expect(shown()).toEqual(['q0', 'q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7', 'q8']);
+  expect(screen.getByTestId('queue-more')).toHaveTextContent('More (3)');
   fireEvent.click(screen.getByTestId('queue-more'));
   expect(shown()).toEqual(items.map((it) => it.queueItemId));
-  expect(screen.getByTestId('queue-jump-q0')).toHaveTextContent('1.');
+});
+
+it('a row opens its info view; its ⋯ holds Play Now and the edits from the one menu table', () => {
+  const push = vi.fn();
+  const items = Array.from({ length: 3 }, (_, i) => ({ queueItemId: `q${i}`, contentId: `c${i}`, title: `Song ${i}` }));
+  const snapshot = { state: 'playing', currentItem: { contentId: 'c0' }, queue: { items, currentIndex: 0 }, config: {} };
+  const jump = vi.fn();
+  const controller = { getSnapshot: () => snapshot, subscribe: () => () => {}, queue: { jump }, config: {} };
+  render(
+    <MantineProvider>
+      <NavContext.Provider value={{ push }}>
+        <PeekContext.Provider value={{ getController: () => controller }}>
+          <FleetContext.Provider value={{ store: createFleetStore(), devices: [] }}>
+            <DispatchProvider><QueuePanel target={{ deviceId: 'tv-a' }} /></DispatchProvider>
+          </FleetContext.Provider>
+        </PeekContext.Provider>
+      </NavContext.Provider>
+    </MantineProvider>,
+  );
+  fireEvent.click(screen.getByTestId('queue-open-q1'));
+  expect(push).toHaveBeenCalledWith('detail', { contentId: 'c1' });
+  fireEvent.click(screen.getByTestId('queue-menu-q1'));
+  expect(screen.getAllByRole('menuitem').map((el) => el.textContent)).toEqual(['Play Now', 'Move up', 'Move down', 'Remove from queue', 'Open detail']);
+  fireEvent.click(screen.getByTestId('queue-jump-q1'));
+  expect(jump).toHaveBeenCalledWith('q1');
 });

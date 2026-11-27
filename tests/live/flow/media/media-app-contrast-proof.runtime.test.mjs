@@ -88,7 +88,7 @@ for (const [label, vp] of Object.entries(VIEWPORTS)) {
     // Another screen's transport and queue controls.
     await scriptReceiver(request, { deviceId: SCRIPTED.POWER, state: 'playing', title: 'Arrival', duration: 7000, position: 100, queue: [{ title: 'Next one' }] });
     await openRemote(page, SCRIPTED.POWER, vp);
-    for (const id of ['np-toggle', 'np-next', 'np-rate', 'np-stop', 'queue-shuffle', 'queue-repeat', 'queue-clear', 'peek-move-to']) await check(`remote: ${id}`, `[data-testid="${id}"]`);
+    for (const id of ['np-toggle', 'np-next', 'np-settings', 'np-more', 'queue-shuffle', 'queue-repeat', 'queue-clear', 'peek-move-to']) await check(`remote: ${id}`, `[data-testid="${id}"]`);
 
     const present = measured.filter((m) => !m.missing && m.ratio !== undefined);
     const failing = present.filter((m) => m.ratio < 3);

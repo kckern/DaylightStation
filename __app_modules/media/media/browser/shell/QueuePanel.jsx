@@ -2,9 +2,13 @@
 // THE queue component — written once against the controller interface and
 // bound to the local session (Now Playing) or a remote session (Peek). Queue
 // semantics are identical either way by design (J2 ≡ J5).
-import React, { useContext } from 'react';
-import { ActionIcon, Button, Group, Text, Badge } from '@mantine/core';
-import { IconX, IconArrowsShuffle, IconRepeat, IconRepeatOnce, IconClearAll, IconChevronUp, IconChevronDown } from '@tabler/icons-react';
+import React, { useContext, useEffect, useState } from 'react';
+import { ActionIcon, Button, Group, Menu, Text, Badge, UnstyledButton } from '@mantine/core';
+import { IconArrowsShuffle, IconRepeat, IconRepeatOnce, IconClearAll, IconChevronDown, IconChevronRight, IconDots } from '@tabler/icons-react';
+import { ActionMenu } from '@/lib/ui/ActionMenu.jsx';
+import { itemMenuEntries } from "../actions/itemMenuTable.js";
+import { queueWindow, earlierLabel, UP_NEXT_SHOWN } from "./nowPlayingModel.js";
+import { NavContext } from "./navContext.js";
 import { useSessionController } from "../controller/useSessionController.js";
 import { createOperationId } from "../actions/itemAction.js";
 import { DispatchContext } from "../cast/DispatchProvider.jsx";
@@ -16,13 +20,14 @@ import { PlayedEarlier } from "../household/PlayedEarlier.jsx";
 import { TopMoreList } from '@/lib/ui/TopMore.jsx';
 import mediaLog from "../logging/mediaLog.js";
 
-// A long queue shows what plays now and the next few; the rest under More.
-export const QUEUE_UP_NEXT_SHOWN = 5;
+// A long queue shows what plays now and the next few (nowPlayingModel.queueWindow):
+// what already played collapses to one "Played N earlier in this queue" line
+// that opens in place, and what comes later sits under More.
+export const QUEUE_UP_NEXT_SHOWN = UP_NEXT_SHOWN;
 
-/** The queue ids shown before More: the current item and the next few. */
+/** The queue ids shown at first: the current item and the next few. */
 export function queueWindowIds(items = [], currentIndex = 0) {
-  const start = Number.isInteger(currentIndex) && currentIndex >= 0 ? currentIndex : 0;
-  return items.slice(start, start + 1 + QUEUE_UP_NEXT_SHOWN).map((item) => item.queueItemId);
+  return queueWindow(items, currentIndex).window.map((item) => item.queueItemId);
 }
 
 const REPEAT_NEXT = { off: 'all', all: 'one', one: 'off' };
@@ -33,8 +38,10 @@ const REPEAT_LABEL = { off: 'Repeat off', all: 'Repeat all', one: 'Repeat one' }
 // rather than leak an unhandled one. (Local ops return undefined — safe.)
 const fire = (thunk) => { try { Promise.resolve(thunk()).catch(() => {}); } catch { /* sync throw */ } };
 
-export function QueuePanel({ target = 'local', availability = null }) {
+export function QueuePanel({ target = 'local', availability = null, showPlayedEarlier = true }) {
   const { controller, snapshot, queue, config } = useSessionController(target);
+  const { push } = useContext(NavContext) ?? {};
+  const [earlierOpen, setEarlierOpen] = useState(false);
   const outcomes = useContext(DispatchContext);
   const remoteId = target === 'local' ? null : target?.deviceId ?? null;
   const fleet = useContext(FleetContext);
@@ -73,14 +80,16 @@ export function QueuePanel({ target = 'local', availability = null }) {
 
   // FIND.11a: every screen's queue — this device's or a remote one's — ends
   // with what played there earlier, whether or not anything is queued.
-  const earlier = (
+  const playedEarlier = showPlayedEarlier ? (
     <PlayedEarlier key={remoteId ?? getDeviceId()} screenId={remoteId ?? getDeviceId()} currentContentId={snapshot?.currentItem?.contentId ?? null} />
-  );
+  ) : null;
+  // A different screen's queue starts collapsed again.
+  useEffect(() => { setEarlierOpen(false); }, [remoteId]);
 
   // A live channel has no list to shuffle, repeat or clear (STEER.7a/AC4): when the only thing here is the live
   // item, the screen's queue says nothing; what it played earlier still follows.
   if (snapshot?.currentItem?.isLive === true && (q?.items?.length ?? 0) <= 1) {
-    return earlier;
+    return playedEarlier;
   }
 
   if (!q || !Array.isArray(q.items) || q.items.length === 0) {
@@ -100,12 +109,106 @@ export function QueuePanel({ target = 'local', availability = null }) {
           {/* A single playing item still ends: its end-of-queue choice applies. */}
           {playingSolo && <EndOfQueueChoice target={target} targetName={remoteId ? deviceName(remoteDevice, remoteId) : null} />}
         </div>
-        {earlier}
+        {playedEarlier}
       </>
     );
   }
 
   const indexOf = new Map(q.items.map((item, index) => [item.queueItemId, index]));
+  const { earlier, window: windowed, later } = queueWindow(q.items, q.currentIndex);
+  const toggleEarlier = () => {
+    setEarlierOpen((open) => {
+      if (!open) mediaLog.nowPlayingQueueExpanded({ part: 'earlier', count: earlier.length, target: remoteId ?? 'local' });
+      return !open;
+    });
+  };
+  const openDetail = (it) => {
+    if (it.contentId) push?.('detail', { contentId: it.contentId });
+  };
+  const runRowVerb = (kind, it, idx) => {
+    if (kind === 'playNow') dispatch(() => queue.jump?.(it.queueItemId));
+    else if (kind === 'moveUp') dispatch(() => queue.reorder?.({ from: it.queueItemId, to: q.items[idx - 1].queueItemId }));
+    else if (kind === 'moveDown') dispatch(() => queue.reorder?.({ from: it.queueItemId, to: q.items[idx + 1].queueItemId }));
+    else if (kind === 'remove') edit('remove', it.queueItemId);
+    else if (kind === 'details') openDetail(it);
+  };
+  const VERB_TESTID = { playNow: 'queue-jump', moveUp: 'queue-moveup', moveDown: 'queue-movedown', remove: 'queue-remove', details: 'queue-details' };
+  const renderRow = (it) => {
+    const idx = indexOf.get(it.queueItemId);
+    const isCurrent = idx === q.currentIndex;
+    const title = it.title ?? it.contentId;
+    const rowLabel = `item ${idx + 1}, ${title}`;
+    const cls = [
+      'queue-item',
+      isCurrent ? 'queue-item--current' : '',
+      idx < q.currentIndex ? 'queue-item--earlier' : '',
+      it.priority === 'upNext' ? 'queue-item--upnext' : '',
+    ].filter(Boolean).join(' ');
+    const entries = itemMenuEntries({
+      surface: 'queue',
+      household: false,
+      queue: { current: isCurrent, first: idx === 0, last: idx === q.items.length - 1 },
+    });
+    return (
+      <li
+        key={it.queueItemId}
+        data-testid={`queue-item-${it.queueItemId}`}
+        className={cls}
+        aria-current={isCurrent ? 'true' : undefined}
+      >
+        <span className="queue-item-index" aria-hidden="true">{idx + 1}</span>
+        <UnstyledButton
+          className="queue-item-title"
+          data-testid={`queue-open-${it.queueItemId}`}
+          aria-label={`Open ${title}${isCurrent ? ', playing now' : ''}`}
+          onClick={() => openDetail(it)}
+        >
+          <span className="queue-item-text">{title}</span>
+        </UnstyledButton>
+        {isCurrent && <span className="queue-item-now" data-testid="queue-now">Now</span>}
+        {it.priority === 'upNext' && (
+          <Badge size="xs" color="amber" variant="light" className="queue-badge">up next</Badge>
+        )}
+        {it.addedBy === 'auto-continue' && (
+          <Badge size="xs" color="gray" variant="light" className="queue-badge" data-testid={`queue-auto-${it.queueItemId}`}>
+            added automatically
+          </Badge>
+        )}
+        <ActionMenu
+          position="bottom-end"
+          withinPortal={false}
+          shadow="md"
+          dropdownProps={{ 'data-testid': `queue-menu-${it.queueItemId}-dropdown` }}
+          trigger={
+            <ActionIcon
+              variant="subtle"
+              color="gray"
+              size={40}
+              className="queue-item-more"
+              data-testid={`queue-menu-${it.queueItemId}`}
+              aria-label={`More for ${rowLabel}`}
+            >
+              <IconDots size={18} />
+            </ActionIcon>
+          }
+        >
+          {entries.map((entry, i) => (entry.divider
+            ? <Menu.Divider key={`d${i}`} />
+            : (
+              <Menu.Item
+                key={entry.kind}
+                data-testid={`${VERB_TESTID[entry.kind]}-${it.queueItemId}`}
+                aria-label={entry.kind === 'details' ? entry.label : `${entry.label}: ${rowLabel}`}
+                disabled={entry.kind !== 'details' && !controlsAvailable}
+                onClick={() => runRowVerb(entry.kind, it, idx)}
+              >
+                {entry.label}
+              </Menu.Item>
+            )))}
+        </ActionMenu>
+      </li>
+    );
+  };
   const shuffle = !!snapshot.config?.shuffle;
   const repeat = snapshot.config?.repeat ?? 'off';
 
@@ -117,6 +220,7 @@ export function QueuePanel({ target = 'local', availability = null }) {
         </Text>
         <Button
           data-testid="queue-shuffle"
+          aria-label="Shuffle"
           size="compact-sm"
           variant={shuffle ? 'light' : 'subtle'}
           color={shuffle ? 'amber' : 'gray'}
@@ -129,6 +233,7 @@ export function QueuePanel({ target = 'local', availability = null }) {
         </Button>
         <Button
           data-testid="queue-repeat"
+          aria-label={REPEAT_LABEL[repeat] ?? 'Repeat off'}
           size="compact-sm"
           variant={repeat !== 'off' ? 'light' : 'subtle'}
           color={repeat !== 'off' ? 'amber' : 'gray'}
@@ -140,6 +245,7 @@ export function QueuePanel({ target = 'local', availability = null }) {
         </Button>
         <Button
           data-testid="queue-clear"
+          aria-label="Clear the queue"
           size="compact-sm"
           variant="subtle"
           color="gray"
@@ -152,84 +258,38 @@ export function QueuePanel({ target = 'local', availability = null }) {
         </Button>
       </Group>
       <ul className="queue-items">
+        {earlier.length > 0 && (
+          <li className="queue-earlier-row">
+            <UnstyledButton
+              data-testid="queue-earlier"
+              className="queue-earlier"
+              aria-expanded={earlierOpen}
+              onClick={toggleEarlier}
+            >
+              {earlierLabel(earlier.length)}
+              {earlierOpen ? <IconChevronDown size={16} aria-hidden /> : <IconChevronRight size={16} aria-hidden />}
+            </UnstyledButton>
+          </li>
+        )}
+        {earlierOpen && earlier.map(renderRow)}
+        {windowed.map(renderRow)}
         <TopMoreList
-          items={q.items}
+          items={later}
           n={0}
-          keepIds={queueWindowIds(q.items, q.currentIndex)}
           getId={(it) => it.queueItemId}
           stable={false}
           expandedOrder="input"
           moreAs="li"
           testId="queue"
-          onExpand={(counts) => mediaLog.listMoreExpanded({ surface: 'queue', ...counts })}
-          renderItem={(it) => {
-          const idx = indexOf.get(it.queueItemId);
-          const isCurrent = idx === q.currentIndex;
-          const rowLabel = `item ${idx + 1}, ${it.title ?? it.contentId}`;
-          const cls = [
-            'queue-item',
-            isCurrent ? 'queue-item--current' : '',
-            it.priority === 'upNext' ? 'queue-item--upnext' : '',
-          ].filter(Boolean).join(' ');
-          return (
-            <li
-              key={it.queueItemId}
-              data-testid={`queue-item-${it.queueItemId}`}
-              className={cls}
-              aria-current={isCurrent ? 'true' : undefined}
-            >
-              <button
-                className="queue-item-title"
-                data-testid={`queue-jump-${it.queueItemId}`}
-                onClick={() => dispatch(() => queue.jump?.(it.queueItemId))}
-                disabled={!controlsAvailable || isCurrent}
-              >
-                <span className="queue-item-index">{idx + 1}.</span>
-                {it.title ?? it.contentId}
-              </button>
-              {it.priority === 'upNext' && (
-                <Badge size="xs" color="amber" variant="light" className="queue-badge">up next</Badge>
-              )}
-              {it.addedBy === 'auto-continue' && (
-                <Badge size="xs" color="gray" variant="light" className="queue-badge" data-testid={`queue-auto-${it.queueItemId}`}>
-                  added automatically
-                </Badge>
-              )}
-              {/* Reorder: discrete tap targets, not drag (touch-first) */}
-              <ActionIcon
-                size="md"
-                aria-label={`Move ${rowLabel} up in queue`}
-                data-testid={`queue-moveup-${it.queueItemId}`}
-                disabled={!controlsAvailable || idx === 0}
-                onClick={() => dispatch(() => queue.reorder?.({ from: it.queueItemId, to: q.items[idx - 1].queueItemId }))}
-              >
-                <IconChevronUp size={16} />
-              </ActionIcon>
-              <ActionIcon
-                size="md"
-                aria-label={`Move ${rowLabel} down in queue`}
-                data-testid={`queue-movedown-${it.queueItemId}`}
-                disabled={!controlsAvailable || idx === q.items.length - 1}
-                onClick={() => dispatch(() => queue.reorder?.({ from: it.queueItemId, to: q.items[idx + 1].queueItemId }))}
-              >
-                <IconChevronDown size={16} />
-              </ActionIcon>
-              <ActionIcon
-                size="md"
-                aria-label={`Remove ${rowLabel} from queue`}
-                data-testid={`queue-remove-${it.queueItemId}`}
-                disabled={!controlsAvailable}
-                onClick={() => edit('remove', it.queueItemId)}
-              >
-                <IconX size={16} />
-              </ActionIcon>
-            </li>
-          );
-        }}
+          onExpand={(counts) => {
+            mediaLog.listMoreExpanded({ surface: 'queue', ...counts });
+            mediaLog.nowPlayingQueueExpanded({ part: 'later', count: later.length, target: remoteId ?? 'local' });
+          }}
+          renderItem={renderRow}
         />
       </ul>
       <EndOfQueueChoice target={target} targetName={remoteId ? deviceName(remoteDevice, remoteId) : null} />
-      {earlier}
+      {playedEarlier}
     </div>
   );
 }
