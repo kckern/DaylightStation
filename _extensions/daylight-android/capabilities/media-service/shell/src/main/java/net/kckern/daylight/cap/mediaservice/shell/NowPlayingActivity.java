@@ -688,7 +688,7 @@ public class NowPlayingActivity extends Activity {
             String[] load = Starting.screenLoad(s.mediaId);
             if (load != null) {
                 note("player.starting", "how", "screen");
-                startOnScreen(load[0], load[1], shuffle, s.title, s.art);
+                startOnScreen(load[0], load[1], shuffle, s.title, s.art, s.longForm);
                 return;
             }
         }
@@ -792,6 +792,17 @@ public class NowPlayingActivity extends Activity {
         return mediaId != null && mediaId.length() > 2 && mediaId.charAt(1) == ':';
     }
 
+    /** The speed a book will play at, as Now playing's long-form memory has it (per book, then the default). */
+    private float startSpeed(Starting s) {
+        SharedPreferences p = getSharedPreferences(LongFormPolicy.PREFS, MODE_PRIVATE);
+        float fallback = p.getFloat(LongForm.DEFAULT_KEY, 1f);
+        String byAlbum = LongForm.speedKey(null, s.title);
+        if (!byAlbum.isEmpty()) fallback = p.getFloat("speed:" + byAlbum, fallback);
+        String list = s.mediaId.startsWith("c:") ? contentOf(s.mediaId) : "";
+        String byList = LongForm.speedKey(list, null);
+        return LongForm.clampSpeed(byList.isEmpty() ? fallback : p.getFloat("speed:" + byList, fallback));
+    }
+
     private void retryStarting() {
         Starting s = starting != null ? starting : failedStart;
         if (s == null || controller == null || s.mediaId.isEmpty()) return;
@@ -833,9 +844,14 @@ public class NowPlayingActivity extends Activity {
         if (begun != null) {
             // The tapped item, from the first frame: its name, who by, its cover, and how starting is going.
             // Laid out exactly as the playing frame is (every line keeps its place), so nothing moves when it lands.
-            title.setText(begun.title.isEmpty() ? "Starting…" : begun.title);
+            // A book's frame is a book's from the first draw (StartFrame): title, the book line kept,
+            // the author under it; speed and ±10 s in the row, no shuffle, repeat or lyrics.
+            boolean book = begun.longForm;
+            StartFrame sf = StartFrame.of(book, begun.title, begun.subtitle);
+            placeByLine(sf.byBelow);
+            title.setText(sf.title);
             title.setTextColor(begun.title.isEmpty() ? theme.inkMuted : theme.ink);
-            show(artistLine, begun.subtitle);
+            show(artistLine, sf.by);
             show(albumLine, null);
             showStart("");
             statusIsSleep = false;
@@ -852,8 +868,20 @@ public class NowPlayingActivity extends Activity {
             enable(prev, false);
             enable(next, false);
             for (View v : new View[] { shuffleButton, repeatButton, queueButton, lyricsButton, speedButton, leftEdgeBox, rightEdgeBox }) enable(v, false);
+            leftEdgeBox.setVisibility(sf.jumps ? View.VISIBLE : View.INVISIBLE);
+            rightEdgeBox.setVisibility(sf.jumps ? View.VISIBLE : View.INVISIBLE);
+            shuffleButton.setVisibility(sf.controls.shuffle ? View.VISIBLE : View.GONE);
+            speedButton.setVisibility(sf.controls.speed ? View.VISIBLE : View.GONE);
+            if (sf.controls.speed) {
+                float speed = startSpeed(begun);
+                speedButton.setText(LongForm.speedLabel(speed));
+                speedButton.setTextColor(Math.abs(speed - 1f) > 0.001f ? theme.primary : theme.ink);
+            }
+            repeatButton.setVisibility(sf.controls.repeat ? View.VISIBLE : View.GONE);
+            lyricsButton.setVisibility(sf.controls.lyrics ? View.VISIBLE : View.GONE);
             if (stage != Stage.ART) setStage(Stage.ART);
-            show(qualityLine, null);
+            if (sf.quality) show(qualityLine, null);
+            else { qualityLine.setText(""); qualityLine.setVisibility(View.GONE); }
             lyricsBadge.setVisibility(View.GONE);
             // The chapter line is reserved only for a long item, as the playing frame does (music has none).
             if (chapterLine != null) { chapterLine.setText(""); chapterLine.setVisibility(begun.longForm && !remote() ? View.INVISIBLE : View.GONE); }
@@ -1529,7 +1557,7 @@ public class NowPlayingActivity extends Activity {
             if (last != null && !last[0].isEmpty()) {
                 String what = last[1].isEmpty() ? "what played last" : last[1];
                 startList.addView(startRow(0, "Resume " + what, last[2], "start.resume",
-                        () -> playHereNow(last[0], false, last[1], last[2], last[3]), last[3]));
+                        () -> playHereNow(last[0], false, last[1], last[2], last[3], radio.lastWasLong()), last[3]));
             }
         }
         String cached = getSharedPreferences("daylight.home", MODE_PRIVATE).getString("continue", "");
@@ -1543,8 +1571,9 @@ public class NowPlayingActivity extends Activity {
                 if (id.isEmpty()) continue;
                 startList.addView(startRow(0, title, item.optString("subtitle"), "start.continue",
                         () -> {
-                            if (here) playHereNow(mediaId, false, title, item.optString("subtitle"), item.optString("art"));
-                            else startOnScreen("play", id, false, title, item.optString("art"));
+                            // Continue listening is long audio only: a book's frame from the first draw.
+                            if (here) playHereNow(mediaId, false, title, item.optString("subtitle"), item.optString("art"), true);
+                            else startOnScreen("play", id, false, title, item.optString("art"), true);
                         }, item.optString("art")));
             }
         } catch (Exception unreadable) { /* the Play tab fills this cache; without it the list is shorter */ }
@@ -1554,8 +1583,8 @@ public class NowPlayingActivity extends Activity {
             String id = contentOf(p.id);
             startList.addView(startRow(0, p.title, null, "start.playlist",
                     () -> {
-                        if (here) playHereNow("c:" + id, true, p.title, "", p.art);
-                        else startOnScreen("queue", id, true, p.title, p.art);
+                        if (here) playHereNow("c:" + id, true, p.title, "", p.art, false);
+                        else startOnScreen("queue", id, true, p.title, p.art, false);
                     }, p.art));
         }
         if (here) {
@@ -1622,10 +1651,11 @@ public class NowPlayingActivity extends Activity {
     }
 
     /** One tap starts it on this phone, from the idle panel: shown as starting at once, played on this controller. */
-    private void playHereNow(String mediaId, boolean shuffle, String title, String subtitle, String art) {
+    private void playHereNow(String mediaId, boolean shuffle, String title, String subtitle, String art, boolean longForm) {
         if (remote() || mediaId == null || mediaId.isEmpty()) return;
         note("player.start", "how", "here");
         Starting s = new Starting(LOCAL, mediaId, title, subtitle, art, SystemClock.elapsedRealtime());
+        s.longForm = longForm;
         s.giveUpMs = PlayBudget.giveUpMs(PayloadReady.now(PayloadMedia.PORT).ready());
         starting = s;
         main.postDelayed(this::render, Starting.SLOW_MS + 50);
@@ -1637,9 +1667,10 @@ public class NowPlayingActivity extends Activity {
     }
 
     /** One tap starts it on the screen (the web's Play on); the player then follows what the screen does. */
-    private void startOnScreen(String how, String contentId, boolean shuffle, String title, String art) {
+    private void startOnScreen(String how, String contentId, boolean shuffle, String title, String art, boolean longForm) {
         final String device = target, name = targetName;
         final Starting mine = new Starting(device, "", title, "", art, SystemClock.elapsedRealtime());
+        mine.longForm = longForm;
         // One budget: the command's wait and the Starting give-up are the same number, so
         // the answer (or its absence) is in before the screen says it failed.
         mine.giveUpMs = PlayBudget.SCREEN_MS + 1_000;

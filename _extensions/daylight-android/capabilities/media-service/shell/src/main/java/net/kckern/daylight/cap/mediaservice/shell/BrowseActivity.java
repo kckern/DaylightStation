@@ -1373,7 +1373,7 @@ public final class BrowseActivity extends Activity {
                 UiTelemetry.tag(row, "browse.open");
                 openDetail(n, k, searchGroup);
             } else if (tap == MediaKind.Tap.PLAY_FROM_HERE) {
-                play(id, false, name, sub, cover);
+                play(id, false, name, sub, cover, null, -1, MediaKind.spoken(kind) || MediaKind.spoken(rowKind));
             }
         });
         UiTelemetry.tag(row, browsable ? "browse.row" : "browse.track");
@@ -1504,7 +1504,11 @@ public final class BrowseActivity extends Activity {
     }
 
     private void play(String mediaId, boolean shuffle, String name, String by, String cover) {
-        play(mediaId, shuffle, name, by, cover, null, -1);
+        play(mediaId, shuffle, name, by, cover, null, -1, MediaKind.spoken(kind));
+    }
+
+    private void play(String mediaId, boolean shuffle, String name, String by, String cover, String stage, long atMs) {
+        play(mediaId, shuffle, name, by, cover, stage, atMs, MediaKind.spoken(kind) || "chapters".equals(stage));
     }
 
     /**
@@ -1514,14 +1518,15 @@ public final class BrowseActivity extends Activity {
      * request (the queue that was playing is never shuffled first). {@code stage}: Now
      * playing opens on its chapters; {@code atMs} ≥ 0: from that place (Play from the start).
      */
-    private void play(String mediaId, boolean shuffle, String name, String by, String cover, String stage, long atMs) {
+    /** @param longItem a book, a talk or a part of one: Now playing's Starting frame is a book's (StartFrame) */
+    private void play(String mediaId, boolean shuffle, String name, String by, String cover, String stage, long atMs, boolean longItem) {
         // A second tap on the same item within a second, or while the first is starting, is dropped.
         if (!playGuard.admit((shuffle ? "shuffle|" : "play|") + mediaId, SystemClock.elapsedRealtime())) return;
         action(shuffle ? "shuffle" : "play");
         // One Now playing: an open one takes the new item (onNewIntent reads the Starting extras).
         Intent now = Starting.put(new Intent(this, NowPlayingActivity.class)
                 .putExtra(NowPlayingActivity.EXTRA_TARGET, NowPlayingActivity.LOCAL)
-                .putExtra(Starting.EXTRA_LONG, MediaKind.spoken(kind) || "chapters".equals(stage))
+                .putExtra(Starting.EXTRA_LONG, longItem)
                 .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP), mediaId, name, by, cover);
         if (stage != null) now.putExtra(NowPlayingActivity.EXTRA_STAGE, stage);
         startActivity(now);
@@ -1575,6 +1580,7 @@ public final class BrowseActivity extends Activity {
                             .putExtra(Starting.EXTRA_TARGET_NAME, label)
                             .putExtra(RemoteControlService.EXTRA_SNAPSHOT, snapshot)
                             .putExtra(Starting.EXTRA_PLAY, true)
+                            .putExtra(Starting.EXTRA_LONG, MediaKind.spoken(kind))
                             .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP), mediaId, name, by, cover));
                 });
         // The list itself, refreshed behind the open picker: new screens are added, the cache kept.

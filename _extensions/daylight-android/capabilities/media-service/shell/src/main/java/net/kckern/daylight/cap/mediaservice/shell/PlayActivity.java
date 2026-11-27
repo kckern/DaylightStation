@@ -30,6 +30,7 @@ public class PlayActivity extends Activity {
                     .putExtra(NowPlayingActivity.EXTRA_TARGET, NowPlayingActivity.LOCAL)
                     .putExtra(Starting.EXTRA_ID, mediaId)
                     .putExtra(Starting.EXTRA_PLAY, true)
+                    .putExtra(Starting.EXTRA_LONG, in.getBooleanExtra("long", false))
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
             try { startActivity(now); }
             catch (RuntimeException refused) { Log.w(TAG, "play: Now playing did not open: " + refused.getClass().getSimpleName()); }

@@ -1916,12 +1916,22 @@ public final class MediaServiceCapability implements Capability {
     }
 
     /** {title, art} of a kept collection this media id is (or is in), or null. */
+    /** A kept collection's kind that plays as long audio (a book, a talk): Now playing's Starting frame is a book's. */
+    static boolean longKind(String kind) {
+        switch (kind == null ? "" : kind) {
+            case "book": case "books": case "part": case "author": case "series": case "speaker": case "lecture": case "talks":
+                return true;
+            default:
+                return false;
+        }
+    }
+
     private String[] knownFace(String mediaId) {
         try {
             String cid = MediaId.parse(mediaId).contentId;
             JSONObject k = cid == null ? null : kept().get(cid);
             if (k == null || k.optString("title").isEmpty()) return null;
-            return new String[] { k.optString("title"), k.optString("art", "") };
+            return new String[] { k.optString("title"), k.optString("art", ""), String.valueOf(longKind(k.optString("kind", ""))) };
         } catch (Exception unknown) {
             return null;
         }
@@ -1947,7 +1957,8 @@ public final class MediaServiceCapability implements Capability {
                     // What this phone already knows of it (a kept collection's title and cover), so
                     // the first frame names it rather than "Starting…" alone (audit: id-only links).
                     String[] face = knownFace(mediaId);
-                    if (face != null) now.putExtra("starting.title", face[0]).putExtra("starting.art", face[1]);
+                    if (face != null) now.putExtra("starting.title", face[0]).putExtra("starting.art", face[1])
+                            .putExtra("starting.long", Boolean.parseBoolean(face[2]));
                     if (shellPlaysFromNowPlaying(c)) c.startActivity(now);
                     else c.startActivity(new Intent().setClassName(c, PLAY_ACTIVITY).putExtra("id", mediaId)
                             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));

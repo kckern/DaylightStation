@@ -855,4 +855,12 @@ public class MediaServiceCapabilityTest {
         assertEquals(400, cap.call(new JSONObject().put("op", "continue-decide").put("all", true).put("decision", "keep")).status);
         assertEquals(400, cap.call(new JSONObject().put("op", "continue-decide").put("contentId", "../x").put("decision", "clear")).status);
     }
+
+    @Test public void aKeptBookOpensNowPlayingWithABooksStartingFrame() {
+        assertTrue(MediaServiceCapability.longKind("book"));
+        assertTrue(MediaServiceCapability.longKind("series"));
+        assertFalse(MediaServiceCapability.longKind("album"));
+        assertFalse(MediaServiceCapability.longKind("playlist"));
+        assertFalse(MediaServiceCapability.longKind(null));
+    }
 }

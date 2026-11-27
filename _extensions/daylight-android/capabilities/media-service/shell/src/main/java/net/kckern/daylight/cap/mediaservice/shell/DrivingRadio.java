@@ -128,7 +128,7 @@ final class DrivingRadio {
         androidx.media3.common.MediaMetadata m = item.mediaMetadata;
         settings.rememberLast("p:" + item.mediaId, m.title == null ? "" : m.title.toString(),
                 m.subtitle == null ? "" : m.subtitle.toString(),
-                m.artworkUri == null ? "" : m.artworkUri.toString());
+                m.artworkUri == null ? "" : m.artworkUri.toString(), NodeItems.longFormKind(item));
     }
 
     /** The last item played, as a playable node, or null when nothing has played. */

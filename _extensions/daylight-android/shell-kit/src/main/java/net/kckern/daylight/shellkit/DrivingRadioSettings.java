@@ -22,6 +22,7 @@ public final class DrivingRadioSettings {
     private static final String LAST_TITLE = "resume.title";
     private static final String LAST_SUBTITLE = "resume.subtitle";
     private static final String LAST_ART = "resume.art";
+    private static final String LAST_LONG = "resume.long";
     private static final String RADIO = "driving_radio.";
     public static final int DEFAULT = 0;
     private final SharedPreferences prefs;
@@ -84,11 +85,19 @@ public final class DrivingRadioSettings {
     }
 
     public void rememberLast(String id, String title, String subtitle, String art) {
+        rememberLast(id, title, subtitle, art, false);
+    }
+
+    /** @param longForm a book or a talk: Now playing's Starting frame is a book's from the first draw */
+    public void rememberLast(String id, String title, String subtitle, String art, boolean longForm) {
         if (id == null || id.isEmpty()) return;
         prefs.edit().putString(LAST_ID, id).putString(LAST_TITLE, title == null ? "" : title)
                 .putString(LAST_SUBTITLE, subtitle == null ? "" : subtitle)
-                .putString(LAST_ART, art == null ? "" : art).apply();
+                .putString(LAST_ART, art == null ? "" : art).putBoolean(LAST_LONG, longForm).apply();
     }
+
+    /** Whether the last item played was long (a book, a talk). */
+    public boolean lastWasLong() { return prefs.getBoolean(LAST_LONG, false); }
 
     /** {id, title, subtitle, art}, or null when nothing has played. */
     public String[] last() {
