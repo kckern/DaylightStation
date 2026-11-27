@@ -23,6 +23,10 @@ import net.kckern.daylight.shellkit.ShellStart;
  * <li>{@link #VERIFY_ID}: once a week, every kept file checked against its length;</li>
  * <li>{@link #RESUME_ID}: Media3's downloads, run here while their network and storage hold
  *   ({@link KeepScheduler}); never a foreground-service start from the background;</li>
+ * <li>{@link #INBOX_ID}: every 15 min (Android's shortest) with any network, the app closed:
+ *   one check of the phone's inbox, so a keep or remove sent from the web lands without
+ *   opening the app (a Play on still needs the app open: plays are only queued while the
+ *   phone is listening);</li>
  * <li>{@link #ACTION_BASE}+n: one screen's action (keep, retry, remove, pause, resume, cancel),
  *   a job id per action and item, so two quick taps are two jobs.</li>
  * </ul>
@@ -37,6 +41,9 @@ public final class KeepJob extends JobService {
     static final int RESUME_ID = 7_206;
     static final int RETRY_ID = 7_207;
     static final int VERIFY_ID = 7_209;
+    static final int INBOX_ID = 7_211;
+    /** Android's shortest period for a periodic job. */
+    static final long INBOX_EVERY_MS = 15 * 60_000L;
     /** Screen actions: 7300..7399 (PhoneHomeActivity schedules these by number). */
     static final int ACTION_BASE = 7_300, ACTION_SLOTS = 100;
     private static final long PAYLOAD_WAIT_MS = 20_000;
@@ -47,8 +54,11 @@ public final class KeepJob extends JobService {
 
     @Override public boolean onStartJob(JobParameters params) {
         Log.i(TAG, "keep job " + params.getJobId());
-        // A cold process: the shell (and its payload) are not up until something starts them.
-        ShellStart.ensure(this);
+        // A cold process: the shell (and its payload) are not up until something brings them up.
+        // A job may not start a service on Android 12+, but may bind one: held until it ends.
+        Object held = ShellStart.hold(this);
+        if (held == null) ShellStart.ensure(this);
+        synchronized (holds) { holds.put(params.getJobId(), held); }
         new Thread(() -> run(params), "Daylight-keep-job").start();
         return true;
     }
@@ -56,20 +66,32 @@ public final class KeepJob extends JobService {
     private void run(JobParameters params) {
         if (!PayloadPort.named(PayloadMedia.PORT).awaitReady(PAYLOAD_WAIT_MS)) {
             Log.w(TAG, "keep job: the payload did not come up; trying again later");
-            jobFinished(params, true);
+            done(params, true);
+            return;
+        }
+        if (params.getJobId() == INBOX_ID) {
+            // The inbox check needs no download store: ask, handle, done. A keep it received
+            // schedules its own sync job (the payload signals the keeper).
+            String status;
+            try {
+                org.json.JSONObject reply = new org.json.JSONObject(new PayloadMedia().inboxOnce(15_000));
+                status = reply.has("status") ? reply.optString("status") : "no status: " + reply.optString("error", reply.toString());
+            } catch (Exception failed) { status = failed.getClass().getSimpleName(); }
+            Log.i(TAG, "inbox job: " + status);
+            done(params, false);
             return;
         }
         KeepStore store;
         try { store = KeepStore.get(this); }
         catch (RuntimeException broken) {
             Log.w(TAG, "keep job: the store could not open: " + broken.getClass().getSimpleName());
-            jobFinished(params, true);
+            done(params, true);
             return;
         }
         int id = params.getJobId();
         // Whatever woke it, the job then runs the downloads while they last (the process stays
         // up for them), then is rescheduled if they are not done.
-        Runnable thenRun = () -> store.runDownloads(RUN_MS, more -> jobFinished(params, more));
+        Runnable thenRun = () -> store.runDownloads(RUN_MS, more -> done(params, more));
         if (id == RESUME_ID) {
             thenRun.run();
         } else if (id == VERIFY_ID) {
@@ -82,7 +104,21 @@ public final class KeepJob extends JobService {
         }
     }
 
-    @Override public boolean onStopJob(JobParameters params) { return true; }
+    @Override public boolean onStopJob(JobParameters params) { letGo(params); return true; }
+
+    private final java.util.Map<Integer, Object> holds = new java.util.HashMap<>();
+
+    /** The job is over: the shell is let go (it stops when nothing else keeps it), then Android is told. */
+    private void done(JobParameters params, boolean reschedule) {
+        letGo(params);
+        jobFinished(params, reschedule);
+    }
+
+    private void letGo(JobParameters params) {
+        Object held;
+        synchronized (holds) { held = holds.remove(params.getJobId()); }
+        if (held != null) main.post(() -> ShellStart.release(this, held));
+    }
 
     private static ComponentName me(Context c) { return new ComponentName(c, KeepJob.class); }
 
@@ -115,6 +151,10 @@ public final class KeepJob extends JobService {
             if (js.getPendingJob(DAILY_ID) == null) {
                 js.schedule(new JobInfo.Builder(DAILY_ID, me(c)).setPeriodic(24 * 60 * 60 * 1000L)
                         .setRequiredNetworkType(JobInfo.NETWORK_TYPE_UNMETERED).setPersisted(true).build());
+            }
+            if (js.getPendingJob(INBOX_ID) == null) {
+                js.schedule(new JobInfo.Builder(INBOX_ID, me(c)).setPeriodic(INBOX_EVERY_MS)
+                        .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY).setPersisted(true).build());
             }
             if (js.getPendingJob(VERIFY_ID) == null) {
                 js.schedule(new JobInfo.Builder(VERIFY_ID, me(c)).setPeriodic(7 * 24 * 60 * 60 * 1000L)

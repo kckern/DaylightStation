@@ -30,6 +30,14 @@ describe('GET /device/:id/commands (the phone app long-polls)', () => {
     expect(again.status).toBe(204);
   });
 
+  it('a background check (background=1) answers at once and does not make the phone read online', async () => {
+    const { app, phoneInbox, sent } = setup();
+    const res = await request(app).get('/api/v1/device/phone/commands?wait=0&background=1&installId=install-aaaa-1111').set('Authorization', 'Bearer t');
+    expect(res.status).toBe(204);
+    expect(phoneInbox.isPresent('phone')).toBe(false);
+    expect(sent.some((m) => m.topic === 'device-state')).toBe(false);
+  });
+
   it('holds until a command comes', async () => {
     const { app, phoneInbox } = setup();
     setTimeout(() => phoneInbox.enqueue('phone', envelope('d2')), 50);

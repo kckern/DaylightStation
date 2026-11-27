@@ -141,6 +141,11 @@ export function pickerRowState({ entry = null, device = null, starting = null, s
       tone: 'busy', busy: true, playingThis: false, disabled: true,
     };
   }
+  // A phone is only reachable while its app listens (open, or playing); closed, a play would
+  // sit unheard and be withdrawn. Say how to make it listen, and don't offer the tap.
+  if (deviceKind(device) === 'phone' && (!entry || entry.offline || entry.isStale)) {
+    return { text: 'Open Daylight to play here', tone: 'off', busy: false, playingThis: false, disabled: true };
+  }
   const snap = entry?.offline ? null : entry?.snapshot;
   const current = snap?.currentItem?.contentId ?? null;
   if (sourceContentId && current === sourceContentId && BUSY_STATES.has(snap.state)) {

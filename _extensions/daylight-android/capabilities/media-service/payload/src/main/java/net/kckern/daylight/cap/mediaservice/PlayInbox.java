@@ -161,8 +161,14 @@ final class PlayInbox {
     }
 
     /** The poll URL: wait, this install, its model. */
-    String pollUrl() {
-        return url.apply("/api/v1/device/" + deviceId + "/commands?wait=" + WAIT_S
+    String pollUrl() { return pollUrl(WAIT_S, false); }
+
+    /**
+     * The poll URL. {@code background}: the app is closed and its job checks in (wait 0,
+     * background=1): home hands over keeps but does not count the phone as listening.
+     */
+    String pollUrl(int waitS, boolean background) {
+        return url.apply("/api/v1/device/" + deviceId + "/commands?wait=" + waitS + (background ? "&background=1" : "")
                 + "&installId=" + ContentPath.encode(installId) + "&model=" + ContentPath.encode(model));
     }
 
@@ -208,9 +214,25 @@ final class PlayInbox {
     }
 
     /** One poll, its commands handled, and the kept list sent when it changed. */
-    void pollOnce() throws Exception {
+    void pollOnce() throws Exception { poll(WAIT_S, false); }
+
+    /**
+     * The app closed: one check from the background job (every 15 min). It asks without
+     * waiting, handles what was queued (keeps, removes; a play is only queued while the phone
+     * is listening, so none should be here), and sends the kept list if one is known, so the
+     * web sees the phone check in. Throws what a poll throws; the job just tries next time.
+     */
+    void checkOnce() throws Exception {
+        if (!validDevice(deviceId)) return;
+        if (keeps != null) keepsDirty = true;
+        keepsChangedAt = Math.min(keepsChangedAt, clock.getAsLong() - KEEPS_DEBOUNCE_MS);
+        keepsSentAt = Math.min(keepsSentAt, clock.getAsLong() - KEEPS_DEBOUNCE_MS);
+        poll(0, true);
+    }
+
+    private void poll(int waitS, boolean background) throws Exception {
         sendKeepsIfDirty();
-        Http.Reply r = http.get(pollUrl(), headers());
+        Http.Reply r = http.get(pollUrl(waitS, background), headers());
         if (r.status == 401 || r.status == 403) {
             refusedBecause = reasonOf(r.body);
             throw new Unauthorized(r.status);

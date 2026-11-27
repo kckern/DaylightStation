@@ -93,6 +93,15 @@ public class ShellService extends Service implements ShellServer.Host {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (BuildConfig.PERSISTENT_SERVICE) postNotification();
+        boot();
+        return BuildConfig.PERSISTENT_SERVICE ? START_STICKY : START_NOT_STICKY;
+    }
+
+    /**
+     * The lifeline (where the device has one) and the payload: from a start, or from a bind
+     * (a background job, which Android 12+ lets bind but not start a service: ShellStart.hold).
+     */
+    private void boot() {
         // The lifeline comes up before the payload, so a payload that hangs on
         // start still leaves rollback reachable.
         // control.bind none: this device has no lifeline, as it has no control API.
@@ -117,7 +126,6 @@ public class ShellService extends Service implements ShellServer.Host {
             // Queued on the loader's own thread: a payload's start() never runs on the main thread.
             l.boot();
         }
-        return BuildConfig.PERSISTENT_SERVICE ? START_STICKY : START_NOT_STICKY;
     }
 
     @Override
@@ -132,7 +140,12 @@ public class ShellService extends Service implements ShellServer.Host {
         super.onDestroy();
     }
 
-    @Override public IBinder onBind(Intent intent) { return null; }
+    @Override public IBinder onBind(Intent intent) {
+        // Held by a background job (ShellStart.hold): boot as a start would, and stay while bound.
+        ShellLog.note("SHELL", "held by a background job");
+        boot();
+        return new android.os.Binder();
+    }
 
     @Override public PayloadLoader loaderOrNull() { return loader; }
 
