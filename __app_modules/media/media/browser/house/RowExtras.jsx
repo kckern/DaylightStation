@@ -3,7 +3,7 @@
 //  StartStatusLine — start progress / last failure, for everyone (RQ-HOUSE-04)
 //  StartedByLine   — "Started by Kitchen button, 7:02" (RQ-HOUSE-07); also
 //                    mountable in a screen's controls header (pass deviceId)
-//  AddOnlyNotice   — Add only is on, and anyone can switch it off (RQ-PLAY-10)
+//  AddOnlyNotice   — "Queue what others send" is on, and anyone can switch it off (RQ-PLAY-10)
 //  RowNotes        — notes of a screen that can't show them, grouped, with
 //                    Put it back (RQ-STEER-21)
 //  ScreenStopControl — Stop, plus "and turn the screen off" where supported
@@ -16,6 +16,7 @@ import { IconChevronDown, IconPlayerStopFilled, IconPower, IconArrowBackUp } fro
 import { startStatusLine, startedByText, rowNotes } from "./houseCopy.js";
 import { useStartedBy } from "./useHouseSignals.js";
 import { useScreenActions, supportsScreenOff } from "./screenActions.js";
+import { ADD_ONLY_COPY } from "../controller/addOnlyCopy.js";
 import "./House.scss";
 
 const TONE_CLASS = { progress: 'house-line--progress', ok: 'house-line--ok', failed: 'house-line--failed' };
@@ -68,7 +69,7 @@ export function AddOnlyNotice({ deviceId, name, controls }) {
   if (!controls?.addOnly) return null;
   return (
     <Group gap="xs" wrap="nowrap" className="house-notice" data-testid={`house-add-only-${deviceId}`}>
-      <Text size="xs" className="house-notice-text">Add only is on: Play from other devices adds to the queue.</Text>
+      <Text size="xs" className="house-notice-text">{ADD_ONLY_COPY.onNotice}</Text>
       <Button
         size="xs"
         variant="default"

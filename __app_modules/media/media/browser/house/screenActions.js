@@ -9,6 +9,7 @@ import { DispatchContext } from "../cast/DispatchProvider.jsx";
 import { deviceKind } from "../cast/castCopy.js";
 import { houseApi as defaultApi } from "./houseApi.js";
 import houseLog from "./houseLog.js";
+import { ADD_ONLY_COPY } from "../controller/addOnlyCopy.js";
 
 /**
  * Whether Stop may offer "and turn the screen off" (RQ-STEER-11, O4): only a
@@ -63,11 +64,11 @@ export function useScreenActions({ api = defaultApi } = {}) {
       const result = await peek?.getController?.(deviceId)?.sessionControls?.setAddOnly?.(false);
       if (!result || result.ok === false) throw new Error(result?.error ?? 'refused');
       houseLog.addOnlyOff({ deviceId });
-      report(deviceId, 'addOnly', true, { primary: `Add only is off on ${name}`, secondary: 'Play from any device replaces what plays there again' });
+      report(deviceId, 'addOnly', true, { primary: ADD_ONLY_COPY.turnedOff(name), secondary: ADD_ONLY_COPY.turnedOffDetail });
       return true;
     } catch (error) {
       houseLog.addOnlyOffFailed({ deviceId, error: error?.message });
-      report(deviceId, 'addOnly', false, { primary: `Couldn't turn Add only off on ${name}`, secondary: reasonOf(error) });
+      report(deviceId, 'addOnly', false, { primary: ADD_ONLY_COPY.turnOffFailed(name), secondary: reasonOf(error) });
       return false;
     }
   }, [peek, report]);

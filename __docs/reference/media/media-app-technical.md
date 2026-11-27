@@ -1746,7 +1746,7 @@ read at send time, so screens name the device in notes.
 **Add only result.** A `homeline` `load` step or `/load` result carrying
 `appliedAs: "add"` turns that attempt into an add (`kind`/`operation: "add"`,
 `appliedAs: "add"`), resolved by its `queue` step and read as
-"Added X to Y (Add only is on) · Nth in line".
+"Added X to the queue on Y · Nth in line" (no "Add only" wording; the setting reads "Queue what others send", `controller/addOnlyCopy.js`).
 
 **Add to this queue.** `SearchLauncherContext.openAddToQueue({ deviceId, name })`
 (provided by the shell) opens `SearchMode` with `addTo`: every pick is

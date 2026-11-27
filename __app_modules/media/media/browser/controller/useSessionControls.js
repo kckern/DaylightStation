@@ -16,7 +16,7 @@ import { useSessionController } from "./useSessionController.js";
 const NO_SUBSCRIBE = () => () => {};
 const NULL_STATE = () => null;
 
-export const REMOTE_CONTROLS_UNSUPPORTED = 'This screen does not offer sleep timer, end of queue or Add only';
+export const REMOTE_CONTROLS_UNSUPPORTED = 'This screen does not offer sleep timer, end of queue or queueing what others send';
 export const REMOTE_CONTROLS_UNREPORTED = 'This screen has not reported its session controls yet';
 
 const REMOTE_SUPPORTS = Object.freeze({

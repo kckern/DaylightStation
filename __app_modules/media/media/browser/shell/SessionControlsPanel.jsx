@@ -24,6 +24,7 @@ import { useSessionControls, secondsUntil, formatClock } from "../controller/use
 import { useSessionController } from "../controller/useSessionController.js";
 import { DispatchContext } from "../cast/DispatchProvider.jsx";
 import mediaLog from "../logging/mediaLog.js";
+import { ADD_ONLY_COPY } from "../controller/addOnlyCopy.js";
 import "./SessionControls.scss";
 
 export const SLEEP_MINUTE_CHOICES = [15, 30, 45, 60, 90];
@@ -211,12 +212,8 @@ export function SessionControlsPanel({ target, targetName = null }) {
   );
 }
 
-/** A person's words for Add only (RQ-PLAY-10): what it does, in one line. */
-export const ADD_ONLY_COPY = Object.freeze({
-  label: 'Queue what others send',
-  explain: 'Plays sent from other devices join the queue instead of replacing what is on.',
-  unavailable: 'This device only plays what you start on it.',
-});
+/** A person's words for Add only (RQ-PLAY-10): one source, `controller/addOnlyCopy.js`. */
+export { ADD_ONLY_COPY };
 
 /**
  * The session settings as items of the player's More ⋯ (Now Playing ruling
