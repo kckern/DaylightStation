@@ -146,4 +146,15 @@ public class KeptIndexTest {
         assertEquals(0, KeptIndex.overCap(0, 9_000_000_000L));
         assertEquals(0, KeptIndex.overCap(4096, 1_000_000L));
     }
+
+    @Test public void anAutomaticKeepSaysKeptAutomaticallyInEveryState() throws Exception {
+        org.json.JSONObject ready = new org.json.JSONObject().put("state", KeptIndex.READY).put("auto", true).put("bytes", 230_000_000L);
+        assertEquals("Kept automatically · 230 MB", KeptIndex.describe(ready));
+        ready.put("finished", true);
+        assertEquals("Finished · Kept automatically · 230 MB", KeptIndex.describe(ready));
+        org.json.JSONObject waiting = new org.json.JSONObject().put("state", KeptIndex.WAITING_WIFI).put("auto", true);
+        assertEquals("Waiting for Wi-Fi · Kept automatically", KeptIndex.describe(waiting));
+        org.json.JSONObject manual = new org.json.JSONObject().put("state", KeptIndex.READY).put("bytes", 230_000_000L);
+        assertEquals("On this phone · 230 MB", KeptIndex.describe(manual));
+    }
 }

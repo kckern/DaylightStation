@@ -117,4 +117,21 @@ describe('phoneKeeps', () => {
     expect(splitInstallTarget('office-tv')).toEqual({ deviceId: 'office-tv', installId: null });
     expect(splitInstallTarget('phone#x')).toEqual({ deviceId: 'phone', installId: null });
   });
+  it('an item the phone kept automatically while listening says "Kept automatically", on the item and the phone page', () => {
+    const v = view({ kept: report([
+      { contentId: 'plex:7', title: 'A book', state: 'ready', bytes: 230e6, done: 14, total: 14, auto: true },
+      { contentId: 'plex:8', title: 'An album', state: 'ready', bytes: 90e6, done: 9, total: 9 },
+    ]) });
+    const auto = keepStatus(v, T, { id: 'plex:7' });
+    expect(auto).toMatchObject({ state: 'ready', kept: true, auto: true, line: 'On Phone · 230 MB · Kept automatically' });
+    expect(keepEntries(T, auto)).toEqual([{ kind: `unkeepOn:phone@${A}`, label: 'Remove from Phone' }]);
+    expect(keepStatus(v, T, { id: 'plex:8' }).line).toBe('On Phone · 90 MB');
+    const downloading = keepStatus(view({ kept: report([{ contentId: 'plex:7', state: 'downloading', done: 1, total: 14, auto: true }]) }), T, { id: 'plex:7' });
+    expect(downloading.line).toBe('Downloading 1 of 14 on Phone · Kept automatically');
+    const page = phonePage({ id: 'phone', name: 'Phone' }, v);
+    const rows = page.installs[0].items;
+    expect(rows.find((r) => r.contentId === 'plex:7')).toMatchObject({ auto: true });
+    expect(rows.find((r) => r.contentId === 'plex:7').status.line).toMatch(/Kept automatically$/);
+    expect(rows.find((r) => r.contentId === 'plex:8').status.auto).toBeUndefined();
+  });
 });

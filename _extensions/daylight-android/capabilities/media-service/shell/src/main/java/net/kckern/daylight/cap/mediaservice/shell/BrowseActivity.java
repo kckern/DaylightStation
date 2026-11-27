@@ -631,6 +631,8 @@ public final class BrowseActivity extends Activity {
         name.setEllipsize(TextUtils.TruncateAt.END);
         words.addView(name);
         if (!subtitle.isEmpty()) words.addView(t.text(this, subtitle, Type.LABEL, t.inkMuted, false));
+        String autoLine = KeepLabels.collectionLine(this, contentIdOf(parent));
+        if (!autoLine.isEmpty()) words.addView(t.text(this, autoLine, Type.LABEL, t.primary, false));
         top.addView(words, new LinearLayout.LayoutParams(0, -2, 1));
         h.addView(top);
         LinearLayout actions = new LinearLayout(this);

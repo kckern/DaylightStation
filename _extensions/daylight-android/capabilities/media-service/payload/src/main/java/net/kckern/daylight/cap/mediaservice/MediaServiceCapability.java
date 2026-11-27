@@ -62,6 +62,10 @@ public final class MediaServiceCapability implements Capability {
     static final String DOWNLOAD_LOCATION = "media.downloadLocation";
     /** Minutes from finished to removed with media.removeFinished (a day; shorter for a check). */
     static final String REMOVE_FINISHED_AFTER = "media.removeFinishedAfterMin";
+    /** Kept automatically while you listen (spec §3.10): on by default; off removes nothing already kept. */
+    static final String AUTO_KEEP = "media.autoKeep";
+    /** Minutes of a long item heard on this phone before it is kept automatically. */
+    static final String AUTO_KEEP_AFTER = "media.autoKeepAfterMin";
     private static final String RECENT_LIMIT = "media.recentLimit";
     private static final String PAGE_SIZE = "media.pageSize";
     /** How a screen's notes name this device when it pauses or skips there: "Paused by Phone". */
@@ -146,6 +150,8 @@ public final class MediaServiceCapability implements Capability {
         core.settings().declare(DOWNLOAD_ON_CELLULAR, SettingsRegistry.Type.BOOLEAN, false, null);
         core.settings().declare(REMOVE_FINISHED, SettingsRegistry.Type.BOOLEAN, false, null);
         core.settings().declare(REMOVE_FINISHED_AFTER, SettingsRegistry.Type.INTEGER, 1440, SettingsRegistry.range(1, 100_000));
+        core.settings().declare(AUTO_KEEP, SettingsRegistry.Type.BOOLEAN, true, null);
+        core.settings().declare(AUTO_KEEP_AFTER, SettingsRegistry.Type.INTEGER, 10, SettingsRegistry.range(1, 600));
         core.settings().declare(DOWNLOAD_LOCATION, SettingsRegistry.Type.STRING, "internal",
                 value -> "internal".equals(value) || "sd".equals(value) ? null : "media.downloadLocation: internal or sd");
         if (inbox == null) {
@@ -443,6 +449,8 @@ public final class MediaServiceCapability implements Capability {
                         .put("onCellular", Boolean.TRUE.equals(core.settings().get(DOWNLOAD_ON_CELLULAR)))
                         .put("removeFinished", Boolean.TRUE.equals(core.settings().get(REMOVE_FINISHED)))
                         .put("removeFinishedAfterMin", (Integer) core.settings().get(REMOVE_FINISHED_AFTER))
+                        .put("autoKeep", !Boolean.FALSE.equals(core.settings().get(AUTO_KEEP)))
+                        .put("autoKeepAfterMin", (Integer) core.settings().get(AUTO_KEEP_AFTER))
                         .put("location", (String) core.settings().get(DOWNLOAD_LOCATION)));
             }
             if ("unkeep".equals(op)) {
@@ -611,8 +619,20 @@ public final class MediaServiceCapability implements Capability {
             if (!album.isEmpty()) cid = ContentId.source(cid) + ":" + album;
         }
         if ("refresh".equals(mode) && (kept().get(cid) == null || kept().tombstoned(cid))) return failure(409, "not_kept");
+        // Kept automatically while listening (spec §3.10): {auto:true, only:[track ids]}. A
+        // manual keep is never turned into an automatic one; a manual Keep of an automatic
+        // one makes it manual (the whole collection, never removed by those rules).
+        boolean auto = "keep".equals(mode) && request.optBoolean("auto", false);
+        JSONObject existing = kept().tombstoned(cid) ? null : kept().get(cid);
+        if (auto && existing != null && !KeptCollections.auto(existing)) {
+            return new Outcome(200, keepAnswer(cid, existing.optString("title"), existing.optString("art", null),
+                    existing.optJSONArray("tracks"), false, existing.optString("kind")).put("manual", true));
+        }
+        List<String> scope = auto ? strings(request.optJSONArray("only"))
+                : "refresh".equals(mode) && KeptCollections.auto(existing) ? KeptCollections.only(existing) : null;
         // The whole list, not a player's 500-track window: a kept playlist is all of it.
         List<Track> all = QueueMapper.fromQueue(api.queue(cid, false), backend, "daylight-" + core.deviceId());
+        if (scope != null && !scope.isEmpty()) all = scoped(all, scope);
         if (all.isEmpty()) return failure(404, "not_found");
         boolean cut = all.size() > MAX_KEPT_TRACKS;
         if (cut) all = new ArrayList<>(all.subList(0, MAX_KEPT_TRACKS));
@@ -644,7 +664,15 @@ public final class MediaServiceCapability implements Capability {
         String kind = kindOf(longParts, albums.size(), listType);
         long now = clock.getAsLong();
         if ("keep".equals(mode)) {
-            kept().save(cid, title, art, tracks, now, kind);
+            kept().save(cid, title, art, tracks, now, kind, auto ? scope : null);
+            if (auto && KeptCollections.auto(existing)) {
+                // The window moved on (or a book's one part became the whole book): what it no
+                // longer holds is released like a re-sync's removal, so its audio may go.
+                java.util.Set<String> fresh = new java.util.HashSet<>(KeptCollections.trackIds(new JSONObject().put("tracks", tracks)));
+                List<String> dropped = new ArrayList<>();
+                for (String t : KeptCollections.trackIds(existing)) if (!fresh.contains(t)) dropped.add(t);
+                kept().release(cid, dropped, now);
+            }
         } else if ("refresh".equals(mode)) {
             JSONObject before = kept().get(cid);
             java.util.Set<String> fresh = new java.util.HashSet<>(KeptCollections.trackIds(new JSONObject().put("tracks", tracks)));
@@ -660,7 +688,26 @@ public final class MediaServiceCapability implements Capability {
             if (!kept().refreshIfKept(cid, title, art, tracks, now, kind)) return failure(409, "not_kept");
             kept().release(cid, dropped, now);
         }
-        return new Outcome(200, keepAnswer(cid, title, art, tracks, cut, kind));
+        JSONObject answer = keepAnswer(cid, title, art, tracks, cut, kind);
+        if (auto) answer.put("auto", true);
+        return new Outcome(200, answer);
+    }
+
+    /**
+     * The tracks of a collection an automatic keep holds: those named in {@code only}, in the
+     * collection's own play order (the shell downloads the current part first).
+     */
+    static List<Track> scoped(List<Track> all, List<String> only) {
+        java.util.Set<String> want = new java.util.HashSet<>(only);
+        List<Track> out = new ArrayList<>();
+        for (Track t : all) if (want.contains(t.id)) out.add(t);
+        return out;
+    }
+
+    private static List<String> strings(JSONArray a) {
+        List<String> out = new ArrayList<>();
+        for (int i = 0; a != null && i < a.length(); i++) if (ContentId.valid(a.optString(i))) out.add(a.optString(i));
+        return out;
     }
 
     /**
@@ -711,6 +758,12 @@ public final class MediaServiceCapability implements Capability {
                     .put("tracks", k.optJSONArray("tracks") == null ? new JSONArray() : k.optJSONArray("tracks"))
                     .put("keptAt", k.optLong("keptAt"));
             if (k.has("art")) o.put("art", k.optString("art"));
+            if (!k.optString("kind").isEmpty()) o.put("kind", k.optString("kind"));
+            if (KeptCollections.auto(k)) {
+                o.put("auto", true);
+                List<String> only = KeptCollections.only(k);
+                if (!only.isEmpty()) o.put("only", new JSONArray(only));
+            }
             items.put(o);
         }
         // Only these tracks' audio may be deleted: ones an explicit removal released. While a

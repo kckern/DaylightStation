@@ -148,6 +148,15 @@ final class PayloadMedia {
         return port.call(new JSONObject().put("op", "keep").put("id", mediaId).put("mode", mode).toString(), waitMs);
     }
 
+    /**
+     * Kept automatically while listening (spec §3.10): the collection {@code mediaId} belongs
+     * to, limited to {@code only} (empty: all of it). Never turns a manual keep automatic.
+     */
+    String keepAuto(String mediaId, List<String> only, long waitMs) throws Exception {
+        return port.call(new JSONObject().put("op", "keep").put("id", mediaId).put("mode", "keep").put("auto", true)
+                .put("only", new JSONArray(only)).toString(), waitMs);
+    }
+
     /** The kept books home says are finished: {ok, finished:[contentId]}. */
     String keptFinished(long waitMs) throws Exception {
         return port.call(new JSONObject().put("op", "kept-finished").toString(), waitMs);

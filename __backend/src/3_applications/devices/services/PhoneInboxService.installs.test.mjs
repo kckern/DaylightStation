@@ -242,6 +242,19 @@ describe('PhoneInboxService: installs, auth and durable keeps', () => {
       expect(items.at(-1)).toMatchObject({ neededBytes: 1.2e9, totalBytes: 2e9, failed: 1, reason: 'r', finished: true });
     });
 
+    it('keeps the auto flag of an item kept automatically while listening, and nothing else as auto', async () => {
+      await inbox.poll('phone', 0, { installId: A });
+      await inbox.reportKeeps('phone', { installId: A, items: [
+        { contentId: 'plex:a', state: 'ready', auto: true },
+        { contentId: 'plex:m', state: 'ready' },
+        { contentId: 'plex:s', state: 'ready', auto: 'yes' },
+      ] });
+      const items = inbox.keeps('phone').kept[A].items;
+      expect(items[0]).toMatchObject({ contentId: 'plex:a', auto: true });
+      expect(items[1].auto).toBeUndefined();
+      expect(items[2].auto).toBeUndefined();
+    });
+
     it('shows an install as gone after 30 days', async () => {
       await inbox.poll('phone', 0, { installId: A });
       t.advance(INSTALL_GONE_MS + 1);

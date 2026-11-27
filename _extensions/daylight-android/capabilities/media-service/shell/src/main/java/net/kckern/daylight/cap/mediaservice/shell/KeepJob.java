@@ -27,6 +27,8 @@ import net.kckern.daylight.shellkit.ShellStart;
  *   one check of the phone's inbox, so a keep or remove sent from the web lands without
  *   opening the app (a Play on still needs the app open: plays are only queued while the
  *   phone is listening);</li>
+ * <li>{@link #AUTO_SWEEP_ID}: when an automatic keep's removal falls due (spec §3.10);</li>
+ * <li>{@link #AUTO_WIFI_ID}: on Wi-Fi, automatic keeps that waited on mobile data;</li>
  * <li>{@link #ACTION_BASE}+n: one screen's action (keep, retry, remove, pause, resume, cancel),
  *   a job id per action and item, so two quick taps are two jobs.</li>
  * </ul>
@@ -42,6 +44,10 @@ public final class KeepJob extends JobService {
     static final int RETRY_ID = 7_207;
     static final int VERIFY_ID = 7_209;
     static final int INBOX_ID = 7_211;
+    /** An automatic keep's removal falling due (a finished book's 24 h, 30 days unplayed): a sync then. */
+    static final int AUTO_SWEEP_ID = 7_212;
+    /** Automatic keeps that waited on mobile data: a sync once the phone is on Wi-Fi. */
+    static final int AUTO_WIFI_ID = 7_213;
     /** Android's shortest period for a periodic job. */
     static final long INBOX_EVERY_MS = 15 * 60_000L;
     /** Screen actions: 7300..7399 (PhoneHomeActivity schedules these by number). */
@@ -174,6 +180,31 @@ public final class KeepJob extends JobService {
                     .setBackoffCriteria(60_000, JobInfo.BACKOFF_POLICY_EXPONENTIAL).setPersisted(true).build());
         } catch (RuntimeException notScheduled) {
             Log.w(TAG, "keep: retry job not scheduled: " + notScheduled.getClass().getSimpleName());
+        }
+    }
+
+    /** A sync once {@code delayMs} has passed (an automatic keep's removal is then due). */
+    @android.annotation.SuppressLint("MissingPermission")
+    static void scheduleSweep(Context c, long delayMs) {
+        try {
+            JobScheduler js = (JobScheduler) c.getSystemService(Context.JOB_SCHEDULER_SERVICE);
+            js.schedule(new JobInfo.Builder(AUTO_SWEEP_ID, me(c)).setMinimumLatency(Math.max(60_000L, delayMs))
+                    .setPersisted(true).build());
+        } catch (RuntimeException notScheduled) {
+            Log.w(TAG, "keep: sweep job not scheduled: " + notScheduled.getClass().getSimpleName());
+        }
+    }
+
+    /** A sync when the phone is next on Wi-Fi (an automatic keep waited on mobile data). */
+    @android.annotation.SuppressLint("MissingPermission")
+    static void scheduleOnWifi(Context c) {
+        try {
+            JobScheduler js = (JobScheduler) c.getSystemService(Context.JOB_SCHEDULER_SERVICE);
+            if (js.getPendingJob(AUTO_WIFI_ID) != null) return;
+            js.schedule(new JobInfo.Builder(AUTO_WIFI_ID, me(c)).setRequiredNetworkType(JobInfo.NETWORK_TYPE_UNMETERED)
+                    .setPersisted(true).build());
+        } catch (RuntimeException notScheduled) {
+            Log.w(TAG, "keep: Wi-Fi job not scheduled: " + notScheduled.getClass().getSimpleName());
         }
     }
 

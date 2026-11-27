@@ -83,6 +83,8 @@ public final class DownloadsActivity extends Activity {
     @Override protected void onResume() {
         super.onResume();
         KeepStore.get(this).refresh();
+        // Automatic keeps whose removal is due go now (a finished book's 24 h, 30 days unplayed).
+        KeepStore.get(this).autoSweepSoon();
         fill();
     }
 
@@ -101,6 +103,8 @@ public final class DownloadsActivity extends Activity {
     private LinearLayout rowsBox;
     private net.kckern.daylight.shellkit.KeyedRows<JSONObject> rows;
     private String headShown;
+    private LinearLayout autoBox;
+    private String autoShown;
 
     /**
      * Refreshes the screen in place: the top part is redrawn only when its words change,
@@ -122,6 +126,9 @@ public final class DownloadsActivity extends Activity {
             rowsBox = new LinearLayout(this);
             rowsBox.setOrientation(LinearLayout.VERTICAL);
             column.addView(rowsBox);
+            autoBox = new LinearLayout(this);
+            autoBox.setOrientation(LinearLayout.VERTICAL);
+            column.addView(autoBox);
             rows = new net.kckern.daylight.shellkit.KeyedRows<>(rowsBox, new net.kckern.daylight.shellkit.KeyedRows.Rows<JSONObject>() {
                 @Override public String key(JSONObject k) { return k.optString("contentId"); }
                 @Override public String signature(JSONObject k) { return k.toString(); }
@@ -140,6 +147,7 @@ public final class DownloadsActivity extends Activity {
             fillHead(store, room, items.size(), total, anyFinished, restricted);
         }
         rows.show(items);
+        fillAuto(store.autoLogShown());
         boolean moving = false;
         for (JSONObject k : items) {
             String s = k.optString("state");
@@ -190,6 +198,42 @@ public final class DownloadsActivity extends Activity {
             head.addView(none);
         }
     }
+
+    /**
+     * Automatic keeps not on the phone (spec §3.10): "Not kept automatically: needs room", and
+     * the ones removed in the last 7 days ("Removed: finished") with Keep again (a manual keep,
+     * its size shown first). Redrawn only when the list changes.
+     */
+    private void fillAuto(List<JSONObject> log) {
+        String now = log.toString();
+        if (now.equals(autoShown)) return;
+        autoShown = now;
+        autoBox.removeAllViews();
+        if (log.isEmpty()) return;
+        TextView heading = t.text(this, "Not on this phone", Type.LABEL, t.inkMuted, true);
+        heading.setPadding(dp(4), dp(18), 0, dp(2));
+        autoBox.addView(heading);
+        for (JSONObject e : log) {
+            String cid = e.optString("contentId");
+            LinearLayout row = new LinearLayout(this);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(dp(10), dp(8), dp(4), dp(8));
+            LinearLayout words = new LinearLayout(this);
+            words.setOrientation(LinearLayout.VERTICAL);
+            String title = TextUtils.isEmpty(e.optString("title")) ? "Kept item" : e.optString("title");
+            words.addView(t.text(this, title, Type.BODY, t.ink, false));
+            String line = AutoKeepLog.words(e);
+            words.addView(t.text(this, line, Type.LABEL, skippedLine(e) ? t.attention : t.inkMuted, false));
+            row.addView(words, new LinearLayout.LayoutParams(0, -2, 1));
+            boolean skipped = AutoKeepLog.SKIPPED.equals(e.optString("kind"));
+            row.addView(link(skipped ? "Keep" : "Keep again", skipped ? "keep.auto.keep" : "keep.auto.keep_again",
+                    () -> KeepFlow.start(this, "c:" + cid)));
+            row.setContentDescription(title + ". " + line);
+            autoBox.addView(row);
+        }
+    }
+
+    private static boolean skippedLine(JSONObject e) { return AutoKeepLog.SKIPPED.equals(e.optString("kind")); }
 
     /** A row's views, so a refresh changes its words and buttons without a new view. */
     private static final class Row {
