@@ -89,9 +89,17 @@ public final class BottomSheet {
                 WindowManager.LayoutParams lp = w.getAttributes();
                 lp.width = WindowManager.LayoutParams.MATCH_PARENT;
                 lp.height = WindowManager.LayoutParams.WRAP_CONTENT;
-                // Above the control: the window's bottom edge sits a little over its top.
-                lp.y = Math.max(dp(8), screenH - at[1] + dp(8));
-                if (lp.y > screenH / 2) lp.y = dp(8);   // no room above: an inset card at the bottom
+                if (at[1] > screenH / 2) {
+                    // A control low on the screen: the card's bottom sits a little over its top.
+                    lp.gravity = Gravity.BOTTOM;
+                    lp.y = Math.max(dp(8), screenH - at[1] + dp(8));
+                } else {
+                    // High on the screen (a page's action row): the card hangs just under it.
+                    android.graphics.Rect frame = new android.graphics.Rect();
+                    activity.getWindow().getDecorView().getWindowVisibleDisplayFrame(frame);
+                    lp.gravity = Gravity.TOP;
+                    lp.y = Math.max(0, at[1] + anchor.getHeight() + dp(4) - frame.top);
+                }
                 w.setAttributes(lp);
                 w.getDecorView().setPadding(dp(12), 0, dp(12), 0);
             } else {

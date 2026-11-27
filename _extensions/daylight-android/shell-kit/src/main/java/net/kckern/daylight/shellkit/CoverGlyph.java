@@ -57,6 +57,8 @@ public final class CoverGlyph {
     /** Puts the placeholder behind {@code cover} (clipped to its outline). */
     public static void behind(ImageView cover, DaylightTheme t, Kind kind, int sidePx, float radiusPx) {
         cover.setBackground(placeholder(cover.getContext(), t, kind, sidePx, radiusPx));
+        // The glyph's inset is the background's padding; the cover itself fills the view.
+        cover.setPadding(0, 0, 0, 0);
         cover.setClipToOutline(true);
     }
 }

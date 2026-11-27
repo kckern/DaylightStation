@@ -807,6 +807,14 @@ public final class BrowseActivity extends Activity {
         if (!autoLine.isEmpty()) words.addView(t.text(this, autoLine, Type.LABEL, t.inkMuted, false));
         top.addView(words, new LinearLayout.LayoutParams(0, -2, 1));
         if (set.primary != null) top.addView(primaryButton(set.primary, cont), new LinearLayout.LayoutParams(dp(56), dp(56)));
+        // A person's page has no icon row: its ⋮ sits at the header's edge.
+        boolean personMore = person && set.secondary.isEmpty() && set.overflow.isEmpty();
+        if (personMore) {
+            ImageButton more = iconButton(R.drawable.daylight_np_more, "More actions for " + title);
+            more.setOnClickListener(v -> overflow(v, set.overflow));
+            UiTelemetry.tag(more, "browse.overflow");
+            top.addView(more, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        }
         headerBox.addView(top);
 
         if (neighbours.pages()) headerBox.addView(neighbourLine());
@@ -814,14 +822,14 @@ public final class BrowseActivity extends Activity {
         String summary = about == null ? "" : about.optString("summary", "");
         if (!summary.isEmpty()) headerBox.addView(summaryView(summary));
 
-        if (!set.secondary.isEmpty() || !set.overflow.isEmpty() || person) {
+        if (!set.secondary.isEmpty() || !set.overflow.isEmpty()) {
             LinearLayout icons = new LinearLayout(this);
             icons.setGravity(Gravity.CENTER_VERTICAL);
             icons.setPadding(0, dp(8), 0, 0);
             for (MediaKind.Action a : set.secondary) icons.addView(secondaryButton(a), new LinearLayout.LayoutParams(dp(48), dp(48)));
             View gap = new View(this);
             icons.addView(gap, new LinearLayout.LayoutParams(0, 1, 1));
-            if (!set.overflow.isEmpty() || person) {
+            if (!set.overflow.isEmpty()) {
                 ImageButton more = iconButton(R.drawable.daylight_np_more, "More actions for " + title);
                 more.setOnClickListener(v -> overflow(v, set.overflow));
                 UiTelemetry.tag(more, "browse.overflow");
@@ -1193,7 +1201,9 @@ public final class BrowseActivity extends Activity {
         ImageView img = new ImageView(this);
         img.setScaleType(ImageView.ScaleType.CENTER_CROP);
         img.setClipToOutline(true);
-        net.kckern.daylight.shellkit.CoverGlyph.behind(img, t, net.kckern.daylight.shellkit.CoverGlyph.of(browsable ? rowKind : MediaKind.spoken(pageKind) ? "book" : "track"), dp(48), dp(8));
+        net.kckern.daylight.shellkit.CoverGlyph.behind(img, t, net.kckern.daylight.shellkit.CoverGlyph.of(browsable
+                ? (MediaKind.hasBooks(pageKind) ? "book" : rowKind.isEmpty() ? MediaKind.childKind(pageKind, id) : rowKind)
+                : MediaKind.spoken(pageKind) ? "book" : "track"), dp(48), dp(8));
         row.addView(img, new LinearLayout.LayoutParams(dp(48), dp(48)));
         loadCover(img, cover, 144);
         LinearLayout words = new LinearLayout(this);

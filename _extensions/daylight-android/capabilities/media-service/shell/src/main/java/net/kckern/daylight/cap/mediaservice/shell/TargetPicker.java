@@ -190,7 +190,14 @@ final class TargetPicker {
     /** Moves an answered screen's row to its group: Available (playing first) or under Off. */
     private static void file(Sections sec, View row, PickerGroups.Group g) {
         int was = sec.available.indexOfChild(row);
-        if (was >= 0) { sec.available.removeViewAt(was); sec.availableGroups.remove(was); }
+        // An idle answer for a row already in Available: it stays where it is (no move, no jump).
+        if (was >= 0 && g == PickerGroups.Group.IDLE) { sec.availableGroups.set(was, g); return; }
+        if (was >= 0) {
+            sec.available.removeViewAt(was);
+            sec.availableGroups.remove(was);
+            // The layout transition keeps a removed view's parent until its fade ends; end it to move the row now.
+            sec.available.endViewTransition(row);
+        }
         if (g == PickerGroups.Group.OFF) {
             sec.offList.addView(row);
             sec.off++;
