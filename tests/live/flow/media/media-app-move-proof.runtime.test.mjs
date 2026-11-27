@@ -179,10 +179,10 @@ test('[PLACE.8a/AC3][PLACE.6a/AC4] hand-off from Now Playing with "Move playback
   await receiver.context.close();
 });
 
-test('[PLACE.6a/AC1][PLACE.6a/AC3] while this device plays and the aim is another screen, the aim label says what the next tap will do and I can change it there; my usual choice is remembered and shown before I confirm', async ({ browser, request }) => {
+test('[PLACE.6a/AC1] while this device plays and the aim is another screen, the aim label says what the next tap will do, before any tap', async ({ browser, request }) => {
   const receiver = await openReceiver(browser, request, A);
-  // The move/keep-playing mode is chosen in the phone header's destination control (the
-  // desktop search chip has no mode switch), so this journey runs at phone width.
+  // No surface switches move / keep playing any more (the phone's header control
+  // went with "one destination, shown where you type"; AC3 has no control left).
   const phoneVp = VIEWPORTS.phone;
   const { context, page } = await newAppPage(browser, phoneVp);
   await gotoMedia(page);
@@ -202,20 +202,6 @@ test('[PLACE.6a/AC1][PLACE.6a/AC3] while this device plays and the aim is anothe
   await openNowPlaying();
   await expect(npBehavior).toContainText('move playback', { timeout: 30000 });
   await closeNowPlaying();
-  // Change it in the destination control, which carries the choice.
-  await page.getByTestId('cast-target-chip').click();
-  await expect(page.getByTestId('cast-mode-transfer')).toBeChecked();
-  await page.getByTestId('cast-mode-fork').check();
-  await page.getByTestId('cast-target-chip').click();
-  await openNowPlaying();
-  await expect(npBehavior).toContainText('keep playing here too');
-  await closeNowPlaying();
-  // Remembered: still the choice after a reload, pre-selected and visible before confirming anything.
-  await page.reload();
-  await expect(page.getByTestId('media-shell')).toBeVisible({ timeout: 60000 });
-  await page.getByTestId('cast-target-chip').click();
-  await expect(page.getByTestId('cast-mode-fork')).toBeChecked();
-  await page.getByTestId('cast-target-chip').click();
   await context.close();
   await receiver.context.close();
 });

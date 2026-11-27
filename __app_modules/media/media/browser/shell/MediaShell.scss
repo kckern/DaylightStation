@@ -80,13 +80,6 @@ $amber-ink: $on-accent;
     max-width: 560px;
   }
 
-  .media-dock-destination {
-    // Phone: the destination takes the first row beside the gear.
-    flex: 1 1 0;
-    min-width: 0;
-    @include tablet-up { flex: 0 1 auto; }
-  }
-
   // The gear always rides the right edge (beside the house indicator when it shows).
   @include tablet-up {
     > .mantine-ActionIcon-root { margin-left: auto; }
@@ -101,47 +94,6 @@ $amber-ink: $on-accent;
   }
 }
 
-// The destination control: "Playing on" over the device name, then a chevron.
-// The only amber in the header is the name; the control is a plain 44 px
-// target with a hairline border, never a filled shape.
-.media-destination {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  max-width: 100%;
-  min-height: 44px;
-  padding: 0 12px;
-  border: 1px solid var(--media-control-line);
-  border-radius: var(--mantine-radius-sm);
-  color: var(--media-muted);
-  @include media-focus-ring;
-
-  &:hover { border-color: var(--media-muted); }
-
-  .media-destination-text {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    line-height: 1.2;
-    text-align: left;
-  }
-
-  .media-destination-prefix {
-    font-size: 0.8125rem;
-    font-weight: 400;
-    color: var(--media-muted);
-  }
-
-  .media-destination-name {
-    font-size: 0.9375rem;
-    font-weight: 500;
-    color: var(--media-accent);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-}
-
 .media-destination-anchor {
   display: inline-flex;
   max-width: 100%;
@@ -152,8 +104,9 @@ $amber-ink: $on-accent;
   background: var(--media-surface);
   border-color: var(--media-line);
 
-  // Phone: the dock wraps to two rows (destination, then the search launcher), so a
-  // popover hanging under the destination would cover search until answered. It
+  // Phone: the dock wraps to two rows (house indicator, then the search
+  // launcher with its destination chip), so a popover hanging under the chip
+  // would cover search until answered. It
   // docks above the handle instead — an overlay that leaves the header, the
   // launcher and the page reachable.
   @include mobile-only {
@@ -356,20 +309,37 @@ $amber-ink: $on-accent;
 }
 
 @include mobile-only {
+  // The launcher row looks like the search box it opens: the open control
+  // fills it, the destination chip + ▾ sit at its right end (Dock.jsx).
   .media-search-launcher {
     display: flex;
-    align-items: center;
-    gap: var(--mantine-spacing-xs);
+    align-items: stretch;
     // Phone: the launcher is the dock's second row, full width; the gear
-    // (last child) rides the destination's row.
+    // (last child) rides the first row with the house indicator.
     flex: 1 1 100%;
     order: 3;
     min-width: 0;
-    min-height: 44px;
-    padding: 0 var(--mantine-spacing-sm);
+    min-height: 46px;
     background: var(--media-surface);
     border: 1px solid var(--media-control-line);
     border-radius: var(--mantine-radius-sm);
+    overflow: hidden;
+
+    .media-destination-group { --media-dest-slot: 10.5rem; }
+    .media-destination-chip { padding: 0 2px 0 8px; }
+  }
+
+  // First row: the house indicator at the left, the gear at the right edge.
+  .media-dock > .mantine-ActionIcon-root { margin-left: auto; }
+
+  .media-search-launcher-open {
+    display: flex;
+    align-items: center;
+    gap: var(--mantine-spacing-xs);
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 44px;
+    padding: 0 var(--mantine-spacing-sm);
     color: var(--media-muted);
     font-size: 0.9375rem;
     text-align: left;
@@ -1376,23 +1346,8 @@ $amber-ink: $on-accent;
   background: var(--mantine-color-dark-5);
 }
 
-.cast-popover {
-  .cast-popover-section { margin-bottom: var(--mantine-spacing-sm); }
-  .cast-popover-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-height: 36px;
-    cursor: pointer;
-    font-size: 14px;
-
-    &:hover { color: var(--media-text); }
-  }
-}
-
 // Portaled surfaces render into document.body (outside .media-shell), so the
 // native-control accent and focus ring are re-declared here.
-.cast-popover,
 .dispatch-target-picker {
   input[type='checkbox'],
   input[type='radio'] {
@@ -1528,7 +1483,9 @@ $amber-ink: $on-accent;
 
 // A source that did not answer inside a search: its retry is a real 44 px target.
 .media-search-dropdown .stream-status-retry-btn,
-.media-shell .stream-status-retry-btn {
+.media-shell .stream-status-retry-btn,
+.media-search-dropdown .search-failure-note-retry,
+.media-shell .search-failure-note-retry {
   min-height: 44px;
   min-width: 44px;
   padding: 0 var(--mantine-spacing-xs);

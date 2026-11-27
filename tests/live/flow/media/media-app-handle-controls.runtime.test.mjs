@@ -5,7 +5,7 @@ import { expectStarted } from './lib/receivers.mjs';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { aimAt } from './lib/aim.mjs';
+import { aimAt, seedAim } from './lib/aim.mjs';
 import { playResult, playResultHere, answerSpotChooser } from './lib/search.mjs';
 
 // Batch B — the handle and the one controls surface, against REAL mounted
@@ -409,14 +409,11 @@ test('PLACE.4a — several screens: labelled, aim names both, same-room drift wa
   await markFirstUseDone(context);
   const page = await context.newPage();
   await gotoMedia(page);
-  // Aim at both screens: on a phone that is the header's "Playing on" control
-  // (one checkbox per screen); the search sheet's chip then names both.
-  await page.getByTestId('cast-target-chip').click();
-  await page.getByTestId(`cast-target-checkbox-${A}`).check();
-  await page.getByTestId(`cast-target-checkbox-${B}`).check();
-  await page.getByTestId('cast-target-chip').click();
-  await expect(page.getByTestId('cast-popover')).toBeHidden();
-  await expect(page.getByTestId('destination-control-name')).toContainText(`${A_NAME} + ${B_NAME}`);
+  // An aim at both screens (no control aims at several — one destination,
+  // shown where you type — but a stored aim can, and every surface reads it);
+  // the launcher's chip and the search sheet's chip then name both.
+  await seedAim(page, [A, B]);
+  await expect(page.getByTestId('media-search-launcher-row').getByTestId('search-destination-chip')).toContainText(`${A_NAME} + ${B_NAME}`);
   await page.getByTestId('media-search-launcher').click();
   const searchMode = page.getByTestId('search-mode');
   await expect(searchMode.getByTestId('search-destination-chip')).toContainText(`${A_NAME} + ${B_NAME}`);

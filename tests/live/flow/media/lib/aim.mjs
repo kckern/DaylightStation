@@ -1,24 +1,18 @@
-// Where ▶ plays, set and read the way a person does it. Desktop: the
-// destination chip inside the search box (`search-destination-chip`) — a click
-// walks one fixed cycle (usual film screen, other screens by name, This
-// device) and the label reads `▶ <name>` / `▶ This device` / `▶ Choose a
-// screen`. Phone: the header "Playing on" control with its popover of
-// checkboxes. One vocabulary for both, so a journey names the screen, not the
-// control. Ordinary input only; nothing here wakes or contacts a screen.
+// Where ▶ plays, set and read the way a person does it: the destination chip
+// (`search-destination-chip`) — in the search box on wider screens, at the
+// right end of the search launcher on a phone, and in the phone's search
+// sheet. A click walks one fixed cycle (usual film screen, other screens by
+// name, This device) and the label reads `▶ <name>` / `▶ This device` /
+// `▶ Choose a screen`. One destination, shown where you type, on every width
+// (the phone's header "Playing on" control is gone). Ordinary input only;
+// nothing here wakes or contacts a screen.
 import { expect } from '@playwright/test';
 import { A, A_NAME, B, B_NAME } from './receivers.mjs';
 
 const NAMES = { [A]: A_NAME, [B]: B_NAME };
 const MAX_STEPS = 16;
-const chipOf = (page) => page.getByTestId('search-destination-chip');
-const headerOf = (page) => page.getByTestId('cast-target-chip');
-
-/** True when the phone header control is the destination surface (it does not render on desktop). */
-export async function hasHeaderControl(page) {
-  // Whichever destination surface this viewport has comes up first.
-  await expect(headerOf(page).or(chipOf(page)).first(), 'a destination control (phone header or search chip) should be on screen').toBeVisible({ timeout: 30000 });
-  return headerOf(page).isVisible().catch(() => false);
-}
+// The dock's chip: the desktop box's or the phone launcher's (whichever shows).
+const chipOf = (page) => page.locator('[data-testid="media-dock"] [data-testid="search-destination-chip"]:visible').first();
 
 const chipText = async (page) => ((await chipOf(page).innerText()).replace(/\s+/g, ' ').trim());
 
@@ -47,9 +41,9 @@ export async function stepChip(chip, wanted) {
 /**
  * Aim ▶ at one screen. `name` defaults to the acceptance receivers' names; any
  * other screen must pass its display name (the chip shows names, never ids).
- * `fork`: also pick "keep playing here too" where that control exists (the
- * phone's popover; desktop has no mode control — a search row's ▶ always
- * keeps this device playing, useContentDispatch).
+ * `fork` is accepted for old callers and means nothing: no surface has a mode
+ * control, and a search row's ▶ always keeps this device playing
+ * (useContentDispatch).
  */
 const sheetChipOf = (page) => page.getByTestId('search-mode').getByTestId('search-destination-chip');
 
@@ -58,18 +52,11 @@ async function searchSheetOpen(page) {
   return sheetChipOf(page).isVisible().catch(() => false);
 }
 
+// eslint-disable-next-line no-unused-vars
 export async function aimAt(page, id, { name = NAMES[id], fork = false } = {}) {
-  if (!fork && await searchSheetOpen(page)) {
+  if (await searchSheetOpen(page)) {
     if (!name) throw new Error(`aimAt(${id}): no display name known; pass one`);
     await stepChip(sheetChipOf(page), `▶ ${name}`);
-    return;
-  }
-  if (await hasHeaderControl(page)) {
-    await headerOf(page).click();
-    if (fork) await page.getByTestId('cast-mode-fork').check();
-    await page.getByTestId(`cast-target-checkbox-${id}`).check();
-    await headerOf(page).click();
-    await expect(page.getByTestId('cast-popover')).toBeHidden();
     return;
   }
   if (!name) throw new Error(`aimAt(${id}): no display name known; pass one`);
@@ -82,24 +69,29 @@ export async function aimHere(page) {
     await stepChip(sheetChipOf(page), '▶ This device');
     return;
   }
-  if (await hasHeaderControl(page)) {
-    await headerOf(page).click();
-    const here = page.getByTestId('cast-target-here');
-    if (!(await here.isChecked())) await here.check();
-    await headerOf(page).click();
-    await expect(page.getByTestId('cast-popover')).toBeHidden();
-    return;
-  }
   await stepChipTo(page, '▶ This device');
 }
 
-/** Where ▶ goes, as words: the screen's name or "This device" (phone: the header control's name). */
+/** Where ▶ goes, as words: the screen's name or "This device". */
 export async function aimLabel(page) {
-  if (await hasHeaderControl(page)) return (await page.getByTestId('destination-control-name').innerText()).trim();
   return (await chipText(page)).replace(/^▶\s*/, '');
 }
 
-/** The locator whose text is the aim: the chip (desktop) or the header control's name (phone). */
+/** The locator whose text is the aim: the dock's chip. */
 export async function aimLocator(page) {
-  return (await hasHeaderControl(page)) ? page.getByTestId('destination-control-name') : chipOf(page);
+  await expect(chipOf(page), 'the destination chip should be on screen').toBeVisible({ timeout: 30000 });
+  return chipOf(page);
+}
+
+/**
+ * Several screens at once. No control aims at several (one destination, shown
+ * where you type; several screens is Play on… › Choose several screens), but a
+ * stored aim can still name several and every surface must read it. Seeds the
+ * stored aim and reloads.
+ */
+export async function seedAim(page, ids) {
+  await page.evaluate((value) => localStorage.setItem('media-app.cast-target', value),
+    JSON.stringify({ mode: 'fork', targetIds: ids, activityAt: Date.now() }));
+  await page.reload();
+  await expect(page.getByTestId('media-shell')).toBeVisible({ timeout: 60000 });
 }

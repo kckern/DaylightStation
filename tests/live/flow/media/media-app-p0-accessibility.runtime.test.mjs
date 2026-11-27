@@ -24,10 +24,10 @@ for (const [size, viewport] of SIZES) {
       const phone = isPhone(page);
       expect(await offscreenControls(page, [
         phone ? '[data-testid="media-search-launcher"]' : '[data-testid="media-search-bar"] input, input[placeholder="Search media…"]',
-        // The destination control is always present: the phone header's control, or on
-        // wider screens the chip inside the search box. The house indicator appears only
-        // while something plays, so it is not a fixed fixture.
-        phone ? '[data-testid="cast-target-chip"]' : '[data-testid="search-destination-chip"]', '[data-testid="settings-menu-trigger"]',
+        // The destination chip is always present: at the right end of the phone's search
+        // launcher, or inside the wider screens' search box. The house indicator appears
+        // only while something plays, so it is not a fixed fixture.
+        phone ? '[data-testid="media-search-launcher-row"] [data-testid="search-destination-chip"]' : '[data-testid="search-destination-chip"]', '[data-testid="settings-menu-trigger"]',
         phone ? '[data-testid="app-tab-home"]' : '[data-testid="app-nav-home"]',
         phone ? '[data-testid="app-tab-fleet"]' : '[data-testid="app-nav-fleet"]',
       ])).toEqual([]);

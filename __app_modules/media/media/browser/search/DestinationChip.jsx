@@ -15,8 +15,8 @@
 // an old name — once the fleet has loaded and answered without it the chip
 // reads the unaimed state and the dead aim is let go. Until then (loading,
 // empty, errored) the aim is still where row ▶ sends, so the chip names it.
-// The phone header's "Playing on" control reads the same label
-// (useDestinationLabel), so the two never disagree. The ▾ joined to the chip
+// The same chip sits in the desktop dock's box, the phone's search launcher
+// and the phone search sheet: one destination, shown where you type. The ▾ joined to the chip
 // opens the careful choice: every destination as a list (DestinationList.jsx).
 import React, { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { UnstyledButton } from '@mantine/core';
@@ -155,20 +155,6 @@ export function useDestinationCycle() {
   }, [setTargets, current, targetIds]);
 
   return { current, cycle, pick, order, usualIds: usualKey ? usualKey.split(',') : NO_IDS };
-}
-
-/**
- * Where a film's ▶ goes, as the chip names it — for any other surface that
- * shows the destination (the phone header), so they always agree.
- * @returns {{ label: string, asks: boolean, here: boolean }}
- */
-export function useDestinationLabel() {
-  const { current } = useDestinationCycle();
-  return {
-    label: current.label,
-    asks: current.unaimed && current.label === ASK_LABEL,
-    here: current.label === HERE_LABEL,
-  };
 }
 
 /**

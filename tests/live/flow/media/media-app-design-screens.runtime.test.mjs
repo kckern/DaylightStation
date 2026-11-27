@@ -39,7 +39,7 @@ test.describe('MediaApp — design screenshots', () => {
     await page.keyboard.press('Escape');
 
     // 04 destination chip — the search box's "▶ <where>" chip, one click along its cycle
-    // (the header "Playing on" control is the phone's).
+    // (the phone has the same chip at the right end of its search launcher).
     await page.keyboard.press('Escape');
     await page.getByTestId('search-destination-chip').click();
     await page.waitForTimeout(200);
