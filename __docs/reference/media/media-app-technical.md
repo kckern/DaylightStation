@@ -1561,14 +1561,21 @@ send is unchanged (`GET /api/v1/device/:id/load`, WakeAndLoad, the dispatch tray
     (`{cancelled:false, removing:true}`); unknown 404.
   - The phone reports what it keeps with `POST /api/v1/device/:id/keeps {installId,
     freeBytes?, limitBytes?, items:[{contentId, state, title?, done, total, bytes,
-    totalBytes?, neededBytes?, failed?, reason?, finished?, auto?, trackIds?}]}`: the whole list
+    totalBytes?, neededBytes?, failed?, reason?, finished?, auto?, group?, trackIds?}]}`: the whole list
     each time, token required, 204 (an unchanged report is not written again). `state`
     is a lifecycle state: `asked checking needs-room queued waiting-wifi waiting-home
     waiting-storage downloading paused partly-ready ready updating removing
     not-available damaged` (and the older `failed refused removed`). `auto: true` (only the
     boolean is taken) marks an item the phone kept automatically while listening (a book,
     talk or course; lifecycle spec §3.10); the web adds "Kept automatically" to its line,
-    and `phone-inbox.keeps.reported` logs how many items were automatic.
+    and `phone-inbox.keeps.reported` logs how many items were automatic. `group` marks a
+    unit of a kept artist or author (lifecycle spec §3.11): `{id, title?, kind: artist |
+    author, follow, removeFinished}`; `PhoneInboxService.groupOf` keeps it only with a valid
+    content id and kind (the booleans only when `true`, the title cut to 200), and drops it
+    otherwise. The web's phone page (`phoneKeeps.keptGroups`, `PhoneKeepsView`) shows each
+    group with its line ("2 books · 300 MB · 1 of 2 ready · keeps new ones") and its units
+    under it; Remove all sends an unkeep of the group's id, which the phone answers by
+    removing the group (a unit also kept on its own stays). The log line counts groups.
   - `GET /api/v1/device/:id/keeps` answers `{installs:[{installId, model, firstSeenAt,
     lastPollAt, current, live, gone}], kept:{<installId>:{items, freeBytes, limitBytes,
     at}}, waiting:[{command, commandId, contentId, title?, installId, queuedAt,
