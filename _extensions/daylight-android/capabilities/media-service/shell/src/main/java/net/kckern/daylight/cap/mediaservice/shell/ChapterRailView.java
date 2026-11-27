@@ -12,7 +12,7 @@ import android.view.View;
 import android.view.accessibility.AccessibilityNodeInfo;
 
 /**
- * Draws ChapterRail: segments 6 dp tall (at least 4 dp wide), rounded rectangles of a 2 dp
+ * Draws ChapterRail: segments 6 dp tall and at least 8 dp wide, rounded rectangles of a 2 dp
  * radius (never capsules: a 4 dp bar with a 2 dp radius is one), in a
  * 24 dp touch band. Finished segments are filled at 70 % ink, the current one in the accent,
  * the rest outlined at 30 % ink. The highlight rests on exactly one segment and slides (200 ms)
@@ -79,7 +79,7 @@ final class ChapterRailView extends View {
     private ChapterRail.Layout layout() {
         float width = getWidth() - getPaddingLeft() - getPaddingRight();
         if (layout == null || Math.abs(layout.segments * (layout.segmentPx + layout.gapPx) - layout.gapPx - width) > 1f) {
-            layout = ChapterRail.layout(count, current, width, 4 * d, 3 * d);
+            layout = ChapterRail.layout(count, current, width, ChapterRail.MIN_SEGMENT_DP * d, ChapterRail.GAP_DP * d);
         }
         return layout;
     }

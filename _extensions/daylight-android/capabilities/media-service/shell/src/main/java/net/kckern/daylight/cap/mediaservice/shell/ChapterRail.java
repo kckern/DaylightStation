@@ -10,6 +10,12 @@ package net.kckern.daylight.cap.mediaservice.shell;
 final class ChapterRail {
     private ChapterRail() { }
 
+    /**
+     * The narrowest a segment may be and the gap between two, in dp. 8 dp keeps every segment
+     * wider than its 6 dp height, so the 2 dp corners never close into a pill.
+     */
+    static final float MIN_SEGMENT_DP = 8, GAP_DP = 3;
+
     static final class Layout {
         /** Segments drawn. */
         final int segments;

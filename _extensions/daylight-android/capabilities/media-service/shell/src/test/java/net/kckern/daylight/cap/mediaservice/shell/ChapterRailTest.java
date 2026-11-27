@@ -7,17 +7,32 @@ import static org.junit.Assert.assertTrue;
 import org.junit.Test;
 
 public class ChapterRailTest {
-    // A phone's rail: 280 dp at 2.625x, 4 dp segments at the least, 3 dp gaps (the view's units: px).
-    private static final float D = 2.625f, WIDTH = 280 * D, MIN = 4 * D, GAP = 3 * D;
+    // A phone's rail: 280 dp at 2.625x, with the view's minimum segment and gap (the view's units: px).
+    private static final float D = 2.625f, WIDTH = 280 * D, MIN = ChapterRail.MIN_SEGMENT_DP * D, GAP = ChapterRail.GAP_DP * D;
+
+    /** Segments at least 8 dp wide: wider than the 6 dp height, so a 2 dp radius never makes a pill. */
+    @Test public void segmentsAreWiderThanTheyAreTall() {
+        assertEquals(8f, ChapterRail.MIN_SEGMENT_DP, 0f);
+        assertEquals(3f, ChapterRail.GAP_DP, 0f);
+    }
 
     private static boolean fits(int segments) { return segments * (MIN + GAP) - GAP <= WIDTH; }
 
     @Test public void oneEqualSegmentPerChapterWhenTheyFit() {
-        ChapterRail.Layout l = ChapterRail.layout(33, 23, WIDTH, MIN, GAP);
-        assertEquals(33, l.segments);
+        ChapterRail.Layout l = ChapterRail.layout(20, 13, WIDTH, MIN, GAP);
+        assertEquals(20, l.segments);
         assertEquals(1, l.perSegment);
-        assertEquals(23, l.current);
-        assertEquals((WIDTH - GAP * 32) / 33f, l.segmentPx, 0.001f);
+        assertEquals(13, l.current);
+        assertEquals((WIDTH - GAP * 19) / 20f, l.segmentPx, 0.001f);
+    }
+
+    /** Paradise's 33 cantos at 280 dp: 25 segments fit, so two a segment, 17 segments. */
+    @Test public void paradiseGroupsInTwos() {
+        ChapterRail.Layout l = ChapterRail.layout(33, 23, WIDTH, MIN, GAP);
+        assertEquals(2, l.perSegment);
+        assertEquals(17, l.segments);
+        assertEquals(11, l.current);
+        assertTrue(l.segmentPx >= MIN);
     }
 
     /** The smallest group that fits: 45 chapters at 280 dp go in twos (23 segments), never tens (5). */
@@ -29,10 +44,11 @@ public class ChapterRailTest {
         assertFalse(fits(45));
     }
 
-    @Test public void sixtyChaptersGroupInTwos() {
+    @Test public void sixtyChaptersGroupInThrees() {
         ChapterRail.Layout l = ChapterRail.layout(60, 15, WIDTH, MIN, GAP);
-        assertEquals(2, l.perSegment);
-        assertEquals(30, l.segments);
+        assertEquals(3, l.perSegment);
+        assertEquals(20, l.segments);
+        assertFalse(fits(30));
     }
 
     /** For any count, perSegment fits and perSegment - 1 does not. */
@@ -42,6 +58,7 @@ public class ChapterRailTest {
             int per = l.perSegment;
             assertEquals((count + per - 1) / per, l.segments);
             assertTrue("count " + count, l.segments == 1 || fits(l.segments));
+            assertTrue("count " + count, l.segmentPx >= MIN - 0.001f);
             if (per > 1) assertFalse("count " + count, fits((count + per - 2) / (per - 1)));
         }
     }
@@ -66,10 +83,10 @@ public class ChapterRailTest {
     }
 
     @Test public void aTapFindsItsSegmentAndItsFirstChapter() {
-        ChapterRail.Layout l = ChapterRail.layout(33, 0, WIDTH, MIN, GAP);
-        float mid = l.left(29) + l.segmentPx / 2;
-        assertEquals(29, l.segmentAt(mid));
-        assertEquals(29, l.tapTo(l.segmentAt(mid)));
+        ChapterRail.Layout l = ChapterRail.layout(20, 0, WIDTH, MIN, GAP);
+        float mid = l.left(17) + l.segmentPx / 2;
+        assertEquals(17, l.segmentAt(mid));
+        assertEquals(17, l.tapTo(l.segmentAt(mid)));
         assertEquals(0, l.segmentAt(0));
         assertEquals(-1, l.segmentAt(WIDTH * 3));
         assertEquals(-1, l.tapTo(-1));
@@ -77,7 +94,7 @@ public class ChapterRailTest {
 
     /** A tap on the segment that holds the current chapter does nothing; never back to the group's first chapter. */
     @Test public void aTapOnTheCurrentSegmentDoesNothing() {
-        ChapterRail.Layout single = ChapterRail.layout(33, 12, WIDTH, MIN, GAP);
+        ChapterRail.Layout single = ChapterRail.layout(20, 12, WIDTH, MIN, GAP);
         assertEquals(-1, single.tapTo(12));
         ChapterRail.Layout grouped = ChapterRail.layout(60, 15, WIDTH, MIN, GAP);
         assertEquals(-1, grouped.tapTo(15 / grouped.perSegment));
