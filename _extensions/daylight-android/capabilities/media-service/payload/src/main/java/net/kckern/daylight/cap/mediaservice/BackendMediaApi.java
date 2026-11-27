@@ -97,6 +97,12 @@ final class BackendMediaApi implements MediaApi {
         }
     }
 
+    @Override public void markWatched(String contentId, boolean watched) throws Exception {
+        Http.Reply r = http.postJson(backend.url("/api/v1/media/household/watched"),
+                new JSONObject().put("contentId", contentId).put("watched", watched).toString());
+        if (!r.ok()) throw new Refused("watched", r.status);
+    }
+
     @Override public JSONObject libraries() throws Exception { return get("libraries", "/api/v1/list/plex?take=60"); }
 
     private JSONObject get(String route, String path) throws Exception {

@@ -71,6 +71,10 @@ public final class BrowseActivity extends Activity {
     private TextView status;
     private String mode, parent, kind, title, subtitle, art, group;
     private final List<JSONObject> rows = new ArrayList<>();
+    private final List<View> rowViews = new ArrayList<>();
+    private TextView progressLine;
+    private LinearLayout azStrip;
+    private ScrollView scroller;
     private int generation;
     private ListenableFuture<MediaController> pending;
     private MediaController controller;
@@ -111,6 +115,7 @@ public final class BrowseActivity extends Activity {
         page.setBackgroundColor(t.background);
         if (MODE_SEARCH.equals(mode)) page.addView(searchField(nz(in.getStringExtra("query"))));
         ScrollView scroll = new ScrollView(this);
+        scroller = scroll;
         column = new LinearLayout(this);
         column.setOrientation(LinearLayout.VERTICAL);
         column.setPadding(dp(16), dp(8), dp(16), dp(24));
@@ -122,6 +127,12 @@ public final class BrowseActivity extends Activity {
         status = t.text(this, "", Type.LABEL, t.inkMuted, false);
         status.setMinHeight(dp(20));
         column.addView(status);
+        // The A–Z strip of a long level: its height is reserved only once a level is long.
+        azStrip = new LinearLayout(this);
+        android.widget.HorizontalScrollView azScroll = new android.widget.HorizontalScrollView(this);
+        azScroll.setHorizontalScrollBarEnabled(false);
+        azScroll.addView(azStrip);
+        column.addView(azScroll);
         results = new LinearLayout(this);
         results.setOrientation(LinearLayout.VERTICAL);
         column.addView(results);
@@ -330,12 +341,163 @@ public final class BrowseActivity extends Activity {
                     : MODE_LIBRARY.equals(mode) ? "Nothing here yet." : "This is empty.");
             return;
         }
+        if (!append) rowViews.clear();
         for (int i = 0; i < items.length(); i++) {
             JSONObject n = items.optJSONObject(i);
             if (n == null) continue;
             rows.add(n);
-            results.addView(row(n, null));
+            View v = row(n, null);
+            rowViews.add(v);
+            results.addView(v);
         }
+        drawStrip();
+        if (progressLine != null) loadProgress();
+    }
+
+    // ── A–Z ─────────────────────────────────────────────────────────────────
+
+    /** The first letter a row sorts under (a leading "The " or "A " left out, as Plex sorts). */
+    static char letterOf(String title) {
+        String t = title == null ? "" : title.trim();
+        String low = t.toLowerCase(java.util.Locale.ROOT);
+        if (low.startsWith("the ")) t = t.substring(4); else if (low.startsWith("a ")) t = t.substring(2);
+        if (t.isEmpty()) return '#';
+        char c = Character.toUpperCase(t.charAt(0));
+        return c >= 'A' && c <= 'Z' ? c : '#';
+    }
+
+    /** On a level of 40 rows or more, a strip of the letters present; a tap scrolls to the first row under it. */
+    private void drawStrip() {
+        azStrip.removeAllViews();
+        if (rows.size() < 40) return;
+        java.util.LinkedHashMap<Character, Integer> first = new java.util.LinkedHashMap<>();
+        for (int i = 0; i < rows.size(); i++) {
+            String id = rows.get(i).optString("id");
+            if (id.startsWith("m:")) continue;
+            char c = letterOf(rows.get(i).optString("title"));
+            if (!first.containsKey(c)) first.put(c, i);
+        }
+        if (first.size() < 3) return;
+        for (java.util.Map.Entry<Character, Integer> e : first.entrySet()) {
+            TextView l = t.text(this, String.valueOf(e.getKey()), Type.LABEL, t.primary, true);
+            l.setGravity(Gravity.CENTER);
+            l.setBackground(t.pressable(null));
+            int at = e.getValue();
+            l.setOnClickListener(v -> {
+                if (at < rowViews.size()) scroller.smoothScrollTo(0, results.getTop() + rowViews.get(at).getTop());
+                action("az");
+            });
+            l.setContentDescription("Jump to " + e.getKey());
+            azStrip.addView(l, new LinearLayout.LayoutParams(dp(36), dp(40)));
+        }
+    }
+
+    // ── a book: progress, speed, finished ────────────────────────────────────
+
+    private List<String> trackIds() {
+        List<String> ids = new ArrayList<>();
+        for (JSONObject r : rows) {
+            String cid = contentIdOf(r.optString("id"));
+            if (r.optString("id").startsWith("p:") && !cid.isEmpty()) ids.add(cid);
+        }
+        return ids;
+    }
+
+    private void loadProgress() {
+        final List<String> ids = trackIds();
+        if (ids.isEmpty()) return;
+        io.execute(() -> {
+            JSONObject p;
+            try { p = new JSONObject(media.progress(ids, WAIT_MS)).optJSONObject("progress"); } catch (Exception e) { p = null; }
+            JSONObject got = p;
+            main.post(() -> { if (!isFinishing() && progressLine != null) progressLine.setText(progressWords(ids, got)); });
+        });
+    }
+
+    /** "2 h 10 min left · 34 %", "Finished", or "Not started" from the parts' progress (seconds). */
+    static String progressWords(List<String> ids, JSONObject progress) {
+        if (progress == null) return "Progress isn't available offline";
+        long played = 0, total = 0;
+        boolean any = false, allDone = true;
+        for (String id : ids) {
+            JSONObject p = progress.optJSONObject(id);
+            if (p == null) { allDone = false; continue; }
+            any = true;
+            long d = Math.max(0, p.optLong("duration")), at = Math.max(0, Math.min(d, p.optLong("playhead")));
+            boolean done = p.optBoolean("finished") || (d > 0 && at >= d * 0.97);
+            total += d;
+            played += done ? d : at;
+            if (!done) allDone = false;
+        }
+        if (!any) return "Not started";
+        if (allDone) return "Finished";
+        long left = Math.max(0, total - played);
+        int pct = total > 0 ? (int) Math.round(played * 100.0 / total) : 0;
+        String l = left >= 3600 ? (left / 3600) + " h " + (left % 3600) / 60 + " min left" : Math.max(1, left / 60) + " min left";
+        return l + " · " + pct + " %";
+    }
+
+    private SharedPreferences speeds() { return getSharedPreferences(LongFormPolicy.PREFS, MODE_PRIVATE); }
+
+    private String speedKey() { return LongForm.speedKey(null, title); }
+
+    private float bookSpeed() {
+        SharedPreferences p = speeds();
+        float fallback = p.getFloat(LongForm.DEFAULT_KEY, 1f);
+        return LongForm.clampSpeed(p.getFloat("speed:" + speedKey(), fallback));
+    }
+
+    /** The book's speed, the same one Now playing remembers for it (and the long-form default). */
+    private void chooseSpeed() {
+        final float[] options = { 0.8f, 1f, 1.1f, 1.25f, 1.5f, 1.75f, 2f, 2.5f, 3f };
+        String[] labels = new String[options.length];
+        for (int i = 0; i < options.length; i++) labels[i] = LongForm.speedLabel(options[i]);
+        new AlertDialog.Builder(this, DaylightTheme.alert()).setTitle("Speed for this book").setItems(labels, (d, which) -> {
+            SharedPreferences.Editor e = speeds().edit();
+            e.putFloat("speed:" + speedKey(), options[which]).putFloat(LongForm.DEFAULT_KEY, options[which]).apply();
+            action("speed");
+            Toast.makeText(this, "Plays at " + labels[which], Toast.LENGTH_SHORT).show();
+            recreate();
+        }).setNegativeButton("Cancel", null).show();
+    }
+
+    private void markFinished(boolean finished) {
+        final List<String> ids = trackIds();
+        if (ids.isEmpty()) { Toast.makeText(this, "Open the book's parts first", Toast.LENGTH_SHORT).show(); return; }
+        new AlertDialog.Builder(this, DaylightTheme.alert()).setTitle("Mark " + title + " finished?")
+                .setMessage("It leaves Continue listening on every screen.").setPositiveButton("Mark finished", (d, w) -> {
+                    action("mark_finished");
+                    io.execute(() -> {
+                        String line;
+                        try {
+                            int n = new JSONObject(media.markFinished(ids, finished, WAIT_MS)).optInt("marked");
+                            line = n > 0 ? "Marked finished" : "Could not mark it";
+                        } catch (Exception e) { line = "Can't reach home"; }
+                        String said = line;
+                        main.post(() -> { if (!isFinishing()) { Toast.makeText(this, said, Toast.LENGTH_SHORT).show(); loadProgress(); } });
+                    });
+                }).setNegativeButton("Cancel", null).show();
+    }
+
+    /** Your playlists (the Play tab's tiles and the widget picker's list): this album or playlist, shuffled for a playlist. */
+    private void addToYourPlaylists() {
+        String cid = contentIdOf(parent);
+        net.kckern.daylight.shellkit.DrivingRadioSettings s = new net.kckern.daylight.shellkit.DrivingRadioSettings(this);
+        if (s.isStaged(cid)) { Toast.makeText(this, "Already in Your playlists", Toast.LENGTH_SHORT).show(); return; }
+        s.stage(cid, title, kind.startsWith("playlist"));
+        if (!art.isEmpty()) s.setArt(cid, art);
+        action("add_to_playlists");
+        Toast.makeText(this, "Added to Your playlists", Toast.LENGTH_SHORT).show();
+        recreate();
+    }
+
+    /** The content id inside a media id: c:<id>, p:<id>|<list>, or the id itself. */
+    static String contentIdOf(String mediaId) {
+        if (mediaId == null) return "";
+        String s = mediaId;
+        if (s.startsWith("c:") || s.startsWith("p:")) s = s.substring(2);
+        int bar = s.indexOf('|');
+        return bar >= 0 ? s.substring(0, bar) : s;
     }
 
     // ── a collection's header ───────────────────────────────────────────────
@@ -376,7 +538,27 @@ public final class BrowseActivity extends Activity {
         if (!book) actions.addView(button("Shuffle", "browse.shuffle", () -> play(parent, true)));
         actions.addView(button("Play on…", "browse.play_on", () -> playOn(parent, title)));
         actions.addView(button("Keep", "browse.keep", () -> KeepFlow.start(this, parent)));
-        h.addView(actions);
+        android.widget.HorizontalScrollView actionScroll = new android.widget.HorizontalScrollView(this);
+        actionScroll.setHorizontalScrollBarEnabled(false);
+        actionScroll.addView(actions);
+        h.addView(actionScroll);
+        if (book) {
+            // A book: how far in and what is left (filled once its parts are known), its speed, and Mark finished.
+            progressLine = t.text(this, " ", Type.LABEL, t.inkMuted, false);
+            progressLine.setPadding(0, dp(10), 0, 0);
+            h.addView(progressLine, 1);
+            LinearLayout more = new LinearLayout(this);
+            more.setPadding(0, dp(6), 0, 0);
+            more.addView(button("Speed " + LongForm.speedLabel(bookSpeed()), "browse.speed", this::chooseSpeed));
+            more.addView(button("Mark finished", "browse.mark_finished", () -> markFinished(true)));
+            h.addView(more);
+        } else if (kind.matches("album|albums|playlist|playlists")) {
+            LinearLayout more = new LinearLayout(this);
+            more.setPadding(0, dp(6), 0, 0);
+            boolean staged = new net.kckern.daylight.shellkit.DrivingRadioSettings(this).isStaged(contentIdOf(parent));
+            more.addView(button(staged ? "In Your playlists" : "Add to Your playlists", "browse.add_to_playlists", this::addToYourPlaylists));
+            h.addView(more);
+        }
         return h;
     }
 

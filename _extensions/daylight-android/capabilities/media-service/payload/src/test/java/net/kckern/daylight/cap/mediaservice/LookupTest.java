@@ -71,4 +71,47 @@ public class LookupTest {
         assertEquals("c:plex:1", hits.getJSONObject(0).getString("id"));
         assertEquals(0, Lookup.offline(Arrays.asList(new JSONObject().put("contentId", "plex:2").put("title", "Abbey Road")), "zz").getJSONArray("groups").length());
     }
+
+    /** "Boethius" finds the author; their books lead the Books group. */
+    @Test public void anAuthorsBooksLeadTheBooksGroup() throws Exception {
+        JSONObject search = new JSONObject().put("items", new JSONArray()
+                .put(item("plex:727118", "container", "artist", "Audiobooks", "Boethius"))
+                .put(item("plex:9", "container", "artist", "Music", "A band")));
+        java.util.List<String[]> authors = Lookup.authors(search, 2);
+        assertEquals(1, authors.size());
+        assertEquals("plex:727118", authors.get(0)[0]);
+        JSONObject body = Lookup.groups(search, null, 5);
+        JSONObject children = new JSONObject().put("items", new JSONArray()
+                .put(new JSONObject().put("id", "plex:727119").put("title", "The Consolation of Philosophy").put("itemType", "container"))
+                .put(new JSONObject().put("id", "plex:5").put("title", "A track").put("itemType", "leaf")));
+        Lookup.prependBooks(body, Lookup.booksOf(children, "Boethius", null, 8));
+        JSONObject first = body.getJSONArray("groups").getJSONObject(0);
+        assertEquals("books", first.getString("key"));
+        assertEquals(1, first.getJSONArray("items").length());
+        assertEquals("c:plex:727119", first.getJSONArray("items").getJSONObject(0).getString("id"));
+        assertEquals("Boethius", first.getJSONArray("items").getJSONObject(0).getString("subtitle"));
+    }
+
+    /** Now playing's lines open pages: a track's album and artist from its info. */
+    @Test public void aTracksParentsComeFromItsInfo() throws Exception {
+        JSONObject info = new JSONObject().put("contentId", "plex:731397").put("metadata", new JSONObject()
+                .put("albumId", "731396").put("artistId", "731395").put("album", "Consolations").put("artist", "David Whyte")
+                .put("librarySectionTitle", "Audiobooks"));
+        JSONObject p = Lookup.parents(info);
+        assertEquals("c:plex:731396", p.getJSONObject("album").getString("id"));
+        assertEquals("book", p.getJSONObject("album").getString("kind"));
+        assertEquals("c:plex:731395", p.getJSONObject("artist").getString("id"));
+        assertEquals("author", p.getJSONObject("artist").getString("kind"));
+        assertEquals(0, Lookup.parents(new JSONObject()).length());
+    }
+
+    @Test public void progressComesFromTheRecentList() throws Exception {
+        JSONObject recent = new JSONObject().put("items", new JSONArray()
+                .put(new JSONObject().put("contentId", "plex:1").put("playhead", 600).put("duration", 3600))
+                .put(new JSONObject().put("contentId", "plex:1").put("playhead", 10).put("duration", 3600))
+                .put(new JSONObject().put("contentId", "plex:2").put("playhead", 5).put("duration", 60)));
+        JSONObject p = Lookup.progress(recent, new java.util.HashSet<>(Arrays.asList("plex:1")));
+        assertEquals(1, p.length());
+        assertEquals(600, p.getJSONObject("plex:1").getLong("playhead"));
+    }
 }

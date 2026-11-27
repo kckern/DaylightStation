@@ -194,6 +194,15 @@ public final class MediaServiceCapability implements Capability {
                     l.nowPlaying(target);
                     return LinkEffect.none();
                 }
+                // media/<kind>/<content id>: the same as media/open?kind=&id= (spec's form).
+                java.util.regex.Matcher alias = java.util.regex.Pattern.compile("(book|album|artist|playlist)/(.+)").matcher(arg == null ? "" : arg);
+                if (alias.matches()) {
+                    java.util.Map<String, String> q = new java.util.HashMap<>(query);
+                    q.put("kind", alias.group(1));
+                    q.put("id", alias.group(2));
+                    query = q;
+                    arg = "open";
+                }
                 if ("open".equals(arg)) {
                     // A page of the phone's library (media/open?kind=album&id=plex:123): a book,
                     // album, artist or playlist. The id is held to the content-id rule.
@@ -371,6 +380,29 @@ public final class MediaServiceCapability implements Capability {
             if ("search".equals(op)) return search(request);
             if ("lookup".equals(op)) return lookup(request);
             if ("library".equals(op)) return library();
+            if ("parents".equals(op)) {
+                String cid = Json.str(request, "id");
+                if (!ContentId.valid(cid)) return failure(400, "bad_request");
+                return new Outcome(200, Replies.ok().put("parents", Lookup.parents(api.info(cid))));
+            }
+            if ("progress".equals(op)) {
+                JSONArray ids = request.optJSONArray("ids");
+                java.util.Set<String> want = new java.util.HashSet<>();
+                for (int i = 0; ids != null && i < ids.length() && i < 500; i++) if (ContentId.valid(ids.optString(i))) want.add(ids.optString(i));
+                return new Outcome(200, Replies.ok().put("progress", Lookup.progress(api.recent(200), want)));
+            }
+            if ("mark-finished".equals(op)) {
+                JSONArray ids = request.optJSONArray("ids");
+                boolean finished = request.optBoolean("finished", true);
+                int done = 0;
+                for (int i = 0; ids != null && i < ids.length() && i < 200; i++) {
+                    String cid = ids.optString(i);
+                    if (!ContentId.valid(cid)) continue;
+                    api.markWatched(cid, finished);
+                    done++;
+                }
+                return new Outcome(200, Replies.ok().put("marked", done));
+            }
             if ("keep".equals(op)) return keep(request);
             if ("kept".equals(op)) return keptList();
             if ("kept-finished".equals(op)) {
@@ -1056,8 +1088,14 @@ public final class MediaServiceCapability implements Capability {
         if (text.isEmpty()) return new Outcome(200, Replies.ok().put("groups", new JSONArray()).put("offline", false));
         JSONObject body;
         try {
-            body = Lookup.groups(api.search(text, 60), backend, 5);
+            JSONObject found = api.search(text, 60);
+            body = Lookup.groups(found, backend, 5);
             health.answered();
+            // An author found by name shows their books too (at most two authors, eight books each).
+            for (String[] a : Lookup.authors(found, 2)) {
+                try { Lookup.prependBooks(body, Lookup.booksOf(api.list(a[0], 8, 0), a[1], backend, 8)); }
+                catch (Exception oneAuthor) { /* the author row still leads to them */ }
+            }
         } catch (IllegalArgumentException bad) {
             throw bad;
         } catch (Exception unreachable) {

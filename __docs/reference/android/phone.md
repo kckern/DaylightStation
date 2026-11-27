@@ -991,15 +991,29 @@ One screen, `BrowseActivity` (not exported), in three modes:
   Playing goes through the media session (the same media ids the car uses) and opens
   Now playing.
 
-Now playing's artist and album lines open the search on that name, led by Artists or
-Albums. A link `daylight://media/open?kind=<book|album|artist|playlist>&id=<content id>`
-(through the link activity, with the install key) opens a collection's page.
+Now playing's artist and album lines open that artist's or album's page, found from the
+playing track's own `albumId`/`artistId` (`parents` op over `/api/v1/info`); only without
+them does the line open the search on the name. A link
+`daylight://media/<book|album|artist|playlist>/<content id>` (or
+`daylight://media/open?kind=…&id=…`; through the link activity, with the install key)
+opens a page. Long-press on a Play tab playlist tile or Continue card offers **Open**.
+
+A **book** page also shows how far in it is ("2 h 10 min left · 34 %", Finished, Not
+started: from the household's recent list), **Speed** (the book's remembered long-form
+speed, the same key Now playing uses) and **Mark finished** (the web's mark-watched for
+each part). An album or playlist page offers **Add to Your playlists** (the Play tab's
+tiles and the widget picker's list). A level of 40 rows or more gets an **A–Z** strip.
+Search adds an author's books (Plex finds "Boethius" the author, not the book) to the top
+of Books. There is no Favourites row: the household's favourites list is empty.
 
 | Payload op | Answers | Endpoint |
 |---|---|---|
 | `lookup` `{query}` | `{groups:[{key, title, items, more}], offline}` | `GET /api/v1/content/query/search` |
 | `library` | `{items:[{id, title, kind}], offline}` | `GET /api/v1/list/plex`, `GET /api/v1/queue/catalog/audio-sources` |
 | `browse` `{parent}` | a level, as the car's | `GET /api/v1/list/…`, the audio-lists catalog |
+| `parents` `{id}` | `{parents:{album?, artist?}}` | `GET /api/v1/info/<id>` |
+| `progress` `{ids}` | `{progress:{id:{playhead, duration, finished}}}` | `GET /api/v1/media/household/recent` |
+| `mark-finished` `{ids, finished}` | `{marked}` | `POST /api/v1/media/household/watched` |
 
 Telemetry: `browse.view` (kind), `search.query` (length, result count, offline: never
 the words), `browse.action` (verb, kind), and a tag on every row and button.

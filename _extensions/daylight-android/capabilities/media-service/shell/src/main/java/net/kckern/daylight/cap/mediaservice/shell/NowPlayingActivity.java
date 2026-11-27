@@ -777,13 +777,33 @@ public class NowPlayingActivity extends Activity {
 
     // ── the stage: cover, lyrics or queue ────────────────────────────────────
 
-    /** Opens the library on what a line names: the album (its year cut off) or the artist. */
+    /**
+     * Opens the page a line names: the playing track's album or artist, found from the track's
+     * own ids (its info's albumId and artistId). Without them, the search on that name.
+     */
     private void lookupLine(TextView line, String kind) {
         if (remote() || line.getVisibility() != View.VISIBLE) return;
         String words = String.valueOf(line.getText()).replaceAll("\\s*\\(\\d{4}\\)\\s*$", "").trim();
-        if (words.isEmpty()) return;
+        MediaItem item = controller == null ? null : controller.getCurrentMediaItem();
+        String cid = item == null ? "" : BrowseActivity.contentIdOf(item.mediaId);
         note("player.lookup", "kind", kind);
-        BrowseActivity.search(this, words, kind);
+        if (cid.isEmpty() || io == null) { if (!words.isEmpty()) BrowseActivity.search(this, words, kind); return; }
+        io.execute(() -> {
+            JSONObject page = null;
+            try {
+                JSONObject parents = new JSONObject(media.parents(cid, 6000)).optJSONObject("parents");
+                page = parents == null ? null : parents.optJSONObject("albums".equals(kind) ? "album" : "artist");
+            } catch (Exception unreachable) { /* the search on the name instead */ }
+            JSONObject p = page;
+            main.post(() -> {
+                if (isFinishing()) return;
+                if (p != null && !p.optString("id").isEmpty()) {
+                    BrowseActivity.open(this, "level", p.optString("id"), p.optString("kind"), p.optString("title"), "", "");
+                } else if (!words.isEmpty()) {
+                    BrowseActivity.search(this, words, kind);
+                }
+            });
+        });
     }
 
     private void setStage(Stage s) {
