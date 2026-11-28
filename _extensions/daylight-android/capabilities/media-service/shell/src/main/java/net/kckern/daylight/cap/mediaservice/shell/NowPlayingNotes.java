@@ -34,6 +34,22 @@ final class NowPlayingNotes {
                         p.play();
                     }
                     @Override public void next() { if (p.hasNextMediaItem()) p.seekToNext(); }
+
+                    @Override public Object stopAndClear() {
+                        if ("local".equals(target)) {
+                            QueueController q = QueueController.live();
+                            return q == null ? null : q.stopAndClear();
+                        }
+                        // A screen: its own stop; what it held is the screen's to keep, so there is no Undo.
+                        p.stop();
+                        return NowPlayingNote.NO_UNDO;
+                    }
+
+                    @SuppressWarnings("unchecked")
+                    @Override public boolean restore(Object token) {
+                        QueueController q = QueueController.live();
+                        return q != null && token instanceof StopUndo && q.restoreStopped((StopUndo<MediaItem>) token);
+                    }
                 }, false, "", item == null ? "" : item.mediaId,
                 item == null ? "" : listOf(NodeItems.listId(item), item.localConfiguration == null ? null : item.localConfiguration.tag));
     }

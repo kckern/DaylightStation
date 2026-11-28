@@ -15,7 +15,20 @@ public final class NowPlayingNote {
     public interface Transport {
         void playPause();
         void next();
+
+        /**
+         * Stops this target and clears its queue (the mini player's long-press). Returns an undo
+         * token for {@link #restore}, {@link #NO_UNDO} when it stopped but cannot be put back (a
+         * screen), or null when it could not act. Main thread.
+         */
+        default Object stopAndClear() { return null; }
+
+        /** Puts back what {@code token} (from {@link #stopAndClear}) took: same queue, item and place. False when too late. */
+        default boolean restore(Object token) { return false; }
     }
+
+    /** {@link Transport#stopAndClear}'s answer for a stop that cannot be undone. */
+    public static final Object NO_UNDO = new Object();
 
     /** One target's state. {@code target} is "local" or a device id. */
     public static final class Entry {

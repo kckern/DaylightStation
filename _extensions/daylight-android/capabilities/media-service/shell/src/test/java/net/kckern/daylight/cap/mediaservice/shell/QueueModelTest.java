@@ -314,6 +314,50 @@ public class QueueModelTest {
         assertEquals(Arrays.asList("X", "Y"), region(Region.QUEUED));
     }
 
+    @Test public void aSnapshotBringsBackTheWholeQueueAfterClearAll() {
+        q.replace(album("a", 5), 2, -1, 0, "Album", "c:a", null, false);
+        q.add(Arrays.asList("X", "Y"), false, "");
+        List<String> items = new ArrayList<>(q.items());
+        int now = q.nowIndex();
+        assertEquals("a3", q.nowEntry().id);
+        List<String> history = region(Region.HISTORY), queued = region(Region.QUEUED), source = region(Region.SOURCE);
+        QueueModel.QueueSnapshot<String> snap = q.queueSnapshot();
+        player.items.clear();
+        q.clearAll();
+        assertEquals(0, q.size());
+        assertTrue(q.restoreQueueSnapshot(snap, 41_000));
+        assertEquals(items, q.items());
+        assertEquals(now, q.nowIndex());
+        assertEquals(items, player.items);
+        assertEquals(now, player.current);
+        assertEquals(41_000, player.position);
+        assertEquals(history, region(Region.HISTORY));
+        assertEquals(queued, region(Region.QUEUED));
+        assertEquals(source, region(Region.SOURCE));
+        assertEquals("Album", q.label());
+        assertEquals("c:a", q.sourceId());
+    }
+
+    @Test public void aSnapshotKeepsShuffleRepeatAndTheSourceOrder() {
+        playAlbum("a", 4);
+        q.setRepeat(Repeat.ALL);
+        List<String> all = new ArrayList<>(q.sourceAll());
+        QueueModel.QueueSnapshot<String> snap = q.queueSnapshot();
+        q.clearAll();
+        assertTrue(q.restoreQueueSnapshot(snap, 0));
+        assertEquals(Repeat.ALL, q.repeat());
+        assertEquals(all, q.sourceAll());
+    }
+
+    @Test public void aSnapshotDoesNotRestoreOverANewQueue() {
+        playAlbum("a", 3);
+        QueueModel.QueueSnapshot<String> snap = q.queueSnapshot();
+        q.clearAll();
+        playAlbum("b", 2);
+        assertFalse(q.restoreQueueSnapshot(snap, 0));
+        assertEquals(2, q.size());
+    }
+
     @Test public void clearAllButNowPlayingKeepsTheItemAndBlocksRadio() {
         playAlbum("a", 3);
         q.add(Arrays.asList("X"), false, "");

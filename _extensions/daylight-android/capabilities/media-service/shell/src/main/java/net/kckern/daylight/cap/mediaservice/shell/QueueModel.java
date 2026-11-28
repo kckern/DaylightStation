@@ -744,6 +744,45 @@ final class QueueModel<T> {
         return e;
     }
 
+    /** The whole queue as it stands, for putting back after a Clear all (Stop and clear's Undo). */
+    static final class QueueSnapshot<T> {
+        private final List<Entry<T>> entries;
+        private final int now;
+        private final String label, sourceId;
+        private final Object sourceTag;
+        private final boolean sourceLong, shuffled, radioBlocked;
+        private final Repeat repeat, beforeOne;
+        private final List<T> all;
+
+        int size() { return entries.size(); }
+
+        private QueueSnapshot(QueueModel<T> m) {
+            entries = new ArrayList<>(m.list);
+            now = m.now;
+            label = m.label;
+            sourceId = m.sourceId;
+            sourceTag = m.sourceTag;
+            sourceLong = m.sourceLong;
+            shuffled = m.shuffled;
+            radioBlocked = m.radioBlocked;
+            repeat = m.repeat;
+            beforeOne = m.beforeOne;
+            all = new ArrayList<>(m.sourceAll);
+        }
+    }
+
+    QueueSnapshot<T> queueSnapshot() { return new QueueSnapshot<>(this); }
+
+    /** Puts a snapshot back; only into an empty queue (false once anything else was loaded). */
+    boolean restoreQueueSnapshot(QueueSnapshot<T> s, long positionMs) {
+        if (s == null || s.entries.isEmpty() || !list.isEmpty()) return false;
+        restore(new ArrayList<>(s.entries), s.now, positionMs, s.label, s.sourceId, s.sourceLong, s.shuffled, s.repeat, s.all);
+        sourceTag = s.sourceTag;
+        beforeOne = s.beforeOne;
+        radioBlocked = s.radioBlocked;
+        return true;
+    }
+
     /** Clear all, the queue gone (player cleared elsewhere). */
     void clearAll() {
         list.clear();

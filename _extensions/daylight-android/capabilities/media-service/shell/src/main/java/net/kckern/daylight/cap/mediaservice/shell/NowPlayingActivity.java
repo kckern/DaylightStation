@@ -278,6 +278,7 @@ public class NowPlayingActivity extends Activity {
         loadScreens();
         // Opened as a screen's remote (the phone home's Connect tab): the pad, at once.
         if (saved == null && getIntent() != null && getIntent().getBooleanExtra(EXTRA_PAD, false) && remote()) showPad(true);
+        if (saved == null) openPickerAsked(getIntent());
         render();
         openStageAsked(getIntent());
         Log.i(TAG, "now playing opened, target " + target + (frame != null ? ", first frame from " + frame.why : ""));
@@ -333,7 +334,15 @@ public class NowPlayingActivity extends Activity {
         takeStarting(intent);
         if (intent != null && intent.getBooleanExtra(EXTRA_PAD, false) && remote()) showPad(true);
         openStageAsked(intent);
+        openPickerAsked(intent);
         if (queueStage != null) queueStage.onResume();
+    }
+
+    /** The mini player's Play on…: Now playing opens with the target picker up. */
+    private void openPickerAsked(Intent intent) {
+        if (intent == null || !intent.getBooleanExtra(net.kckern.daylight.shellkit.MiniPlayer.EXTRA_PICKER, false)) return;
+        intent.removeExtra(net.kckern.daylight.shellkit.MiniPlayer.EXTRA_PICKER);
+        main.post(this::openTargets);
     }
 
     /** A book page's Chapters: Now playing opens on its chapter list. */

@@ -109,6 +109,7 @@ public final class MiniPlayer {
         row.addView(next, new LinearLayout.LayoutParams(dp(48), dp(48)));
         bar.addView(row, new LinearLayout.LayoutParams(-1, -2));
         bar.setOnClickListener(v -> open("tap"));
+        bar.setOnLongClickListener(v -> longPress());
         bar.setOnTouchListener(this::swipe);
         UiTelemetry.tag(bar, "mini.open");
         paint();
@@ -214,6 +215,63 @@ public final class MiniPlayer {
         event("mini.toggle", "to", flipped ? "play" : "pause");
         draw();   // at once; the player's report corrects it
         e.transport.playPause();
+    }
+
+    /** The extra that makes Now playing open its target picker (Play on…); NowPlayingActivity reads it. */
+    public static final String EXTRA_PICKER = "np.picker";
+
+    /** How long the Undo after Stop and clear stays up. */
+    private static final long UNDO_MS = 6000;
+
+    /**
+     * Long-press: the item sheet (the item, Open Now playing, Play on…, and last the
+     * destructive Stop). Stop and clear acts on this entry's own target: this phone's queue,
+     * or the screen Now playing is controlling; never silently the other one.
+     */
+    private boolean longPress() {
+        NowPlayingNote.Entry e = NowPlayingNote.current();
+        if (e == null || e.title.isEmpty()) return false;
+        bar.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+        event("mini.long-press", "target", "local".equals(e.target) ? "local" : "screen");
+        boolean playing = MiniPlayerState.playing(e, pressedAt, flipped);
+        final NowPlayingNote.Transport transport = e.transport;
+        final String target = e.target, targetName = e.targetName;
+        ItemSheet sheet = ItemSheet.of(activity, screen)
+                .item(e.artworkUrl, CoverGlyph.Kind.ALBUM, e.title, MiniPlayerState.line(e),
+                        e.starting ? "Starting…" : playing ? "Playing" : "Paused");
+        for (String row : MiniPlayerMenu.rows(!e.starting && transport != null, target)) {
+            String label = MiniPlayerMenu.label(row, targetName);
+            switch (row) {
+                case "open": sheet.row(R.drawable.daylight_ic_expand, label, () -> open("sheet")); break;
+                case "play_on": sheet.row(R.drawable.daylight_ic_cast, label, () -> openPicker(target, targetName)); break;
+                default: sheet.destructive(R.drawable.daylight_ic_stop, label, () -> stopAndClear(transport, target, targetName, row)); break;
+            }
+        }
+        sheet.show();
+        return true;
+    }
+
+    private void openPicker(String target, String targetName) {
+        event("mini.open", "how", "play-on");
+        Intent i = new Intent().setClassName(activity, NOW_PLAYING).putExtra("target", target).putExtra("targetName", targetName)
+                .putExtra(EXTRA_PICKER, true).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        try { activity.startActivity(i); } catch (RuntimeException absent) { /* not in this build */ }
+    }
+
+    private void stopAndClear(NowPlayingNote.Transport transport, String target, String targetName, String row) {
+        Object token = transport.stopAndClear();
+        event("mini.stop", "row", row);
+        if (token == null) return;
+        // The bar goes now; the service's own report agrees a moment later.
+        if ("local".equals(target)) NowPlayingNote.update(target, targetName, "", false, SystemClock.elapsedRealtime());
+        if (!MiniPlayerMenu.undoable(row) || token == NowPlayingNote.NO_UNDO) return;
+        android.widget.FrameLayout host = activity.findViewById(android.R.id.content);
+        if (host == null) return;
+        Snack.show(host, t, "Stopped and cleared", "Undo", () -> {
+            boolean ok = transport.restore(token);
+            event("mini.undo", "ok", String.valueOf(ok));
+            if (!ok) Snack.show(host, t, "Couldn't bring it back", null, null, 3000);
+        }, UNDO_MS);
     }
 
     /** Tap or swipe up: Now playing on that target, rising from the bar, drawn from the same entry. */
