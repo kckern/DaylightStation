@@ -12,8 +12,8 @@ import java.nio.file.Files;
  * Plain java.io, so it runs in JVM tests. Thread-safe.
  */
 public final class TelemetryBackoff {
-    /** Past this the wait is at its cap (TelemetrySchedule), so the count stops. */
-    static final int MAX_RUNS = 16;
+    /** Past this the wait is at its cap (TelemetrySchedule.runsToCap), so the count stops. */
+    static final int MAX_RUNS = TelemetrySchedule.runsToCap();
 
     private final File file;
     private int failedRuns;
@@ -31,7 +31,11 @@ public final class TelemetryBackoff {
         try {
             if (failedRuns == 0) //noinspection ResultOfMethodCallIgnored
                 file.delete();
-            else Files.write(file.toPath(), String.valueOf(failedRuns).getBytes(StandardCharsets.UTF_8));
+            else {
+                File tmp = new File(file.getPath() + ".tmp");
+                Files.write(tmp.toPath(), String.valueOf(failedRuns).getBytes(StandardCharsets.UTF_8));
+                Files.move(tmp.toPath(), file.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
         } catch (Exception unwritable) {
             // Kept in memory for this process; a restart starts the wait over.
         }

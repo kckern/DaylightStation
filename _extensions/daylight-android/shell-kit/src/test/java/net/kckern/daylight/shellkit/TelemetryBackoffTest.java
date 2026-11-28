@@ -2,6 +2,7 @@ package net.kckern.daylight.shellkit;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import org.junit.Rule;
 import org.junit.Test;
@@ -51,6 +52,24 @@ public class TelemetryBackoffTest {
         TelemetryBackoff a = new TelemetryBackoff(f);
         for (int i = 0; i < 500; i++) a.ran(true);
         assertEquals(TelemetryBackoff.MAX_RUNS, a.failedRuns());
+        assertEquals(TelemetrySchedule.MAX_RETRY_MS, TelemetrySchedule.retryMs(TelemetryBackoff.MAX_RUNS));
+        assertTrue(TelemetrySchedule.retryMs(TelemetryBackoff.MAX_RUNS - 1) < TelemetrySchedule.MAX_RETRY_MS);
         assertEquals(TelemetrySchedule.MAX_RETRY_MS, TelemetrySchedule.retryMs(a.failedRuns()));
+    }
+
+    @Test public void twoThreadsRanningAtOnceStayInRangeAndNeverThrow() throws Exception {
+        File f = new File(tmp.getRoot(), "backoff.txt");
+        TelemetryBackoff a = new TelemetryBackoff(f);
+        java.util.concurrent.atomic.AtomicReference<Throwable> failure = new java.util.concurrent.atomic.AtomicReference<>();
+        Runnable work = () -> {
+            try { for (int i = 0; i < 300; i++) { int n = a.ran(i % 7 != 0); if (n < 0 || n > TelemetryBackoff.MAX_RUNS) throw new AssertionError(n); } }
+            catch (Throwable t) { failure.set(t); }
+        };
+        Thread t1 = new Thread(work), t2 = new Thread(work);
+        t1.start(); t2.start(); t1.join(); t2.join();
+        assertEquals(null, failure.get());
+        int onDisk = new TelemetryBackoff(f).failedRuns();
+        assertTrue(onDisk >= 0 && onDisk <= TelemetryBackoff.MAX_RUNS);
+        assertEquals("the file agrees with memory", a.failedRuns(), onDisk);
     }
 }

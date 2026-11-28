@@ -70,7 +70,7 @@ public final class UiTelemetry {
     });
     private final Handler main = new Handler(Looper.getMainLooper());
     private final Runnable tick = this::tick;
-    private int started;
+    private volatile int started;
     private long backoffMs = FLUSH_MS;
 
     private UiTelemetry(Context context) {
@@ -114,13 +114,17 @@ public final class UiTelemetry {
     static final String JOB_CLASS = "net.kckern.daylight.cap.widgets.shell.TelemetryJob";
     private static final int JOB_ID = 7102;
 
-    private void scheduleJob() {
+    /** After a failed send: the job after the count's wait. {@code afterJobRun}: the job itself is asking again. */
+    private void scheduleJob(boolean afterJobRun) { scheduleJob(TelemetrySchedule.retryMs(backoff.failedRuns()), afterJobRun); }
+
+    private void scheduleJob(long wait, boolean afterJobRun) {
         try {
             android.content.ComponentName job = new android.content.ComponentName(app, JOB_CLASS);
             app.getPackageManager().getServiceInfo(job, 0);
             android.app.job.JobScheduler scheduler = app.getSystemService(android.app.job.JobScheduler.class);
             if (scheduler == null) return;
-            long wait = TelemetrySchedule.retryMs(backoff.failedRuns());
+            android.app.job.JobInfo pending = scheduler.getPendingJob(JOB_ID);
+            if (!TelemetrySchedule.replacePending(pending == null ? -1 : pending.getMinLatencyMillis(), wait, afterJobRun)) return;
             scheduler.schedule(new android.app.job.JobInfo.Builder(JOB_ID, job)
                     .setRequiredNetworkType(android.app.job.JobInfo.NETWORK_TYPE_ANY)
                     .setMinimumLatency(wait)
@@ -178,7 +182,11 @@ public final class UiTelemetry {
         try {
             ConnectivityManager cm = app.getSystemService(ConnectivityManager.class);
             if (cm != null) cm.registerDefaultNetworkCallback(new ConnectivityManager.NetworkCallback() {
-                @Override public void onAvailable(Network network) { backoffMs = FLUSH_MS; flush(); }
+                @Override public void onAvailable(Network network) {
+                    backoffMs = FLUSH_MS;
+                    // Held batches with no screen: the job, within seconds (it holds the shell; this flush cannot start it).
+                    flush(false, left -> { if (left && started == 0) scheduleJob(TelemetrySchedule.NETWORK_BACK_MS, false); });
+                }
             });
         } catch (RuntimeException noPermission) {
             Log.i(TAG, "no network callback: " + noPermission.getClass().getSimpleName());
@@ -299,7 +307,7 @@ public final class UiTelemetry {
             try { left = flushNow(mayStartPayload); }
             finally {
                 int held = left ? Math.max(1, safeWaiting()) : 0;
-                if (TelemetrySchedule.needsJob(held, started > 0) || (left && mayStartPayload)) scheduleJob();
+                if (TelemetrySchedule.needsJob(held, started > 0) || (left && mayStartPayload)) scheduleJob(mayStartPayload);
                 if (done != null) done.accept(left);
             }
         });
@@ -317,18 +325,17 @@ public final class UiTelemetry {
         // Only a visible screen may start the shell. The job holds it by binding
         // (ShellStart.hold); starting a service from a job is refused on Android 12+.
         if (started > 0) { try { ShellStart.ensure(app); } catch (RuntimeException refused) { /* sent later */ } }
-        return drained(TelemetryDrain.drain(store, TelemetryDrain.port(mayStartPayload ? 15_000 : 4000)));
+        return drained(TelemetryDrain.drain(store, TelemetryDrain.port(mayStartPayload ? 15_000 : 4000)), mayStartPayload);
     }
 
     private int safeWaiting() {
         try { return store.waiting(); } catch (RuntimeException unreadable) { return 1; }
     }
 
-    private boolean drained(TelemetryDrain.Result r) {
+    private boolean drained(TelemetryDrain.Result r, boolean withPayloadHeld) {
         if (r.refused > 0) Log.w(TAG, "telemetry: " + r.refused + " batch(es) refused by home; dropped");
-        // Only a failure with no screen open counts: a screen's own timer retries on its own
-        // backoff, and its failures must not push the job's first retry out to 15 min.
-        if (!r.left || started == 0) backoff.ran(r.left);
+        // Only a run that could have succeeded counts (TelemetrySchedule.countsFailure).
+        if (!r.left || TelemetrySchedule.countsFailure(started > 0, withPayloadHeld)) backoff.ran(r.left);
         if (r.left) {
             backoffMs = Math.min(MAX_BACKOFF_MS, backoffMs * 2);
             Log.i(TAG, "telemetry kept for later: " + r.waiting + " batch(es) waiting");
@@ -350,7 +357,7 @@ public final class UiTelemetry {
         UiTelemetry t = get(context);
         java.util.concurrent.Future<TelemetryDrain.Result> f = t.io.submit(() -> {
             TelemetryDrain.Result r = TelemetryDrain.drain(t.store, TelemetryDrain.port(Math.min(waitMs, 15_000)));
-            if (t.drained(r) && TelemetrySchedule.needsJob(r.waiting, t.started > 0)) t.scheduleJob();
+            if (t.drained(r, true) && TelemetrySchedule.needsJob(r.waiting, t.started > 0)) t.scheduleJob(true);
             return r;
         });
         try {

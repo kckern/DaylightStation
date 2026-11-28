@@ -2818,10 +2818,11 @@ a network comes back. With the app closed, two jobs send: when the last screen c
 with batches held, `TelemetryJob` (widgets, one-shot, any network; again 30 s after a run
 that left some, doubling to at most 15 min apart, `TelemetrySchedule`; the count of failed runs
 is kept in `files/telemetry/backoff.txt` (`TelemetryBackoff`), so a killed process does not
-restart the wait at 30 s, and only a failure with no screen open counts), and the media
+restart the wait at 30 s, and only a failed run of the job, or of the inbox job's flush, with no screen open counts: a flush with no payload or a screen's own timer does not. A flush that fails while a job already waits leaves that job's clock alone; a network returning with batches held schedules the job within seconds), and the media
 service's 15-minute inbox job (`KeepJob` 7211), which sends whatever waits after its inbox
-check. Both hold the shell up by **binding** it (`ShellStart.hold`), and neither calls
-`ShellStart.ensure` (only a visible screen does): from Android 12 a job
+check. Both hold the shell up by **binding** it (`ShellStart.hold`); `TelemetryJob` never calls
+`ShellStart.ensure` (a visible screen does, and `KeepJob` and `UploadJob` fall back to it only when the bind
+is refused): from Android 12 a job
 in a background process may not start a service, which is why, before shell 194, held
 batches sat on the phone until a screen next opened (`BackgroundServiceStartNotAllowedException`
 from `ShellStart.ensure`, and the inbox job never flushed). Every sender uses the same
