@@ -43,6 +43,18 @@ final class KeepChoices {
         return onMobile && !mobileAllowed;
     }
 
+    /** How long a "mobile data this time" outlives the sync it starts, whose index does not list the new keep yet. */
+    static final long MOBILE_ONCE_GRACE_MS = 90_000;
+
+    /**
+     * The "this time" ends once everything is ready, but not within the grace period after it
+     * was asked: the sync that "Download now" starts sees every older keep ready and would end
+     * it before the keep just chosen is listed, leaving that keep waiting for Wi-Fi.
+     */
+    static boolean mobileOnceDone(boolean allReady, long askedAt, long now) {
+        return allReady && (askedAt <= 0 || now - askedAt > MOBILE_ONCE_GRACE_MS);
+    }
+
     /** A sheet is needed: more than one thing to keep, or the mobile-data choice to make. */
     static boolean asks(List<String> choices, boolean mobileOnce) {
         return choices.size() > 1 || mobileOnce;

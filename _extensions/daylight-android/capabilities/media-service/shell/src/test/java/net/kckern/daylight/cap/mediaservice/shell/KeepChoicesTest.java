@@ -48,4 +48,21 @@ public class KeepChoicesTest {
         assertTrue("the album keep of the same track is the whole", KeepChoices.onlyOf("p:plex:20|plex:9").isEmpty());
         assertEquals(id, KeepChoices.trackKeepId(id));
     }
+
+    /** "Download now on mobile data": the sync it starts sees everything ready (the new keep is not listed yet) and must not end the "once". */
+    @Test public void mobileOnceSurvivesTheSyncItStartsBeforeTheKeepIsListed() {
+        assertFalse(KeepChoices.mobileOnceDone(true, 1_000, 1_000 + 5_000));
+    }
+
+    @Test public void mobileOnceEndsWhenEverythingIsReadyAfterTheGracePeriod() {
+        assertTrue(KeepChoices.mobileOnceDone(true, 1_000, 1_000 + KeepChoices.MOBILE_ONCE_GRACE_MS + 1));
+    }
+
+    @Test public void mobileOnceStaysWhileSomethingIsStillDownloading() {
+        assertFalse(KeepChoices.mobileOnceDone(false, 1_000, 1_000 + 10 * KeepChoices.MOBILE_ONCE_GRACE_MS));
+    }
+
+    @Test public void aMobileOnceWithNoRecordedTimeEndsWhenReady() {
+        assertTrue(KeepChoices.mobileOnceDone(true, 0, 5_000));
+    }
 }

@@ -805,7 +805,7 @@ final class KeepStore {
 
     /** "Use mobile data once": what is waiting now goes on mobile data; the rule is back once it is all ready. */
     void useMobileDataOnce() {
-        prefs.edit().putBoolean("cellularOnce", true).apply();
+        prefs.edit().putBoolean("cellularOnce", true).putLong("cellularOnceAt", System.currentTimeMillis()).apply();
         event("keep.mobile_once", null);
         boolean c = onCellular;
         main.post(() -> manager.setRequirements(requirements(c)));
@@ -942,8 +942,9 @@ final class KeepStore {
             autoSweep(reply.optJSONArray("items"), now);
             groupSweep(reply.optJSONArray("items"), reply.optJSONArray("groups"), now);
             autoPendingOnWifi();
-            if (prefs.getBoolean("cellularOnce", false) && allReady()) {
-                prefs.edit().remove("cellularOnce").apply();
+            if (prefs.getBoolean("cellularOnce", false)
+                    && KeepChoices.mobileOnceDone(allReady(), prefs.getLong("cellularOnceAt", 0), System.currentTimeMillis())) {
+                prefs.edit().remove("cellularOnce").remove("cellularOnceAt").apply();
                 boolean c = onCellular;
                 main.post(() -> manager.setRequirements(requirements(c)));
             }
