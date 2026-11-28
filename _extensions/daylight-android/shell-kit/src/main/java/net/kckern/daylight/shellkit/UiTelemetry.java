@@ -136,6 +136,15 @@ public final class UiTelemetry {
         }
     }
 
+    /**
+     * For TelemetryJob, after it has finished a run that left batches: the next run, after the
+     * wait the failed-run count calls for. Not called from inside the run (TelemetrySchedule.replacePending).
+     */
+    public static void rescheduleAfterJob(Context context) {
+        UiTelemetry t = get(context);
+        t.io.execute(() -> t.scheduleJob(true));
+    }
+
     /** A named event from a screen ("now-playing", "stage", {to: "lyrics"}). Ignored before install. */
     public static void event(String screen, String name, JSONObject data) {
         UiTelemetry t = instance;
@@ -307,7 +316,9 @@ public final class UiTelemetry {
             try { left = flushNow(mayStartPayload); }
             finally {
                 int held = left ? Math.max(1, safeWaiting()) : 0;
-                if (TelemetrySchedule.needsJob(held, started > 0) || (left && mayStartPayload)) scheduleJob(mayStartPayload);
+                // Never from inside the job's own run: scheduling the id that is running stops it
+                // (onStopJob) before it finishes. The job asks after jobFinished (rescheduleAfterJob).
+                if (TelemetrySchedule.needsJob(held, started > 0, mayStartPayload)) scheduleJob(false);
                 if (done != null) done.accept(left);
             }
         });

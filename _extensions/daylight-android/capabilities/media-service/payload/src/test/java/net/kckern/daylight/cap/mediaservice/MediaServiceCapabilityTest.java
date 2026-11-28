@@ -887,6 +887,19 @@ public class MediaServiceCapabilityTest {
         assertEquals(660 * 60, about.getLong("totalSec"));
     }
 
+    /** A home route that ignores `skip` answers the same page again: counted once, and the paging stops. */
+    @Test public void anAuthorsTracksFromARouteThatIgnoresSkipAreCountedOnce() throws Exception {
+        api.responses.put("info plex:7", new JSONObject().put("id", "plex:7").put("metadata", new JSONObject()).toString());
+        org.json.JSONArray page = new org.json.JSONArray();
+        for (int i = 0; i < 500; i++) page.put(new JSONObject().put("id", "plex:" + (1000 + i)).put("albumId", String.valueOf(100 + i / 20)).put("duration", 60));
+        String same = new JSONObject().put("items", page).toString();
+        for (int skip = 0; skip < 4000; skip += 500) api.responses.put("list plex:library/metadata/7/allLeaves 500 " + skip, same);
+        api.responses.put("recent 200", "{\"items\":[]}");
+        JSONObject about = cap.call(new JSONObject().put("op", "about").put("id", "plex:7").put("books", true)).body.getJSONObject("about");
+        assertEquals(25, about.getInt("children"));
+        assertEquals(500 * 60, about.getLong("totalSec"));
+    }
+
     /** The phone's Continue: long audio only (a film's audio and a 79-second item showed there, 2026-11-27). */
     @Test public void continueListeningOnThePhoneIsLongAudioOnly() throws Exception {
         api.responses.put("continue 12", continueAnswer(0,

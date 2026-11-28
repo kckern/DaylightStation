@@ -30,4 +30,9 @@ public class MiniPlayerMenuTest {
         assertTrue(MiniPlayerMenu.undoable("stop_clear"));
         assertFalse(MiniPlayerMenu.undoable("stop_screen"));
     }
+
+    @Test public void aStopOrAnUndoWaitsOutAStartInFlight() {
+        org.junit.Assert.assertFalse("a tap started something after the sheet opened", MiniPlayerMenu.mayStopOrRestore(true));
+        org.junit.Assert.assertTrue(MiniPlayerMenu.mayStopOrRestore(false));
+    }
 }

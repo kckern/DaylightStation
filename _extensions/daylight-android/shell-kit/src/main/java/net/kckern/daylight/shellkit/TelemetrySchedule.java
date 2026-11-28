@@ -14,6 +14,14 @@ public final class TelemetrySchedule {
 
     private TelemetrySchedule() { }
 
+    /**
+     * A send that leaves batches held with no screen open schedules the job, except from
+     * inside the job's own run: scheduling the id that is running stops it.
+     */
+    public static boolean needsJob(int heldBatches, boolean screenOpen, boolean insideJobRun) {
+        return !insideJobRun && needsJob(heldBatches, screenOpen);
+    }
+
     /** Batches held and no screen open to send them: schedule the job. */
     public static boolean needsJob(int heldBatches, boolean screenOpen) {
         return heldBatches > 0 && !screenOpen;

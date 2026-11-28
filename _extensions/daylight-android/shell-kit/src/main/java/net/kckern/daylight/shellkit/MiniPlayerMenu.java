@@ -31,4 +31,11 @@ public final class MiniPlayerMenu {
     }
 
     public static boolean undoable(String row) { return "stop_clear".equals(row); }
+
+    /**
+     * Stop and clear, and its Undo, are for the item the sheet was opened on. Once a new tap
+     * has started something there ("Starting…"), neither runs: a clear would be swallowed by
+     * the pending start, and an Undo would bring back a queue that start is about to replace.
+     */
+    public static boolean mayStopOrRestore(boolean startingNow) { return !startingNow; }
 }

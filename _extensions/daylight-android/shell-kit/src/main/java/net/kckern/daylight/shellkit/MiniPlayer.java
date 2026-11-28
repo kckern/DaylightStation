@@ -261,7 +261,14 @@ public final class MiniPlayer {
         try { activity.startActivity(i); } catch (RuntimeException absent) { /* not in this build */ }
     }
 
+    /** A start (a tap on an item) is showing on this target: the sheet's Stop and Undo stand down. */
+    private static boolean startingOn(String target) {
+        NowPlayingNote.Entry now = NowPlayingNote.current();
+        return now != null && now.starting && target.equals(now.target);
+    }
+
     private void stopAndClear(NowPlayingNote.Transport transport, String target, String targetName, String row) {
+        if (!MiniPlayerMenu.mayStopOrRestore(startingOn(target))) { event("mini.stop", "row", "ignored-starting"); return; }
         android.widget.FrameLayout host = activity.findViewById(android.R.id.content);
         int inset = belowBar(host);
         Object token = transport.stopAndClear();
@@ -276,6 +283,7 @@ public final class MiniPlayer {
         if (!MiniPlayerMenu.undoable(row) || token == NowPlayingNote.NO_UNDO) return;
         if (host == null) return;
         Snack.show(host, t, "Stopped and cleared", "Undo", () -> {
+            if (!MiniPlayerMenu.mayStopOrRestore(startingOn(target))) return;
             boolean ok = transport.restore(token);
             event("mini.undo", "ok", String.valueOf(ok));
             if (!ok) Snack.show(host, t, "Couldn't bring it back", null, null, 3000, inset);

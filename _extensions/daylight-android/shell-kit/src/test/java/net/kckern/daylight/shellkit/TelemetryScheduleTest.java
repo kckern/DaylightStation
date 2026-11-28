@@ -57,4 +57,11 @@ public class TelemetryScheduleTest {
         assertTrue(onNetworkBack <= 5_000L);
         assertTrue(TelemetrySchedule.replacePending(pending, onNetworkBack, false));
     }
+
+    @Test public void aFlushInsideTheRunningJobNeverSchedulesTheJob() {
+        assertFalse("scheduling the running id stops it", TelemetrySchedule.needsJob(4, false, true));
+        assertTrue(TelemetrySchedule.needsJob(4, false, false));
+        assertFalse(TelemetrySchedule.needsJob(0, false, false));
+        assertFalse(TelemetrySchedule.needsJob(4, true, false));
+    }
 }

@@ -1415,6 +1415,8 @@ final class KeepStore {
     /** A stalled row's Retry (or the notification's Try again): a new remedy starts now, whatever the clock or an earlier episode says. */
     void restart(String contentId, Consumer<String> done) {
         main.post(() -> {
+            // The card is out: downloads are paused on purpose, and nothing runs until it is back.
+            if (KeepRules.SD_MISSING.equals(location)) { say(done, "Card is out"); return; }
             Layout l = layout.get(contentId);
             List<String> moving = new ArrayList<>();
             if (l != null) {
@@ -1439,6 +1441,7 @@ final class KeepStore {
 
     /** Every item whose bytes have stopped, restarted (the notification's Try again). */
     void restartStalled() {
+        if (KeepRules.SD_MISSING.equals(location)) return;
         for (String cid : LiveDownloads.stalledIds()) restart(cid, null);
     }
 

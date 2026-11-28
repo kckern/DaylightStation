@@ -25,13 +25,17 @@ public final class TelemetryJob extends JobService {
         UiTelemetry.flushInBackground(this, left -> {
             android.util.Log.i("Daylight-Telemetry", "telemetry job finished (" + (left ? "batches still held" : "nothing left") + ")");
             letGo();
+            // Asks the system to try again (its own backoff is the safety net), then, once the
+            // job has ended, replaces that with the wait the failed-run count calls for.
             jobFinished(params, left);
+            if (left) main.postDelayed(() -> UiTelemetry.rescheduleAfterJob(this), 1000);
         });
         return true;
     }
 
     @Override public boolean onStopJob(JobParameters params) {
         // Stopped by the system (the network went): the batches stay on disk.
+        android.util.Log.i("Daylight-Telemetry", "telemetry job stopped by the system");
         letGo();
         return true;
     }

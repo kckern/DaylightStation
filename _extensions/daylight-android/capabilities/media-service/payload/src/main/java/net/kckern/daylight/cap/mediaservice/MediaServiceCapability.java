@@ -1690,27 +1690,36 @@ public final class MediaServiceCapability implements Capability {
     }
 
     /**
-     * An author's, speaker's or artist's header (About): home's info, and for an author or a
-     * speaker their books' lengths and progress. {id: content id, books: true for an author}.
-     */
-    /**
      * Every track under an author, page by page (2026-11-27: Shakespeare has 660 tracks; the
      * first 500 held 29 of his 36 books, so the header said "29 books · 182 h" over 36 rows).
      */
     private JSONObject allLeaves(String listId) throws Exception {
         final int page = 500, cap = 4000;
         JSONArray all = new JSONArray();
+        java.util.Set<String> seen = new java.util.HashSet<>();
         for (int skip = 0; skip < cap; skip += page) {
             JSONObject one = api.list(listId, page, skip);
             JSONArray items = one == null ? null : one.optJSONArray("items");
             int n = items == null ? 0 : items.length();
-            for (int i = 0; i < n; i++) all.put(items.get(i));
+            int fresh = 0;
+            for (int i = 0; i < n; i++) {
+                JSONObject item = items.getJSONObject(i);
+                String id = item.optString("id", "");
+                // A route that ignores `skip` answers the same page again: kept once, and the loop ends.
+                if (!id.isEmpty() && !seen.add(id)) continue;
+                all.put(item);
+                fresh++;
+            }
             int total = one == null ? -1 : one.optInt("total", -1);
-            if (n < page || (total >= 0 && all.length() >= total)) break;
+            if (fresh == 0 || n < page || (total >= 0 && all.length() >= total)) break;
         }
         return new JSONObject().put("items", all);
     }
 
+    /**
+     * An author's, speaker's or artist's header (About): home's info, and for an author or a
+     * speaker their books' lengths and progress. {id: content id, books: true for an author}.
+     */
     private Outcome about(JSONObject request) throws Exception {
         String id = Json.str(request, "id");
         if (!ContentId.valid(id)) return failure(400, "bad_request");
@@ -1955,7 +1964,6 @@ public final class MediaServiceCapability implements Capability {
         }
     }
 
-    /** {title, art} of a kept collection this media id is (or is in), or null. */
     /** A kept collection's kind that plays as long audio (a book, a talk): Now playing's Starting frame is a book's. */
     static boolean longKind(String kind) {
         switch (kind == null ? "" : kind) {
@@ -1966,12 +1974,20 @@ public final class MediaServiceCapability implements Capability {
         }
     }
 
-    private String[] knownFace(String mediaId) {
+    /** What the phone already knows of a kept collection: its title, cover and whether it plays as long audio. */
+    private static final class Face {
+        final String title, art;
+        final boolean longAudio;
+        Face(String title, String art, boolean longAudio) { this.title = title; this.art = art; this.longAudio = longAudio; }
+    }
+
+    /** The face of a kept collection this media id is (or is in), or null. */
+    private Face knownFace(String mediaId) {
         try {
             String cid = MediaId.parse(mediaId).contentId;
             JSONObject k = cid == null ? null : kept().get(cid);
             if (k == null || k.optString("title").isEmpty()) return null;
-            return new String[] { k.optString("title"), k.optString("art", ""), String.valueOf(longKind(k.optString("kind", ""))) };
+            return new Face(k.optString("title"), k.optString("art", ""), longKind(k.optString("kind", "")));
         } catch (Exception unknown) {
             return null;
         }
@@ -1996,9 +2012,9 @@ public final class MediaServiceCapability implements Capability {
                             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
                     // What this phone already knows of it (a kept collection's title and cover), so
                     // the first frame names it rather than "Starting…" alone (audit: id-only links).
-                    String[] face = knownFace(mediaId);
-                    if (face != null) now.putExtra("starting.title", face[0]).putExtra("starting.art", face[1])
-                            .putExtra("starting.long", Boolean.parseBoolean(face[2]));
+                    Face face = knownFace(mediaId);
+                    if (face != null) now.putExtra("starting.title", face.title).putExtra("starting.art", face.art)
+                            .putExtra("starting.long", face.longAudio);
                     if (shellPlaysFromNowPlaying(c)) c.startActivity(now);
                     else c.startActivity(new Intent().setClassName(c, PLAY_ACTIVITY).putExtra("id", mediaId)
                             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));

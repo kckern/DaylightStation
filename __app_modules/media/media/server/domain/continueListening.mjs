@@ -148,8 +148,8 @@ export function judgeContinueGroup({
   }
 
   // Too short to continue: Continue listening is long audio (a book, a talk), never a
-  // 79-second item or an 11-minute clip filed in a books library (2026-11-27: "Orlando
-  // Saunders · 1 min left" and a film's audio on the phone). A standalone item by its
+  // 79-second item or an 11-minute clip filed in a books library (2026-11-27: a one-minute
+  // item and a film's audio showed on the phone). A standalone item by its
   // own length; a book by its parts' total when they are known (unknown parts keep it).
   const total = totalSeconds({ standalone, current, display, parts });
   if (total !== null && total < LONG_FORM_SECONDS) return { status: 'out', reason: 'short' };
