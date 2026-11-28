@@ -106,4 +106,11 @@ public class LiveDownloadTest {
         assertTrue(LiveDownloads.any());
         LiveDownloads.clear();
     }
+
+    @Test public void aRowTheRemedyHasStoppedForAMomentKeepsItsLiveWords() throws Exception {
+        LiveDownload held = live(0, 2, 12_400_000, 40_100_000, 0, DownloadProgress.Phase.RESTARTING);
+        JSONObject queued = new JSONObject().put("state", KeptIndex.QUEUED).put("total", 2);
+        assertEquals("Track 1 of 2 · 12.4 of 40.1 MB · Stalled · restarting", KeptIndex.describe(queued, held));
+        assertEquals("Queued", KeptIndex.describe(queued, null));
+    }
 }

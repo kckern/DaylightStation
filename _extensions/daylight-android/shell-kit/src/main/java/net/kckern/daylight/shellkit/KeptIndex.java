@@ -150,7 +150,8 @@ public final class KeptIndex {
      */
     public static String describe(JSONObject k, LiveDownload live) {
         String state = k.optString("state", "");
-        if (live == null || !(DOWNLOADING.equals(state) || UPDATING.equals(state))) return describe(k);
+        // Queued counts: while a stall's remedy has the downloads stopped for a moment the index says Queued, the row keeps its live words.
+        if (live == null || !(DOWNLOADING.equals(state) || UPDATING.equals(state) || QUEUED.equals(state))) return describe(k);
         String words = (UPDATING.equals(state) ? "Updating · " : "") + live.words();
         return k.optBoolean("auto") ? words + " · " + KEPT_AUTOMATICALLY : words;
     }

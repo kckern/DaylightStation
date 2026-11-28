@@ -339,6 +339,14 @@ final class KeepStore {
                 if (!again.isEmpty()) add(request(d.request.id, again));
                 refreshSoon();
             }
+            @Override public void onInitialized(DownloadManager m) {
+                // A stop of the stall remedy's that outlived the process (killed between its two steps) would strand the
+                // download: a person's Pause carries its own reason, so every reason of the remedy's is ours to undo.
+                for (Download d : m.getCurrentDownloads()) {
+                    if (d.stopReason == STOP_RESTART) m.setStopReason(d.request.id, Download.STOP_REASON_NONE);
+                }
+                refreshSoon();
+            }
             @Override public void onDownloadsPausedChanged(DownloadManager m, boolean paused) { refreshSoon(); }
             @Override public void onRequirementsStateChanged(DownloadManager m, Requirements r, int notMet) { refreshSoon(); }
         });
