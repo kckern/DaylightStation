@@ -44,7 +44,9 @@ public final class KeepService extends DownloadService {
 
     /** Each second the keep store publishes live bytes (main thread): the notification shows them. Only while it is the foreground one. */
     private void updateNotification() {
-        if (!foreground || !net.kckern.daylight.shellkit.LiveDownloads.any()) return;
+        // Nothing downloading: the foreground notification is going away. It is posted again only by Media3 (which sets the flag).
+        if (!net.kckern.daylight.shellkit.LiveDownloads.any()) { foreground = false; return; }
+        if (!foreground) return;
         try {
             DownloadManager m = KeepStore.get(this).manager;
             ((android.app.NotificationManager) getSystemService(NOTIFICATION_SERVICE))
@@ -97,10 +99,10 @@ public final class KeepService extends DownloadService {
 
     @Override protected Notification getForegroundNotification(List<Download> downloads, int notMetRequirements) {
         foreground = true;
-        int[] p = KeepStore.get(this).progress();
+        int[] p = KeepStore.get(this).progressCached();
         // Android requires this notification while bytes move; for automatic keeps alone it says
         // "Keeping The Book for offline" (spec §3.10: no notification of their own).
-        String title = KeepStore.get(this).notificationTitle();
+        String title = KeepStore.get(this).titleCached();
         int flags = PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT;
         PendingIntent open = PendingIntent.getActivity(this, 0,
                 new Intent(this, DownloadsActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), flags);

@@ -1712,7 +1712,7 @@ the Downloads row's sheet), and the keep notification gains a "Try again" action
 item is stalled; all of them restart the transfer at once (home goes through the keep job's
 `restart` action). The Downloads screen, the home page, the Browse header and Now playing's
 sheet read `LiveDownloads` (a subscription, not a poll of the index); the keep notification is
-re-posted from the same one-second tick, only while it is the foreground notification. Bytes
+re-posted from the same one-second tick, only while it is the foreground notification. A Pause or a Remove during a stall always wins (`StallGuard`): the remedy is dropped, a stop of ours is replaced by the person's Pause, and a re-add acts only on a live download of an item still kept. A manual Retry always starts a new remedy (`StallRemedy.restart`). Bytes
 past the most seen end the stall; a count that dips and climbs back does not. The old 30-minute stall check is gone.
 
 Failure reasons, one set everywhere: Gone from the library (404, permanent only after a

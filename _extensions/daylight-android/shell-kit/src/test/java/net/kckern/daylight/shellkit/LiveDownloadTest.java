@@ -95,4 +95,15 @@ public class LiveDownloadTest {
         assertFalse(idx.equals(KeptIndex.describeNow(dl)));
         LiveDownloads.clear();
     }
+
+    @Test public void aListenerThatThrowsDoesNotStopTheOthersOrThePublish() {
+        LiveDownloads.clear();
+        final int[] heard = { 0 };
+        LiveDownloads.listen(() -> { throw new IllegalStateException("a screen that is gone"); });
+        LiveDownloads.listen(() -> heard[0]++);
+        LiveDownloads.publish(java.util.Collections.singletonMap("a", live(0, 1, 5, 10, 0, DownloadProgress.Phase.MOVING)));
+        assertEquals("the other listener still heard it", 1, heard[0]);
+        assertTrue(LiveDownloads.any());
+        LiveDownloads.clear();
+    }
 }

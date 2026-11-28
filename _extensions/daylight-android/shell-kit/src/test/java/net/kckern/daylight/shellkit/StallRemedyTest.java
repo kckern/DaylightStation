@@ -63,4 +63,43 @@ public class StallRemedyTest {
         assertEquals(NONE, r.step(1_000, false, false));
         assertTrue(r.active());
     }
+
+    @Test public void aManualRestartAlwaysStartsANewEpisodeEvenAfterTheStrongStep() {
+        StallRemedy r = new StallRemedy();
+        r.begin(0);
+        r.step(0, false, false);
+        r.step(2_000, false, false);
+        r.step(22_000, false, false);
+        r.begin(30_000);
+        assertEquals("begin does nothing mid-episode", NONE, r.step(30_000, false, false));
+        r.restart(31_000);
+        assertEquals(STOP, r.step(31_000, false, false));
+    }
+
+    @Test public void restartWorksFromIdleToo() {
+        StallRemedy r = new StallRemedy();
+        r.restart(5_000);
+        assertEquals(STOP, r.step(5_000, false, false));
+    }
+
+    @Test public void abandonEndsTheEpisodeSoNothingMoreHappens() {
+        StallRemedy r = new StallRemedy();
+        r.begin(0);
+        r.step(0, false, false);
+        r.step(2_000, false, false);
+        r.abandon();
+        assertFalse(r.active());
+        assertEquals(NONE, r.step(40_000, false, false));
+    }
+
+    @Test public void itSaysWhenItHoldsAStop() {
+        StallRemedy r = new StallRemedy();
+        assertFalse(r.holdingStop());
+        r.begin(0);
+        assertFalse("armed, nothing stopped yet", r.holdingStop());
+        r.step(0, false, false);
+        assertTrue(r.holdingStop());
+        r.step(2_000, false, false);
+        assertFalse("resumed", r.holdingStop());
+    }
 }

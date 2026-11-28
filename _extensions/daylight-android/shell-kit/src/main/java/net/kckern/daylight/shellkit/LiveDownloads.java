@@ -20,7 +20,10 @@ public final class LiveDownloads {
     /** Replaces what is live (by content id) and tells the listeners. */
     public static void publish(Map<String, LiveDownload> live) {
         now = new ConcurrentHashMap<>(live);
-        for (Runnable r : LISTENERS) r.run();
+        // One screen that is gone or broken must not take the others (or the tick that publishes) down.
+        for (Runnable r : LISTENERS) {
+            try { r.run(); } catch (RuntimeException brokenListener) { /* the others still hear it */ }
+        }
     }
 
     /** The item's live line, or null when it is not downloading now. */

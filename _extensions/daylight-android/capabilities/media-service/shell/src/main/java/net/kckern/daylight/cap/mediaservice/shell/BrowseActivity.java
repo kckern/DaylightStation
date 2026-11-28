@@ -252,25 +252,27 @@ public final class BrowseActivity extends Activity {
         if (!detail() || parent == null) return "";
         String cid = contentIdOf(parent);
         JSONObject k = KeepLabels.holding(net.kckern.daylight.shellkit.KeptIndex.read(getFilesDir()), cid);
-        net.kckern.daylight.shellkit.LiveDownload live = net.kckern.daylight.shellkit.LiveDownloads.get(cid);
-        return (k == null ? "-" : k.optString("state") + "|" + k.optBoolean("auto")) + "|" + KeepLabels.collectionLine(this, cid)
-                + "|" + (live == null ? "" : live.words());
+        return (k == null ? "-" : k.optString("state") + "|" + k.optBoolean("auto")) + "|" + KeepLabels.collectionLine(this, cid);
     }
 
-    /** The keep's live bytes arrive once a second (LiveDownloads): the header's keep button and line follow them. */
+    /**
+     * The keep's live bytes arrive once a second (LiveDownloads): only the keep button's words
+     * follow them here (no disk read); the header is re-read on the keepWatch cadence.
+     */
+    private ImageButton keepButton;
+    private JSONObject keptHeld;
     private final Runnable liveKeep = () -> {
-        if (isFinishing() || isDestroyed() || !detail()) return;
-        String now = keepState();
-        if (!now.equals(keepShown)) {
-            keepShown = now;
-            fillHeader();
-        }
+        if (isFinishing() || isDestroyed() || keepButton == null || keptHeld == null) return;
+        keepButton.setContentDescription(net.kckern.daylight.shellkit.KeptIndex.describeNow(keptHeld));
     };
-
     private final Runnable keepWatch = new Runnable() {
         @Override public void run() {
             if (isFinishing() || isDestroyed()) return;
-            liveKeep.run();
+            String now = keepState();
+            if (!now.equals(keepShown)) {
+                keepShown = now;
+                fillHeader();
+            }
             main.postDelayed(this, KEEP_WATCH_MS);
         }
     };
@@ -1343,6 +1345,8 @@ public final class BrowseActivity extends Activity {
                 ImageButton b = iconButton(k == null ? R.drawable.daylight_np_download : ready ? R.drawable.daylight_np_kept : R.drawable.daylight_np_downloading,
                         k == null ? "Keep on this phone" : net.kckern.daylight.shellkit.KeptIndex.describeNow(k));
                 // Kept is a selected state: the accent; downloading or queued stays muted.
+                keepButton = b;
+                keptHeld = k;
                 if (ready) b.setImageTintList(ColorStateList.valueOf(t.primary));
                 b.setOnClickListener(v -> { if (k == null) KeepFlow.start(this, self(), title); else DownloadsActivity.open(this); });
                 UiTelemetry.tag(b, "browse.keep");

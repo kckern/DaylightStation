@@ -24,7 +24,19 @@ public final class StallRemedy {
         if (state == State.IDLE) { state = State.ARMED; since = nowMs; }
     }
 
+    /** A new episode whatever the state (a person's Retry must always do something, the soft cycle included). */
+    public void restart(long nowMs) {
+        state = State.ARMED;
+        since = nowMs;
+    }
+
+    /** Gives the episode up (the strong step was already used and is not allowed again): nothing more happens by itself. */
+    public void abandon() { state = State.IDLE; }
+
     public boolean active() { return state != State.IDLE; }
+
+    /** The remedy has stopped the downloads and not yet resumed them: it owns a stop that must not be left behind. */
+    public boolean holdingStop() { return state == State.STOPPING; }
 
     /**
      * @param stopped every download of the item is reported STOPPED by the manager

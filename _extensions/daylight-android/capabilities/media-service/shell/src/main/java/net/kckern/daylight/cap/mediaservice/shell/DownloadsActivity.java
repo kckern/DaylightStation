@@ -494,7 +494,8 @@ public final class DownloadsActivity extends Activity {
         h.state.setText(words + (live == null && size > 0 && !words.contains("MB") && !words.contains("GB") ? " · " + KeptIndex.size(size) : ""));
         showBar(h, live);
         loadCover(h.cover, k.optString("art"));
-        row.setContentDescription(title + ". " + words);
+        // Stable while it downloads (the words change every second and would be read out each time).
+        row.setContentDescription(title + ". " + (live == null ? words : live.stalled() ? "Stalled" : "Downloading"));
         h.title = title;
         h.size = size;
         h.frees = k.has("frees") ? k.optLong("frees") : -1;
