@@ -407,6 +407,7 @@ public class NowPlayingActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
+        if (guardOff != null) { guardOff.run(); guardOff = null; }
         for (ExecutorService e : new ExecutorService[] { io, artIo, padIo, detailIo, startIo }) if (e != null) e.shutdownNow();
         super.onDestroy();
     }
@@ -708,7 +709,15 @@ public class NowPlayingActivity extends Activity {
         return why.isEmpty() ? PlaybackRecovery.WONT_PLAY : why;
     }
 
+    /** After a contained Media3 failure (MainLoopGuard): drop this controller and build a new one. */
+    private Runnable guardOff;
+
     private void connect() {
+        if (guardOff == null) guardOff = MainLoopGuard.onContained(() -> {
+            if (isFinishing() || isDestroyed()) return;
+            disconnect();
+            connect();
+        });
         if (pending != null || controller != null) return;
         Class<?> service = remote() ? RemoteControlService.class : DaylightMediaService.class;
         final String forTarget = target;

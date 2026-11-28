@@ -3114,8 +3114,15 @@ From screenshot review of build 150 and the design sweep
 - **Play next / Add to queue on a track** adds that one track (`FirstTap.onlyTrack`): home answers a
   track with its whole list, and the queue verb picks the asked track out of it.
 - **Keep one track** names the track in "Keeping X on this phone" (`KeepRules.keepingName`).
-- **`MainLoopGuard`.** A Media3 1.1.1 controller assertion (`PlayerInfo.Builder.build` through
-  `MediaUtils.mergePlayerInfo`) killed the process once in the 212 acceptance run (a tap pending,
-  network restored); it was not reproduced in about twenty tries and its cause is not known. That
-  one failure is now logged (`a Media3 controller update was inconsistent; contained`) and the main
-  loop resumes; anything else crashes as before. If the line appears in a log, it is the lead.
+- **`MainLoopGuard` (a stopgap; the cause is not known).** A Media3 1.1.1 controller assertion
+  (`PlayerInfo.Builder.build` through `MediaUtils.mergePlayerInfo`: a position past the end of the
+  timeline it merged with) killed the process once in the 212 acceptance run (a tap pending, network
+  restored); it did not repeat in about forty tries. That one failure is contained: logged, sent as the
+  `media.controller.contained` telemetry event, the screens' controllers (Now playing, Browse) rebuilt
+  through `MainLoopGuard.onContained`, and the main loop resumed. More than three in ten seconds is
+  rethrown, so the process crashes and restarts clean. Any other exception crashes as before.
+  Suspected cause (unconfirmed): a controller masks its own edit on its copy of the timeline (a new
+  source, a remove, a move, an add) and the queue does something else; with no timeline change in the
+  player, no update carries the timeline, and the next update's position is past that copy's end.
+  Hardening: `QueuePlayer.resyncControllers` re-sends the real timeline after a controller edit and when
+  a tapped start is pending. A Media3 1.2.x upgrade changed this merge; worth a separate task.

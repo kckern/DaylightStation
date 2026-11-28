@@ -489,13 +489,13 @@ public final class MediaServiceCapability implements Capability {
                 try {
                     going = continueGoing(limit + 4);
                     health.answered();
-                } catch (IllegalArgumentException bad) {
-                    throw bad;
-                } catch (Exception noHome) {
+                } catch (java.io.IOException noHome) {
+                    // Home is not there (transport failure, or a 5xx: Refused is an IOException): the books
+                    // kept on this phone that it started and that are wholly here. A 4xx, a bug (a
+                    // RuntimeException, a bad answer) is not "home is down" and goes on as an error.
                     if (noHome instanceof MediaApi.Refused && ((MediaApi.Refused) noHome).status < 500) throw noHome;
-                    // Home is not there: the books kept on this phone that it started, which play without it.
                     health.failed(clock.getAsLong());
-                    going = new Going(OfflineContinue.rows(kept().list(), id -> positions().get(id), limit + 4), 0);
+                    going = new Going(OfflineContinue.rows(kept().list(), id -> positions().get(id), keptReady(), limit + 4), 0);
                     offline = true;
                 }
                 // A hide home has not heard yet keeps its card away here (offline, or just tapped).
@@ -1410,7 +1410,7 @@ public final class MediaServiceCapability implements Capability {
     /** A media call home connected to and that answers nothing gives up after this. */
     static final int READ_MS_MEDIA = 10_000;
     private final java.util.concurrent.atomic.AtomicBoolean flushing = new java.util.concurrent.atomic.AtomicBoolean();
-    private final BackendHealth health = new BackendHealth();
+    final BackendHealth health = new BackendHealth();
 
     /** The token the shell holds for the inbox (empty when it holds none, or is too old to say). */
     private String inboxToken() {
@@ -1498,6 +1498,21 @@ public final class MediaServiceCapability implements Capability {
     }
 
     /** The last position reported for each item (sent or not): where an offline play resumes. */
+    /** Which kept collections are wholly on the phone (the shell's kept index); a test sets its own. */
+    private volatile java.util.function.Predicate<String> keptReadyOverride;
+
+    void keptReadyForTest(java.util.function.Predicate<String> ready) { keptReadyOverride = ready; }
+
+    private java.util.function.Predicate<String> keptReady() {
+        java.util.function.Predicate<String> o = keptReadyOverride;
+        if (o != null) return o;
+        Object context = core == null ? null : core.shell().context();
+        if (!(context instanceof Context)) return id -> false;
+        java.io.File files = ((Context) context).getFilesDir();
+        List<JSONObject> index = KeptReady.read(files);
+        return id -> KeptReady.ready(index, id);
+    }
+
     synchronized PendingProgress positions() {
         if (positions == null) positions = new PendingProgress(new java.io.File(stateDir(), "positions.json"), this::stillKept);
         return positions;

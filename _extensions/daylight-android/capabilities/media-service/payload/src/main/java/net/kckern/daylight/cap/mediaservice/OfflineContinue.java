@@ -13,7 +13,11 @@ import java.util.function.Function;
  * and not finished, newest listened first, in the shape of home's rows. The place is the
  * last one reported for each part (PendingProgress "positions"); a part heard to its end moves
  * the row on to the next one from its start; a book heard to its last part's end is left out.
- * Only what plays offline, so no row says "Needs a connection". Pure.
+ * Only what plays offline: a book is listed only when the shell says all of it is on the phone
+ * ({@code ready}, from the kept index's Ready state, the same fact the Play home's "On this
+ * phone" mark uses), so a book still downloading never shows. Offline.resolve itself does not
+ * check readiness, which is why the check is made here. A book re-listened after it was finished
+ * counts again: the newest report decides, and a report early in a part is not an ending. Pure.
  */
 final class OfflineContinue {
     /** A part within this many seconds of its end is finished (Offline's rule). */
@@ -22,11 +26,12 @@ final class OfflineContinue {
     private OfflineContinue() { }
 
     /** {@code position}: the last report for a track id ({seconds, observedAt}), or null. */
-    static JSONArray rows(List<JSONObject> kept, Function<String, JSONObject> position, int limit) throws JSONException {
+    static JSONArray rows(List<JSONObject> kept, Function<String, JSONObject> position,
+                          java.util.function.Predicate<String> ready, int limit) throws JSONException {
         List<JSONObject> rows = new ArrayList<>();
         List<Long> at = new ArrayList<>();
         for (JSONObject k : kept) {
-            if (!"book".equals(k.optString("kind"))) continue;
+            if (!"book".equals(k.optString("kind")) || !ready.test(k.optString("contentId"))) continue;
             List<Track> tracks = Offline.tracks(k.optJSONArray("tracks"));
             if (tracks.isEmpty()) continue;
             int last = -1;
@@ -48,12 +53,18 @@ final class OfflineContinue {
                 durSec = tracks.get(part).durationMs / 1000;
             }
             long remaining = Math.max(0, durSec - sec);
-            for (int i = part + 1; i < tracks.size(); i++) remaining += tracks.get(i).durationMs / 1000;
+            boolean known = durSec > 0;
+            for (int i = part + 1; i < tracks.size(); i++) {
+                long d = tracks.get(i).durationMs / 1000;
+                remaining += d;
+                known |= d > 0;
+            }
             String play = tracks.get(part).id;
             JSONObject o = new JSONObject().put("id", MediaId.leaf(play, null)).put("contentId", k.optString("contentId"))
                     .put("playContentId", play).put("title", k.optString("title"))
                     .put("subtitle", tracks.get(0).artist).put("playhead", sec).put("duration", durSec)
-                    .put("remainingSec", remaining).put("legacy", false).put("offline", true);
+                    .put("legacy", false).put("offline", true);
+            if (known) o.put("remainingSec", remaining);   // never a made-up time left
             if (tracks.size() > 1) o.put("partTitle", tracks.get(part).title).put("partIndex", part + 1).put("partCount", tracks.size());
             String art = k.optString("art", "");
             if (!art.isEmpty()) o.put("art", art);

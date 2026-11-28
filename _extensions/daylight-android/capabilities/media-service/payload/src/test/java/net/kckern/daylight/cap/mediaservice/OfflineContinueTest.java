@@ -14,6 +14,8 @@ import java.util.Map;
 
 /** Continue listening with no home: the kept, started, unfinished books (acceptance 212, "vanishes offline"). */
 public class OfflineContinueTest {
+    private static final java.util.function.Predicate<String> ALL = id -> true;
+
     private static JSONObject book(String cid, String title, String kind, int parts, long partMs) throws Exception {
         JSONArray tracks = new JSONArray();
         for (int i = 1; i <= parts; i++) {
@@ -34,7 +36,7 @@ public class OfflineContinueTest {
     @Test public void aStartedKeptBookShowsWithItsPlaceAndTimeLeft() throws Exception {
         List<JSONObject> kept = Arrays.asList(book("plex:10", "A Long Book", "book", 3, 3_000_000L));
         Map<String, JSONObject> h = heard("plex:102", 600, 5);
-        JSONArray rows = OfflineContinue.rows(kept, h::get, 6);
+        JSONArray rows = OfflineContinue.rows(kept, h::get, ALL, 6);
         assertEquals(1, rows.length());
         JSONObject r = rows.getJSONObject(0);
         assertEquals("plex:10", r.getString("contentId"));
@@ -52,19 +54,19 @@ public class OfflineContinueTest {
 
     @Test public void aKeptBookNeverStartedIsNotContinue() throws Exception {
         List<JSONObject> kept = Arrays.asList(book("plex:10", "A Long Book", "book", 3, 3_000_000L));
-        assertEquals(0, OfflineContinue.rows(kept, id -> null, 6).length());
+        assertEquals(0, OfflineContinue.rows(kept, id -> null, id -> true, 6).length());
     }
 
     @Test public void aFinishedBookAndAnAlbumAreLeftOut() throws Exception {
         List<JSONObject> kept = Arrays.asList(book("plex:10", "Done", "book", 2, 1_200_000L), book("plex:20", "An Album", "album", 2, 1_200_000L));
         Map<String, JSONObject> h = heard("plex:102", 1199, 9, "plex:201", 100, 9);
-        assertEquals(0, OfflineContinue.rows(kept, h::get, 6).length());
+        assertEquals(0, OfflineContinue.rows(kept, h::get, ALL, 6).length());
     }
 
     @Test public void aFinishedPartMovesOnToTheNextFromItsStart() throws Exception {
         List<JSONObject> kept = Arrays.asList(book("plex:10", "A Long Book", "book", 3, 1_200_000L));
         Map<String, JSONObject> h = heard("plex:101", 1199, 9);
-        JSONObject r = OfflineContinue.rows(kept, h::get, 6).getJSONObject(0);
+        JSONObject r = OfflineContinue.rows(kept, h::get, ALL, 6).getJSONObject(0);
         assertEquals("plex:102", r.getString("playContentId"));
         assertEquals(0, r.getLong("playhead"));
         assertEquals(2400, r.getLong("remainingSec"));
@@ -73,9 +75,32 @@ public class OfflineContinueTest {
     @Test public void newestListenedFirstAndLimited() throws Exception {
         List<JSONObject> kept = Arrays.asList(book("plex:30", "Older", "book", 1, 3_000_000L), book("plex:40", "Newer", "book", 1, 3_000_000L));
         Map<String, JSONObject> h = heard("plex:301", 10, 1, "plex:401", 10, 2);
-        JSONArray rows = OfflineContinue.rows(kept, h::get, 6);
+        JSONArray rows = OfflineContinue.rows(kept, h::get, ALL, 6);
         assertEquals("Newer", rows.getJSONObject(0).getString("title"));
-        assertEquals(1, OfflineContinue.rows(kept, h::get, 1).length());
+        assertEquals(1, OfflineContinue.rows(kept, h::get, ALL, 1).length());
         assertTrue(rows.getJSONObject(0).getBoolean("offline"));
+    }
+
+    @Test public void aStartedBookWhosePartsAreNotAllOnThePhoneIsNotListed() throws Exception {
+        List<JSONObject> kept = Arrays.asList(book("plex:10", "Still downloading", "book", 3, 3_000_000L), book("plex:30", "Ready", "book", 1, 3_000_000L));
+        Map<String, JSONObject> h = heard("plex:101", 100, 5, "plex:301", 100, 4);
+        JSONArray rows = OfflineContinue.rows(kept, h::get, id -> id.equals("plex:30"), 6);
+        assertEquals(1, rows.length());
+        assertEquals("Ready", rows.getJSONObject(0).getString("title"));
+    }
+
+    @Test public void aFinishedBookIsNotListedEvenWhenReady() throws Exception {
+        List<JSONObject> kept = Arrays.asList(book("plex:10", "Done", "book", 2, 1_200_000L));
+        Map<String, JSONObject> h = heard("plex:101", 1199, 5, "plex:102", 1199, 9);
+        assertEquals(0, OfflineContinue.rows(kept, h::get, ALL, 6).length());
+    }
+
+    @Test public void aPartWithNoKnownLengthNeverGivesAFakeTimeLeft() throws Exception {
+        List<JSONObject> kept = Arrays.asList(book("plex:10", "Unknown length", "book", 1, 0L));
+        Map<String, JSONObject> h = heard("plex:101", 100, 5);
+        JSONObject r = OfflineContinue.rows(kept, h::get, ALL, 6).getJSONObject(0);
+        assertEquals(0, r.getLong("duration"));
+        assertTrue("no time left is stated", !r.has("remainingSec"));
+        assertEquals(100, r.getLong("playhead"));
     }
 }

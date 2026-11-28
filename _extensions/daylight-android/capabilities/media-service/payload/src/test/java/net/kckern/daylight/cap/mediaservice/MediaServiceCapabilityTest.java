@@ -163,6 +163,7 @@ public class MediaServiceCapabilityTest {
                 .put("title", "Part " + i).put("durationMs", 2_400_000));
         cap.kept().saveUnit("plex:50", "A Kept Book", null, parts, 1, "book", "plex:900");
         cap.positions().keep(new JSONObject().put("assetId", "plex:501").put("seconds", 600).put("observedAt", 7));
+        cap.keptReadyForTest(id -> id.equals("plex:50"));
         api.down = true;
         MediaServiceCapability.Outcome out = cap.call(new JSONObject().put("op", "continue"));
         assertEquals(200, out.status);
@@ -172,6 +173,43 @@ public class MediaServiceCapabilityTest {
         assertEquals("A Kept Book", items.getJSONObject(0).getString("title"));
         assertEquals(600, items.getJSONObject(0).getLong("playhead"));
         assertEquals("not home's, and not an error", 0, out.body.getInt("reviewCount"));
+    }
+
+    private void keptStartedBook() throws Exception {
+        org.json.JSONArray parts = new org.json.JSONArray();
+        for (int i = 1; i <= 2; i++) parts.put(new JSONObject().put("id", "plex:50" + i).put("url", "https://home.example/s/" + i)
+                .put("title", "Part " + i).put("durationMs", 2_400_000));
+        cap.kept().saveUnit("plex:50", "A Kept Book", null, parts, 1, "book", "plex:900");
+        cap.positions().keep(new JSONObject().put("assetId", "plex:501").put("seconds", 600).put("observedAt", 7));
+        cap.keptReadyForTest(id -> id.equals("plex:50"));
+    }
+
+    @Test public void continueFallsBackOfflineOnAServerErrorAndOnATransportFailureButNotOnA404() throws Exception {
+        keptStartedBook();
+        api.continueStatus = 500;
+        assertTrue(cap.call(new JSONObject().put("op", "continue")).body.getBoolean("offline"));
+        api.continueStatus = 0;
+        api.down = true;
+        assertTrue(cap.call(new JSONObject().put("op", "continue")).body.getBoolean("offline"));
+        api.down = false;
+        api.continueStatus = 404;
+        MediaServiceCapability.Outcome notFound = cap.call(new JSONObject().put("op", "continue"));
+        assertEquals("a 404 (and no recent list) is an error, not offline rows", 404, notFound.status);
+    }
+
+    @Test public void aBugInTheContinueReadIsNotHomeBeingDown() throws Exception {
+        keptStartedBook();
+        api.continueBoom = true;
+        MediaServiceCapability.Outcome out = cap.call(new JSONObject().put("op", "continue"));
+        assertTrue("an error, not offline rows", out.status >= 400);
+        assertFalse("home is not marked down by a RuntimeException", cap.health.down(0));
+    }
+
+    @Test public void aBookStillDownloadingIsNotInOfflineContinue() throws Exception {
+        keptStartedBook();
+        cap.keptReadyForTest(id -> false);
+        api.down = true;
+        assertEquals(0, cap.call(new JSONObject().put("op", "continue")).body.getJSONArray("items").length());
     }
 
     /** A home without the route keeps the hide waiting on the phone (the card stays gone) until it is updated. */

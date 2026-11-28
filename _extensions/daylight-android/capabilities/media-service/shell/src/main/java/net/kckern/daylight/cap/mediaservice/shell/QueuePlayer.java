@@ -60,13 +60,18 @@ class QueuePlayer extends ForwardingPlayer {
     /** Right after the item playing is Play next; anywhere else is Add to queue. */
     @Override public void addMediaItems(int index, List<MediaItem> items) {
         queue.addFromController(index, new ArrayList<>(items));
+        resyncControllers();
     }
 
     @Override public void removeMediaItem(int index) { removeMediaItems(index, index + 1); }
-    @Override public void removeMediaItems(int fromIndex, int toIndex) { queue.removeFromController(fromIndex, toIndex); }
-    @Override public void moveMediaItem(int currentIndex, int newIndex) { queue.move(currentIndex, newIndex, null); }
+    @Override public void removeMediaItems(int fromIndex, int toIndex) {
+        queue.removeFromController(fromIndex, toIndex);
+        resyncControllers();
+    }
+    @Override public void moveMediaItem(int currentIndex, int newIndex) { queue.move(currentIndex, newIndex, null); resyncControllers(); }
     @Override public void moveMediaItems(int fromIndex, int toIndex, int newIndex) {
         if (toIndex - fromIndex == 1) queue.move(fromIndex, newIndex, null);
+        resyncControllers();
     }
     @Override public void clearMediaItems() { queue.clearEverything(); }
 
@@ -102,6 +107,22 @@ class QueuePlayer extends ForwardingPlayer {
     }
 
     /** Tells every controller that shuffle or repeat changed (the real player's did not). */
+    /**
+     * A controller masks its own edit on its copy of the timeline at once (remove, move, add,
+     * a new source), and the queue may do something else (it never removes the item playing,
+     * and an add lands where Play next or Add to queue puts it). When nothing in the player's
+     * own timeline changed, no update carries the timeline and that copy stays wrong; then a
+     * later update with a position past its end trips Media3 1.1.1's check (the acceptance 212
+     * crash is suspected to be this; unconfirmed). So after an edit, and when a tapped start is
+     * pending, the real timeline is sent again. Posted, so the player's own events come first.
+     */
+    void resyncControllers() {
+        new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
+            androidx.media3.common.Timeline timeline = getCurrentTimeline();
+            for (Player.Listener l : listeners) l.onTimelineChanged(timeline, Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED);
+        });
+    }
+
     // ── a tapped item while it resolves (audit: the car's card showed the previous item) ──
 
     private volatile androidx.media3.common.MediaMetadata starting;
@@ -119,6 +140,7 @@ class QueuePlayer extends ForwardingPlayer {
         starting = shown;
         if (getPlayWhenReady()) super.pause();
         announceMetadata();
+        resyncControllers();
         // A start that neither played nor was refused within the play budget stops saying so.
         new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
             if (starting == shown) clearStarting();

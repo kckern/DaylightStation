@@ -295,6 +295,7 @@ public final class BrowseActivity extends Activity {
 
     @Override protected void onDestroy() {
         super.onDestroy();
+        if (guardOff != null) { guardOff.run(); guardOff = null; }
         main.removeCallbacks(retryTimer);
         mini.release();
         io.shutdownNow();
@@ -1982,7 +1983,16 @@ public final class BrowseActivity extends Activity {
      * future (each used to build its own controller, and the earlier one was never released).
      */
     /** @param mediaId what is being played, so a failure here gives back the mini player's start for it */
+    private Runnable guardOff;
+
     private void withController(String mediaId, java.util.function.Consumer<MediaController> then) {
+        // After a contained Media3 failure (MainLoopGuard) this page's controller is dropped; the next tap builds a new one.
+        if (guardOff == null) guardOff = MainLoopGuard.onContained(() -> {
+            if (pending != null) MediaController.releaseFuture(pending);
+            else if (controller != null) controller.release();
+            pending = null;
+            controller = null;
+        });
         if (controller != null && controller.isConnected()) {
             try { then.accept(controller); } finally { playGuard.done(); }
             return;

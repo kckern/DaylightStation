@@ -487,7 +487,7 @@ public class DaylightMediaService extends MediaLibraryService {
         events = new PlaybackEvents(player, media, io);
         events.attach();
         current = this;
-        MainLoopGuard.install();
+        MainLoopGuard.install(this);
         queue.restore();
         Log.i(TAG, "media service created");
     }

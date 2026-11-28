@@ -21,6 +21,14 @@ public class ContinueRowTest {
         assertFalse(ContinueRow.grouped(row));
     }
 
+    @Test public void aRowWithNoKnownLengthStatesNoTimeLeft() throws Exception {
+        JSONObject row = new JSONObject().put("contentId", "plex:700").put("playContentId", "plex:701")
+                .put("title", "A Book").put("subtitle", "An Author").put("partIndex", 1).put("partCount", 2).put("playhead", 100).put("duration", 0);
+        assertEquals("An Author · Part 1 of 2", ContinueRow.line(row));
+        JSONObject single = new JSONObject().put("contentId", "plex:710").put("playContentId", "plex:710").put("title", "T").put("subtitle", "An Author");
+        assertEquals("An Author", ContinueRow.line(single));
+    }
+
     @Test public void theReviewRowCountsTheOlderItems() {
         assertEquals("", ContinueRow.reviewLabel(0));
         assertEquals("Review 1 older item", ContinueRow.reviewLabel(1));

@@ -59,13 +59,18 @@ final class FirstTap {
      * For Play next and Add to queue: which of the answer's tracks is the one asked for, when
      * {@code askedId} is a track row ("p:<track>" or "p:<track>|<list>"); -1 for anything else
      * (a container adds whole). Home answers a track's play with its whole list, so the one
-     * track is picked out by id, else by the answer's start index.
+     * track is picked out by id, else (a list answer to a track row) by the start index, else -1.
      */
     static int onlyTrack(String askedId, List<String> answerIds, int startIndex) {
         if (askedId == null || !askedId.startsWith("p:") || answerIds == null || answerIds.isEmpty()) return -1;
         String want = bare(alone(askedId));
+        // The occurrence the answer's start index names, when it is this track (a track twice in a list).
+        if (startIndex >= 0 && startIndex < answerIds.size() && want.equals(bare(answerIds.get(startIndex)))) return startIndex;
         for (int i = 0; i < answerIds.size(); i++) if (want.equals(bare(answerIds.get(i)))) return i;
-        return startIndex >= 0 && startIndex < answerIds.size() ? startIndex : 0;
+        // Not in the answer. A track row from a list ("p:<track>|<list>") answered with that list is
+        // the start index's track; a bare "p:<id>" may be a whole collection, which adds whole.
+        boolean fromList = askedId.indexOf('|') > 2;
+        return fromList && answerIds.size() > 1 && startIndex >= 0 && startIndex < answerIds.size() ? startIndex : -1;
     }
 
     private static String bare(String id) {

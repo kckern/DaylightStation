@@ -73,7 +73,13 @@ final class FakeMediaApi implements MediaApi {
         if (hideStatus != 200) throw new Refused("continue hide", hideStatus);
         hides.add((hidden ? "+" : "-") + contentId);
     }
-    @Override public JSONObject continueListening(int limit) throws Exception { return answer("continue", "continue " + limit); }
+    volatile int continueStatus;
+    volatile boolean continueBoom;
+    @Override public JSONObject continueListening(int limit) throws Exception {
+        if (continueBoom) throw new IllegalStateException("a bug, not a network");
+        if (continueStatus > 0) throw new Refused("continue", continueStatus);
+        return answer("continue", "continue " + limit);
+    }
     @Override public JSONObject continueReview() throws Exception { return answer("continue review", "continueReview"); }
     final List<String> decisions = Collections.synchronizedList(new ArrayList<String>());
     @Override public JSONObject decideContinueReview(String contentId, boolean all, String decision) throws Exception {

@@ -19,16 +19,19 @@ final class ContinueRow {
 
     /** "Part 2 of 5 · 1 h 30 min left", or the time left alone for a single item. */
     static String progress(JSONObject row) {
-        String left = PhoneHomeActivity.timeLeft(leftSeconds(row));
+        // No length known (no remaining time and no duration): no time is said, never "under a minute".
+        boolean known = row.has("remainingSec") || row.optLong("duration") > 0;
+        String left = known ? PhoneHomeActivity.timeLeft(leftSeconds(row)) : "";
         int n = row.optInt("partIndex", 0), of = row.optInt("partCount", 0);
-        return n > 0 && of > 1 ? "Part " + n + " of " + of + " · " + left : left;
+        String part = n > 0 && of > 1 ? "Part " + n + " of " + of : "";
+        return part.isEmpty() ? left : left.isEmpty() ? part : part + " · " + left;
     }
 
     /** The row's second line: the author (never the title again), then the progress. */
     static String line(JSONObject row) {
         String by = row.optString("subtitle", ""), title = row.optString("title", "");
         String p = progress(row);
-        return by.isEmpty() || by.equalsIgnoreCase(title) ? p : by + " · " + p;
+        return by.isEmpty() || by.equalsIgnoreCase(title) ? p : p.isEmpty() ? by : by + " · " + p;
     }
 
     /** "Review 3 older items" (the one-time row), or "" for none. */

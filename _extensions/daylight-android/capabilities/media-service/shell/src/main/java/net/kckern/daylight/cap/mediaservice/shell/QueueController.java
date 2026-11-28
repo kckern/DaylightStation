@@ -176,9 +176,12 @@ final class QueueController implements QueueModel.Sink<MediaItem> {
         return u;
     }
 
-    void removeFromController(int from, int to) {
-        for (int i = to - 1; i >= from; i--) if (i != model.nowIndex()) model.remove(i);
+    /** True when exactly what the controller asked was done (its own masked copy of the timeline then matches). */
+    boolean removeFromController(int from, int to) {
+        boolean exact = QueueEdits.exact(from, to, model.nowIndex());
+        for (int i : QueueEdits.removable(from, to, model.nowIndex())) model.remove(i);
         changed();
+        return exact;
     }
 
     boolean move(int from, int to, Region target) {
