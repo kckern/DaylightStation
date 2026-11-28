@@ -12,12 +12,16 @@ import { InfrastructureError } from '#system/utils/errors/index.mjs';
  * Immich content source adapter.
  * Implements IContentSource + IMediaSearchable for accessing Immich gallery.
  */
+// How long search reuses the people, tags and albums lists (see #searchList).
+const SEARCH_LISTS_TTL_MS = 10 * 60 * 1000;
+
 export class ImmichAdapter {
   #client;
   #source;
   #proxyPath;
   #claimsBareIds;
   #peopleCache;
+  #searchLists = new Map();
   #peopleCacheTime;
 
   /**
@@ -491,6 +495,46 @@ export class ImmichAdapter {
   }
 
   /**
+   * The people (with photo counts), tags or albums a text search matches
+   * names against, reused for SEARCH_LISTS_TTL_MS; an older copy is served
+   * while the next loads. Every search used to fetch all three, and the people
+   * list with one statistics request per named person (~145 here): 1.6 s cold,
+   * so the first search after a restart missed the 3 s budget.
+   * @param {'people'|'tags'|'albums'} name
+   * @returns {Promise<Array>}
+   */
+  #searchList(name) {
+    const state = this.#searchLists.get(name) ?? {};
+    if (state.list && Date.now() - state.at < SEARCH_LISTS_TTL_MS) return Promise.resolve(state.list);
+    if (!state.loading) {
+      const load = name === 'people' ? this.#client.getPeople({ withStatistics: true })
+        : name === 'tags' ? this.#client.getTags()
+        : this.#client.getAlbums();
+      const loading = Promise.resolve(load).then((list) => {
+        this.#searchLists.set(name, { list: list || [], at: Date.now(), loading: null });
+        return list || [];
+      }, (error) => {
+        this.#searchLists.set(name, { ...this.#searchLists.get(name), loading: null });
+        throw error;
+      });
+      this.#searchLists.set(name, { ...state, loading });
+      if (state.list) { loading.catch(() => {}); return Promise.resolve(state.list); }
+      return loading;
+    }
+    return state.list ? Promise.resolve(state.list) : state.loading;
+  }
+
+  /**
+   * Load the name lists search matches against, ahead of the first search
+   * (called at boot, not awaited).
+   * @returns {Promise<{entries: number}>}
+   */
+  async prepareSearch() {
+    const lists = await Promise.all(['people', 'tags', 'albums'].map((name) => this.#searchList(name)));
+    return { entries: lists.reduce((n, list) => n + list.length, 0) };
+  }
+
+  /**
    * Search for people by name
    * @param {string} text - Search text
    * @returns {Promise<ListableItem[]>}
@@ -498,7 +542,7 @@ export class ImmichAdapter {
   async #searchPeople(text) {
     try {
       const searchLower = text.toLowerCase();
-      const people = await this.#client.getPeople({ withStatistics: true });
+      const people = await this.#searchList('people');
 
       // Find people whose names contain the search text
       const matching = people.filter(p =>
@@ -537,7 +581,7 @@ export class ImmichAdapter {
   async #searchTags(text) {
     try {
       const searchLower = text.toLowerCase();
-      const tags = await this.#client.getTags();
+      const tags = await this.#searchList('tags');
 
       // Find tags whose names contain the search text
       const matching = tags.filter(t =>
@@ -570,7 +614,7 @@ export class ImmichAdapter {
   async #searchAlbums(text) {
     try {
       const searchLower = text.toLowerCase();
-      const albums = await this.#client.getAlbums();
+      const albums = await this.#searchList('albums');
 
       // Find albums whose names contain the search text
       const matching = albums.filter(a =>

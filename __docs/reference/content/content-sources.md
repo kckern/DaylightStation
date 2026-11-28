@@ -109,7 +109,7 @@ Tiers let the frontend get fast results first and defer expensive work until the
 | Driver | Tier 1 | Tier 2 | Difference |
 |--------|--------|--------|------------|
 | **plex** | `hubSearch()` only → filter to show/movie/artist/album/collection → return without hydration (~300ms) | Full: hubSearch + `_searchPlaylists` + `_searchCollections` + `getItem()` per result (~8-18s) | 30-80x fewer API calls |
-| **immich** | Same as tier 2 | 4 parallel searches (assets, people, tags, albums) (~50-200ms) | No difference — already fast |
+| **immich** | Same as tier 2 | Asset search + cached people/tags/albums lists (~10-60ms) | No difference — already fast |
 | **audiobookshelf** | Same as tier 2 | Local index of each library (built at boot, 1 h TTL; ~5-20ms) | No difference — already fast |
 | **filesystem** | Same as tier 2 | Local file scan (~<50ms) | No difference — local I/O |
 
@@ -180,6 +180,7 @@ Connects to an Immich photo/video management server.
 - **Date filtering**: `time` accepts a single day (`2025-12-25`), month (`2025-12`), year (`2025`), or range (`2024..2025`). A single day expands to a same-day window. Date filters are forwarded to Immich as `takenAfter`/`takenBefore`.
 - **Rich metadata (opt-in)**: add `withExif=1` and/or `withPeople=1` to a `query/search` request. These pass straight through to Immich's `/api/search/metadata`, so exif and people/faces come back in a single call (no per-asset hydration). Output is normalized into a curated `metadata.exif` block (`capturedAt, city, state, country, latitude, longitude, make, model, lensModel, fNumber, iso, exposureTime, focalLength`) and `metadata.people` (with face bounding boxes). Tags are not available on the search path.
 - **Empty fields**: `null`/`[]`/`{}` members are stripped from item payloads at the API boundary to reduce response size.
+- **Text search name lists**: people (with photo counts), tags and albums are loaded once (`prepareSearch` at boot, ~0.5 s) and reused for 10 minutes, an older copy served while the next loads; a search costs only the asset search (~10-60 ms). Loading them per search (the people list takes one statistics request per named person) cost 1.6 s cold and timed out the first search after a restart.
 
 ### audiobookshelf (source name: `abs`)
 
@@ -229,7 +230,7 @@ Reads files from the local filesystem. Behavior varies by `content_format` confi
   searches never walk the tree per keystroke — per-search walks of ~450k entries starved the other sources (photo libraries
   timed out at 3 s only while a walk ran). Excluded by default: `video/fitness/` and `fitness/` (workout footage and session
   snapshots); `files.includeExcluded=true` searches them with a direct walk. Override the list with `mediaSearchExcludePaths`.
-- **Index at boot**: boot calls `ContentQueryService.prepareSearch()` without waiting; every adapter with a `prepareSearch()` (`files`, `singalong`, `abs`) builds its index then, logged as `content-query.search-index.ready` `{source, buildMs, entries}` (or `.failed`). A `files` search that arrives during the first build waits up to 1.5 s, then matches the names walked so far and returns `partial: true` — never a timeout.
+- **Index at boot**: boot calls `ContentQueryService.prepareSearch()` without waiting; every adapter with a `prepareSearch()` (`files`, `singalong`, `abs`, the immich sources) builds its index then, logged as `content-query.search-index.ready` `{source, buildMs, entries}` (or `.failed`). A `files` search that arrives during the first build waits up to 1.5 s, then matches the names walked so far and returns `partial: true` — never a timeout.
 - **Search (`singalong` source)**: matches titles and numbers in an index of `{collection, number, title}` (TTL 10 minutes, stale served while rebuilding); only the matches are built with `getItem`, each once per index. Building every song per search (~650 YAML + audio scans + MP3 header reads) took ~1 s alone and 8 s (its budget) beside the other sources.
 
 #### Data/Media Path Split

@@ -387,4 +387,30 @@ describe('ImmichAdapter', () => {
       expect(result.metadata.exif).toBeUndefined();
     });
   });
+
+  // 2026-11-27: every text search fetched the people list with one statistics
+  // request per named person (~145), plus every tag and album: 1.6 s cold, so
+  // the first search after a restart missed the 3 s budget. The lists are
+  // loaded once (prepareSearch at boot) and reused.
+  describe('search name lists', () => {
+    test('prepareSearch loads people, tags and albums once; searches reuse them', async () => {
+      mockHttpClient.get.mockImplementation(async (url) => {
+        if (url.endsWith('/api/people')) return { data: { people: [{ id: 'p-1', name: 'Hymn Choir' }] } };
+        if (url.includes('/statistics')) return { data: { assets: 12 } };
+        if (url.endsWith('/api/tags')) return { data: [{ id: 't-1', name: 'hymnal' }] };
+        if (url.endsWith('/api/albums')) return { data: [{ id: 'al-1', albumName: 'Hymn night', assetCount: 3 }] };
+        throw new Error(`unexpected ${url}`);
+      });
+      mockHttpClient.post.mockResolvedValue({ data: { assets: { items: [], nextPage: null } } });
+      const adapter = new ImmichAdapter({ host: 'http://immich', apiKey: 'key' }, { httpClient: mockHttpClient });
+
+      expect(await adapter.prepareSearch()).toEqual({ entries: 3 });
+      mockHttpClient.get.mockClear();
+
+      const first = await adapter.search({ text: 'hymn' });
+      await adapter.search({ text: 'choir' });
+      expect(mockHttpClient.get).not.toHaveBeenCalled();
+      expect(first.items.map((i) => i.title)).toEqual(['Hymn Choir', 'hymnal', 'Hymn night']);
+    });
+  });
 });
