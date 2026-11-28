@@ -1266,7 +1266,12 @@ tells the service, which notifies `kept` and `root` (`KeptChanges.nodes`) and lo
 but not to a legacy `MediaBrowserCompat` one (Android Auto), which subscribes under its own
 callback; so the callback also keeps its legacy followers per parent (`SubscriptionBook`) and
 notifies each directly (`LibraryCallback.childrenChanged`). The Driving Radio list and the
-"payload is up" root notice go through the same call. A build made with `-PsubscriberProbe` (debug only, never the verified build) carries
+"payload is up" root notice go through the same call. Only a keep being **saved**, **ready** or
+**removed** is notified: a state or title change of an item already listed (progress, paused,
+renamed) is not, and the item count passed is 0 (unknown; browsers re-query the list).
+Legacy followers no longer connected are dropped when told (`SubscriptionBook.deliver`, checked
+against `getConnectedControllers()`), whether or not `onDisconnected` ran. A burst of keeps (a
+group of N units) runs one refresh, 120 ms after the first (`RefreshGate`). A build made with `-PsubscriberProbe` (debug only, never the verified build) carries
 `SubscriberProbeActivity` (exported, own task): it connects a legacy and a Media3 browser,
 subscribes both to `kept,root` (`--es parents`) and logs every callback under the tag
 `Daylight-Probe`; saving, finishing and removing a keep on the emulator showed both
@@ -1688,7 +1693,10 @@ keeps held to Wi-Fi, the keep sheet says so in its header and offers **Download 
 mobile data (this time)** (the same once-flag as Use mobile data once), beside keeping it
 for Wi-Fi; any other Keep shows the same two choices first. The once-flag outlives the sync it
 starts by 90 s (`KeepChoices.mobileOnceDone`): that sync sees every older keep ready and used
-to end the "this time" before the new keep was listed, leaving it waiting for Wi-Fi.
+to end the "this time" before the new keep was listed, leaving it waiting for Wi-Fi. The time
+is `elapsedRealtime`, so a restart (a "now" before the time it was asked) ends the once at
+once (`mobileOnceOn`). Its limit: the flag is the phone's, not one album's ("what is waiting
+now goes on mobile data"), so an unrelated download that starts inside the 90 s also rides it.
 
 **States.** Each kept item has one state, the same words on every surface (the Play tab,
 On this phone, Now playing's ⋮, the notification, the web through the inbox report). They

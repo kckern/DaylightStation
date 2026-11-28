@@ -65,4 +65,12 @@ public class KeepChoicesTest {
     @Test public void aMobileOnceWithNoRecordedTimeEndsWhenReady() {
         assertTrue(KeepChoices.mobileOnceDone(true, 0, 5_000));
     }
+
+    /** A reboot or a clock set back makes "now" earlier than when it was asked: the once is over, ready or not. */
+    @Test public void mobileOnceIsOverWhenTheClockIsBeforeWhenItWasAsked() {
+        assertFalse(KeepChoices.mobileOnceOn(10_000, 5_000));
+        assertTrue(KeepChoices.mobileOnceDone(true, 10_000, 5_000));
+        assertTrue(KeepChoices.mobileOnceOn(10_000, 10_000));
+        assertTrue(KeepChoices.mobileOnceOn(0, 5_000));
+    }
 }

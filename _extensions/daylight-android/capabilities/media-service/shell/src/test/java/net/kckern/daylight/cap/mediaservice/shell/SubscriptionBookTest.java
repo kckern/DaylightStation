@@ -38,4 +38,30 @@ public class SubscriptionBookTest {
         assertTrue(book.of("kept").isEmpty());
         assertEquals(Collections.singletonList("other"), book.of("root"));
     }
+
+    /** A follower that is no longer connected is skipped and forgotten, whether or not onDisconnected ever ran. */
+    @Test public void deliveryReachesConnectedFollowersAndForgetsTheRest() {
+        SubscriptionBook<String> book = new SubscriptionBook<>();
+        book.add("kept", "auto");
+        book.add("kept", "gone");
+        book.add("root", "gone");
+        java.util.List<String> told = new java.util.ArrayList<>();
+        book.deliver("kept", Arrays.asList("auto", "someone else"), told::add);
+        assertEquals(Collections.singletonList("auto"), told);
+        assertTrue("the vanished follower is dropped from every parent", book.of("root").isEmpty());
+        assertEquals(Collections.singletonList("auto"), book.of("kept"));
+    }
+
+    @Test public void aFollowerThatFailsWhenToldIsForgotten() {
+        SubscriptionBook<String> book = new SubscriptionBook<>();
+        book.add("kept", "auto");
+        book.add("kept", "dead");
+        java.util.List<String> told = new java.util.ArrayList<>();
+        book.deliver("kept", Arrays.asList("auto", "dead"), who -> {
+            if (who.equals("dead")) throw new IllegalStateException("binder died");
+            told.add(who);
+        });
+        assertEquals(Collections.singletonList("auto"), told);
+        assertEquals(Collections.singletonList("auto"), book.of("kept"));
+    }
 }

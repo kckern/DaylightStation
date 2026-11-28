@@ -245,16 +245,16 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
         return browser.getControllerVersion() == MediaSession.ControllerInfo.LEGACY_CONTROLLER_VERSION;
     }
 
-    /** Tells every browser following {@code parentId} to ask again: Media3's own by broadcast, legacy ones one by one. Main thread. */
+    /**
+     * Tells every browser following {@code parentId} to ask again: Media3's own by broadcast,
+     * legacy ones one by one (those no longer connected are forgotten, whether or not
+     * {@code onDisconnected} ran). The item count is passed as 0: it is unknown here, and a
+     * browser re-queries the list rather than trusting a count. Main thread.
+     */
     void childrenChanged(MediaLibrarySession session, String parentId) {
         session.notifyChildrenChanged(parentId, 0, null);
-        for (MediaSession.ControllerInfo legacy : legacyFollowers.of(parentId)) {
-            try {
-                session.notifyChildrenChanged(legacy, parentId, 0, null);
-            } catch (RuntimeException gone) {
-                legacyFollowers.removeAll(legacy);
-            }
-        }
+        legacyFollowers.deliver(parentId, session.getConnectedControllers(),
+                legacy -> session.notifyChildrenChanged(legacy, parentId, 0, null));
     }
 
     /**

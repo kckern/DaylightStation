@@ -1,6 +1,8 @@
 package net.kckern.daylight.cap.mediaservice.shell;
 
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.function.Consumer;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -36,5 +38,20 @@ final class SubscriptionBook<T> {
     List<T> of(String parent) {
         Set<T> set = byParent.get(parent);
         return set == null ? new ArrayList<T>() : new ArrayList<>(set);
+    }
+
+    /**
+     * Tells each follower of {@code parent} that is in {@code connected}, and forgets the ones
+     * that are not (or that fail when told), so the book never depends on a disconnect callback.
+     */
+    void deliver(String parent, Collection<T> connected, Consumer<T> tell) {
+        for (T who : of(parent)) {
+            if (!connected.contains(who)) { removeAll(who); continue; }
+            try {
+                tell.accept(who);
+            } catch (RuntimeException gone) {
+                removeAll(who);
+            }
+        }
     }
 }

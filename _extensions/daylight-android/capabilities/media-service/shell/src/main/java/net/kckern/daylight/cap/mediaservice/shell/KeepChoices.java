@@ -52,7 +52,16 @@ final class KeepChoices {
      * it before the keep just chosen is listed, leaving that keep waiting for Wi-Fi.
      */
     static boolean mobileOnceDone(boolean allReady, long askedAt, long now) {
-        return allReady && (askedAt <= 0 || now - askedAt > MOBILE_ONCE_GRACE_MS);
+        return !mobileOnceOn(askedAt, now) || (allReady && (askedAt <= 0 || now - askedAt > MOBILE_ONCE_GRACE_MS));
+    }
+
+    /**
+     * The flag still means something: {@code askedAt} and {@code now} are {@code elapsedRealtime}
+     * (monotonic, reset by a reboot), so a "now" before it was asked means the phone restarted
+     * since, and mobile data is not allowed any more. 0 is a flag from before the time was kept.
+     */
+    static boolean mobileOnceOn(long askedAt, long now) {
+        return askedAt <= 0 || now >= askedAt;
     }
 
     /** A sheet is needed: more than one thing to keep, or the mobile-data choice to make. */

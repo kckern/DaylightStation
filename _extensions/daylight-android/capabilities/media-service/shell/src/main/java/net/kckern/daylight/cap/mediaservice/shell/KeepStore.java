@@ -395,7 +395,7 @@ final class KeepStore {
     }
 
     private Requirements requirements(boolean cellular) {
-        boolean anyNetwork = cellular || prefs.getBoolean("cellularOnce", false);
+        boolean anyNetwork = cellular || mobileOnce();
         return new Requirements((anyNetwork ? Requirements.NETWORK : Requirements.NETWORK_UNMETERED)
                 | Requirements.DEVICE_STORAGE_NOT_LOW);
     }
@@ -432,7 +432,7 @@ final class KeepStore {
             Network n = cm.getActiveNetwork();
             NetworkCapabilities caps = n == null ? null : cm.getNetworkCapabilities(n);
             boolean connected = caps != null && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
-            return KeepRules.networkAllows(connected, cm.isActiveNetworkMetered(), onCellular || prefs.getBoolean("cellularOnce", false));
+            return KeepRules.networkAllows(connected, cm.isActiveNetworkMetered(), onCellular || mobileOnce());
         } catch (RuntimeException unknown) {
             return false;
         }
@@ -446,7 +446,7 @@ final class KeepStore {
             Network n = cm.getActiveNetwork();
             NetworkCapabilities caps = n == null ? null : cm.getNetworkCapabilities(n);
             boolean connected = caps != null && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
-            return connected && KeepChoices.offerMobileOnce(cm.isActiveNetworkMetered(), onCellular || prefs.getBoolean("cellularOnce", false));
+            return connected && KeepChoices.offerMobileOnce(cm.isActiveNetworkMetered(), onCellular || mobileOnce());
         } catch (RuntimeException unknown) {
             return false;
         }
@@ -637,7 +637,7 @@ final class KeepStore {
         start(k);
         return "Keeping " + Json.first(k.optString("title"), "this") + " on this phone · "
                 + (sized[1] > 0 ? KeepRules.needWords(need, (int) sized[1]) : KeptIndex.size(Math.max(1, need)))
-                + (onCellular || prefs.getBoolean("cellularOnce", false) ? "" : " · on Wi-Fi") + (k.optBoolean("cut") ? " · only the first 5000 tracks" : "");
+                + (onCellular || mobileOnce() ? "" : " · on Wi-Fi") + (k.optBoolean("cut") ? " · only the first 5000 tracks" : "");
     }
 
     private void start(JSONObject k) {
@@ -819,7 +819,7 @@ final class KeepStore {
 
     /** "Use mobile data once": what is waiting now goes on mobile data; the rule is back once it is all ready. */
     void useMobileDataOnce() {
-        prefs.edit().putBoolean("cellularOnce", true).putLong("cellularOnceAt", System.currentTimeMillis()).apply();
+        prefs.edit().putBoolean("cellularOnce", true).putLong("cellularOnceAt", android.os.SystemClock.elapsedRealtime()).apply();
         event("keep.mobile_once", null);
         boolean c = onCellular;
         main.post(() -> manager.setRequirements(requirements(c)));
@@ -957,7 +957,7 @@ final class KeepStore {
             groupSweep(reply.optJSONArray("items"), reply.optJSONArray("groups"), now);
             autoPendingOnWifi();
             if (prefs.getBoolean("cellularOnce", false)
-                    && KeepChoices.mobileOnceDone(allReady(), prefs.getLong("cellularOnceAt", 0), System.currentTimeMillis())) {
+                    && KeepChoices.mobileOnceDone(allReady(), prefs.getLong("cellularOnceAt", 0), android.os.SystemClock.elapsedRealtime())) {
                 prefs.edit().remove("cellularOnce").remove("cellularOnceAt").apply();
                 boolean c = onCellular;
                 main.post(() -> manager.setRequirements(requirements(c)));
@@ -2153,8 +2153,15 @@ final class KeepStore {
 
     /** A keep saved or removed is listed now, not a second from now (a car's "On this phone" waits on it). */
     private void refreshNowAt() {
-        main.removeCallbacks(refreshNow);
-        main.post(refreshNow);
+        // A group keep saves N units in a row: one refresh follows them all, a moment later.
+        if (refreshGate.arm()) main.postDelayed(() -> { refreshGate.fired(); main.removeCallbacks(refreshNow); refreshNow.run(); }, 120);
+    }
+    private final RefreshGate refreshGate = new RefreshGate();
+
+    /** "Mobile data this time" is on, and still means something (it ends when the phone restarts: KeepChoices.mobileOnceOn). */
+    private boolean mobileOnce() {
+        return prefs.getBoolean("cellularOnce", false)
+                && KeepChoices.mobileOnceOn(prefs.getLong("cellularOnceAt", 0), android.os.SystemClock.elapsedRealtime());
     }
 
     private void refreshOnce() {
