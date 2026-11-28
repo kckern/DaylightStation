@@ -1327,7 +1327,13 @@ again when you're back online"), keeps kept matches under it with **Try again** 
 them, and asks again by itself: home not answering (reasons `timeout`, `home-error`,
 `unreachable`, and the port wait running out, reason empty) after 5 s, three times; no
 validated network on the connectivity callback (`registerDefaultNetworkCallback`, while
-the search page is started). A retry belongs to the text it was planned for: changing or
+the search page is started; `NetworkEdge` counts only a not-validated or lost to validated
+change, and the first validated report after registering, as "back", and the return acts
+only on a search waiting for the network, never one on its 5 s timer, so a flapping signal
+cannot spend the tries). Which reasons are retried is a deny-list (refused, not-found,
+bad-request, unauthorized, forbidden, starting), so anything else agrees with the words
+"Home isn't answering". `SearchState` (pure) picks the line and the Try again link: only an
+ok, not-offline, empty answer says "Nothing called". A retry belongs to the text it was planned for: changing or
 clearing the text drops it, and a typed or tapped search starts the count again. The
 payload's offline lookup answer names the failed `branch` and `failure` class for the log.
 BackendHealth is not touched by searches.

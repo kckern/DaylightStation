@@ -121,7 +121,8 @@ public class MediaServiceCapabilityTest {
         api.down = true;
         JSONObject found = cap.call(new JSONObject().put("op", "lookup").put("query", "abbey")).body;
         assertEquals("search", found.getString("branch"));
-        assertFalse(found.getString("failure").isEmpty());
+        assertEquals("unreachable", found.getString("reason"));
+        assertEquals("the exception class the fake throws", "IOException", found.getString("failure"));
     }
 
     private static String recentWith(String... ids) throws Exception {

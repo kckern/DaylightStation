@@ -1555,7 +1555,7 @@ public final class MediaServiceCapability implements Capability {
         final String text = BrowseTree.searchText(raw instanceof String ? (String) raw : "");
         if (text.isEmpty()) return new Outcome(200, Replies.ok().put("groups", new JSONArray()).put("offline", false));
         JSONObject body;
-        String reason = null, failure = null;
+        String reason = null, failure = null, branch = "search";
         JSONObject remembered = lookups.get(text, clock.getAsLong());
         if (remembered != null) {
             // The same search a moment ago (typing back over a word, Back to the results): no new round trip.
@@ -1565,7 +1565,9 @@ public final class MediaServiceCapability implements Capability {
         }
         try {
             JSONObject found = api.search(text, 60);
+            branch = "kinds";
             LibraryKinds kinds = kinds();
+            branch = "groups";
             body = Lookup.groups(found, backend, 5, kinds);
             health.answered();
             // An author found by name shows their books too (at most two authors, eight books
@@ -1594,7 +1596,7 @@ public final class MediaServiceCapability implements Capability {
             failure = unreachable.getClass().getSimpleName();
         }
         JSONObject out = Replies.ok();
-        if (reason != null) out.put("reason", reason).put("branch", "search").put("failure", failure);
+        if (reason != null) out.put("reason", reason).put("branch", branch).put("failure", failure);
         for (java.util.Iterator<String> k = body.keys(); k.hasNext(); ) { String key = k.next(); out.put(key, body.get(key)); }
         return new Outcome(200, out);
     }

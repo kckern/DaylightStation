@@ -23,4 +23,18 @@ public class FailureReasonTest {
         assertEquals("unreachable", FailureReason.of(new java.net.ConnectException("refused")));
         assertEquals("unreachable", FailureReason.of(new java.io.IOException("other")));
     }
+
+    /**
+     * Contract with the shell's SearchRetryTest (same list there): these are every reason
+     * a failure can carry; the shell retries exactly the ones its words call "Home isn't answering".
+     */
+    @Test public void everyReasonThatCanBeSentIsOneTheShellClassifies() {
+        java.util.Set<String> seen = new java.util.TreeSet<>();
+        for (int status = 100; status < 600; status++) seen.add(FailureReason.ofStatus(status));
+        seen.add(FailureReason.of(new java.net.SocketTimeoutException()));
+        seen.add(FailureReason.of(new java.net.UnknownHostException()));
+        seen.add(FailureReason.of(new java.io.IOException()));
+        seen.add(FailureReason.of(new IllegalArgumentException()));
+        assertEquals(new java.util.TreeSet<>(java.util.Arrays.asList("timeout", "home-error", "unreachable", "not-found", "refused", "bad-request")), seen);
+    }
 }

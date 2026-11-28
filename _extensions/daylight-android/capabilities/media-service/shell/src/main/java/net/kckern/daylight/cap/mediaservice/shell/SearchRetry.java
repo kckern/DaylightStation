@@ -14,6 +14,8 @@ final class SearchRetry {
     static final long DELAY_MS = 5_000;
     static final int MAX = 3;
     static final int NONE = -1, ON_NETWORK = -2;
+    /** timerFired: run the retry now / nothing to run (a stale or cancelled timer). A positive value is the wait left. */
+    static final long FIRE = 0, STALE = -1;
 
     enum Waiting { NONE, TIMER, NETWORK }
 
@@ -52,27 +54,40 @@ final class SearchRetry {
         return (int) DELAY_MS;
     }
 
-    /** The planned timer fired: true once, only for the text it was planned for and not before it was due. */
-    synchronized boolean timerFired(String q) {
-        if (!q.equals(text) || waiting != Waiting.TIMER || clock.getAsLong() < dueAt) return false;
+    /**
+     * The planned timer fired: FIRE once (only for the text it was planned for, once due), the
+     * wait left when it came early (the state stays, so the caller posts it again), else STALE.
+     */
+    synchronized long timerFired(String q) {
+        if (!q.equals(text) || waiting != Waiting.TIMER) return STALE;
+        long left = dueAt - clock.getAsLong();
+        if (left > 0) return left;
         waiting = Waiting.NONE;
-        return true;
+        return FIRE;
     }
 
-    /** Connectivity returned: true once, when a retry was waiting (for the network or on its timer). */
+    /**
+     * The network came back (see NetworkEdge): true once, only for a search waiting for it. A
+     * timer wait is left alone, so a flapping connection cannot spend the tries against a down home.
+     */
     synchronized boolean networkBack(String q) {
-        if (!q.equals(text) || waiting == Waiting.NONE) return false;
+        if (!q.equals(text) || waiting != Waiting.NETWORK) return false;
         waiting = Waiting.NONE;
         return true;
     }
 
     synchronized Waiting waiting(String q) { return q.equals(text) ? waiting : Waiting.NONE; }
 
-    private static boolean retryable(String reason) {
+    /**
+     * A deny-list, so it agrees with FailureWords.cause (anything not named here is "Home isn't
+     * answering", and is asked again): what another try cannot fix is not retried.
+     */
+    static boolean retryable(String reason) {
         if (reason == null) return true;
         switch (reason) {
-            case "timeout": case "home-error": case "unreachable": case "": return true;
-            default: return false;
+            case "refused": case "not-found": case "not_found": case "bad-request": case "bad_request":
+            case "unauthorized": case "forbidden": case "starting": return false;
+            default: return true;
         }
     }
 }
