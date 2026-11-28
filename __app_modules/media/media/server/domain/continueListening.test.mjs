@@ -141,6 +141,19 @@ describe('continue listening — too short to continue', () => {
     expect(standalone('plex:727001', 17687).status).toBe('qualified');
   });
 
+  it('an item with no known length is kept, not marked short (legacy records lack a duration)', () => {
+    expect(standalone('plex:727002', 0).status).not.toBe('out');
+    const bare = rec('plex:727003');
+    delete bare.duration;
+    const out = judgeContinueGroup({
+      groupId: 'plex:727003', current: bare, display: { title: 'Item', type: 'track' }, groupRecords: [bare],
+      minListenedSec: 300, kind: 'books',
+    });
+    expect(out.status).not.toBe('out');
+    expect(totalSeconds({ standalone: true, current: bare, display: {} })).toBeNull();
+    expect(totalSeconds({ standalone: true, current: rec('plex:1', { duration: 0 }), display: { duration: 900 } })).toBe(900);
+  });
+
   it('a book counts its parts in all, short parts or not; unknown parts never drop it', () => {
     const short = [1, 2].map((n) => ({ id: `plex:10${n}`, duration: 300 }));
     expect(judge({ parts: short, current: rec('plex:102'), groupRecords: [rec('plex:102')] }))

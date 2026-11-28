@@ -203,10 +203,13 @@ export function judgeContinueGroup({
 
 /**
  * A Continue row's whole length in seconds: a standalone item's own, a book's parts summed
- * (null when its parts are not known, so a lookup that failed never drops a real book).
+ * (null when the length is not known (an item with no duration, parts not found), so a lookup that failed never drops a real book).
  */
 export function totalSeconds({ standalone, current, display = {}, parts = null }) {
-  if (standalone) return Number(current?.duration) || Number(display?.duration) || 0;
+  if (standalone) {
+    const d = Number(current?.duration) || Number(display?.duration) || 0;
+    return d > 0 ? d : null; // unknown length keeps the row, as for a book's unknown parts
+  }
   if (!Array.isArray(parts) || !parts.length) return null;
   const sum = parts.reduce((a, p) => a + (Number(p?.duration) || 0), 0);
   return sum > 0 ? sum : null;
