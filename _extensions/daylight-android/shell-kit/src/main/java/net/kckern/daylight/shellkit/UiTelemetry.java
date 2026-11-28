@@ -60,6 +60,8 @@ public final class UiTelemetry {
 
     private final Context app;
     private final TelemetryStore store;
+    /** Sends in a row that left batches; on disk, so a restarted process keeps the wait (TelemetryBackoff). */
+    private final TelemetryBackoff backoff;
     private final String session = UUID.randomUUID().toString().substring(0, 8);
     private final ExecutorService io = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "Daylight-telemetry");
@@ -73,7 +75,9 @@ public final class UiTelemetry {
 
     private UiTelemetry(Context context) {
         app = context.getApplicationContext();
-        store = new TelemetryStore(new File(app.getFilesDir(), "telemetry"));
+        File dir = new File(app.getFilesDir(), "telemetry");
+        store = new TelemetryStore(dir);
+        backoff = new TelemetryBackoff(new File(dir, "backoff.txt"));
     }
 
     /** Watch this app's activities from now on (idempotent), this one included. */
@@ -110,20 +114,19 @@ public final class UiTelemetry {
     static final String JOB_CLASS = "net.kckern.daylight.cap.widgets.shell.TelemetryJob";
     private static final int JOB_ID = 7102;
 
-    /** Runs of the job (or flushes) in a row that left batches: the next try waits longer (TelemetrySchedule). */
-    private volatile int failedRuns;
-
     private void scheduleJob() {
         try {
             android.content.ComponentName job = new android.content.ComponentName(app, JOB_CLASS);
             app.getPackageManager().getServiceInfo(job, 0);
             android.app.job.JobScheduler scheduler = app.getSystemService(android.app.job.JobScheduler.class);
             if (scheduler == null) return;
+            long wait = TelemetrySchedule.retryMs(backoff.failedRuns());
             scheduler.schedule(new android.app.job.JobInfo.Builder(JOB_ID, job)
                     .setRequiredNetworkType(android.app.job.JobInfo.NETWORK_TYPE_ANY)
-                    .setMinimumLatency(TelemetrySchedule.retryMs(failedRuns))
-                    .setBackoffCriteria(TelemetrySchedule.retryMs(failedRuns), android.app.job.JobInfo.BACKOFF_POLICY_LINEAR)
+                    .setMinimumLatency(wait)
+                    .setBackoffCriteria(wait, android.app.job.JobInfo.BACKOFF_POLICY_LINEAR)
                     .build());
+            Log.i(TAG, "telemetry job scheduled in " + (wait / 1000) + " s (failed runs " + backoff.failedRuns() + ")");
         } catch (Exception notInThisBuild) {
             // No job: the batches go when a screen next opens or a network returns.
         }
@@ -306,13 +309,14 @@ public final class UiTelemetry {
     private boolean flushNow(boolean mayStartPayload) {
         try {
             store.seal();
-            if (store.waiting() == 0) return false;
+            if (store.waiting() == 0) { backoff.ran(false); return false; }
         } catch (Exception failed) {
             Log.w(TAG, "telemetry flush: " + failed.getClass().getSimpleName());
             return true;
         }
-        // While a screen is open, or from the job, the payload may be started for this.
-        if (started > 0 || mayStartPayload) { try { ShellStart.ensure(app); } catch (RuntimeException refused) { /* sent later */ } }
+        // Only a visible screen may start the shell. The job holds it by binding
+        // (ShellStart.hold); starting a service from a job is refused on Android 12+.
+        if (started > 0) { try { ShellStart.ensure(app); } catch (RuntimeException refused) { /* sent later */ } }
         return drained(TelemetryDrain.drain(store, TelemetryDrain.port(mayStartPayload ? 15_000 : 4000)));
     }
 
@@ -322,7 +326,9 @@ public final class UiTelemetry {
 
     private boolean drained(TelemetryDrain.Result r) {
         if (r.refused > 0) Log.w(TAG, "telemetry: " + r.refused + " batch(es) refused by home; dropped");
-        failedRuns = r.left ? failedRuns + 1 : 0;
+        // Only a failure with no screen open counts: a screen's own timer retries on its own
+        // backoff, and its failures must not push the job's first retry out to 15 min.
+        if (!r.left || started == 0) backoff.ran(r.left);
         if (r.left) {
             backoffMs = Math.min(MAX_BACKOFF_MS, backoffMs * 2);
             Log.i(TAG, "telemetry kept for later: " + r.waiting + " batch(es) waiting");

@@ -21,7 +21,9 @@ public final class TelemetryJob extends JobService {
 
     @Override public boolean onStartJob(JobParameters params) {
         held = ShellStart.hold(this);
+        android.util.Log.i("Daylight-Telemetry", "telemetry job started (shell " + (held != null ? "held" : "bind refused") + ")");
         UiTelemetry.flushInBackground(this, left -> {
+            android.util.Log.i("Daylight-Telemetry", "telemetry job finished (" + (left ? "batches still held" : "nothing left") + ")");
             letGo();
             jobFinished(params, left);
         });

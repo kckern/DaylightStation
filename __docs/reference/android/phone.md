@@ -2810,16 +2810,22 @@ a repeat can be told by its event ids. Sending is tried when a screen goes to th
 background, every 30 s while one is shown (doubling to 5 min while it fails), and when
 a network comes back. With the app closed, two jobs send: when the last screen closes
 with batches held, `TelemetryJob` (widgets, one-shot, any network; again 30 s after a run
-that left some, doubling to at most 15 min apart, `TelemetrySchedule`), and the media
+that left some, doubling to at most 15 min apart, `TelemetrySchedule`; the count of failed runs
+is kept in `files/telemetry/backoff.txt` (`TelemetryBackoff`), so a killed process does not
+restart the wait at 30 s, and only a failure with no screen open counts), and the media
 service's 15-minute inbox job (`KeepJob` 7211), which sends whatever waits after its inbox
-check. Both hold the shell up by **binding** it (`ShellStart.hold`): from Android 12 a job
+check. Both hold the shell up by **binding** it (`ShellStart.hold`), and neither calls
+`ShellStart.ensure` (only a visible screen does): from Android 12 a job
 in a background process may not start a service, which is why, before shell 194, held
 batches sat on the phone until a screen next opened (`BackgroundServiceStartNotAllowedException`
 from `ShellStart.ensure`, and the inbox job never flushed). Every sender uses the same
 `TelemetryDrain`: oldest first, deleted only once accepted, stopped at the first "later",
 a batch refused for good dropped. Batches are tiny, so any network will do. The store holds at most 1 MB; past that the oldest batches go
 and the next batch reports how many events were lost. Logcat: `adb logcat -s
-Daylight-Telemetry` (`telemetry sent: n batch(es)`, `telemetry kept for later`).
+Daylight-Telemetry` (`telemetry sent: n batch(es)`, `telemetry kept for later`,
+`telemetry job started|finished`, `telemetry job scheduled in n s (failed runs k)`). To exercise the job on a
+device: `adb shell cmd jobscheduler run -f net.kckern.daylight.phone 7102` (`am force-stop` cancels the
+job; `kill -9` does not).
 
 Reading it: `context.source:android AND _msg:"ui.tap" | stats by ("data.control") count()`
 (see `__docs/reference/core/session-logging.md`).
