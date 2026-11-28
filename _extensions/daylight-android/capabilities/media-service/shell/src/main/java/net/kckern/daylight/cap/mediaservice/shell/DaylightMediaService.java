@@ -487,6 +487,7 @@ public class DaylightMediaService extends MediaLibraryService {
         events = new PlaybackEvents(player, media, io);
         events.attach();
         current = this;
+        MainLoopGuard.install();
         queue.restore();
         Log.i(TAG, "media service created");
     }
@@ -680,8 +681,13 @@ public class DaylightMediaService extends MediaLibraryService {
             @Override public List<MediaItem> resolve(String mediaId) throws Exception {
                 // A track adds alone (its list's other rows stay out); a container adds whole.
                 String id = FirstTap.alone(mediaId);
-                return NodeItems.tracks(TrackAnswer.parse(media.resolve(java.util.Collections.singletonList(id),
-                        C.INDEX_UNSET, false, false, 8000)).tracks);
+                TrackAnswer answer = TrackAnswer.parse(media.resolve(java.util.Collections.singletonList(id),
+                        C.INDEX_UNSET, false, false, 8000));
+                // Home answers a track with its whole list: only the track asked for is added.
+                List<String> ids = new java.util.ArrayList<>();
+                for (TrackAnswer.Track t : answer.tracks) ids.add(t.id);
+                int only = FirstTap.onlyTrack(mediaId, ids, answer.startIndex);
+                return NodeItems.tracks(only < 0 ? answer.tracks : answer.tracks.subList(only, only + 1));
             }
         };
     }

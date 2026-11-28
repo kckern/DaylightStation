@@ -156,6 +156,24 @@ public class MediaServiceCapabilityTest {
         assertEquals(java.util.Arrays.asList("+plex:1", "-plex:1"), api.hides);
     }
 
+    /** Home not answering: Continue shows the kept books this phone started (acceptance 212: the whole section vanished). */
+    @Test public void continueOfflineShowsTheKeptStartedBook() throws Exception {
+        org.json.JSONArray parts = new org.json.JSONArray();
+        for (int i = 1; i <= 2; i++) parts.put(new JSONObject().put("id", "plex:50" + i).put("url", "https://home.example/s/" + i)
+                .put("title", "Part " + i).put("durationMs", 2_400_000));
+        cap.kept().saveUnit("plex:50", "A Kept Book", null, parts, 1, "book", "plex:900");
+        cap.positions().keep(new JSONObject().put("assetId", "plex:501").put("seconds", 600).put("observedAt", 7));
+        api.down = true;
+        MediaServiceCapability.Outcome out = cap.call(new JSONObject().put("op", "continue"));
+        assertEquals(200, out.status);
+        assertTrue(out.body.getBoolean("offline"));
+        org.json.JSONArray items = out.body.getJSONArray("items");
+        assertEquals(1, items.length());
+        assertEquals("A Kept Book", items.getJSONObject(0).getString("title"));
+        assertEquals(600, items.getJSONObject(0).getLong("playhead"));
+        assertEquals("not home's, and not an error", 0, out.body.getInt("reviewCount"));
+    }
+
     /** A home without the route keeps the hide waiting on the phone (the card stays gone) until it is updated. */
     @Test public void aHomeWithoutTheHideRouteKeepsItWaiting() throws Exception {
         api.responses.put("recent 50", recentWith("plex:1"));

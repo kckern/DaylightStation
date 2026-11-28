@@ -3104,3 +3104,18 @@ From screenshot review of build 150 and the design sweep
   reports of one session at the real speed (lookup spec §13; the backend side is in
   `__docs/reference/media/media-app-technical.md`).
 
+## Continue offline, one-track queue adds, and a contained Media3 failure (shell 213)
+
+- **Continue offline.** With no home, the payload's `continue` op answers from the phone
+  (`OfflineContinue`): the kept books this phone started and did not finish, newest first, with
+  place and time left, `offline: true`. The Play home draws them, does not store them as the last
+  answer, and leaves out the review row. A refused or failed read (no `items`) leaves the last
+  answer on screen instead of drawing "nothing".
+- **Play next / Add to queue on a track** adds that one track (`FirstTap.onlyTrack`): home answers a
+  track with its whole list, and the queue verb picks the asked track out of it.
+- **Keep one track** names the track in "Keeping X on this phone" (`KeepRules.keepingName`).
+- **`MainLoopGuard`.** A Media3 1.1.1 controller assertion (`PlayerInfo.Builder.build` through
+  `MediaUtils.mergePlayerInfo`) killed the process once in the 212 acceptance run (a tap pending,
+  network restored); it was not reproduced in about twenty tries and its cause is not known. That
+  one failure is now logged (`a Media3 controller update was inconsistent; contained`) and the main
+  loop resumes; anything else crashes as before. If the line appears in a log, it is the lead.

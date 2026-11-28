@@ -484,13 +484,25 @@ public final class MediaServiceCapability implements Capability {
             if ("continue".equals(op)) {
                 int limit = Math.max(1, Math.min(20, request.optInt("limit", 8)));
                 flushHides();
-                Going going = continueGoing(limit + 4);
+                Going going;
+                boolean offline = false;
+                try {
+                    going = continueGoing(limit + 4);
+                    health.answered();
+                } catch (IllegalArgumentException bad) {
+                    throw bad;
+                } catch (Exception noHome) {
+                    if (noHome instanceof MediaApi.Refused && ((MediaApi.Refused) noHome).status < 500) throw noHome;
+                    // Home is not there: the books kept on this phone that it started, which play without it.
+                    health.failed(clock.getAsLong());
+                    going = new Going(OfflineContinue.rows(kept().list(), id -> positions().get(id), limit + 4), 0);
+                    offline = true;
+                }
                 // A hide home has not heard yet keeps its card away here (offline, or just tapped).
                 JSONArray items = heardHere.patch(hides().filter(going.rows), clock.getAsLong());
                 JSONArray cut = new JSONArray();
                 for (int i = 0; i < items.length() && i < limit; i++) cut.put(items.get(i));
-                health.answered();
-                return new Outcome(200, Replies.ok().put("items", cut).put("reviewCount", going.reviewCount));
+                return new Outcome(200, Replies.ok().put("items", cut).put("reviewCount", going.reviewCount).put("offline", offline));
             }
             if ("continue-review".equals(op)) {
                 JSONObject answer = api.continueReview();

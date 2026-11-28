@@ -635,7 +635,9 @@ final class KeepStore {
         }
         prefs.edit().remove("needroom." + cid).putBoolean("admitted." + cid, true).apply();
         start(k);
-        return "Keeping " + Json.first(k.optString("title"), "this") + " on this phone · "
+        JSONObject first = tracks == null ? null : tracks.optJSONObject(0);
+        return "Keeping " + KeepRules.keepingName(k.optString("title"), tracks == null ? 0 : tracks.length(),
+                first == null ? "" : first.optString("title"), "this") + " on this phone · "
                 + (sized[1] > 0 ? KeepRules.needWords(need, (int) sized[1]) : KeptIndex.size(Math.max(1, need)))
                 + (onCellular || mobileOnce() ? "" : " · on Wi-Fi") + (k.optBoolean("cut") ? " · only the first 5000 tracks" : "");
     }

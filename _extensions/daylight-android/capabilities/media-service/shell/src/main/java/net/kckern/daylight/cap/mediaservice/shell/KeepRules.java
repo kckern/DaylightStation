@@ -249,4 +249,10 @@ final class KeepRules {
     static boolean askFirst(long needBytes, long limitBytes, long freeBytes) {
         return needBytes > 0 && (needBytes > limitBytes / 4 || needBytes > freeBytes / 4);
     }
+
+    /** The name in "Keeping X on this phone": the one track when only one was kept, else the collection. */
+    static String keepingName(String collectionTitle, int trackCount, String firstTrackTitle, String fallback) {
+        if (trackCount == 1 && firstTrackTitle != null && !firstTrackTitle.isEmpty()) return firstTrackTitle;
+        return collectionTitle == null || collectionTitle.isEmpty() ? fallback : collectionTitle;
+    }
 }

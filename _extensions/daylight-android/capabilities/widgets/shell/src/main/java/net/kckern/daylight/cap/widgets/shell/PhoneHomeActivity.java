@@ -1045,7 +1045,11 @@ public class PhoneHomeActivity extends Activity {
         catch (Exception impossible) { return; }
         call("media", body, reply -> {
             org.json.JSONArray items = reply.optJSONArray("items");
-            String now = items == null ? "[]" : items.toString();
+            // A refusal is not "nothing to continue": the last answer stays.
+            if (items == null) return;
+            String now = items.toString();
+            // Offline: only what plays from this phone, drawn but never kept as the last answer.
+            if (reply.optBoolean("offline", false)) { if (into.getParent() != null) fillContinue(into, now, true); return; }
             int review = Math.max(0, reply.optInt("reviewCount", 0));
             boolean reviewChanged = review != cache.getInt("continueReview", 0);
             if ((now.equals(last) && !reviewChanged) || into.getParent() == null) return;
@@ -1054,7 +1058,9 @@ public class PhoneHomeActivity extends Activity {
         }, failure -> { /* nothing to continue is not an error; the last answer stays */ });
     }
 
-    private void fillContinue(LinearLayout into, String json) {
+    private void fillContinue(LinearLayout into, String json) { fillContinue(into, json, false); }
+
+    private void fillContinue(LinearLayout into, String json, boolean offline) {
         into.removeAllViews();
         org.json.JSONArray items;
         try { items = json == null || json.isEmpty() ? new org.json.JSONArray() : new org.json.JSONArray(json); }
@@ -1067,7 +1073,7 @@ public class PhoneHomeActivity extends Activity {
         // row offers to review them; once opened it does not come back (§13).
         android.content.SharedPreferences cache = getSharedPreferences("daylight.home", MODE_PRIVATE);
         int review = cache.getInt("continueReview", 0);
-        if (review > 0 && !cache.getBoolean("continueReviewOpened", false)) into.addView(reviewRow(review));
+        if (!offline && review > 0 && !cache.getBoolean("continueReviewOpened", false)) into.addView(reviewRow(review));
         for (int i = 0; i < items.length(); i++) {
             JSONObject item = items.optJSONObject(i);
             if (item != null) into.addView(continueCard(item));

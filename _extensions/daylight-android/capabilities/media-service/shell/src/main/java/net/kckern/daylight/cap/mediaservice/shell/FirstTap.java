@@ -55,6 +55,23 @@ final class FirstTap {
         return bar < 0 ? leafId : leafId.substring(0, bar);
     }
 
+    /**
+     * For Play next and Add to queue: which of the answer's tracks is the one asked for, when
+     * {@code askedId} is a track row ("p:<track>" or "p:<track>|<list>"); -1 for anything else
+     * (a container adds whole). Home answers a track's play with its whole list, so the one
+     * track is picked out by id, else by the answer's start index.
+     */
+    static int onlyTrack(String askedId, List<String> answerIds, int startIndex) {
+        if (askedId == null || !askedId.startsWith("p:") || answerIds == null || answerIds.isEmpty()) return -1;
+        String want = bare(alone(askedId));
+        for (int i = 0; i < answerIds.size(); i++) if (want.equals(bare(answerIds.get(i)))) return i;
+        return startIndex >= 0 && startIndex < answerIds.size() ? startIndex : 0;
+    }
+
+    private static String bare(String id) {
+        return id != null && (id.startsWith("p:") || id.startsWith("c:")) ? id.substring(2) : String.valueOf(id);
+    }
+
     /** Whether the track-alone answer may play before the list: one music track, no saved place. */
     static boolean playsAlone(int tracks, long durationMs, long startPositionMs) {
         return tracks == 1 && durationMs > 0 && durationMs < LONG_MS && startPositionMs <= 0;

@@ -131,4 +131,11 @@ public class KeepRulesTest {
         assertEquals("Waiting for the charger", KeepRules.waitingWords(androidx.media3.exoplayer.scheduler.Requirements.DEVICE_CHARGING));
         assertEquals("Waiting", KeepRules.waitingWords(0));
     }
+
+    @Test public void keepingOneTrackNamesTheTrackNotTheAlbum() {
+        assertEquals("What's Your Name?", KeepRules.keepingName("What's Your Name?", 19, "Moody Susan", "this"));
+        assertEquals("Moody Susan", KeepRules.keepingName("What's Your Name?", 1, "Moody Susan", "this"));
+        assertEquals("What's Your Name?", KeepRules.keepingName("What's Your Name?", 1, "", "this"));
+        assertEquals("this", KeepRules.keepingName("", 3, "", "this"));
+    }
 }
