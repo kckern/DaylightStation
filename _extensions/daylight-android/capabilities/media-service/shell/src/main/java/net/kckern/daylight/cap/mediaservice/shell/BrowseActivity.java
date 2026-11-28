@@ -234,6 +234,7 @@ public final class BrowseActivity extends Activity {
         if (started && detail()) fillHeader();
         started = true;
         keepShown = keepState();
+        watchNetwork();
         main.removeCallbacks(keepWatch);
         if (detail()) main.postDelayed(keepWatch, KEEP_WATCH_MS);
     }
@@ -279,6 +280,7 @@ public final class BrowseActivity extends Activity {
 
     @Override protected void onStop() {
         main.removeCallbacks(keepWatch);
+        unwatchNetwork();
         net.kckern.daylight.shellkit.NowPlayingNote.unlisten(playingChanged);
         net.kckern.daylight.shellkit.LiveDownloads.unlisten(liveKeep);
         mini.stop();
@@ -287,6 +289,7 @@ public final class BrowseActivity extends Activity {
 
     @Override protected void onDestroy() {
         super.onDestroy();
+        main.removeCallbacks(retryTimer);
         mini.release();
         io.shutdownNow();
         searchIo.shutdownNow();
@@ -459,6 +462,8 @@ public final class BrowseActivity extends Activity {
 
     private void showRecent() {
         generation++;
+        retry.cancel();
+        main.removeCallbacks(retryTimer);
         clearResults();
         JSONArray recent = recent();
         status.setText(recent.length() == 0 ? "Search the household's books, talks, music and playlists." : "Recent searches");
@@ -478,9 +483,14 @@ public final class BrowseActivity extends Activity {
         }));
     }
 
-    private void runSearch(String raw) {
+    private void runSearch(String raw) { runSearch(raw, false); }
+
+    /** @param automatic a retry the screen planned itself (the person's own search starts the count again) */
+    private void runSearch(String raw, boolean automatic) {
         final String q = raw == null ? "" : raw.trim();
         if (q.isEmpty()) { showRecent(); return; }
+        main.removeCallbacks(retryTimer);
+        if (automatic) retry.retryStarted(q); else retry.begin(q);
         final int mine = ++generation;
         status.setText("Searching…");
         searchIo.execute(() -> {
@@ -494,6 +504,70 @@ public final class BrowseActivity extends Activity {
             String why = reason;
             main.post(() -> { if (mine == generation && !isFinishing()) showResults(q, a, why); });
         });
+    }
+
+    // ── search failover: home not answering is asked again by itself, never drawn as "no results" ──
+
+    private final SearchRetry retry = new SearchRetry(android.os.SystemClock::elapsedRealtime);
+    private String retryText = "";
+    private final Runnable retryTimer = () -> {
+        if (isFinishing() || isDestroyed() || field == null) return;
+        String q = field.getText().toString().trim();
+        if (q.equals(retryText) && retry.timerFired(q)) runSearch(q, true);
+    };
+    private android.net.ConnectivityManager.NetworkCallback networkWatch;
+
+    /** Connectivity returning retries a search that was waiting for it (or on its timer). */
+    private void watchNetwork() {
+        if (networkWatch != null || !MODE_SEARCH.equals(mode)) return;
+        try {
+            android.net.ConnectivityManager cm = getSystemService(android.net.ConnectivityManager.class);
+            if (cm == null) return;
+            networkWatch = new android.net.ConnectivityManager.NetworkCallback() {
+                @Override public void onCapabilitiesChanged(android.net.Network n, android.net.NetworkCapabilities c) {
+                    if (!c.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED)) return;
+                    main.post(() -> {
+                        if (isFinishing() || isDestroyed() || field == null) return;
+                        String q = field.getText().toString().trim();
+                        if (retry.networkBack(q)) { main.removeCallbacks(retryTimer); runSearch(q, true); }
+                    });
+                }
+            };
+            cm.registerDefaultNetworkCallback(networkWatch);
+        } catch (RuntimeException cannot) {
+            networkWatch = null;
+            Log.w(TAG, "network watch unavailable: " + cannot.getClass().getSimpleName());
+        }
+    }
+
+    private void unwatchNetwork() {
+        if (networkWatch == null) return;
+        try { getSystemService(android.net.ConnectivityManager.class).unregisterNetworkCallback(networkWatch); }
+        catch (RuntimeException already) { /* not registered */ }
+        networkWatch = null;
+    }
+
+    /** Plans the next try after a failure (or an offline answer) and says so; returns what the line should add. */
+    private String planRetry(String q, net.kckern.daylight.shellkit.FailureWords.Cause cause, String reason) {
+        boolean network = cause != net.kckern.daylight.shellkit.FailureWords.Cause.OFFLINE;
+        int plan = retry.failed(q, reason, network);
+        if (plan == SearchRetry.ON_NETWORK) return " · will try again when you're back online";
+        if (plan == SearchRetry.NONE) return "";
+        retryText = q;
+        main.postDelayed(retryTimer, plan);
+        return " · trying again";
+    }
+
+    /** What failed, for the log store: the reason, the payload's branch and failure, and the plan. */
+    private void logSearchFailure(String q, JSONObject answer, String reason, int results, boolean offline, String planned) {
+        try {
+            UiTelemetry.event("Browse", "search.query", new JSONObject().put("length", q.length()).put("results", results)
+                    .put("offline", offline).put("failed", true)
+                    .put("reason", answer != null ? net.kckern.daylight.shellkit.FailureWords.reasonOf(answer) : reason)
+                    .put("branch", answer != null ? answer.optString("branch", "") : "port")
+                    .put("failure", answer != null ? answer.optString("failure", "") : "")
+                    .put("retry", planned.isEmpty() ? "none" : planned.contains("online") ? "network" : "timer"));
+        } catch (Exception ignored) { }
     }
 
     /** The cause of a failed or offline answer: what the payload said went wrong, and this phone's network. */
@@ -531,8 +605,10 @@ public final class BrowseActivity extends Activity {
         searchGroups.clear();
         if (answer == null || !answer.optBoolean("ok", false)) {
             net.kckern.daylight.shellkit.FailureWords.Cause cause = causeOf(answer, reason);
-            status.setText(net.kckern.daylight.shellkit.FailureWords.line(cause));
-            results.addView(link("Retry", "search.retry", () -> runSearch(q)));
+            String planned = cause == net.kckern.daylight.shellkit.FailureWords.Cause.STARTING ? "" : planRetry(q, cause, answer != null ? net.kckern.daylight.shellkit.FailureWords.reasonOf(answer) : reason);
+            status.setText(net.kckern.daylight.shellkit.FailureWords.line(cause) + planned);
+            logSearchFailure(q, answer, reason, 0, cause == net.kckern.daylight.shellkit.FailureWords.Cause.OFFLINE, planned);
+            results.addView(link("Try again", "search.retry", () -> runSearch(q)));
             // Typed while the app was starting up (or its code was being replaced): searched
             // again by itself the moment it is up, not left for a second tap (audit).
             if (cause == net.kckern.daylight.shellkit.FailureWords.Cause.STARTING) whenUp(() -> {
@@ -548,13 +624,22 @@ public final class BrowseActivity extends Activity {
         try { UiTelemetry.event("Browse", "search.query", new JSONObject().put("length", q.length()).put("results", count).put("offline", offline)); }
         catch (Exception ignored) { }
         // Offline answers are what is kept on this phone; the line says why home did not answer.
-        String away = offline ? net.kckern.daylight.shellkit.FailureWords.head(causeOf(answer, "")) + " · searching what's on this phone" : "";
+        net.kckern.daylight.shellkit.FailureWords.Cause offCause = offline ? causeOf(answer, "") : null;
+        String planned = offline ? planRetry(q, offCause, net.kckern.daylight.shellkit.FailureWords.reasonOf(answer)) : "";
+        if (offline) {
+            logSearchFailure(q, answer, "", count, true, planned);
+        } else {
+            retry.succeeded(q);
+        }
+        String away = offline ? net.kckern.daylight.shellkit.FailureWords.head(offCause) + " · searching what's on this phone" + planned : "";
         if (count == 0) {
+            // Only a real empty answer from home says "Nothing called"; kept-only answers say what was searched.
             status.setText(offline ? away + " · nothing kept matches \"" + q + "\"." : "Nothing called \"" + q + "\". Try fewer words.");
-            if (offline) results.addView(link("Retry", "search.retry", () -> runSearch(q)));
+            if (offline) results.addView(link("Try again", "search.retry", () -> runSearch(q)));
             return;
         }
         status.setText(away);
+        if (offline) results.addView(link("Try again", "search.retry", () -> runSearch(q)));
         // The group asked for (Now playing's album or artist line) comes first.
         List<JSONObject> ordered = new ArrayList<>();
         for (int g = 0; groups != null && g < groups.length(); g++) {

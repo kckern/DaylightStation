@@ -1555,7 +1555,7 @@ public final class MediaServiceCapability implements Capability {
         final String text = BrowseTree.searchText(raw instanceof String ? (String) raw : "");
         if (text.isEmpty()) return new Outcome(200, Replies.ok().put("groups", new JSONArray()).put("offline", false));
         JSONObject body;
-        String reason = null;
+        String reason = null, failure = null;
         JSONObject remembered = lookups.get(text, clock.getAsLong());
         if (remembered != null) {
             // The same search a moment ago (typing back over a word, Back to the results): no new round trip.
@@ -1591,9 +1591,10 @@ public final class MediaServiceCapability implements Capability {
             body = Lookup.offline(kept().list(), text);
             // Why home did not answer: the phone says "Home isn't answering", not "Offline", for a slow home.
             reason = FailureReason.of(unreachable);
+            failure = unreachable.getClass().getSimpleName();
         }
         JSONObject out = Replies.ok();
-        if (reason != null) out.put("reason", reason);
+        if (reason != null) out.put("reason", reason).put("branch", "search").put("failure", failure);
         for (java.util.Iterator<String> k = body.keys(); k.hasNext(); ) { String key = k.next(); out.put(key, body.get(key)); }
         return new Outcome(200, out);
     }

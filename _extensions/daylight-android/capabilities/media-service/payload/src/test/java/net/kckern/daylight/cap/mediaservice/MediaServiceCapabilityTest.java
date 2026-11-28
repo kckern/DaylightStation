@@ -116,6 +116,14 @@ public class MediaServiceCapabilityTest {
         assertEquals("unreachable", library.body.getString("reason"));
     }
 
+    /** The log store must be able to say which branch of the search failed and how (shell logs search.query with these). */
+    @Test public void aFailedSearchNamesTheBranchThatFailedAndTheFailure() throws Exception {
+        api.down = true;
+        JSONObject found = cap.call(new JSONObject().put("op", "lookup").put("query", "abbey")).body;
+        assertEquals("search", found.getString("branch"));
+        assertFalse(found.getString("failure").isEmpty());
+    }
+
     private static String recentWith(String... ids) throws Exception {
         org.json.JSONArray items = new org.json.JSONArray();
         for (String id : ids) items.put(new JSONObject().put("contentId", id).put("title", "Book " + id).put("type", "track")

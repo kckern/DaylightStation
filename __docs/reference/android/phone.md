@@ -1320,6 +1320,18 @@ and picks the words (shell-kit `FailureWords`):
 | 404 | "Not found at home" |
 | 401 / 403 | "Home refused this phone" |
 
+**Search failover** (shell 208, `SearchRetry`, pure and clock-injected): a search whose
+answer did not come is never drawn as "No results" (that line is only a real empty answer
+from home). It says why ("Home isn't answering · trying again", or "Offline · will try
+again when you're back online"), keeps kept matches under it with **Try again** above
+them, and asks again by itself: home not answering (reasons `timeout`, `home-error`,
+`unreachable`, and the port wait running out, reason empty) after 5 s, three times; no
+validated network on the connectivity callback (`registerDefaultNetworkCallback`, while
+the search page is started). A retry belongs to the text it was planned for: changing or
+clearing the text drops it, and a typed or tapped search starts the count again. The
+payload's offline lookup answer names the failed `branch` and `failure` class for the log.
+BackendHealth is not touched by searches.
+
 Browse uses them for a level, the library, search ("Home isn't answering · searching
 what's on this phone"), More and a book's progress line; Keep's preview and keep say
 "Offline: it will be kept when home answers", "Home isn't answering: it will be kept
@@ -1631,8 +1643,9 @@ reports its item again (`onStartCommand`), and the bar comes back.
 | `continue-hide` `{contentId, hidden}` | `{hidden, sent}` | `POST`/`DELETE /api/v1/media/household/continue/hide` |
 | `book-finished` `{contentId, finished}` | `{marked, book, parts}` | `GET /api/v1/info`, `GET /api/v1/list`, `POST …/watched`, the hide |
 
-Telemetry: `browse.view` (kind), `search.query` (length, result count, offline: never
-the words), `browse.action` (verb, kind), `browse.swipe` (kind, direction, edge),
+Telemetry: `browse.view` (kind), `search.query` (length, result count, offline; on a
+failed search also `failed`, `reason`, `branch`, `failure`, `retry` (none, timer, network):
+never the words), `browse.action` (verb, kind), `browse.swipe` (kind, direction, edge),
 `continue.hide`, `continue.unhide`, `continue.finished`, `mini.open`, `mini.toggle`,
 `mini.dismiss` (screen), and a tag on every row and button.
 
