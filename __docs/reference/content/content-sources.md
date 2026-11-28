@@ -110,7 +110,7 @@ Tiers let the frontend get fast results first and defer expensive work until the
 |--------|--------|--------|------------|
 | **plex** | `hubSearch()` only → filter to show/movie/artist/album/collection → return without hydration (~300ms) | Full: hubSearch + `_searchPlaylists` + `_searchCollections` + `getItem()` per result (~8-18s) | 30-80x fewer API calls |
 | **immich** | Same as tier 2 | 4 parallel searches (assets, people, tags, albums) (~50-200ms) | No difference — already fast |
-| **audiobookshelf** | Same as tier 2 | One native search per library, in parallel (books + authors, ~5-200ms) | No difference — already fast |
+| **audiobookshelf** | Same as tier 2 | Local index of each library (built at boot, 1 h TTL; ~5-20ms) | No difference — already fast |
 | **filesystem** | Same as tier 2 | Local file scan (~<50ms) | No difference — local I/O |
 
 Adapters that are already fast (<500ms) ignore the tier parameter and always do their full search. Only adapters with expensive multi-phase search need to differentiate.
@@ -192,7 +192,7 @@ Connects to an Audiobookshelf server. A single ABS instance can produce both pla
 - **Config**: host, API key
 - **Resume**: Audiobooks use seconds-based playhead. Ebooks use EPUB CFI (Canonical Fragment Identifiers). 90% = complete.
 - **Container aliases**: `libraries`, `authors`, `series`, `narrators`
-- **Search**: one `/api/libraries/:id/search` per library, in parallel; it answers books and authors together. The library list is cached for 10 minutes. Only an author with no picture is fetched (`/api/authors/:id?include=items`) to borrow a book cover. Never download a library's author list per search: it is ~13 MB here and cost 1.4 s alone, 6 s (the `abs` budget) beside the other sources.
+- **Search**: matches a local index per library: every item's title, subtitle, author, series and narrator (minified item list fetched in pages of 1000, so the server keeps answering between pages) plus the library's author list. Built at boot (`prepareSearch`, ~14 s for ~31k items, ~28 MB), reused for 1 hour, an older index served while the next builds. Until the first build is done, the server's own `/api/libraries/:id/search` answers (books and authors in one request). An author with no picture borrows the cover of their first book in the index. The library list is cached for 10 minutes. Why: the server's search costs ~0.5 s per library for a new word and serves one request at a time (~0.9-1.3 s per everything search), and the older code downloaded each library's whole author list (~13 MB) per search (6 s, the `abs` budget, under load). Search rows carry no descriptions; the info view reads the full item by id.
 
 ### komga
 
@@ -229,7 +229,7 @@ Reads files from the local filesystem. Behavior varies by `content_format` confi
   searches never walk the tree per keystroke — per-search walks of ~450k entries starved the other sources (photo libraries
   timed out at 3 s only while a walk ran). Excluded by default: `video/fitness/` and `fitness/` (workout footage and session
   snapshots); `files.includeExcluded=true` searches them with a direct walk. Override the list with `mediaSearchExcludePaths`.
-- **Index at boot**: boot calls `ContentQueryService.prepareSearch()` without waiting; every adapter with a `prepareSearch()` (`files`, `singalong`) builds its index then, logged as `content-query.search-index.ready` `{source, buildMs, entries}` (or `.failed`). A `files` search that arrives during the first build waits up to 1.5 s, then matches the names walked so far and returns `partial: true` — never a timeout.
+- **Index at boot**: boot calls `ContentQueryService.prepareSearch()` without waiting; every adapter with a `prepareSearch()` (`files`, `singalong`, `abs`) builds its index then, logged as `content-query.search-index.ready` `{source, buildMs, entries}` (or `.failed`). A `files` search that arrives during the first build waits up to 1.5 s, then matches the names walked so far and returns `partial: true` — never a timeout.
 - **Search (`singalong` source)**: matches titles and numbers in an index of `{collection, number, title}` (TTL 10 minutes, stale served while rebuilding); only the matches are built with `getItem`, each once per index. Building every song per search (~650 YAML + audio scans + MP3 header reads) took ~1 s alone and 8 s (its budget) beside the other sources.
 
 #### Data/Media Path Split

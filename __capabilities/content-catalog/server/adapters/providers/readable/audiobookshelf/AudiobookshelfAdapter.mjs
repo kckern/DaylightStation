@@ -16,10 +16,22 @@ import { InfrastructureError } from '#system/utils/errors/index.mjs';
 // How long the server's library list is reused by search.
 const LIBRARIES_TTL_MS = 10 * 60 * 1000;
 
+// Search matches a local index of each library (every item's title, subtitle,
+// author, series and narrator, plus the author list) instead of asking the
+// server. The server's own search costs ~0.5 s per library for a word it has
+// not seen and runs one request at a time, so an everything search waited
+// ~0.9-1.3 s on it. The index is fetched in pages (the server keeps answering
+// other requests between them), built at boot, reused this long, and an older
+// index is served while the next builds. Until the first build is done the
+// server's search answers.
+const LIBRARY_INDEX_TTL_MS = 60 * 60 * 1000;
+const LIBRARY_INDEX_PAGE = 1000;
+
 export class AudiobookshelfAdapter {
   #client;
   #proxyPath;
   #librariesCache = null;
+  #libraryIndexes = new Map();
 
   /**
    * @param {Object} config
@@ -310,11 +322,7 @@ export class AudiobookshelfAdapter {
           const itemsData = await this.#client.getLibraryItems(lib.id, { limit: 100 });
           return { items: itemsData.results || [], authors: [] };
         }
-        const searchData = await this.#client.searchLibrary(lib.id, searchText, Math.max(25, skip + take));
-        return {
-          items: (searchData.book || []).map(b => b.libraryItem).filter(Boolean),
-          authors: searchData.authors || []
-        };
+        return this.#searchLibrary(lib.id, searchText, Math.max(25, skip + take));
       }));
 
       const matchingAuthors = searchText
@@ -336,6 +344,142 @@ export class AudiobookshelfAdapter {
       console.error('[AudiobookshelfAdapter] search error:', err.message);
       return { items: [], total: 0 };
     }
+  }
+
+  /**
+   * One library's matches: from its local index when one is built, else from
+   * the server's search (one request answers books and authors together).
+   * @param {string} libraryId
+   * @param {string} searchText
+   * @param {number} limit - Max books and max authors (the server's own cap)
+   * @returns {Promise<{items: Array, authors: Array}>}
+   */
+  async #searchLibrary(libraryId, searchText, limit) {
+    const index = this.#libraryIndex(libraryId);
+    if (!index) {
+      const searchData = await this.#client.searchLibrary(libraryId, searchText, limit);
+      return {
+        items: (searchData.book || []).map(b => b.libraryItem).filter(Boolean),
+        authors: searchData.authors || []
+      };
+    }
+    const needle = searchText.toLowerCase();
+    const items = [];
+    for (const entry of index.items) {
+      if (entry.hay.includes(needle)) {
+        items.push(entry.item);
+        if (items.length >= limit) break;
+      }
+    }
+    const authors = [];
+    for (const author of index.authors) {
+      if (author.nameLower.includes(needle)) {
+        authors.push(author.record);
+        if (authors.length >= limit) break;
+      }
+    }
+    return { items, authors };
+  }
+
+  /**
+   * The built index of a library (fresh or stale), or null before its first
+   * build. Starts a build when there is none or it is stale; never waits.
+   * @param {string} libraryId
+   * @returns {Object|null}
+   */
+  #libraryIndex(libraryId) {
+    const state = this.#libraryIndexes.get(libraryId) ?? {};
+    const fresh = state.index && Date.now() - state.builtAt < LIBRARY_INDEX_TTL_MS;
+    if (!fresh && !state.building) this.#startLibraryIndex(libraryId, state);
+    return state.index ?? null;
+  }
+
+  #startLibraryIndex(libraryId, state = this.#libraryIndexes.get(libraryId) ?? {}) {
+    const building = this.#buildLibraryIndex(libraryId).then((index) => {
+      this.#libraryIndexes.set(libraryId, { index, builtAt: Date.now(), building: null });
+      return index;
+    }, (error) => {
+      this.#libraryIndexes.set(libraryId, { ...this.#libraryIndexes.get(libraryId), building: null });
+      throw error;
+    });
+    building.catch(() => {});
+    this.#libraryIndexes.set(libraryId, { ...state, building });
+    return building;
+  }
+
+  /**
+   * Fetch a library's items (minified, in pages) and authors into a search
+   * index. Each item keeps only what a search row shows (no descriptions: the
+   * info view reads the full item by id).
+   * @param {string} libraryId
+   * @returns {Promise<{items: Array<{item: Object, hay: string}>, authors: Array}>}
+   */
+  async #buildLibraryIndex(libraryId) {
+    const items = [];
+    const coverByAuthor = new Map();
+    for (let page = 0; ; page++) {
+      const data = await this.#client.getLibraryItems(libraryId, { limit: LIBRARY_INDEX_PAGE, page, minified: true });
+      const results = data?.results || [];
+      for (const raw of results) {
+        const media = raw.media || {};
+        const metadata = media.metadata || {};
+        const item = {
+          id: raw.id,
+          libraryId: raw.libraryId || libraryId,
+          media: {
+            numAudioFiles: media.numAudioFiles || 0,
+            duration: media.duration || null,
+            ...(media.ebookFormat || media.ebookFile ? { ebookFile: { ebookFormat: media.ebookFormat || media.ebookFile?.ebookFormat } } : {}),
+            metadata: {
+              title: metadata.title || null,
+              authorName: metadata.authorName || null,
+              narratorName: metadata.narratorName || null,
+              seriesName: metadata.seriesName || null
+            }
+          }
+        };
+        const hay = [metadata.title, metadata.subtitle, metadata.authorName, metadata.seriesName, metadata.narratorName]
+          .filter(Boolean).join('\u0001').toLowerCase();
+        items.push({ item, hay });
+        for (const name of String(metadata.authorName || '').split(',')) {
+          const key = name.trim().toLowerCase();
+          if (key && !coverByAuthor.has(key)) coverByAuthor.set(key, raw.id);
+        }
+      }
+      if (results.length < LIBRARY_INDEX_PAGE) break;
+    }
+    const authorsData = await this.#client.getAuthors(libraryId);
+    const authors = (authorsData?.authors || []).filter(a => a?.id && a.name).map((a) => {
+      const coverItemId = coverByAuthor.get(a.name.toLowerCase());
+      return {
+        nameLower: a.name.toLowerCase(),
+        record: {
+          id: a.id,
+          name: a.name,
+          imagePath: a.imagePath || null,
+          numBooks: a.numBooks || 0,
+          asin: a.asin || null,
+          ...(coverItemId ? { libraryItems: [{ id: coverItemId }] } : {})
+        }
+      };
+    });
+    return { items, authors };
+  }
+
+  /**
+   * Build every library's search index ahead of the first search (called at
+   * boot, not awaited). Libraries are fetched one after another.
+   * @returns {Promise<{entries: number}>}
+   */
+  async prepareSearch() {
+    const libraries = await this.#libraries();
+    let entries = 0;
+    for (const lib of libraries) {
+      const state = this.#libraryIndexes.get(lib.id) ?? {};
+      const index = await (state.building || this.#startLibraryIndex(lib.id, state));
+      entries += index.items.length;
+    }
+    return { entries };
   }
 
   /**
@@ -371,7 +515,7 @@ export class AudiobookshelfAdapter {
       });
 
       const withBooks = await Promise.all(matching.map(async (author) => {
-        if (author.imagePath) return author;
+        if (author.imagePath || author.libraryItems?.length) return author;
         try {
           return { ...author, ...(await this.#client.getAuthor(author.id)) };
         } catch {
