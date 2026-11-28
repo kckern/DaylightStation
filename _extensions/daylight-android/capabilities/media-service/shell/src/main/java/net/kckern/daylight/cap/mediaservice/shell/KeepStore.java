@@ -343,7 +343,7 @@ final class KeepStore {
                 // A stop of the stall remedy's that outlived the process (killed between its two steps) would strand the
                 // download: a person's Pause carries its own reason, so every reason of the remedy's is ours to undo.
                 for (Download d : m.getCurrentDownloads()) {
-                    if (d.stopReason == STOP_RESTART) m.setStopReason(d.request.id, Download.STOP_REASON_NONE);
+                    if (d.stopReason == STOP_RESTART) m.setStopReason(d.request.id, StallGuard.restoreReason(pausedByPerson(d.request.id)));
                 }
                 refreshSoon();
             }
@@ -1220,6 +1220,15 @@ final class KeepStore {
         });
     }
 
+    /** Whether the person paused the item this download belongs to (read from the index file, the layout may not be built yet). */
+    private boolean pausedByPerson(String key) {
+        for (Map.Entry<String, ?> e : prefs.getAll().entrySet()) {
+            if (!e.getKey().startsWith("paused.") || !Boolean.TRUE.equals(e.getValue())) continue;
+            if (keysOf(e.getKey().substring("paused.".length())).contains(key)) return true;
+        }
+        return false;
+    }
+
     private String cidOfKey(String key) {
         for (Map.Entry<String, Layout> en : layout.entrySet()) if (en.getValue().keys.contains(key)) return en.getKey();
         return null;
@@ -1350,7 +1359,8 @@ final class KeepStore {
         }
         liveLine = line;
         LiveDownloads.publish(out);
-        return moving;
+        // A remedy holding a stop keeps the tick alive, whatever the second's work did.
+        return moving || !fixes.isEmpty();
     }
 
     /** One step of a stall's remedy (main thread). */
@@ -1401,7 +1411,7 @@ final class KeepStore {
             if (!moving.isEmpty()) {
                 Fix fx = fixes.get(contentId);
                 if (fx == null) { fx = new Fix(); fixes.put(contentId, fx); }
-                fx.keys = moving;
+                fx.keys = StallGuard.union(fx.keys, moving);
                 fx.remedy.restart(SystemClock.elapsedRealtime());
                 readded.remove(contentId);
                 liveTickSoon();

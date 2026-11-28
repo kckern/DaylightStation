@@ -42,4 +42,10 @@ public class StallGuardTest {
         assertFalse("no download at all", StallGuard.readdAllowed(-1, true));
         assertFalse("no longer kept", StallGuard.readdAllowed(Download.STATE_DOWNLOADING, false));
     }
+
+    @Test public void aRestartMergesTheKeysAlreadyStoppedWithTheOnesStillMoving() {
+        java.util.List<String> merged = StallGuard.union(java.util.Arrays.asList("a", "b"), java.util.Arrays.asList("b", "c"));
+        assertEquals(java.util.Arrays.asList("a", "b", "c"), merged);
+        assertEquals(java.util.Arrays.asList("x"), StallGuard.union(java.util.Collections.<String>emptyList(), java.util.Arrays.asList("x")));
+    }
 }

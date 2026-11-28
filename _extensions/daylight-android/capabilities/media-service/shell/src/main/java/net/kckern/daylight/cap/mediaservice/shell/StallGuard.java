@@ -37,4 +37,11 @@ final class StallGuard {
         return downloadState == Download.STATE_DOWNLOADING || downloadState == Download.STATE_STOPPED
                 || downloadState == Download.STATE_QUEUED;
     }
+
+    /** The keys of an episode already running plus new ones, in order, none twice (a restart must not forget what is stopped). */
+    static java.util.List<String> union(java.util.List<String> have, java.util.List<String> more) {
+        java.util.List<String> out = new java.util.ArrayList<>(have);
+        for (String k : more) if (!out.contains(k)) out.add(k);
+        return out;
+    }
 }
