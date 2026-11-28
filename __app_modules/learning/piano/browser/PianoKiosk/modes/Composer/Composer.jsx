@@ -21,7 +21,7 @@ import getLogger from '../../../../../../../frontend/src/lib/logging/Logger.js';
 import { usePianoKioskConfig } from '../../PianoConfig.jsx';
 import { usePianoBreadcrumbBar } from '../../PianoBreadcrumbContext.jsx';
 import { usePianoUser } from '../../PianoUserContext.jsx';
-import { useCompositionsApi } from './useCompositionsApi.js';
+import { createCompositionsApi } from './useCompositionsApi.js';
 import { parseMusicXml, makeEmptyScore } from './model/index.js';
 import { Gallery } from './Gallery.jsx';
 import { EditorSurface } from './EditorSurface.jsx';
@@ -58,7 +58,7 @@ export function Composer() {
   const { setCrumbs } = usePianoBreadcrumbBar();
   const { currentUser } = usePianoUser();
   const persistent = isPersistentUser(currentUser);
-  const realApi = useCompositionsApi(currentUser, logger);
+  const realApi = useMemo(() => createCompositionsApi(currentUser, logger), [currentUser, logger]);
   const api = persistent ? realApi : GUEST_API;
   const [view, setView] = useState('editor'); // 'editor' | 'gallery'
   const [open, setOpen] = useState(() => makeDraft()); // { key, id, title, score, revision }

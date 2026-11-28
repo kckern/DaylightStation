@@ -5,7 +5,7 @@ import getLogger, { getRecentEvents } from '../../../../../../../frontend/src/li
 // Mock the piano contexts + api so the mode renders headless.
 vi.mock('../../PianoConfig.jsx', () => ({ usePianoKioskConfig: () => ({ config: { composer: {} } }) }));
 vi.mock('../../PianoBreadcrumbContext.jsx', () => ({ usePianoBreadcrumbBar: () => ({ setCrumbs: vi.fn() }) }));
-vi.mock('./useCompositionsApi.js', () => ({ useCompositionsApi: () => ({ list: vi.fn().mockResolvedValue([]), get: vi.fn(), create: vi.fn(), save: vi.fn() }) }));
+vi.mock('./useCompositionsApi.js', () => ({ createCompositionsApi: () => ({ list: vi.fn().mockResolvedValue([]), get: vi.fn(), create: vi.fn(), save: vi.fn() }) }));
 // Real active-user hook (grepped from Studio.jsx / Studio.test.jsx): usePianoUser()
 // from PianoUserContext.jsx returns { currentUser }, not { userId }. Mutable so
 // individual tests (Guest (F2)) can swap the active identity per-test.

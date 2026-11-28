@@ -6,7 +6,12 @@ import getLogger from '../../../../../../../frontend/src/lib/logging/Logger.js';
 // debug, success/failure at info/error with elapsed ms + a size hint) so the
 // network leg of any "didn't save / didn't load" report is visible in the same
 // log stream as the UI events, and slow calls are obvious by `ms`.
-export function useCompositionsApi(userId, logger) {
+//
+// It returns fresh functions on every call, so a component must hold ONE
+// instance (useMemo on userId): Gallery re-lists whenever `list` changes
+// identity, and an unmemoized api re-listed on every Composer render, 45
+// times in one second on the tablet (2026-11-27).
+export function createCompositionsApi(userId, logger) {
   const log = logger || getLogger().child({ component: 'composer-api' });
   const base = `/api/v1/piano/users/${userId}/compositions`;
 
@@ -49,3 +54,6 @@ export function useCompositionsApi(userId, logger) {
     },
   };
 }
+
+// Back-compat name; still a plain factory, not a hook.
+export const useCompositionsApi = createCompositionsApi;
