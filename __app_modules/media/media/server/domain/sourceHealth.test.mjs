@@ -1,10 +1,10 @@
-import {
-  rescanFolderFor, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   SOURCE_STATE,
   classifyPlexParts,
   composeSourceUnreadablePush,
   parsePlexRatingKey,
+  rescanFolderFor,
 } from "./sourceHealth.mjs";
 import { findPushTextDefects } from "../../../../../__backend/src/2_domains/notification/push/pushText.mjs";
 
