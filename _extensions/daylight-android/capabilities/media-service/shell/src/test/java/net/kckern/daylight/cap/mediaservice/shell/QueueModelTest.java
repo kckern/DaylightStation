@@ -339,14 +339,20 @@ public class QueueModelTest {
     }
 
     @Test public void aSnapshotKeepsShuffleRepeatAndTheSourceOrder() {
-        playAlbum("a", 4);
+        playAlbum("a", 6);
+        assertTrue(q.setShuffle(true));
+        assertTrue(q.shuffled());
         q.setRepeat(Repeat.ALL);
         List<String> all = new ArrayList<>(q.sourceAll());
+        List<String> order = new ArrayList<>(q.items());
         QueueModel.QueueSnapshot<String> snap = q.queueSnapshot();
         q.clearAll();
+        assertFalse("clear all turns shuffle off", q.shuffled());
         assertTrue(q.restoreQueueSnapshot(snap, 0));
+        assertTrue(q.shuffled());
         assertEquals(Repeat.ALL, q.repeat());
         assertEquals(all, q.sourceAll());
+        assertEquals("the shuffled order, not the source's", order, q.items());
     }
 
     @Test public void aSnapshotDoesNotRestoreOverANewQueue() {

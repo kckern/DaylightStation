@@ -346,6 +346,7 @@ final class QueueStage {
         if (!isNow || q == null) row.addView(menu, new LinearLayout.LayoutParams(dp(40), dp(48)));
         UiTelemetry.tag(row, isNow ? "queue.current" : r.region == Region.HISTORY ? "queue.history-row" : "queue.row");
         row.setOnTouchListener(new SwipeTap(row, r));
+        net.kckern.daylight.shellkit.MoreOptions.attach(row, String.valueOf(name), () -> rowSheet(r));
         return row;
     }
 
@@ -505,7 +506,7 @@ final class QueueStage {
         SwipeTap(View row, Row r) {
             this.row = row;
             this.r = r;
-            this.longPress = () -> { longDone = true; rowSheet(r); };
+            this.longPress = () -> { longDone = true; row.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS); rowSheet(r); };
         }
 
         @Override public boolean onTouch(View v, MotionEvent e) {

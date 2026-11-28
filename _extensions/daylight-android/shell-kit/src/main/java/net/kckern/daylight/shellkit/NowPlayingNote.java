@@ -27,6 +27,9 @@ public final class NowPlayingNote {
         default boolean restore(Object token) { return false; }
     }
 
+    /** How long the Undo line after Stop and clear stays up; the service's undo window is a little longer. */
+    public static final long UNDO_SNACK_MS = 6000;
+
     /** {@link Transport#stopAndClear}'s answer for a stop that cannot be undone. */
     public static final Object NO_UNDO = new Object();
 

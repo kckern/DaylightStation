@@ -776,10 +776,11 @@ final class QueueModel<T> {
     /** Puts a snapshot back; only into an empty queue (false once anything else was loaded). */
     boolean restoreQueueSnapshot(QueueSnapshot<T> s, long positionMs) {
         if (s == null || s.entries.isEmpty() || !list.isEmpty()) return false;
-        restore(new ArrayList<>(s.entries), s.now, positionMs, s.label, s.sourceId, s.sourceLong, s.shuffled, s.repeat, s.all);
+        // All the state first: restore() tells the player and counts the change.
         sourceTag = s.sourceTag;
         beforeOne = s.beforeOne;
         radioBlocked = s.radioBlocked;
+        restore(new ArrayList<>(s.entries), s.now, positionMs, s.label, s.sourceId, s.sourceLong, s.shuffled, s.repeat, s.all);
         return true;
     }
 

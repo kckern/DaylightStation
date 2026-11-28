@@ -59,7 +59,7 @@ public final class MiniPlayer {
     private String artUrl = "", dismissed = "";
     private int accent = CoverColor.NONE;
     private long pressedAt = -1;
-    private boolean flipped, up, listening;
+    private boolean flipped, up, listening, longFired;
     private float downY;
     private final NowPlayingNote.Listener changed = () -> main.post(this::draw);
 
@@ -110,6 +110,11 @@ public final class MiniPlayer {
         bar.addView(row, new LinearLayout.LayoutParams(-1, -2));
         bar.setOnClickListener(v -> open("tap"));
         bar.setOnLongClickListener(v -> longPress());
+        // TalkBack: the same sheet as the long-press, named for what is playing.
+        MoreOptions.attach(bar, () -> {
+            NowPlayingNote.Entry now = NowPlayingNote.current();
+            return now == null ? "" : now.title;
+        }, this::longPress);
         bar.setOnTouchListener(this::swipe);
         UiTelemetry.tag(bar, "mini.open");
         paint();
@@ -220,9 +225,6 @@ public final class MiniPlayer {
     /** The extra that makes Now playing open its target picker (Play on…); NowPlayingActivity reads it. */
     public static final String EXTRA_PICKER = "np.picker";
 
-    /** How long the Undo after Stop and clear stays up. */
-    private static final long UNDO_MS = 6000;
-
     /**
      * Long-press: the item sheet (the item, Open Now playing, Play on…, and last the
      * destructive Stop). Stop and clear acts on this entry's own target: this phone's queue,
@@ -232,6 +234,7 @@ public final class MiniPlayer {
         NowPlayingNote.Entry e = NowPlayingNote.current();
         if (e == null || e.title.isEmpty()) return false;
         bar.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+        longFired = true;
         event("mini.long-press", "target", "local".equals(e.target) ? "local" : "screen");
         boolean playing = MiniPlayerState.playing(e, pressedAt, flipped);
         final NowPlayingNote.Transport transport = e.transport;
@@ -259,19 +262,33 @@ public final class MiniPlayer {
     }
 
     private void stopAndClear(NowPlayingNote.Transport transport, String target, String targetName, String row) {
+        android.widget.FrameLayout host = activity.findViewById(android.R.id.content);
+        int inset = belowBar(host);
         Object token = transport.stopAndClear();
         event("mini.stop", "row", row);
-        if (token == null) return;
+        if (token == null) {
+            // Nothing could stop it: never leave the bar up without a word.
+            if (host != null) Snack.show(host, t, "Couldn't stop it", null, null, 3000, inset);
+            return;
+        }
         // The bar goes now; the service's own report agrees a moment later.
         if ("local".equals(target)) NowPlayingNote.update(target, targetName, "", false, SystemClock.elapsedRealtime());
         if (!MiniPlayerMenu.undoable(row) || token == NowPlayingNote.NO_UNDO) return;
-        android.widget.FrameLayout host = activity.findViewById(android.R.id.content);
         if (host == null) return;
         Snack.show(host, t, "Stopped and cleared", "Undo", () -> {
             boolean ok = transport.restore(token);
             event("mini.undo", "ok", String.valueOf(ok));
-            if (!ok) Snack.show(host, t, "Couldn't bring it back", null, null, 3000);
-        }, UNDO_MS);
+            if (!ok) Snack.show(host, t, "Couldn't bring it back", null, null, 3000, inset);
+        }, NowPlayingNote.UNDO_SNACK_MS, inset);
+    }
+
+    /** How far the bar's bottom edge is above the screen content's bottom (a bottom nav under it), so a line can sit there. */
+    private int belowBar(android.widget.FrameLayout host) {
+        if (host == null || bar.getHeight() == 0) return 0;
+        int[] b = new int[2], h = new int[2];
+        bar.getLocationInWindow(b);
+        host.getLocationInWindow(h);
+        return Math.max(0, (h[1] + host.getHeight()) - (b[1] + bar.getHeight()));
     }
 
     /** Tap or swipe up: Now playing on that target, rising from the bar, drawn from the same entry. */
@@ -286,13 +303,15 @@ public final class MiniPlayer {
 
     private boolean swipe(View v, MotionEvent m) {
         switch (m.getActionMasked()) {
-            case MotionEvent.ACTION_DOWN: downY = m.getRawY(); return false;
+            case MotionEvent.ACTION_DOWN: downY = m.getRawY(); longFired = false; return false;
             case MotionEvent.ACTION_MOVE: {
                 float dy = m.getRawY() - downY;
                 if (dy > 0) bar.setTranslationY(dy);
                 return Math.abs(dy) > dp(12);
             }
             case MotionEvent.ACTION_UP: {
+                // The finger that long-pressed lifting (maybe after drifting) is not a swipe.
+                if (longFired) { longFired = false; bar.animate().translationY(0).setDuration(120).start(); return true; }
                 float dy = m.getRawY() - downY;
                 if (dy < -dp(24)) { bar.setTranslationY(0); open("swipe"); return true; }
                 if (dy > dp(28)) {

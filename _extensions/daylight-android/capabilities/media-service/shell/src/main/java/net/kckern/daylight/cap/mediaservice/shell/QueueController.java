@@ -76,8 +76,8 @@ final class QueueController implements QueueModel.Sink<MediaItem> {
     private String status = "";
     private long statusAt;
     private boolean restoring;
-    /** The Stop and clear that can still be undone; while it is, the saved copy is not rewritten. */
-    private StopUndo<MediaItem> held;
+    /** The latest Stop and clear, in memory only (a lost process loses the Undo, and the queue stays cleared). */
+    private StopUndo<MediaItem> lastStop;
     private final Runnable save = this::saveNow;
     private final Runnable positionTick = this::positionTick;
 
@@ -111,8 +111,6 @@ final class QueueController implements QueueModel.Sink<MediaItem> {
     QueueModel<MediaItem> model() { return model; }
 
     void release() {
-        main.removeCallbacks(releaseHold);
-        held = null;
         main.removeCallbacks(save);
         main.removeCallbacks(positionTick);
         saveNow();
@@ -212,9 +210,8 @@ final class QueueController implements QueueModel.Sink<MediaItem> {
 
     /**
      * The mini player's Stop and clear: playback stops and the whole queue goes, the item
-     * playing too. Returns what Undo needs, or null when nothing was loaded. The saved copy is
-     * left as it was until the Undo window passes (then the empty queue is written), so a
-     * process lost in the window does not lose what the person can still ask back.
+     * playing too. Returns what Undo needs, or null when nothing was loaded. The empty queue is
+     * saved at once; the Undo snapshot lives in memory only.
      */
     StopUndo<MediaItem> stopAndClear() {
         if (model.size() == 0) return null;
@@ -226,22 +223,20 @@ final class QueueController implements QueueModel.Sink<MediaItem> {
         try { player.stop(); player.setPlayWhenReady(false); } finally { applying = false; }
         clearEverything();
         StopUndo<MediaItem> token = new StopUndo<>(snap, at, playing, now, model.rev());
+        lastStop = token;
         main.removeCallbacks(save);
-        held = token;
-        main.removeCallbacks(releaseHold);
-        main.postDelayed(releaseHold, StopUndo.WINDOW_MS);
+        saveNow();
         event("queue.stop-clear", "items", snap.size());
         return token;
     }
 
     /** Undo of {@link #stopAndClear}: the same queue, item and place, as it was (playing again if it was). */
     boolean restoreStopped(StopUndo<MediaItem> token) {
-        if (token == null || held != token || !token.live(SystemClock.elapsedRealtime(), model.rev())) {
+        if (token == null || lastStop != token || !token.live(SystemClock.elapsedRealtime(), model.rev())) {
             event("queue.stop-undo", "ok", false);
             return false;
         }
-        held = null;
-        main.removeCallbacks(releaseHold);
+        lastStop = null;
         boolean ok = model.restoreQueueSnapshot(token.snapshot, token.positionMs);
         if (ok) {
             player.prepare();
@@ -253,9 +248,6 @@ final class QueueController implements QueueModel.Sink<MediaItem> {
         event("queue.stop-undo", "ok", ok);
         return ok;
     }
-
-    /** The Undo window passed: the empty queue is the saved copy now. */
-    private final Runnable releaseHold = () -> { held = null; saveNow(); };
 
     boolean undo(QueueModel.Undo u, String verb) {
         if (u == null) return false;
@@ -520,14 +512,12 @@ final class QueueController implements QueueModel.Sink<MediaItem> {
     private void changed() {
         if (model.rev() == lastRev) return;
         lastRev = model.rev();
-        // Something else changed the queue: Undo is gone, so the saved copy follows again.
-        if (held != null && model.rev() != held.revAfter) { held = null; main.removeCallbacks(releaseHold); }
         scheduleSave();
         for (Runnable r : listeners) r.run();
     }
 
     private void scheduleSave() {
-        if (restoring || held != null) return;
+        if (restoring) return;
         main.removeCallbacks(save);
         main.postDelayed(save, SAVE_DELAY_MS);
     }
@@ -539,7 +529,7 @@ final class QueueController implements QueueModel.Sink<MediaItem> {
 
     /** Main thread: the snapshot is taken here, written on io. */
     private void saveNow() {
-        if (restoring || held != null) return;
+        if (restoring) return;
         final String json;
         try { json = QueueState.encode(model, player.getCurrentPosition()).toString(); }
         catch (Exception broken) { Log.w(TAG, "save: " + broken.getClass().getSimpleName()); return; }

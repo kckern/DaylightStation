@@ -834,6 +834,10 @@ public class PhoneHomeActivity extends Activity {
             if (k2 == null) { openDownloads(null); return true; }
             return keepMenu(card, "c:" + k2.optString("contentId"), k2.optString("contentId"), k2.optString("kind", "album"), k2.optString("title"), k2.optString("art"));
         });
+        net.kckern.daylight.shellkit.MoreOptions.attach(card, () -> {
+            JSONObject k2 = (JSONObject) card.getTag(R.id.daylight_home_kept);
+            return k2 == null ? "" : k2.optString("title");
+        }, () -> card.performLongClick());
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.topMargin = dp(6);
         card.setLayoutParams(lp);
@@ -1132,6 +1136,7 @@ public class PhoneHomeActivity extends Activity {
         });
         // Press and hold: Open · Keep on this phone (or its state) · Mark finished · Remove from Continue listening.
         card.setOnLongClickListener(v -> continueMenu(card, item));
+        net.kckern.daylight.shellkit.MoreOptions.attach(card, title, () -> continueMenu(card, item));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.topMargin = dp(6);
         card.setLayoutParams(lp);
@@ -1402,6 +1407,7 @@ public class PhoneHomeActivity extends Activity {
             String id = p.id;
             tile.setOnClickListener(v -> playHere("c:" + id, p.title, "", p.art, false));
             tile.setOnLongClickListener(v -> keepMenu(tile, "c:" + id, id, "playlist", p.title, p.art));
+            net.kckern.daylight.shellkit.MoreOptions.attach(tile, p.title, () -> keepMenu(tile, "c:" + id, id, "playlist", p.title, p.art));
             LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(0, -2, 1);
             if (pair.getChildCount() < 2) tp.setMarginEnd(dp(6));
             pair.addView(tile, tp);

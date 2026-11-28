@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The "More options for <title>" accessibility action on a long-press surface (MoreOptions). -->
+    <item name="daylight_more_options" type="id" />
+</resources>

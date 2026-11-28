@@ -38,7 +38,13 @@ final class NowPlayingNotes {
                     @Override public Object stopAndClear() {
                         if ("local".equals(target)) {
                             QueueController q = QueueController.live();
-                            return q == null ? null : q.stopAndClear();
+                            Object undo = q == null ? null : q.stopAndClear();
+                            if (undo != null) return undo;
+                            // No controller, or its model is empty while the player still holds something
+                            // (the bar must never stay up after Stop and clear): the player's own stop and clear.
+                            p.stop();
+                            p.clearMediaItems();
+                            return NowPlayingNote.NO_UNDO;
                         }
                         // A screen: its own stop; what it held is the screen's to keep, so there is no Undo.
                         p.stop();

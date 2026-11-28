@@ -24,6 +24,6 @@ public class StopUndoTest {
     }
 
     @Test public void theWindowOutlastsTheSixSecondSnackbar() {
-        assertTrue(StopUndo.WINDOW_MS > 6000);
+        assertTrue(StopUndo.WINDOW_MS > net.kckern.daylight.shellkit.NowPlayingNote.UNDO_SNACK_MS);
     }
 }

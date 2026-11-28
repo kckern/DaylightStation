@@ -16,6 +16,11 @@ public final class Snack {
 
     /** Shows {@code text} over the bottom of {@code host} for {@code ms}; {@code action} runs {@code then} and closes it. */
     public static void show(FrameLayout host, DaylightTheme t, String text, String action, Runnable then, long ms) {
+        show(host, t, text, action, then, ms, 0);
+    }
+
+    /** As above, {@code bottomInsetPx} up from the bottom of {@code host} (a bottom nav it should sit above). */
+    public static void show(FrameLayout host, DaylightTheme t, String text, String action, Runnable then, long ms, int bottomInsetPx) {
         View old = host.findViewWithTag("daylight.snack");
         if (old != null) host.removeView(old);
         float d = host.getResources().getDisplayMetrics().density;
@@ -35,7 +40,7 @@ public final class Snack {
         }
         FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM);
         int m = Math.round(12 * d);
-        lp.setMargins(m, m, m, m);
+        lp.setMargins(m, m, m, m + Math.max(0, bottomInsetPx));
         host.addView(bar, lp);
         bar.setAlpha(0f);
         bar.animate().alpha(1f).setDuration(150).start();
