@@ -80,13 +80,6 @@ $amber-ink: $on-accent;
     max-width: 560px;
   }
 
-  .media-dock-destination {
-    // Phone: the destination takes the first row beside the gear.
-    flex: 1 1 0;
-    min-width: 0;
-    @include tablet-up { flex: 0 1 auto; }
-  }
-
   // The gear always rides the right edge (beside the house indicator when it shows).
   @include tablet-up {
     > .mantine-ActionIcon-root { margin-left: auto; }
@@ -101,47 +94,6 @@ $amber-ink: $on-accent;
   }
 }
 
-// The destination control: "Playing on" over the device name, then a chevron.
-// The only amber in the header is the name; the control is a plain 44 px
-// target with a hairline border, never a filled shape.
-.media-destination {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  max-width: 100%;
-  min-height: 44px;
-  padding: 0 12px;
-  border: 1px solid var(--media-control-line);
-  border-radius: var(--mantine-radius-sm);
-  color: var(--media-muted);
-  @include media-focus-ring;
-
-  &:hover { border-color: var(--media-muted); }
-
-  .media-destination-text {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    line-height: 1.2;
-    text-align: left;
-  }
-
-  .media-destination-prefix {
-    font-size: 0.8125rem;
-    font-weight: 400;
-    color: var(--media-muted);
-  }
-
-  .media-destination-name {
-    font-size: 0.9375rem;
-    font-weight: 500;
-    color: var(--media-accent);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-}
-
 .media-destination-anchor {
   display: inline-flex;
   max-width: 100%;
@@ -152,8 +104,9 @@ $amber-ink: $on-accent;
   background: var(--media-surface);
   border-color: var(--media-line);
 
-  // Phone: the dock wraps to two rows (destination, then the search launcher), so a
-  // popover hanging under the destination would cover search until answered. It
+  // Phone: the dock wraps to two rows (house indicator, then the search
+  // launcher with its destination chip), so a popover hanging under the chip
+  // would cover search until answered. It
   // docks above the handle instead — an overlay that leaves the header, the
   // launcher and the page reachable.
   @include mobile-only {
@@ -204,12 +157,29 @@ $amber-ink: $on-accent;
 
 // Bound content width on very wide viewports: lists become unreadable ribbons
 // past ~900px. (Now Playing and Detail carry their own tighter caps.)
-.browse-view,
 .fleet-view,
 .peek-panel {
   max-width: 900px;
   margin: 0;
   width: 100%;
+}
+// Browse uses the Mac's width (owner review 2026-11-27: the right ~45% sat
+// empty): the page runs to 1280px, and from 1200px its rows fall into two
+// columns so no row becomes a ribbon. Header text keeps its ~760px measure.
+.browse-view {
+  max-width: 1280px;
+  margin: 0;
+  width: 100%;
+
+  @media (min-width: 1200px) {
+    .browse-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      column-gap: var(--mantine-spacing-xl);
+      align-items: start;
+    }
+    .browse-list > .ds-top-more-row { grid-column: 1 / -1; }
+  }
 }
 // Device cards are a grid, so the Devices view gets a wider cap than lists.
 .fleet-view { max-width: 1200px; }
@@ -339,20 +309,37 @@ $amber-ink: $on-accent;
 }
 
 @include mobile-only {
+  // The launcher row looks like the search box it opens: the open control
+  // fills it, the destination chip + ▾ sit at its right end (Dock.jsx).
   .media-search-launcher {
     display: flex;
-    align-items: center;
-    gap: var(--mantine-spacing-xs);
+    align-items: stretch;
     // Phone: the launcher is the dock's second row, full width; the gear
-    // (last child) rides the destination's row.
+    // (last child) rides the first row with the house indicator.
     flex: 1 1 100%;
     order: 3;
     min-width: 0;
-    min-height: 44px;
-    padding: 0 var(--mantine-spacing-sm);
+    min-height: 46px;
     background: var(--media-surface);
     border: 1px solid var(--media-control-line);
     border-radius: var(--mantine-radius-sm);
+    overflow: hidden;
+
+    .media-destination-group { --media-dest-slot: 10.5rem; }
+    .media-destination-chip { padding: 0 2px 0 8px; }
+  }
+
+  // First row: the house indicator at the left, the gear at the right edge.
+  .media-dock > .mantine-ActionIcon-root { margin-left: auto; }
+
+  .media-search-launcher-open {
+    display: flex;
+    align-items: center;
+    gap: var(--mantine-spacing-xs);
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 44px;
+    padding: 0 var(--mantine-spacing-sm);
     color: var(--media-muted);
     font-size: 0.9375rem;
     text-align: left;
@@ -628,7 +615,7 @@ $amber-ink: $on-accent;
   position: relative;
   flex: 1;
   min-width: 0;
-  max-width: 560px;
+  max-width: 720px;
 
   .media-search-controls {
     display: flex;
@@ -636,9 +623,13 @@ $amber-ink: $on-accent;
     gap: var(--mantine-spacing-xs);
     min-width: 0;
 
+    // The scope chips give way (scroll sideways) when they need more room;
+    // the search box beside them never does.
     .media-scope-chips {
-      flex: 0 0 auto;
+      flex: 0 1 auto;
       min-width: 0;
+      overflow-x: auto;
+      scrollbar-width: none;
     }
   }
 
@@ -647,14 +638,27 @@ $amber-ink: $on-accent;
   // covers dock-row placement.
   .scope-error { color: var(--mantine-color-red-5); display: inline-flex; }
 
-  .media-search-input-wrap { flex: 1 1 160px; min-width: 120px; }
+  // One fixed width per breakpoint (owner ruling 2026-11-27): the box never
+  // resizes when the destination's name changes, the ▾ list opens, or a scope
+  // chip is chosen. The destination slot inside it is fixed too (Search.scss),
+  // so the text field keeps one width as well.
+  --media-search-box: 24rem;
+  .media-search-input-wrap {
+    flex: 0 0 var(--media-search-box);
+    width: var(--media-search-box);
+    min-width: 0;
+  }
 
   // Laptop: the dock row has room the three controls were not given — the aim
   // label read "Browser ac5…" and the scope chips were clipped mid-chip.
   @media (min-width: 1100px) {
     max-width: 920px;
+    --media-search-box: 30rem;
+  }
 
-    .media-search-input-wrap { flex-basis: 260px; }
+  @media (min-width: 1400px) {
+    max-width: 1040px;
+    --media-search-box: 37.5rem;
   }
 }
 
@@ -954,55 +958,85 @@ $amber-ink: $on-accent;
   .browse-crumb:first-child { margin-left: -8px; }
 }
 
-// Container dispatch header (Task 15, spec D6 addendum): a container tap
-// always browses (Task 14) — this pays that cost back so a browsed-into
-// album/show/playlist is one more tap from playing, not a dead end. Sits
-// directly under the breadcrumb, above the row list.
-.browse-dispatch-header {
+// Browse header (2026-11-27; jellyfin study rec 1–3): the info view's header
+// for a person, show, season, album or collection. Picture in a fixed column
+// on the left, one left edge for the title, parent link, facts, summary and
+// row one; the text measure stops near 760 px. On a phone the picture shrinks
+// beside the title and the summary moves below the buttons (2-line clamp).
+.browse-header {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 760px);
+  grid-template-areas: "art top" "art body";
+  grid-template-rows: auto 1fr;
+  column-gap: var(--mantine-spacing-lg);
+  row-gap: var(--mantine-spacing-xs);
+  align-items: start;
+
+  &:not(:has(.browse-header__art)) { grid-template-columns: minmax(0, 760px); grid-template-areas: "top" "body"; }
+
+  .browse-header__top {
+    grid-area: top;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .browse-header__art {
+    grid-area: art;
+    width: 200px;
+    aspect-ratio: 2 / 3;
+    border-radius: var(--mantine-radius-md);
+    &--round { aspect-ratio: 1; border-radius: 50%; }
+    &--square { aspect-ratio: 1; }
+  }
+
+  .browse-header__body {
+    grid-area: body;
+    display: flex;
+    flex-direction: column;
+    gap: var(--mantine-spacing-xs);
+    min-width: 0;
+  }
+
+  .browse-header__title { line-height: 1.15; }
+
+  @media (max-width: 480px) {
+    grid-template-columns: 96px minmax(0, 1fr);
+    grid-template-areas: "art top" "body body";
+    column-gap: var(--mantine-spacing-sm);
+    row-gap: var(--mantine-spacing-sm);
+
+    &:not(:has(.browse-header__art)) { grid-template-columns: minmax(0, 1fr); grid-template-areas: "top" "body"; }
+    .browse-header__art { width: 96px; }
+    .browse-header__title { font-size: 1.375rem; }
+  }
+}
+
+// The parent link (author, artist, show): a small picture and the name.
+.media-parent-chip {
+  align-self: flex-start;
+  border-radius: var(--mantine-radius-xl);
+  padding: 2px 10px 2px 2px;
+  min-height: 36px;
+  @include media-focus-ring;
+  &:hover .media-parent-chip__name { text-decoration: underline; }
+  .media-parent-chip__text { display: inline-flex; flex-direction: column; line-height: 1.1; }
+}
+
+.media-summary {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
-  background: var(--media-surface);
-  border: 1px solid var(--media-line);
-  border-radius: var(--mantine-radius-md);
+  align-items: flex-start;
+  gap: 2px;
 }
 
-.browse-dispatch-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.browse-dispatch-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  flex: 1 1 0;
-  min-width: 0;
-  min-height: 44px;
-  background: transparent;
-  border: 1px solid var(--media-line);
-  border-radius: var(--mantine-radius-sm);
-  color: var(--media-text);
-  font: inherit;
-  font-size: 0.9375rem;
+// Type sections on a person page (jellyfin study rec 4): "Books (14)".
+.browse-section-title {
+  margin-top: var(--mantine-spacing-sm);
+  font-size: 1rem;
   font-weight: 600;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: border-color var(--ds-motion-fast) var(--ds-motion-easing);
-
-  &:hover { border-color: var(--media-muted); }
-  @include media-focus-ring;
-
-  &--primary {
-    background: var(--mantine-color-amber-5);
-    color: $amber-ink;
-    border-color: transparent;
-
-    &:hover { background: var(--mantine-color-amber-4); }
-  }
+  color: var(--media-text);
 }
 
 .browse-list {
@@ -1054,6 +1088,15 @@ $amber-ink: $on-accent;
 }
 
 // ---- Detail ---------------------------------------------------------------------
+// Row 1 on a phone, wherever it sits (info view or Browse header).
+@media (max-width: 480px) {
+  .browse-header .detail-row-one {
+    flex-wrap: wrap;
+    > .mantine-Button-root { flex: 1 1 0; min-width: 0; padding-inline: var(--mantine-spacing-xs); }
+    > .detail-play-primary { flex: 1 0 100%; }
+  }
+}
+
 .detail-view {
   max-width: 680px;
 
@@ -1303,23 +1346,8 @@ $amber-ink: $on-accent;
   background: var(--mantine-color-dark-5);
 }
 
-.cast-popover {
-  .cast-popover-section { margin-bottom: var(--mantine-spacing-sm); }
-  .cast-popover-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-height: 36px;
-    cursor: pointer;
-    font-size: 14px;
-
-    &:hover { color: var(--media-text); }
-  }
-}
-
 // Portaled surfaces render into document.body (outside .media-shell), so the
 // native-control accent and focus ring are re-declared here.
-.cast-popover,
 .dispatch-target-picker {
   input[type='checkbox'],
   input[type='radio'] {
@@ -1455,7 +1483,9 @@ $amber-ink: $on-accent;
 
 // A source that did not answer inside a search: its retry is a real 44 px target.
 .media-search-dropdown .stream-status-retry-btn,
-.media-shell .stream-status-retry-btn {
+.media-shell .stream-status-retry-btn,
+.media-search-dropdown .search-failure-note-retry,
+.media-shell .search-failure-note-retry {
   min-height: 44px;
   min-width: 44px;
   padding: 0 var(--mantine-spacing-xs);

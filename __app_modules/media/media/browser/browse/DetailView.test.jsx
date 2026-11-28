@@ -7,6 +7,7 @@ import { resetApiResourceCache } from '../../../../../frontend/src/lib/hooks/use
 const dispatchLeafVerb = vi.fn();
 const queuePlayNow = vi.fn();
 const pop = vi.fn();
+const navPush = vi.fn();
 let backDestination = 'Browse';
 let contentState;
 const apiMock = vi.fn(() => Promise.resolve({ items: [] }));
@@ -25,7 +26,7 @@ vi.mock("../controller/useSessionController.js", () => ({
   useSessionController: () => ({ queue: { playNow: queuePlayNow, playNext: vi.fn(), addUpNext: vi.fn(), add: vi.fn() } }),
 }));
 vi.mock("../cast/CastButton.jsx", () => ({ CastButton: () => null }));
-vi.mock("../shell/NavProvider.jsx", () => ({ useNav: () => ({ pop, backDestination }) }));
+vi.mock("../shell/NavProvider.jsx", () => ({ useNav: () => ({ pop, push: navPush, backDestination }) }));
 vi.mock("../logging/mediaLog.js", () => {
   const stub = new Proxy({}, { get: (target, key) => { if (!(key in target)) target[key] = vi.fn(); return target[key]; } });
   return { default: stub, mediaLog: stub };
@@ -61,11 +62,67 @@ beforeEach(() => {
   devicesOverride = null;
 });
 
+describe('DetailView PLAY names the resume point (owner-approved 2026-11-27)', () => {
+  it('reads Resume … · 26:00 when there is a saved spot; From the start in More plays from 0', async () => {
+    contentState.info = { title: 'Arrival', type: 'movie', duration: 6000 };
+    apiMock.mockImplementation((url) => Promise.resolve(String(url).includes('carry-on')
+      ? { items: [{ contentId: 'plex:55854', playhead: 1560, duration: 6000, finished: false }] }
+      : { items: [] }));
+    render(<MantineProvider><DetailView contentId="plex:55854" /></MantineProvider>);
+    await waitFor(() => expect(screen.getByTestId('detail-play-now')).toHaveTextContent('Resume here · 26:00'));
+    pickMore('detail-from-start');
+    expect(dispatchLeafVerb).toHaveBeenCalledWith('playNow', 'plex:55854', expect.objectContaining({ id: 'plex:55854' }), { startAt: 0 });
+  });
+  it('without a saved spot PLAY says Play and More has no From the start', () => {
+    contentState.info = { title: 'Arrival', type: 'movie', duration: 6000 };
+    render(<MantineProvider><DetailView contentId="plex:55854" /></MantineProvider>);
+    expect(screen.getByTestId('detail-play-now')).toHaveTextContent('Play here');
+    openMore();
+    expect(screen.queryByTestId('detail-from-start')).toBeNull();
+  });
+});
+
+describe('DetailView parent chip (browse headers 2026-11-27)', () => {
+  it('a book track shows its author as a linked chip; one tap opens the author page', () => {
+    contentState.info = {
+      title: 'Is God a Mathematician?', type: 'track', duration: 32681,
+      metadata: { type: 'track', librarySectionTitle: 'Audiobooks', artist: 'Mario Livio', artistId: '196996', album: 'Is God a Mathematician?', albumId: '505133' },
+    };
+    render(<MantineProvider><DetailView contentId="plex:505134" /></MantineProvider>);
+    const chip = screen.getByTestId('detail-parent');
+    expect(chip).toHaveTextContent('Author');
+    expect(chip).toHaveTextContent('Mario Livio');
+    fireEvent.click(chip);
+    expect(navPush).toHaveBeenCalledWith('browse', { path: 'plex/196996', label: 'Mario Livio' });
+    expect(mediaLog.parentOpened).toHaveBeenCalledWith({ from: 'plex:505134', to: 'plex:196996', surface: 'detail' });
+  });
+  it('when ▶ itself asks where, there is no second "Play on…" beside it', () => {
+    localStorage.clear();
+    contentState.info = { title: 'Arrival', type: 'movie', metadata: { type: 'movie' } };
+    render(<MantineProvider><DetailView contentId="plex:55854" /></MantineProvider>);
+    expect(screen.getByTestId('detail-play-now')).toHaveTextContent('Play on…');
+    expect(screen.queryByTestId('detail-play-on')).toBeNull();
+  });
+  it('a film has no parent chip', () => {
+    contentState.info = { title: 'Arrival', type: 'movie', metadata: { type: 'movie' } };
+    render(<MantineProvider><DetailView contentId="plex:55854" /></MantineProvider>);
+    expect(screen.queryByTestId('detail-parent')).toBeNull();
+  });
+  it('a long summary is clamped with More, which shows it all', () => {
+    contentState.info = { title: 'Arrival', type: 'movie', metadata: { type: 'movie', summary: 'A linguist. '.repeat(40) } };
+    render(<MantineProvider><DetailView contentId="plex:55854" /></MantineProvider>);
+    const more = screen.getByTestId('detail-summary-more');
+    expect(more).toHaveTextContent('Show more');
+    fireEvent.click(more);
+    expect(more).toHaveTextContent('Show less');
+  });
+});
+
 describe('DetailView facts (FIND.8a/AC2)', () => {
   it('states the kind and the length in words, and the summary as the description', () => {
     contentState.info = { title: 'Arrival', type: 'movie', duration: 6983, metadata: { type: 'movie', librarySectionTitle: 'Movies', summary: 'Linguist meets aliens.' } };
     render(<MantineProvider><DetailView contentId="plex:55854" /></MantineProvider>);
-    expect(screen.getByTestId('detail-facts')).toHaveTextContent('Movie · 1 hr 56 min');
+    expect(screen.getByTestId('detail-facts')).toHaveTextContent('Film · 1 hr 56 min');
     expect(screen.getByText('Linguist meets aliens.')).toBeVisible();
   });
   it('knows how far anyone has got on a page opened straight to the item (lists not loaded yet)', async () => {

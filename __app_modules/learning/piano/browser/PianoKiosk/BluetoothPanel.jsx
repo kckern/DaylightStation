@@ -180,7 +180,7 @@ export default function BluetoothPanel({ onBack }) {
           <strong>Pairing: {pairing.name || pairing.address}</strong>
           {expired ? <p>Pairing request expired. Start pairing again.</p> : <>
             {variant === 'pin' ? <>
-              <label>Pairing PIN<input aria-label="Pairing PIN" type="password" value={pin} maxLength={16} autoComplete="off" onChange={(event) => setPin(event.target.value)} /></label>
+              <label>Pairing PIN<input aria-label="Pairing PIN" data-soft-keyboard="allow" type="password" value={pin} maxLength={16} autoComplete="off" onChange={(event) => setPin(event.target.value)} /></label>
               <TransportButton label="Send PIN" disabled={disabled || !capabilities.pin || !pin.length} onPress={() => command('pairing', { address: pairing.address, accept: true, pin })} />
               {!capabilities.pin && <p>This tablet cannot submit a pairing PIN.</p>}
             </> : confirmation || variant === 'display' ? <>

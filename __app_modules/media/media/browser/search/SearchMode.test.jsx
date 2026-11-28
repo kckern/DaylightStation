@@ -50,9 +50,10 @@ vi.mock("../shell/NavProvider.jsx", () => ({
 // that merely records a call. ──
 let comboState = { search: null, results: [] };
 let comboExtra = {};
+let comboArgs = null;
 const handleInputSpy = vi.fn();
 vi.mock("../../../../../__capabilities/content-catalog/browser/picker-controller.mjs", () => ({
-  useContentCombobox: (args) => ({
+  useContentCombobox: (args) => (comboArgs = args, {
     state: { search: comboState.search, results: comboState.results },
     handleInput: (text) => handleInputSpy(text),
     select: (item) => args.onChange(item.id, item),
@@ -60,6 +61,8 @@ vi.mock("../../../../../__capabilities/content-catalog/browser/picker-controller
     pendingSources: comboExtra.pendingSources ?? [],
     sourceErrors: comboExtra.sourceErrors ?? [],
     fellBackToAll: comboExtra.fellBackToAll ?? false,
+    scopeEmpty: comboExtra.scopeEmpty ?? false,
+    widenSearch: comboExtra.widenSearch ?? (() => {}),
   }),
 }));
 
@@ -109,6 +112,7 @@ import { CastTargetProvider } from "../cast/CastTargetProvider.jsx";
 import { FleetContext } from "../fleet/FleetProvider.jsx";
 import { SearchMode } from "./SearchMode.jsx";
 import { habitsStore as seedHabits } from "../habits/mediaHabits.js";
+import { rememberSearch, recentSearches, resetRecentSearchesCache } from "./recentSearches.js";
 
 // These tests describe a browser that has chosen to watch here: with nothing
 // chosen, a film's ▶ asks where (Play on…) instead — see habits/playDestination.js.
@@ -137,7 +141,7 @@ beforeEach(() => {
   dispatchLeafVerbMock.mockReset();
   playContainerAsQueueMock.mockReset();
   navPush.mockReset();
-  localStorage.clear(); seedHabits().recordScreen('video', []);
+  localStorage.clear(); resetRecentSearchesCache(); seedHabits().recordScreen('video', []);
   comboState = { search: null, results: [] };
   comboExtra = {};
   fleetDevices = [];
@@ -351,6 +355,28 @@ describe('SearchMode', () => {
     expect(screen.queryByTestId('search-learned-where')).toBeNull();
   });
 
+  it('Alt+↓ in the input opens the destination list; a pick sets the destination and focus returns to the box', async () => {
+    const devices = [
+      { id: 'office-tv', type: 'linux-pc', name: 'Office Screen', content_control: { provider: 'ws' } },
+      { id: 'livingroom-tv', type: 'shield-tv', name: 'Living Room TV', content_control: { provider: 'fully-kiosk' } },
+    ];
+    seedHabits().recordScreen('video', ['office-tv']);
+    render(
+      <FleetContext.Provider value={{ devices, loading: false, error: null, identity: { deviceId: 'browser:me' } }}>
+        <Harness />
+      </FleetContext.Provider>
+    );
+    const input = await screen.findByTestId('search-mode-input');
+    act(() => { fireEvent.keyDown(input, { key: 'ArrowDown', altKey: true }); });
+    expect(screen.getByTestId('dest-list')).toBeInTheDocument();
+    act(() => { fireEvent.click(screen.getByTestId('dest-list-row-livingroom-tv')); });
+    expect(screen.queryByTestId('dest-list')).toBeNull();
+    expect(screen.getByTestId('search-destination-chip')).toHaveTextContent('▶ Living Room TV');
+    expect(document.activeElement).toBe(input);
+    // Still searching: the pick never closes Search.
+    expect(screen.getByTestId('search-mode')).toBeInTheDocument();
+  });
+
   it('Tab / Shift+Tab in the input cycle the chip and keep focus in the box', async () => {
     const devices = [
       { id: 'office-tv', type: 'linux-pc', name: 'Office Screen', content_control: { provider: 'ws' } },
@@ -377,6 +403,53 @@ describe('SearchMode', () => {
     fireEvent.click(chip());
     expect(chip()).toHaveTextContent('▶ This device');
     expect(screen.getByTestId('search-mode')).toBeInTheDocument();
+  });
+
+  // Owner ruling 2026-11-27: the empty box shows recent searches (and
+  // Continue), and words are remembered only when acted on.
+  describe('recent searches in the empty box', () => {
+    it('lists them with their scope tag; a tap reruns the words in that scope; × and Clear forget', async () => {
+      rememberSearch({ text: 'bluey', scopeKey: 'all', scopeLabel: 'All' }, 1);
+      rememberSearch({ text: 'rain', scopeKey: 'ambient', scopeLabel: 'Ambient' }, 2);
+      comboState = { search: '', results: [] };
+      render(<Harness />);
+      const first = await screen.findByTestId('search-mode-recent-0');
+      expect(first).toHaveTextContent('rain');
+      expect(first).toHaveTextContent('· Ambient');
+      expect(screen.getByTestId('search-mode-recent-1')).toHaveTextContent('bluey');
+      expect(screen.queryByTestId('search-mode-hint')).toBeNull();
+
+      fireEvent.click(first);
+      expect(handleInputSpy).toHaveBeenCalledWith('rain');
+      await waitFor(() => expect(screen.getByTestId('scope-chip-ambient')).toHaveAttribute('aria-pressed', 'true'));
+
+      fireEvent.click(screen.getByTestId('search-mode-recent-forget-1'));
+      expect(recentSearches().map((e) => e.text)).toEqual(['rain']);
+      fireEvent.click(screen.getByTestId('search-mode-recent-clear'));
+      expect(recentSearches()).toEqual([]);
+      await waitFor(() => expect(screen.queryByTestId('search-mode-recents')).toBeNull());
+      expect(screen.getByTestId('search-mode-hint')).toBeInTheDocument();
+    });
+
+    it('ArrowDown from the box goes into the list', async () => {
+      rememberSearch({ text: 'rain', scopeKey: 'ambient', scopeLabel: 'Ambient' }, 1);
+      comboState = { search: '', results: [] };
+      render(<Harness />);
+      await screen.findByTestId('search-mode-recent-0');
+      fireEvent.keyDown(screen.getByTestId('search-mode-input'), { key: 'ArrowDown' });
+      expect(document.activeElement).toBe(screen.getByTestId('search-mode-recent-0'));
+    });
+
+    it('remembers the words with their scope only when a result is acted on', async () => {
+      comboState = { search: 'bluey', results: [{ id: 'plex:685088', title: 'Bluey', type: 'episode', thumbnail: null }] };
+      dispatchMock.mockReturnValue('local');
+      render(<Harness />);
+      await screen.findByTestId('search-mode-result-plex:685088');
+      fireEvent.click(await screen.findByTestId('scope-chip-ambient'));
+      expect(recentSearches()).toEqual([]);
+      fireEvent.click(screen.getByTestId('search-mode-result-plex:685088'));
+      expect(recentSearches().map((e) => [e.text, e.scopeKey, e.scopeLabel])).toEqual([['bluey', 'ambient', 'Ambient']]);
+    });
   });
 
   // ── Fix round (Important 2): the D5 widening notice. The hook widened
@@ -433,6 +506,27 @@ describe('SearchMode', () => {
     it('stays hidden while the widened search is still in flight', async () => {
       await renderWidened({ results: [], isSearching: true });
       expect(screen.queryByTestId('search-mode-widening-notice')).toBeNull();
+    });
+
+    // 2026-11-27: a picked scope is honoured — the phone says the scope came
+    // up empty and offers the wider search; it never runs it unasked.
+    it('asks the hook to offer, not widen, for a picked scope', async () => {
+      await renderWidened({ results: [], fellBackToAll: false });
+      expect(comboArgs.widenOnEmpty).toBe('offer');
+    });
+
+    it('an empty picked scope names the words and the scope, with one Search everything action', async () => {
+      const widenSearch = vi.fn();
+      comboState = { search: 'nephi', results: [] };
+      comboExtra = { scopeEmpty: true, widenSearch };
+      render(<Harness />);
+      fireEvent.click(await screen.findByTestId('scope-chip-ambient'));
+
+      expect(screen.getByTestId('search-mode-scope-empty')).toHaveTextContent('Nothing for “nephi” in Ambient');
+      expect(screen.queryByTestId('search-mode-empty')).toBeNull();
+      expect(screen.getByTestId('search-mode-empty-announcement')).toHaveTextContent('Nothing for “nephi” in Ambient');
+      fireEvent.click(screen.getByTestId('search-mode-widen'));
+      expect(widenSearch).toHaveBeenCalledWith('tap');
     });
 
     it('renders no notice when the search never widened', async () => {

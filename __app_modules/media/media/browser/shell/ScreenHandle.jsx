@@ -36,6 +36,7 @@ import { useNav } from "./NavProvider.jsx";
 import { presentTitle } from "../browse/tilePresentation.js";
 import { pickHandleScreen, pickHandlePlay, handlePlayView } from "./screenHandleModel.js";
 import { playbackStateLabel } from "./stateCopy.js";
+import { handleStops, handleSuppressed, useHandleStops } from "./handleStop.js";
 import mediaLog from "../logging/mediaLog.js";
 import "./NowPlaying.scss";
 
@@ -83,9 +84,18 @@ function SessionButtons({ deviceId, name, snapshot, controller, onStopped }) {
         className="np-icon-btn"
         data-testid="screen-handle-stop"
         aria-label={`Stop ${name}`}
-        title="Stop playback and keep the queue"
+        title={`Stop on ${name}`}
         disabled={!controller}
-        onClick={() => run('stop', () => transport.stop?.({ keepMusic: false }))}
+        onClick={() => {
+          // Optimistic (owner ruling 2026-11-27): the handle goes at once; a
+          // failed stop brings it back with Retry (handleStop.js).
+          mediaLog.screenHandleCommand({ deviceId, action: 'stop' });
+          handleStops.stop(deviceId, {
+            contentId: snapshot?.currentItem?.contentId ?? null,
+            name,
+            run: () => transport.stop?.({ keepMusic: false }),
+          }).then(() => { if (handleStops.get(deviceId)?.status === 'stopped') onStopped?.(); });
+        }}
       >
         <IconPlayerStopFilled size={18} />
       </UnstyledButton>
@@ -125,6 +135,7 @@ function PlayBar({ record }) {
   const snapshot = entry && !entry.offline ? entry.snapshot ?? null : null;
   const seenActiveRef = useRef(false);
   const view = handlePlayView({ record, entry, seenActive: seenActiveRef.current });
+  const stops = useHandleStops();
   if (view.status === 'playing' || view.status === 'paused') {
     if (snapshot?.currentItem) seenActiveRef.current = true;
   }
@@ -145,6 +156,8 @@ function PlayBar({ record }) {
   }, [view.status, attemptId, outcomes]);
 
   if (view.status === 'ended') return null;
+  // Stopped from this bar: gone at once, and not brought back by the screen's lagging state.
+  if ((view.status === 'playing' || view.status === 'paused') && handleSuppressed(stops.get(deviceId), snapshot)) return null;
   // Its full controls are open: do not duplicate them.
   if ((view.status === 'playing' || view.status === 'paused') && navView === 'peek' && params?.deviceId === deviceId) return null;
 
@@ -211,6 +224,26 @@ function PlayBar({ record }) {
   );
 }
 
+/** A stop from the handle that did not take: the bar comes back to say so, with Retry. */
+function StopFailedBar({ stop, stops }) {
+  const { device } = useDevice(stop.deviceId);
+  const { push } = useNav();
+  const name = deviceName(device, stop.deviceId) || stop.name;
+  return (
+    <Bar deviceId={stop.deviceId} status="failed" title="Stop" name={name} onOpen={() => push('peek', { deviceId: stop.deviceId })}
+      stateLine={`Couldn't stop on ${name}`}
+      icon={<span className="mini-player-problem" aria-hidden><IconAlertCircle size={18} /></span>}>
+      <UnstyledButton className="screen-handle-action" data-testid="screen-handle-stop-retry"
+        onClick={() => { mediaLog.screenHandleRetry({ deviceId: stop.deviceId, status: 'stop-failed' }); stops.retry(stop.deviceId); }}>
+        <IconRefresh size={16} aria-hidden /> Retry
+      </UnstyledButton>
+      <UnstyledButton className="np-icon-btn" data-testid="screen-handle-dismiss" aria-label="Dismiss" onClick={() => stops.dismiss(stop.deviceId)}>
+        <IconX size={16} />
+      </UnstyledButton>
+    </Bar>
+  );
+}
+
 /** STEER.1a/AC4: the screen most recently steered, or aimed at, while it plays. */
 function HandleBar({ deviceId, why }) {
   const { device, entry } = useDevice(deviceId);
@@ -219,6 +252,7 @@ function HandleBar({ deviceId, why }) {
   const snapshot = entry?.snapshot ?? null;
   const item = snapshot?.currentItem ?? null;
   const name = deviceName(device, deviceId);
+  const stops = useHandleStops();
   const shownRef = useRef(false);
   useEffect(() => {
     if (shownRef.current) return undefined;
@@ -230,6 +264,7 @@ function HandleBar({ deviceId, why }) {
   // Its full controls are open: do not duplicate them.
   if (view === 'peek' && params?.deviceId === deviceId) return null;
   if (!item) return null;
+  if (handleSuppressed(stops.get(deviceId), snapshot)) return null;
   const title = presentTitle(item) ?? item.contentId;
   return (
     <Bar deviceId={deviceId} status={snapshot.state === 'paused' ? 'paused' : 'playing'} title={title} name={name}
@@ -256,6 +291,9 @@ export function ScreenHandle() {
     return () => unsubs.forEach((unsub) => unsub?.());
   // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by the ids
   }, [store, watched.join('|')]);
+  const stops = useHandleStops();
+  const failedStop = stops.firstFailed();
+  if (failedStop) return <StopFailedBar key={`stop-${failedStop.deviceId}`} stop={failedStop} stops={stops} />;
   const play = pickHandlePlay(outcomes ? outcomes.values() : []);
   if (play) return <PlayBar key={play.attemptId ?? play.dispatchId} record={play} />;
   const picked = pickHandleScreen({

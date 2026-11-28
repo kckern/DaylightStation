@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import {
+  rescanFolderFor, describe, expect, it } from 'vitest';
 import {
   SOURCE_STATE,
   classifyPlexParts,
@@ -63,5 +64,16 @@ describe('composeSourceUnreadablePush', () => {
     const push = composeSourceUnreadablePush({ title: null, unreadableMs: 0 });
     expect(push.body).toContain('read a video from the NAS for 1 min');
     expect(findPushTextDefects(push.body)).toEqual([]);
+  });
+});
+
+describe('rescanFolderFor', () => {
+  it('names the folder above the file\'s folder', () => {
+    expect(rescanFolderFor('/data/media/audio/audiobooks/Mario Livio/2009 Is God a Mathematician?/Is God a Mathematician?.mp3'))
+      .toBe('/data/media/audio/audiobooks/Mario Livio');
+  });
+  it('refuses a path too shallow to name one', () => {
+    expect(rescanFolderFor('/data/x.mp3')).toBeNull();
+    expect(rescanFolderFor(null)).toBeNull();
   });
 });

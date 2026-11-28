@@ -18,34 +18,30 @@ test.describe('MediaApp — P4 cast', () => {
     await expect.poll(async () => (await chip.innerText()).trim()).not.toBe(first);
   });
 
-  // The header "Playing on" control (popover with mode + screens) is the phone's.
-  test.describe('phone header control', () => {
+  // A phone has no header "Playing on" control either: the same chip and ▾
+  // ride the right end of the search launcher (one destination, where you type).
+  test.describe('phone launcher chip', () => {
     test.use({ viewport: { width: 390, height: 844 } });
+    const row = (page) => page.getByTestId('media-search-launcher-row');
 
-    test('CastTargetChip renders and opens a popover', async ({ page }) => {
+    test('the launcher carries the chip; no header control', async ({ page }) => {
       await page.goto('/media');
-      await expect(page.getByTestId('cast-target-chip')).toBeVisible({ timeout: 10000 });
-      await page.getByTestId('cast-target-chip').click();
-      await expect(page.getByTestId('cast-popover')).toBeVisible();
-      await expect(page.getByTestId('cast-mode-transfer')).toBeVisible();
-      await expect(page.getByTestId('cast-mode-fork')).toBeVisible();
-      await expect(page.getByTestId('cast-target-here')).toBeVisible();
+      const chip = row(page).getByTestId('search-destination-chip');
+      await expect(chip).toBeVisible({ timeout: 10000 });
+      await expect(page.getByText('Playing on', { exact: true })).toHaveCount(0);
+      await expect(chip).toHaveText(/^▶ \S/);
+      const first = (await chip.innerText()).trim();
+      await chip.click();
+      await expect.poll(async () => (await chip.innerText()).trim()).not.toBe(first);
     });
 
-    test('Escape closes the cast popover', async ({ page }) => {
+    test('the ▾ opens the destination list and Escape closes it', async ({ page }) => {
       await page.goto('/media');
-      await page.getByTestId('cast-target-chip').click();
-      await expect(page.getByTestId('cast-popover')).toBeVisible();
+      await row(page).getByTestId('search-destination-list-toggle').click();
+      await expect(page.getByTestId('dest-list')).toBeVisible();
+      await expect(page.getByTestId('dest-list-row-local')).toBeVisible();
       await page.keyboard.press('Escape');
-      await expect(page.getByTestId('cast-popover')).toBeHidden({ timeout: 2000 });
-    });
-
-    test('outside click closes the cast popover', async ({ page }) => {
-      await page.goto('/media');
-      await page.getByTestId('cast-target-chip').click();
-      await expect(page.getByTestId('cast-popover')).toBeVisible();
-      await page.locator('[data-testid="media-canvas"]').click({ position: { x: 200, y: 400 } });
-      await expect(page.getByTestId('cast-popover')).toBeHidden({ timeout: 2000 });
+      await expect(page.getByTestId('dest-list')).toBeHidden({ timeout: 2000 });
     });
   });
 

@@ -3,7 +3,7 @@
 // useContentDispatch and the destination it chose is logged.
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 
 // Mutable holders — factories close over these but only read at render time.
 const dispatch = vi.fn();
@@ -356,6 +356,24 @@ describe('MediaContentSearch', () => {
       fireEvent.click(screen.getByTestId('search-destination-chip'));
       expect(chipText()).toBe('▶ This device');
       expect(info).toHaveBeenCalledWith('search.destination-cycled', { from: 'office-tv', to: 'local', via: 'click' });
+    });
+
+    it('Alt+↓ in the box opens the destination list (not a move through the results) and keeps the search open', () => {
+      render(withAim(<MediaContentSearch />));
+      const input = screen.getByTestId('mock-search-input');
+      expect(screen.queryByTestId('dest-list')).toBeNull();
+      expect(comboboxProps.destinationInteractionActive).toBe(false);
+      let notPrevented;
+      act(() => { notPrevented = fireEvent.keyDown(input, { key: 'ArrowDown', altKey: true }); });
+      expect(notPrevented).toBe(false);
+      expect(screen.getByTestId('dest-list')).toBeInTheDocument();
+      // While the list is open the search's words, results and list stay put.
+      expect(comboboxProps.destinationInteractionActive).toBe(true);
+      act(() => { fireEvent.keyDown(document.activeElement, { key: 'Escape' }); });
+      expect(screen.queryByTestId('dest-list')).toBeNull();
+      // A plain ↓ is still the results' own key.
+      expect(fireEvent.keyDown(input, { key: 'ArrowDown' })).toBe(true);
+      expect(screen.queryByTestId('dest-list')).toBeNull();
     });
 
     it('Tab inside a ⋯ menu does not cycle the destination', () => {

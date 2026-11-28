@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { openPlayOn, pressStop } from './lib/playerBar.mjs';
 import { randomUUID } from 'node:crypto';
 import { resetHouseholdAt } from './lib/household.mjs';
 import { scriptReceiver, SCRIPTED } from './lib/scriptedReceiver.mjs';
@@ -69,7 +70,7 @@ test('[PLACE.7a/AC2] Move to this device from another screen\'s controls: this d
   await expect(moved).toBeVisible({ timeout: 30000 });
   // PLACE.7a/AC3 "and from where": it names the screen it came from.
   await expect(moved).toContainText(`from ${A_NAME}`);
-  await page.getByTestId('np-stop').click();
+  await pressStop(page);
   await context.close();
   await receiver.context.close();
 });
@@ -118,7 +119,7 @@ async function handoffSetup(browser, request) {
   await page.getByTestId('mini-player-open-nowplaying').click();
   const local = page.getByTestId('now-playing-host').locator('video');
   await expect.poll(() => local.evaluate((v) => !v.paused && v.readyState >= 2 && v.currentTime > 5), { timeout: 120000 }).toBe(true);
-  const picker = page.getByTestId('handoff-section').getByTestId('dispatch-target-picker');
+  const picker = (await openPlayOn(page)).getByTestId('dispatch-target-picker');
   await expect(picker).toBeVisible();
   return { receiver, context, page, local, picker };
 }
@@ -172,16 +173,16 @@ test('[PLACE.8a/AC3][PLACE.6a/AC4] hand-off from Now Playing with "Move playback
   await picker.getByTestId(`picker-device-${A}`).click();
   await expect.poll(async () => (await receiverState(request, A))?.currentItem?.contentId, { timeout: 60000 }).toBe(ITEM.HOSPITAL);
   // This device stopped: its player is gone (or at least paused).
-  await expect.poll(async () => (await local.count()) === 0 || await local.evaluate((v) => v.paused || v.ended), { timeout: 60000 }).toBe(true);
+  await expect.poll(() => local.evaluateAll((vs) => vs.length === 0 || vs.every((v) => v.paused || v.ended)), { timeout: 60000 }).toBe(true);
   await stopReceiver(request, A);
   await context.close();
   await receiver.context.close();
 });
 
-test('[PLACE.6a/AC1][PLACE.6a/AC3] while this device plays and the aim is another screen, the aim label says what the next tap will do and I can change it there; my usual choice is remembered and shown before I confirm', async ({ browser, request }) => {
+test('[PLACE.6a/AC1] while this device plays and the aim is another screen, the aim label says what the next tap will do, before any tap', async ({ browser, request }) => {
   const receiver = await openReceiver(browser, request, A);
-  // The move/keep-playing mode is chosen in the phone header's destination control (the
-  // desktop search chip has no mode switch), so this journey runs at phone width.
+  // No surface switches move / keep playing any more (the phone's header control
+  // went with "one destination, shown where you type"; AC3 has no control left).
   const phoneVp = VIEWPORTS.phone;
   const { context, page } = await newAppPage(browser, phoneVp);
   await gotoMedia(page);
@@ -201,20 +202,6 @@ test('[PLACE.6a/AC1][PLACE.6a/AC3] while this device plays and the aim is anothe
   await openNowPlaying();
   await expect(npBehavior).toContainText('move playback', { timeout: 30000 });
   await closeNowPlaying();
-  // Change it in the destination control, which carries the choice.
-  await page.getByTestId('cast-target-chip').click();
-  await expect(page.getByTestId('cast-mode-transfer')).toBeChecked();
-  await page.getByTestId('cast-mode-fork').check();
-  await page.getByTestId('cast-target-chip').click();
-  await openNowPlaying();
-  await expect(npBehavior).toContainText('keep playing here too');
-  await closeNowPlaying();
-  // Remembered: still the choice after a reload, pre-selected and visible before confirming anything.
-  await page.reload();
-  await expect(page.getByTestId('media-shell')).toBeVisible({ timeout: 60000 });
-  await page.getByTestId('cast-target-chip').click();
-  await expect(page.getByTestId('cast-mode-fork')).toBeChecked();
-  await page.getByTestId('cast-target-chip').click();
   await context.close();
   await receiver.context.close();
 });

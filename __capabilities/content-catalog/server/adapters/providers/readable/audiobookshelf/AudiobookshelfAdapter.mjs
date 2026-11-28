@@ -13,9 +13,25 @@ import { InfrastructureError } from '#system/utils/errors/index.mjs';
  *
  * Supports both ebooks (ReadableItem) and audiobooks (PlayableItem).
  */
+// How long the server's library list is reused by search.
+const LIBRARIES_TTL_MS = 10 * 60 * 1000;
+
+// Search matches a local index of each library (every item's title, subtitle,
+// author, series and narrator, plus the author list) instead of asking the
+// server. The server's own search costs ~0.5 s per library for a word it has
+// not seen and runs one request at a time, so an everything search waited
+// ~0.9-1.3 s on it. The index is fetched in pages (the server keeps answering
+// other requests between them), built at boot, reused this long, and an older
+// index is served while the next builds. Until the first build is done the
+// server's search answers.
+const LIBRARY_INDEX_TTL_MS = 60 * 60 * 1000;
+const LIBRARY_INDEX_PAGE = 1000;
+
 export class AudiobookshelfAdapter {
   #client;
   #proxyPath;
+  #librariesCache = null;
+  #libraryIndexes = new Map();
 
   /**
    * @param {Object} config
@@ -290,19 +306,29 @@ export class AudiobookshelfAdapter {
       const searchText = text || query.query; // Support translated query.query
       const rawLibraryId = query.libraryId || query['abs.libraryId'] || undefined;
 
-      // Get libraries, optionally filtered by abs.libraryId
-      const librariesData = await this.#client.getLibraries();
-      let libraries = librariesData.libraries || [];
+      // Get libraries (cached), optionally filtered by abs.libraryId
+      let libraries = await this.#libraries();
       if (rawLibraryId) {
         const allowedIds = new Set(String(rawLibraryId).split(',').map(s => s.trim()));
         libraries = libraries.filter(lib => allowedIds.has(lib.id));
       }
 
-      // Search authors and items in parallel
-      const [matchingAuthors, allItems] = await Promise.all([
-        searchText ? this.#searchAuthors(searchText, libraries) : Promise.resolve([]),
-        this.#searchItems(searchText, mediaType, libraries)
-      ]);
+      // One native search per library, all at once. It answers books and
+      // authors together in a few ms; the search used to download every
+      // author of every library (~13 MB, 11k+ names) to filter them here,
+      // which took 1.4 s alone and 6 s (its budget) beside the other sources.
+      const perLibrary = await Promise.all(libraries.map(async (lib) => {
+        if (!searchText) {
+          const itemsData = await this.#client.getLibraryItems(lib.id, { limit: 100 });
+          return { items: itemsData.results || [], authors: [] };
+        }
+        return this.#searchLibrary(lib.id, searchText, Math.max(25, skip + take));
+      }));
+
+      const matchingAuthors = searchText
+        ? await this.#authorListables(searchText, perLibrary.flatMap(r => r.authors))
+        : [];
+      const allItems = this.#toSearchItems(perLibrary.flatMap(r => r.items), mediaType);
 
       // Combine - authors first (higher relevance), then items
       const combinedItems = [...matchingAuthors, ...allItems];
@@ -321,45 +347,183 @@ export class AudiobookshelfAdapter {
   }
 
   /**
-   * Search for authors by name
+   * One library's matches: from its local index when one is built, else from
+   * the server's search (one request answers books and authors together).
+   * @param {string} libraryId
    * @param {string} searchText
-   * @param {Array} libraries
-   * @returns {Promise<ListableItem[]>}
+   * @param {number} limit - Max books and max authors (the server's own cap)
+   * @returns {Promise<{items: Array, authors: Array}>}
    */
-  async #searchAuthors(searchText, libraries) {
-    try {
-      const searchLower = searchText.toLowerCase();
-      const matchingAuthorIds = [];
+  async #searchLibrary(libraryId, searchText, limit) {
+    const index = this.#libraryIndex(libraryId);
+    if (!index) {
+      const searchData = await this.#client.searchLibrary(libraryId, searchText, limit);
+      return {
+        items: (searchData.book || []).map(b => b.libraryItem).filter(Boolean),
+        authors: searchData.authors || []
+      };
+    }
+    const needle = searchText.toLowerCase();
+    const items = [];
+    for (const entry of index.items) {
+      if (entry.hay.includes(needle)) {
+        items.push(entry.item);
+        if (items.length >= limit) break;
+      }
+    }
+    const authors = [];
+    for (const author of index.authors) {
+      if (author.nameLower.includes(needle)) {
+        authors.push(author.record);
+        if (authors.length >= limit) break;
+      }
+    }
+    return { items, authors };
+  }
 
-      // First pass: find matching author IDs
-      for (const lib of libraries) {
-        try {
-          const authorsData = await this.#client.getAuthors(lib.id);
-          const authors = authorsData.authors || [];
+  /**
+   * The built index of a library (fresh or stale), or null before its first
+   * build. Starts a build when there is none or it is stale; never waits.
+   * @param {string} libraryId
+   * @returns {Object|null}
+   */
+  #libraryIndex(libraryId) {
+    const state = this.#libraryIndexes.get(libraryId) ?? {};
+    const fresh = state.index && Date.now() - state.builtAt < LIBRARY_INDEX_TTL_MS;
+    if (!fresh && !state.building) this.#startLibraryIndex(libraryId, state);
+    return state.index ?? null;
+  }
 
-          const matching = authors.filter(a =>
-            a.name && a.name.toLowerCase().includes(searchLower)
-          );
+  #startLibraryIndex(libraryId, state = this.#libraryIndexes.get(libraryId) ?? {}) {
+    const building = this.#buildLibraryIndex(libraryId).then((index) => {
+      this.#libraryIndexes.set(libraryId, { index, builtAt: Date.now(), building: null });
+      return index;
+    }, (error) => {
+      this.#libraryIndexes.set(libraryId, { ...this.#libraryIndexes.get(libraryId), building: null });
+      throw error;
+    });
+    building.catch(() => {});
+    this.#libraryIndexes.set(libraryId, { ...state, building });
+    return building;
+  }
 
-          matchingAuthorIds.push(...matching.map(a => a.id));
-        } catch {
-          // Skip libraries without authors
+  /**
+   * Fetch a library's items (minified, in pages) and authors into a search
+   * index. Each item keeps only what a search row shows (no descriptions: the
+   * info view reads the full item by id).
+   * @param {string} libraryId
+   * @returns {Promise<{items: Array<{item: Object, hay: string}>, authors: Array}>}
+   */
+  async #buildLibraryIndex(libraryId) {
+    const items = [];
+    const coverByAuthor = new Map();
+    for (let page = 0; ; page++) {
+      const data = await this.#client.getLibraryItems(libraryId, { limit: LIBRARY_INDEX_PAGE, page, minified: true });
+      const results = data?.results || [];
+      for (const raw of results) {
+        const media = raw.media || {};
+        const metadata = media.metadata || {};
+        const item = {
+          id: raw.id,
+          libraryId: raw.libraryId || libraryId,
+          media: {
+            numAudioFiles: media.numAudioFiles || 0,
+            duration: media.duration || null,
+            ...(media.ebookFormat || media.ebookFile ? { ebookFile: { ebookFormat: media.ebookFormat || media.ebookFile?.ebookFormat } } : {}),
+            metadata: {
+              title: metadata.title || null,
+              authorName: metadata.authorName || null,
+              narratorName: metadata.narratorName || null,
+              seriesName: metadata.seriesName || null
+            }
+          }
+        };
+        const hay = [metadata.title, metadata.subtitle, metadata.authorName, metadata.seriesName, metadata.narratorName]
+          .filter(Boolean).join('\u0001').toLowerCase();
+        items.push({ item, hay });
+        for (const name of String(metadata.authorName || '').split(',')) {
+          const key = name.trim().toLowerCase();
+          if (key && !coverByAuthor.has(key)) coverByAuthor.set(key, raw.id);
         }
       }
+      if (results.length < LIBRARY_INDEX_PAGE) break;
+    }
+    const authorsData = await this.#client.getAuthors(libraryId);
+    const authors = (authorsData?.authors || []).filter(a => a?.id && a.name).map((a) => {
+      const coverItemId = coverByAuthor.get(a.name.toLowerCase());
+      return {
+        nameLower: a.name.toLowerCase(),
+        record: {
+          id: a.id,
+          name: a.name,
+          imagePath: a.imagePath || null,
+          numBooks: a.numBooks || 0,
+          asin: a.asin || null,
+          ...(coverItemId ? { libraryItems: [{ id: coverItemId }] } : {})
+        }
+      };
+    });
+    return { items, authors };
+  }
 
-      // Second pass: fetch full author data (with books) for thumbnails
-      const matchingAuthors = await Promise.all(
-        matchingAuthorIds.map(async (id) => {
-          try {
-            const author = await this.#client.getAuthor(id);
-            return this.#toAuthorListable(author);
-          } catch {
-            return null;
-          }
-        })
-      );
+  /**
+   * Build every library's search index ahead of the first search (called at
+   * boot, not awaited). Libraries are fetched one after another.
+   * @returns {Promise<{entries: number}>}
+   */
+  async prepareSearch() {
+    const libraries = await this.#libraries();
+    let entries = 0;
+    for (const lib of libraries) {
+      const state = this.#libraryIndexes.get(lib.id) ?? {};
+      const index = await (state.building || this.#startLibraryIndex(lib.id, state));
+      entries += index.items.length;
+    }
+    return { entries };
+  }
 
-      const validAuthors = matchingAuthors.filter(Boolean);
+  /**
+   * The server's libraries, reused for LIBRARIES_TTL_MS (they change only when
+   * someone adds a library in Audiobookshelf).
+   * @returns {Promise<Array>}
+   */
+  async #libraries() {
+    const cached = this.#librariesCache;
+    if (cached && Date.now() - cached.at < LIBRARIES_TTL_MS) return cached.libraries;
+    const data = await this.#client.getLibraries();
+    const libraries = data.libraries || [];
+    this.#librariesCache = { libraries, at: Date.now() };
+    return libraries;
+  }
+
+  /**
+   * Authors from the native search whose name contains the text, best first.
+   * An author with no picture borrows a book cover, which needs that author's
+   * books: fetched for those authors only, in parallel.
+   * @param {string} searchText
+   * @param {Array} authors - Native search author records
+   * @returns {Promise<ListableItem[]>}
+   */
+  async #authorListables(searchText, authors) {
+    try {
+      const searchLower = searchText.toLowerCase();
+      const seen = new Set();
+      const matching = authors.filter((a) => {
+        if (!a?.id || seen.has(a.id)) return false;
+        seen.add(a.id);
+        return a.name && a.name.toLowerCase().includes(searchLower);
+      });
+
+      const withBooks = await Promise.all(matching.map(async (author) => {
+        if (author.imagePath || author.libraryItems?.length) return author;
+        try {
+          return { ...author, ...(await this.#client.getAuthor(author.id)) };
+        } catch {
+          return author;
+        }
+      }));
+
+      const validAuthors = withBooks.map((author) => this.#toAuthorListable(author));
 
       // Sort by relevance - exact match first, then starts with, then contains
       validAuthors.sort((a, b) => {
@@ -386,44 +550,26 @@ export class AudiobookshelfAdapter {
   }
 
   /**
-   * Search for items (books) by title using ABS native search API.
-   * Falls back to browse (first page) when no search text is provided.
-   * @param {string} searchText
+   * Library items as search results, filtered by media type.
+   * @param {Array} items
    * @param {string} mediaType
-   * @param {Array} libraries
-   * @returns {Promise<Array>}
+   * @returns {Array}
    */
-  async #searchItems(searchText, mediaType, libraries) {
+  #toSearchItems(items, mediaType) {
     const allItems = [];
+    for (const item of items) {
+      const isAudiobook = this.#isAudiobook(item);
+      const isEbook = this.#isEbook(item);
 
-    for (const lib of libraries) {
-      let items;
+      if (mediaType === 'audio' && !isAudiobook) continue;
+      if (mediaType === 'ebook' && !isEbook) continue;
 
-      if (searchText) {
-        // Use ABS native search endpoint — searches full library server-side
-        const searchData = await this.#client.searchLibrary(lib.id, searchText);
-        items = (searchData.book || []).map(b => b.libraryItem);
-      } else {
-        // No search text — browse first page
-        const itemsData = await this.#client.getLibraryItems(lib.id, { limit: 100 });
-        items = itemsData.results || [];
-      }
-
-      for (const item of items) {
-        const isAudiobook = this.#isAudiobook(item);
-        const isEbook = this.#isEbook(item);
-
-        if (mediaType === 'audio' && !isAudiobook) continue;
-        if (mediaType === 'ebook' && !isEbook) continue;
-
-        if (isAudiobook) {
-          allItems.push(this.#toPlayableItem(item, null));
-        } else if (isEbook) {
-          allItems.push(this.#toReadableItem(item, null));
-        }
+      if (isAudiobook) {
+        allItems.push(this.#toPlayableItem(item, null));
+      } else if (isEbook) {
+        allItems.push(this.#toReadableItem(item, null));
       }
     }
-
     return allItems;
   }
 

@@ -12,7 +12,7 @@
 // behind asks whether to keep the music playing.
 import { UiIcon } from '../../../../../frontend/src/lib/ui/UiIcon.jsx';
 import React, { useCallback, useContext, useLayoutEffect, useMemo, useState, useSyncExternalStore } from 'react';
-import { Button, Group, Menu, Text } from '@mantine/core';
+import { Button, Group, Menu, Text, UnstyledButton } from '@mantine/core';
 import {
   IconBadgeCc, IconCheck, IconLanguage, IconMusic, IconPlayerPauseFilled, IconPlayerPlayFilled,
   IconPlayerSkipForwardFilled, IconPlayerStopFilled,
@@ -81,7 +81,7 @@ function Mark({ on }) {
   return on ? <IconCheck size={14} aria-label="Selected" /> : <span className="pf-mark-space" aria-hidden="true" />;
 }
 
-function TrackMenu({ kind, tracks, selected, onSelect, disabled }) {
+function TrackMenu({ kind, tracks, selected, onSelect, disabled, compact = false }) {
   const isSubs = kind === 'subtitle';
   const list = isSubs ? tracks.subtitles : tracks.audio;
   const current = list.find((t) => t.id === selected) ?? null;
@@ -91,7 +91,19 @@ function TrackMenu({ kind, tracks, selected, onSelect, disabled }) {
     // viewport — a file can carry dozens of subtitle streams.
     <ActionMenu position="top" withinPortal middlewares={{ flip: true, shift: true, size: { padding: 8 } }}
       dropdownProps={{ 'data-testid': `pf-${isSubs ? 'subtitles' : 'audio'}-menu`, className: 'pf-track-menu' }}
-      trigger={
+      trigger={compact ? (
+        <UnstyledButton
+          disabled={disabled}
+          aria-label={label}
+          title={label}
+          data-testid={`pf-${isSubs ? 'subtitles' : 'audio'}`}
+          className="pf-chip pf-chip--compact np-rate-btn"
+        >
+          {isSubs ? <IconBadgeCc size={18} aria-hidden /> : <IconLanguage size={18} aria-hidden />}
+          <span className="media-sr-only">{isSubs ? 'Subtitles: ' : 'Audio: '}</span>
+          <span className="pf-chip-short">{isSubs ? (current?.label ?? 'Off') : (current?.label ?? list[0]?.label ?? '—')}</span>
+        </UnstyledButton>
+      ) : (
         <Button
           variant="default" size="sm" disabled={disabled}
           leftSection={isSubs ? <IconBadgeCc size={16} /> : <IconLanguage size={16} />}
@@ -100,7 +112,7 @@ function TrackMenu({ kind, tracks, selected, onSelect, disabled }) {
         >
           {label}
         </Button>
-      }>
+      )}>
       {isSubs && (
         <Menu.Item data-testid="pf-subtitle-off" onClick={() => onSelect({ subtitle: SUBTITLES_OFF })}
           data-selected={!selected || undefined} leftSection={<Mark on={!selected} />}>Off</Menu.Item>
@@ -155,7 +167,40 @@ function MusicPicker({ open, onClose, onPick }) {
   );
 }
 
-export function PlayerFeatureControls({ target, snapshot: snapshotOverride = null }) {
+/** Which tracks an item offers right now: subtitles when it has any, audio when it has a choice. */
+function availableTracks(f) {
+  const currentItem = f.snapshot?.currentItem ?? null;
+  const tracks = f.tracks && (!f.tracks.contentId || !currentItem || f.tracks.contentId === currentItem.contentId) ? f.tracks : null;
+  return { tracks, showSubs: !!tracks && tracks.subtitles.length > 0, showAudio: !!tracks && tracks.audio.length > 1 };
+}
+
+/**
+ * Subtitles / Audio as compact buttons for the control bar (Now Playing
+ * ruling 2026-11-27): Off, the current one and the three languages used last;
+ * the rest under More. Nothing when the item has no choice to make.
+ */
+export function TrackButtons({ target, snapshot: snapshotOverride = null }) {
+  const f = usePlayerFeatures(target, snapshotOverride);
+  const targetName = f.isLocal ? 'local' : target?.deviceId ?? 'unknown';
+  const { tracks, showSubs, showAudio } = availableTracks(f);
+  if (!showSubs && !showAudio) return null;
+  const select = (sel) => {
+    mediaLog.playerFeature({ feature: 'tracks', action: 'select', target: targetName });
+    settle(Promise.resolve().then(() => f.setTracks(sel))).then((result) => {
+      if (result.ok === false) mediaLog.playerFeatureFailed({ feature: 'tracks', action: 'select', target: targetName, code: result.code ?? null });
+    });
+  };
+  return (
+    <>
+      {showSubs && <TrackMenu compact kind="subtitle" tracks={tracks} selected={tracks.selected?.subtitle ?? null}
+        disabled={!f.setTracks} onSelect={select} />}
+      {showAudio && <TrackMenu compact kind="audio" tracks={tracks} selected={tracks.selected?.audio ?? null}
+        disabled={!f.setTracks} onSelect={select} />}
+    </>
+  );
+}
+
+export function PlayerFeatureControls({ target, snapshot: snapshotOverride = null, withTracks = true }) {
   const f = usePlayerFeatures(target, snapshotOverride);
   const [feedback, setFeedback] = useState(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -172,9 +217,10 @@ export function PlayerFeatureControls({ target, snapshot: snapshotOverride = nul
   }, [targetName]);
 
   const currentItem = f.snapshot?.currentItem ?? null;
-  const tracks = f.tracks && (!f.tracks.contentId || !currentItem || f.tracks.contentId === currentItem.contentId) ? f.tracks : null;
-  const showSubs = !!tracks && tracks.subtitles.length > 0;
-  const showAudio = !!tracks && tracks.audio.length > 1;
+  const available = availableTracks(f);
+  const tracks = available.tracks;
+  const showSubs = withTracks && available.showSubs;
+  const showAudio = withTracks && available.showAudio;
   const slideshow = isSlideshowItem(currentItem);
   const music = f.musicBehind;
 

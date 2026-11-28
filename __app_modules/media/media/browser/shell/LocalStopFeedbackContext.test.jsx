@@ -31,7 +31,7 @@ function StopFeedbackHarness({ controller }) {
 }
 
 describe('LocalStopFeedbackProvider', () => {
-  it('keeps a real Mini Stop receipt visible through Back and reopen, but not a held Add', () => {
+  it('keeps a queue-keeping Stop receipt (Now Playing\'s Stop) visible through Back and reopen, but not a held Add', () => {
     const controller = createLocalSessionController({
       clientId: 'shell-stop-receipt',
       randomUuid: () => 'shell-stop-receipt-session',
@@ -43,7 +43,8 @@ describe('LocalStopFeedbackProvider', () => {
     render(<StopFeedbackHarness controller={controller} />);
     expect(screen.queryByTestId('np-queue-kept')).toBeNull();
 
-    fireEvent.click(screen.getByTestId('mini-stop'));
+    // The bottom bar's Stop now clears the item (handleStop.js); Now Playing's Stop keeps the queue.
+    act(() => { controller.transport.stop(); });
     expect(screen.getByTestId('np-queue-kept')).toHaveTextContent('Queue kept: 1 item');
 
     fireEvent.click(screen.getByRole('button', { name: 'Back' }));
@@ -77,7 +78,7 @@ describe('LocalStopFeedbackProvider', () => {
     const queueA = controller.getSnapshot().queue.items[0].queueItemId;
 
     render(<StopFeedbackHarness controller={controller} />);
-    fireEvent.click(screen.getByTestId('mini-stop'));
+    act(() => { controller.transport.stop(); });
     expect(screen.getByTestId('np-queue-kept')).toHaveTextContent('Queue kept: 1 item');
 
     await act(async () => {

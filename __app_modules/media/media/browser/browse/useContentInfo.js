@@ -6,7 +6,8 @@ export function useContentInfo(contentId) {
   const separator = typeof contentId === 'string' ? contentId.indexOf(':') : -1;
   const path = separator < 0 ? null
     : `api/v1/info/${contentId.slice(0, separator)}/${contentId.slice(separator + 1)}`;
-  const { data, loading, error, reload } = useApiResource(path);
+  // swr: an info read ahead on hover (prefetchBrowse.js) paints at once.
+  const { data, loading, error, reload } = useApiResource(path, { swr: true });
 
   useEffect(() => {
     if (error) mediaLog.loadFailed({ surface: 'detail', contentId, error: error.message });

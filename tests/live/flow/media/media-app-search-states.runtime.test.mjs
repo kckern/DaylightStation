@@ -8,10 +8,12 @@ test.describe('MediaApp — search states', () => {
     await page.addInitScript(() => { try { (() => { const k = 'media-app.first-use-done'; const v = localStorage.getItem(k); localStorage.clear(); if (v) localStorage.setItem(k, v); })(); } catch {} });
   });
 
-  test('idle prompt appears on focus', async ({ page }) => {
+  test('the empty box shows Continue or the idle prompt on focus', async ({ page }) => {
     await page.goto('/media');
     await page.getByRole('textbox', { name: 'Search media…' }).focus();
-    await expect(page.getByRole('listbox').getByText('Type to search...', { exact: true })).toBeVisible();
+    // Owner ruling 2026-11-27: the empty box shows Continue / Recent searches
+    // (the seeded household has unfinished items); the prompt only when both are empty.
+    await expect(page.getByTestId('combobox-idle').or(page.getByRole('listbox').getByText('Type to search...', { exact: true })).first()).toBeVisible({ timeout: 15000 });
   });
 
   test('empty state for a no-match query', async ({ page }) => {
@@ -67,6 +69,11 @@ test.describe('MediaApp — search states', () => {
     await page.goto('/media');
     await page.getByRole('button', { name: 'Video', exact: true }).click();
     await page.getByRole('textbox', { name: 'Search media…' }).fill('not-in-video');
+    // The failed source is retried in Video first; Video stays picked until
+    // the person asks for everything (2026-11-27, "A picked scope is honoured").
+    await expect(page.getByTestId('combobox-scope-empty')).toContainText('Nothing for “not-in-video” in Video', { timeout: 20000 });
+    expect(requestCount).toBe(2);
+    await page.getByTestId('combobox-widen').click();
     await expect.poll(() => requestCount).toBe(3);
 
     const status = page.getByTestId('stream-status-line');

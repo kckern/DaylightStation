@@ -16,6 +16,9 @@ vi.mock("../search/useContentDispatch.js", () => ({
     dispatchLeafVerb: vi.fn(), playContainerAsQueue: vi.fn(), addContainerToQueue: vi.fn(),
   }),
 }));
+// These cases are about the list and history; the page's own info read (its
+// header) is covered in BrowseView.dispatch-header.test.jsx.
+vi.mock("./useContentInfo.js", () => ({ useContentInfo: () => ({ info: null, loading: false, error: null, reload: () => {} }) }));
 vi.mock("../fleet/useFleetContext.js", () => ({ useFleetContext: () => ({ devices: [] }) }));
 vi.mock("@/lib/ui/dismiss/useDismissLayer.js", () => ({ useDismissLayer: () => {} }));
 vi.mock("../cast/DispatchTargetPicker.jsx", () => ({ DispatchTargetPicker: () => null }));

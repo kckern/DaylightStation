@@ -14,7 +14,7 @@ test.describe('MediaApp — Resume and Recents on Home', () => {
     const search = page.getByRole('textbox', { name: 'Search media…' });
     await expect(search).toBeVisible({ timeout: 30000 });
     await search.fill('Arrival');
-    const arrival = page.getByRole('option').filter({ hasText: 'Arrival' }).filter({ hasText: 'Movie' });
+    const arrival = page.getByRole('option').filter({ hasText: 'Arrival' }).filter({ hasText: 'Film' });
     await expect(arrival).toHaveCount(1, { timeout: 15000 });
     // This device, then the row's ▶ (PLAY; selecting the row only opens its info view).
     await aimHere(page);
@@ -44,7 +44,7 @@ test.describe('MediaApp — paused restore after reload', () => {
     const search = page.getByRole('textbox', { name: 'Search media…' });
     await expect(search).toBeVisible({ timeout: 30000 });
     await search.fill('Arrival');
-    const arrival = page.getByRole('option').filter({ hasText: 'Arrival' }).filter({ hasText: 'Movie' });
+    const arrival = page.getByRole('option').filter({ hasText: 'Arrival' }).filter({ hasText: 'Film' });
     await expect(arrival).toHaveCount(1, { timeout: 15000 });
     // This device, then the row's ▶ (PLAY; selecting the row only opens its info view).
     await aimHere(page);
@@ -56,7 +56,7 @@ test.describe('MediaApp — paused restore after reload', () => {
     await page.getByRole('button', { name: 'Forward 10 seconds' }).click();
 
     await search.fill('Disclosure Day');
-    const next = page.getByRole('option').filter({ hasText: 'Disclosure Day' }).filter({ hasText: 'Movie' });
+    const next = page.getByRole('option').filter({ hasText: 'Disclosure Day' }).filter({ hasText: 'Film' });
     await expect(next).toHaveCount(1, { timeout: 15000 });
     await next.getByRole('button', { name: 'More actions' }).click();
     await page.getByRole('menuitem', { name: 'Add to Queue', exact: true }).click();

@@ -27,7 +27,68 @@
 // Content (here) and Media (resultPresentation.js) and has no imports of its
 // own to tie it to either side.
 import React from 'react';
+import { UnstyledButton } from '@mantine/core';
 import { sourceLabel } from "../lib/sourceLabels.js";
+
+/**
+ * The sources a search scope asks for, from its params (`source=plex,abs`),
+ * or null when the scope is everything (no `source=`).
+ */
+export function scopeSources(scopeParams) {
+  const raw = new URLSearchParams(String(scopeParams ?? '')).get('source');
+  if (!raw) return null;
+  const list = raw.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+  return list.length ? list : null;
+}
+
+/**
+ * Where each failed source is said (owner, 2026-11-27: "Photos did not answer"
+ * rows on a search for a cartoon were noise):
+ *  - a scoped search names its own failed library at the top (`rows`) — that
+ *    library IS the answer;
+ *  - a source the scope does not ask for is never mentioned (a widened or
+ *    retried search's failures do not belong to the person's scope);
+ *  - an everything search gathers its failures into ONE quiet line under the
+ *    results (`note`), never a row per source.
+ */
+export function failurePlacement(failedSources = [], scopeParams = '') {
+  const scoped = scopeSources(scopeParams);
+  if (!scoped) return { rows: [], note: [...failedSources] };
+  const serves = (source) => {
+    const key = String(source).toLowerCase();
+    return scoped.includes(key) || scoped.includes(key.split('-')[0]);
+  };
+  return { rows: failedSources.filter(serves), note: [] };
+}
+
+/**
+ * The everything-search failure line: "Some libraries didn't answer · Retry",
+ * at the bottom of the results. Retry asks each failed source again.
+ */
+export function SourceFailureNote({ failedSources = [], scopeParams = '', onRetry, testId = 'search-failure-note' }) {
+  const { note } = failurePlacement(failedSources, scopeParams);
+  if (note.length === 0) return null;
+  return (
+    <div data-testid={testId} className="search-failure-note" role="status">
+      <span>Some libraries didn&apos;t answer</span>
+      {onRetry && (
+        <>
+          <span aria-hidden="true">·</span>
+          <UnstyledButton
+            className="search-failure-note-retry"
+            data-testid={`${testId}-retry`}
+            // A pointer focus move would blur the search input and close the
+            // list before the click lands.
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => note.forEach((source) => onRetry(source))}
+          >
+            Retry
+          </UnstyledButton>
+        </>
+      )}
+    </div>
+  );
+}
 
 /**
  * @param {object} props
@@ -43,13 +104,16 @@ function failureLabel(source) {
   return sourceLabel(source) || source;
 }
 
-export function StreamStatusLine({ state = null, pending = [], sourceErrors = [], widening = null, onRetry }) {
+export function StreamStatusLine({ state = null, pending = [], sourceErrors = [], widening = null, onRetry, scopeParams = '' }) {
   const effectiveState = state ?? (widening?.active ? { sources: {}, failedSources: [] } : null);
   if (effectiveState) {
     const pendingSources = Object.entries(effectiveState.sources ?? {})
       .filter(([, status]) => status === 'pending')
       .map(([source]) => source);
-    const failedSources = effectiveState.failedSources ?? [];
+    // Only the scope's own failures are named here; everything-search failures
+    // go to SourceFailureNote under the results (failurePlacement).
+    const failedSources = failurePlacement(effectiveState.failedSources ?? [], scopeParams).rows;
+    const anyFailed = (effectiveState.failedSources ?? []).length > 0;
     if (pendingSources.length === 0 && failedSources.length === 0 && !widening?.active) return null;
     return (
       <div data-testid="stream-status-line" className="stream-status-line" aria-live="polite">
@@ -76,8 +140,8 @@ export function StreamStatusLine({ state = null, pending = [], sourceErrors = []
             Not in {widening.from || 'this kind'} — <strong>From everything:</strong>{' '}
             {widening.resultCount > 0
               ? `${widening.resultCount} result${widening.resultCount === 1 ? '' : 's'}`
-              : failedSources.length > 0
-                ? 'results may be incomplete. Retry the source above.'
+              : anyFailed
+                ? 'results may be incomplete.'
               : `no matches. Check the spelling or browse ${widening.from || 'this kind'}.`}
           </span>
         )}

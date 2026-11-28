@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { act, render, screen, fireEvent, within } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { FleetContext } from "../fleet/FleetProvider.jsx";
 import { CastTargetProvider } from "../cast/CastTargetProvider.jsx";
@@ -30,7 +30,10 @@ const pop = vi.fn();
 let backDestination = 'Browse';
 vi.mock("./NavProvider.jsx", () => ({ useNav: () => ({ pop, push: vi.fn(), view: 'nowPlaying', backDestination }) }));
 vi.mock("./QueuePanel.jsx", () => ({ QueuePanel: () => <div data-testid="queue-stub" /> }));
-vi.mock("./SessionControlsPanel.jsx", () => ({ SessionControlsPanel: () => <div data-testid="session-controls-stub" /> }));
+vi.mock("./SessionControlsPanel.jsx", () => ({
+  SessionControlsPanel: () => <div data-testid="session-controls-stub" />,
+  SessionControlMenuItems: () => <div data-testid="session-menu-items-stub" />,
+}));
 vi.mock("./LineUpOffer.jsx", () => ({ LineUpOffer: () => null }));
 vi.mock("../cast/DispatchTargetPicker.jsx", () => ({
   DispatchTargetPicker: () => <div data-testid="picker-stub" />,
@@ -58,6 +61,9 @@ function renderNowPlayingTree({ devices = [] } = {}) {
 function renderNowPlaying(opts = {}) {
   return render(renderNowPlayingTree(opts));
 }
+
+const openMore = () => fireEvent.click(screen.getByTestId('np-more'));
+const openSettings = () => fireEvent.click(screen.getByTestId('np-settings'));
 
 function makeSnapshot({ item, index = 1, containerTitle = 'Primary Songs' } = {}) {
   const items = [0, 1, 2].map((i) => ({
@@ -91,7 +97,8 @@ beforeEach(() => {
 });
 
 describe('NowPlayingView: Add to home screen (phone app only)', () => {
-  const pinButton = () => screen.queryByRole('button', { name: /add to home screen/i });
+  // Add to home screen is an item of More ⋯ (Now Playing ruling 2026-11-27).
+  const pinButton = () => { if (!screen.queryByTestId('np-more-menu')) openMore(); return screen.queryByRole('menuitem', { name: /add to home screen/i }); };
   const withPlaylist = () => {
     const snap = makeSnapshot({ containerTitle: 'Primary Songs' });
     snap.queue.items = snap.queue.items.map((entry) => ({ ...entry, containerContentId: 'singalong:primary' }));
@@ -140,7 +147,7 @@ describe('NowPlayingView: Add to home screen (phone app only)', () => {
 });
 
 describe('NowPlayingView', () => {
-  it('shows the persisted remote aim while the local Now Playing surface is open', () => {
+  it('on a phone, the aim (where the next ▶ goes) sits after the queue at the thumb, never in the hero (RELY.12a)', () => {
     localStorage.setItem('media-app.cast-target', JSON.stringify({
       mode: 'transfer', targetIds: ['office-tv'], activityAt: Date.now(), exemptionStartedAt: null,
     }));
@@ -149,12 +156,45 @@ describe('NowPlayingView', () => {
     try {
       renderNowPlaying({ devices: [{ id: 'office-tv', name: 'Office TV', location: 'Office' }] });
       expect(screen.getByTestId('aim-label')).toHaveTextContent('Playing on Office TV · Office');
+      expect(screen.getByTestId('aim-label').closest('.np-hero')).toBeNull();
+      expect(screen.getByTestId('aim-label').closest('.np-queue')).not.toBeNull();
     } finally { window.matchMedia = original; }
   });
 
-  it('does not repeat the destination in the page on wider screens (the header carries it)', () => {
+  it('does not repeat the aim in the page on wider screens (the search box carries it)', () => {
     renderNowPlaying();
     expect(screen.queryByTestId('aim-label')).toBeNull();
+  });
+
+  it('one hero: the title once, the subtitle, where it plays — and no inline device list', () => {
+    renderNowPlaying();
+    expect(screen.getAllByText('Primary Song 5')).toHaveLength(1);
+    expect(screen.getByTestId('np-meta-context')).toHaveTextContent('Primary Songs');
+    expect(screen.getByTestId('np-where')).toHaveTextContent('Playing on This device');
+    expect(screen.queryByTestId('handoff-section')).toBeNull();
+    expect(screen.queryByTestId('picker-stub')).toBeNull();
+    expect(screen.getByTestId('np-play-on')).toBeInTheDocument();
+  });
+
+  it('Play on… opens the one picker (moving and several screens live inside it)', async () => {
+    renderNowPlaying();
+    fireEvent.click(screen.getByTestId('np-play-on'));
+    expect(await screen.findByTestId('handoff-section')).toBeInTheDocument();
+    expect(screen.getByTestId('picker-stub')).toBeInTheDocument();
+  });
+
+  it('←/→ seek 10 s while nothing is being typed', () => {
+    renderNowPlaying();
+    fireEvent.keyDown(document.body, { key: 'ArrowRight' });
+    expect(transport.seekRel).toHaveBeenLastCalledWith(10);
+    fireEvent.keyDown(document.body, { key: 'ArrowLeft' });
+    expect(transport.seekRel).toHaveBeenLastCalledWith(-10);
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+    transport.seekRel.mockClear();
+    fireEvent.keyDown(input, { key: 'ArrowRight' });
+    expect(transport.seekRel).not.toHaveBeenCalled();
+    input.remove();
   });
 
   it('the poster always belongs to the CURRENT item: follows it, clears with it', () => {
@@ -198,6 +238,7 @@ describe('NowPlayingView', () => {
     renderNowPlaying();
 
     expect(screen.getByRole('button', { name: 'Expand video', exact: true })).toBeVisible();
+    openSettings();
     expect(screen.getByTestId('np-rate')).toBeDisabled();
   });
 
@@ -217,7 +258,9 @@ describe('NowPlayingView', () => {
 
     expect(screen.getByRole('button', { name: 'Shrink audio', exact: true })).toBeVisible();
     expect(screen.getByTestId('np-meta-art')).toHaveAttribute('src', '/api/v1/thumb/audio-1.jpg');
-    expect(screen.getByTestId('np-meta-title')).toHaveTextContent('Audio Arrival');
+    // Expanded, the title rides on the control bar's lead.
+    expect(screen.getByTestId('now-playing-title')).toHaveTextContent('Audio Arrival');
+    expect(screen.getByTestId('np-transport')).toContainElement(screen.getByTestId('now-playing-title'));
   });
 
   it('keeps the exact "Now Playing: <title>" heading', () => {
@@ -225,26 +268,25 @@ describe('NowPlayingView', () => {
     expect(screen.getByTestId('now-playing-title')).toHaveTextContent('Now Playing: Primary Song 5');
   });
 
-  it('renders artwork + metadata from the current item without raw ids', () => {
+  it('renders the title and its context from the current item without raw ids', () => {
     renderNowPlaying();
-    const meta = screen.getByTestId('np-meta');
-    expect(within(meta).getByTestId('np-meta-title')).toHaveTextContent('Primary Song 5');
-    expect(within(meta).getByTestId('np-meta-context')).toHaveTextContent('Primary Songs');
-    expect(within(meta).getByTestId('np-meta-sub')).toHaveTextContent('2 of 3');
-    expect(within(meta).getByTestId('np-meta-sub')).not.toHaveTextContent('3:00');
-    expect(meta.textContent).not.toMatch(/singalong:/);
+    const hero = screen.getByTestId('now-playing-view').querySelector('.np-titles');
+    expect(within(hero).getByTestId('now-playing-title')).toHaveTextContent('Primary Song 5');
+    expect(within(hero).getByTestId('np-meta-context')).toHaveTextContent('Primary Songs');
+    expect(hero.textContent).not.toMatch(/singalong:/);
+    expect(hero.textContent).not.toMatch(/2 of 3/);
   });
 
-  it('omits metadata lines it cannot fill — never falls back to a raw id', () => {
+  it('omits lines it cannot fill — never falls back to a raw id', () => {
     state.snapshot = makeSnapshot({
       item: { contentId: 'plex:999', title: null, duration: null },
       containerTitle: null,
     });
     renderNowPlaying();
-    const meta = screen.getByTestId('np-meta');
-    expect(within(meta).queryByTestId('np-meta-title')).toBeNull();
-    expect(within(meta).queryByTestId('np-meta-context')).toBeNull();
-    expect(meta.textContent).not.toContain('plex:999');
+    const hero = screen.getByTestId('now-playing-view').querySelector('.np-titles');
+    expect(within(hero).queryByTestId('np-meta-context')).toBeNull();
+    expect(hero.textContent).not.toContain('plex:999');
+    expect(hero.textContent).not.toContain('Untitled');
   });
 
   it('mounts the seek row and full transport for the current item', () => {
@@ -255,8 +297,9 @@ describe('NowPlayingView', () => {
     expect(screen.getByTestId('np-ffw')).toBeInTheDocument();
   });
 
-  it('keeps speed visible but unavailable without a controller rate capability', () => {
+  it('keeps speed (in ⚙) visible but unavailable without a controller rate capability', () => {
     renderNowPlaying();
+    openSettings();
     expect(screen.getByTestId('np-rate')).toBeDisabled();
     expect(screen.getByText('Playback speed is not available for this screen')).toBeInTheDocument();
   });
@@ -271,7 +314,6 @@ describe('NowPlayingView', () => {
     state.snapshot = { ...makeSnapshot({ item: null, index: -1 }), queue: { items: [], currentIndex: -1, upNextCount: 0 } };
     renderNowPlaying();
     expect(screen.getByTestId('now-playing-title')).toHaveTextContent('Nothing playing');
-    expect(screen.queryByTestId('np-meta')).toBeNull();
     expect(screen.queryByTestId('np-transport')).toBeNull();
     expect(screen.queryByTestId('handoff-section')).toBeNull();
   });
@@ -298,12 +340,29 @@ describe('NowPlayingView', () => {
     expect(screen.getByRole('button', { name: 'Shrink video', exact: true })).toBeVisible();
     expect(screen.getByTestId('now-playing-view')).toHaveClass('now-playing-view--expanded');
     expect(hostClaimSpy).toHaveBeenLastCalledWith(expect.any(Object), 2, true, { forceShader: 'focused' });
-    expect(screen.getByRole('button', { name: 'Stop', exact: true })).toBeVisible();
+    openMore();
+    expect(screen.getByRole('menuitem', { name: 'Stop', exact: true })).toBeVisible();
+    // Esc leaves the expanded video.
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(screen.getByTestId('now-playing-view')).not.toHaveClass('now-playing-view--expanded');
+  });
+
+  it('expanded and playing, the controls hide after 3 s without a pointer move and come back on a move', () => {
+    vi.useFakeTimers();
+    try {
+      renderNowPlaying();
+      fireEvent.click(screen.getByRole('button', { name: 'Expand video', exact: true }));
+      act(() => { vi.advanceTimersByTime(3100); });
+      expect(screen.getByTestId('now-playing-view')).toHaveClass('np-idle');
+      fireEvent.pointerMove(screen.getByTestId('now-playing-view'));
+      expect(screen.getByTestId('now-playing-view')).not.toHaveClass('np-idle');
+    } finally { vi.useRealTimers(); }
   });
 
   it('does not use the controller media accessor as a speed control pathway', () => {
     state.mediaElement = { playbackRate: 1 };
     renderNowPlaying();
+    openSettings();
     expect(screen.getByTestId('np-rate')).toBeDisabled();
   });
 });

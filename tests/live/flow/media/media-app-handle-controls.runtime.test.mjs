@@ -1,10 +1,11 @@
 import { markFirstUseDone } from './lib/firstUse.mjs';
+import { closeMenus, moreItem, openMore, pressStop } from './lib/playerBar.mjs';
 import { test, expect } from '@playwright/test';
 import { expectStarted } from './lib/receivers.mjs';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { aimAt } from './lib/aim.mjs';
+import { aimAt, seedAim } from './lib/aim.mjs';
 import { playResult, playResultHere, answerSpotChooser } from './lib/search.mjs';
 
 // Batch B — the handle and the one controls surface, against REAL mounted
@@ -130,7 +131,7 @@ async function openRemote(page, id, viewport) {
   await expect(page.getByTestId(`fleet-peek-${id}`)).toBeVisible({ timeout: 30000 });
   await page.getByTestId(`fleet-peek-${id}`).click();
   await expect(page.getByTestId('peek-panel')).toBeVisible();
-  await expect(page.getByTestId('session-controls-panel')).toBeVisible();
+  await expect(page.getByTestId('peek-panel').getByTestId('np-transport')).toBeVisible();
 }
 
 for (const [label, viewport] of Object.entries(VIEWPORTS)) {
@@ -142,24 +143,30 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
     await markFirstUseDone(context);
     const page = await context.newPage();
     await openRemote(page, A, viewport);
-    const panel = page.getByTestId('session-controls-panel');
+    // The session settings live in the bar's More ⋯ (Now Playing ruling 2026-11-27).
+    const panel = page.getByTestId('peek-panel');
 
-    // Add only: one step, and the screen publishes it (PLAY.10a/AC1).
-    await expect(panel.getByTestId('add-only-toggle')).toHaveText('Add only: off');
-    await panel.getByTestId('add-only-toggle').click();
-    await expect(panel.getByTestId('add-only-toggle')).toHaveText('Add only: on', { timeout: 15000 });
+    // Add only ("Queue what others send"): one step, and the screen publishes it (PLAY.10a/AC1).
+    const addOnly = await moreItem(panel, 'add-only-toggle');
+    await expect(addOnly).toContainText('Queue what others send');
+    await expect(addOnly).toHaveAttribute('aria-checked', 'false');
+    await addOnly.click();
+    await expect(addOnly).toHaveAttribute('aria-checked', 'true', { timeout: 15000 });
     await expect.poll(async () => (await receiverState(request, A))?.controls?.addOnly, { timeout: 15000 }).toBe(true);
 
     // Stop after this one, from a Remote (STEER.13b/AC2).
-    await panel.getByTestId('stop-after-current').click();
-    await expect(panel.getByTestId('stop-after-current')).toHaveAttribute('aria-pressed', 'true', { timeout: 15000 });
+    const stopAfter = await moreItem(panel, 'stop-after-current');
+    await stopAfter.click();
+    await expect(stopAfter).toHaveAttribute('aria-pressed', 'true', { timeout: 15000 });
     await expect.poll(async () => (await receiverState(request, A))?.controls?.stopAfterCurrent, { timeout: 15000 }).toBe(true);
 
     // Sleep timer: minutes, shown with time left (STEER.10a/AC1 remote).
-    await panel.getByTestId('sleep-timer-button').click();
+    await (await moreItem(panel, 'sleep-timer-button')).click();
     await expect(page.getByTestId('sleep-option-end')).toBeVisible();
     await page.getByTestId('sleep-option-30').click();
+    await openMore(panel);
     await expect(panel.getByTestId('sleep-timer-left')).toHaveText(/^Sleep in (30:00|29:\d\d)$/, { timeout: 15000 });
+    await closeMenus(page);
     await expect.poll(async () => (await receiverState(request, A))?.controls?.sleepTimer?.minutes, { timeout: 15000 }).toBe(30);
 
     // End of queue, at the bottom of the queue, with the current choice (STEER.13a/AC1–2).
@@ -171,21 +178,22 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
     await expect.poll(async () => (await receiverState(request, A))?.controls?.endOfQueue, { timeout: 15000 }).toBe('similar');
 
     // Anyone can turn Add only off (PLAY.10a/AC4).
-    await panel.scrollIntoViewIfNeeded();
-    await panel.getByTestId('add-only-toggle').click();
-    await expect(panel.getByTestId('add-only-toggle')).toHaveText('Add only: off', { timeout: 15000 });
-    await panel.getByTestId('sleep-timer-button').click();
+    await panel.getByTestId('np-more').scrollIntoViewIfNeeded();
+    const addOnlyAgain = await moreItem(panel, 'add-only-toggle');
+    await addOnlyAgain.click();
+    await expect(addOnlyAgain).toHaveAttribute('aria-checked', 'false', { timeout: 15000 });
+    await (await moreItem(panel, 'sleep-timer-button')).click();
     await page.getByTestId('sleep-option-off').click();
-    await expect(panel.getByTestId('sleep-timer-button')).toHaveText('Sleep timer', { timeout: 15000 });
-    await panel.scrollIntoViewIfNeeded();
+    await expect(await moreItem(panel, 'sleep-timer-button')).toHaveText('Sleep timer', { timeout: 15000 });
     await shot(page, `remote-session-controls-${label}`);
-    // Nothing is hidden by width: every control is in the viewport's reach.
+    // Nothing is hidden by width: every setting is in the viewport's reach.
     for (const id of ['sleep-timer-button', 'stop-after-current', 'add-only-toggle']) {
       const box = await panel.getByTestId(id).boundingBox();
       expect(box.x).toBeGreaterThanOrEqual(0);
       expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
-      expect(box.height).toBeGreaterThanOrEqual(44);
+      expect(box.height).toBeGreaterThanOrEqual(32);
     }
+    await closeMenus(page);
 
     await resetControls(request, A);
     await stopReceiver(request, A);
@@ -244,7 +252,7 @@ test('RELY.4b/STEER.1b — a pause from this Remote leaves a note on the screen;
   await receiver.context.close();
 });
 
-test('PLAY.10a/AC2 — with Add only on, Play from this device is added and says "Added … (Add only is on)" with its place in line', async ({ browser, request }) => {
+test('PLAY.10a/AC2 — with Add only on, Play from this device is added and says "Added … to the queue on <screen>" with its place in line', async ({ browser, request }) => {
   const receiver = await openReceiver(browser, request, A);
   await resetControls(request, A);
   await startOn(request, A, DISCLOSURE);
@@ -267,7 +275,7 @@ test('PLAY.10a/AC2 — with Add only on, Play from this device is added and says
   await answerSpotChooser(page, { until: () => page.evaluate(() => (
     document.querySelector('[data-testid="dispatch-tray"]')?.textContent ?? '').includes('Added Keepy Uppy')) });
   const tray = page.getByTestId('dispatch-tray');
-  await expect(tray).toContainText(`Added Keepy Uppy to ${A_NAME} (Add only is on)`, { timeout: 60000 });
+  await expect(tray).toContainText(`Added Keepy Uppy to the queue on ${A_NAME}`, { timeout: 60000 });
   await expect(tray).toContainText(/2nd in line/);
   const snap = await receiverState(request, A);
   expect(snap.currentItem.contentId).toBe(DISCLOSURE);
@@ -384,7 +392,7 @@ test('PLACE.9a — Move to… from a screen\'s Remote: to the other screen (it p
   // This device picks up at B's spot (playing or paused, as B was).
   await expect.poll(() => local.evaluate((node) => (node.readyState >= 1 ? node.currentTime : -1)), { timeout: 120000 })
     .toBeGreaterThanOrEqual(Math.max(0, bSpot - 3));
-  await page.getByTestId('np-stop').click();
+  await pressStop(page);
   await context.close();
   await ra.context.close();
   await rb.context.close();
@@ -401,14 +409,11 @@ test('PLACE.4a — several screens: labelled, aim names both, same-room drift wa
   await markFirstUseDone(context);
   const page = await context.newPage();
   await gotoMedia(page);
-  // Aim at both screens: on a phone that is the header's "Playing on" control
-  // (one checkbox per screen); the search sheet's chip then names both.
-  await page.getByTestId('cast-target-chip').click();
-  await page.getByTestId(`cast-target-checkbox-${A}`).check();
-  await page.getByTestId(`cast-target-checkbox-${B}`).check();
-  await page.getByTestId('cast-target-chip').click();
-  await expect(page.getByTestId('cast-popover')).toBeHidden();
-  await expect(page.getByTestId('destination-control-name')).toContainText(`${A_NAME} + ${B_NAME}`);
+  // An aim at both screens (no control aims at several — one destination,
+  // shown where you type — but a stored aim can, and every surface reads it);
+  // the launcher's chip and the search sheet's chip then name both.
+  await seedAim(page, [A, B]);
+  await expect(page.getByTestId('media-search-launcher-row').getByTestId('search-destination-chip')).toContainText(`${A_NAME} + ${B_NAME}`);
   await page.getByTestId('media-search-launcher').click();
   const searchMode = page.getByTestId('search-mode');
   await expect(searchMode.getByTestId('search-destination-chip')).toContainText(`${A_NAME} + ${B_NAME}`);
@@ -518,10 +523,13 @@ test('PLACE.4a — several screens: labelled, aim names both, same-room drift wa
     await expect(np).toBeVisible();
     const media = page.getByTestId('now-playing-host').locator('video');
     await expect.poll(() => media.evaluate((n) => !n.paused && n.currentTime > 1), { timeout: 60000 }).toBe(true);
-    await np.getByTestId('sleep-timer-button').click();
+    await (await moreItem(np, 'sleep-timer-button')).click();
     await expect(page.getByTestId('sleep-timer-menu')).toBeVisible();
     await page.getByTestId('sleep-option-end').click();
-    await expect(np.getByTestId('sleep-timer-left')).toHaveText('Sleep at end of this item');
+    // The hero says it (the bar is hidden on Now Playing), and More ⋯ names it.
+    await expect(np.getByTestId('np-sleep')).toContainText('sleeps at the end');
+    await expect(await moreItem(np, 'sleep-timer-left')).toHaveText('Sleep at end of this item');
+    await closeMenus(page);
     await shot(page, `local-session-controls-${label}`);
     await np.getByTestId('now-playing-back').click();
     // The handle's span is aria-hidden decoration; assistive tech reads the
@@ -566,11 +574,14 @@ test('PLACE.4a — several screens: labelled, aim names both, same-room drift wa
     const choice = np.getByTestId('queue-end-choice');
     await choice.getByTestId('queue-end-similar').click();
     await expect(choice.getByTestId('queue-end-similar')).toHaveAttribute('data-checked', 'true');
-    await np.getByTestId('stop-after-current').click();
-    await expect(np.getByTestId('stop-after-current')).toHaveAttribute('aria-pressed', 'true');
+    const stopAfter = await moreItem(np, 'stop-after-current');
+    await stopAfter.click();
+    await expect(stopAfter).toHaveAttribute('aria-pressed', 'true');
+    await closeMenus(page);
     await seekNearEnd(page, np);
     await expect(choice.getByTestId('queue-end-status')).toHaveText('Stopped after that one, as asked', { timeout: 120000 });
-    await expect(np.getByTestId('stop-after-current')).toHaveAttribute('aria-pressed', 'false');
+    await expect(await moreItem(np, 'stop-after-current')).toHaveAttribute('aria-pressed', 'false');
+    await closeMenus(page);
 
     // Now the end of the queue keeps similar things playing, marked as added automatically.
     await page.getByTestId('np-toggle').click();
@@ -579,7 +590,7 @@ test('PLACE.4a — several screens: labelled, aim names both, same-room drift wa
     await expect(choice.getByTestId('queue-end-status')).toHaveText(/^Added \d similar items?/, { timeout: 120000 });
     await expect(np.locator('[data-testid^="queue-auto-"]').first()).toHaveText('added automatically');
     await shot(page, `local-similar-${label}`);
-    await page.getByTestId('np-stop').click();
+    await pressStop(page);
     await context.close();
   });
 }

@@ -202,6 +202,20 @@ describe('MiniPlayer', () => {
     expect(transport.stop).toHaveBeenCalledTimes(1);
   });
 
+  it('Stop clears the item: the bar leaves at once, with no "Ready / Resume" leftover, and nothing to restore', () => {
+    const controller = createLocalSessionController({ clientId: 'stop-clears' });
+    controller.setPlayerHandle?.({ play: vi.fn(), pause: vi.fn(), seek: vi.fn() });
+    controller.queue.playNow({ contentId: 'plex:a', title: 'Hospital', format: 'video', duration: 400 });
+    controller.queue.add({ contentId: 'plex:b', title: 'Keepy Uppy', format: 'video' });
+    renderMiniPlayer(controller);
+    expect(screen.getByTestId('media-mini-player')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('mini-stop'));
+    expect(screen.queryByTestId('media-mini-player')).toBeNull();
+    expect(controller.getSnapshot().currentItem).toBeNull();
+    expect(controller.getSnapshot().queue.items).toHaveLength(0);
+    expect(localStorage.getItem('media-app.session') ?? '').not.toMatch(/Hospital/);
+  });
+
   it('docks the live video (not the thumbnail) for video while browsing', () => {
     state.snapshot = makeSnapshot({ format: 'video' });
     nav.view = 'home';

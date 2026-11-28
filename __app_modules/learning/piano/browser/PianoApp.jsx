@@ -27,6 +27,7 @@ import {
 import { usePianoScreensaver } from './PianoKiosk/usePianoScreensaverHooks.js';
 import { usePianoScreenOff } from './PianoKiosk/usePianoScreenOff.js';
 import { KIOSK_DEVICE_ID } from './PianoKiosk/kioskDeviceIdentity.js';
+import { useNoSoftKeyboard } from './PianoKiosk/useNoSoftKeyboard.js';
 import { useKioskLaunchCommand } from './PianoKiosk/useKioskLaunchCommand.js';
 import { openPianoContent, openPianoCourseLesson } from './PianoKiosk/pianoContentOpen.js';
 import { PianoPlaybackProvider } from './PianoKiosk/PianoPlaybackContext.jsx';
@@ -156,6 +157,8 @@ function ScreensaverDriver() {
   // configured target; otherwise pass a falsy deviceId, which makes the hook inert.
   const configDeviceId = config.screensaver?.deviceId;
   const isThisDevice = !!configDeviceId && KIOSK_DEVICE_ID === configDeviceId;
+  // A kiosk (any `?device=` identity) never raises the on-screen keyboard.
+  useNoSoftKeyboard(!!KIOSK_DEVICE_ID);
   usePianoScreensaver({
     deviceId: isThisDevice ? configDeviceId : null,
     activeNotes,

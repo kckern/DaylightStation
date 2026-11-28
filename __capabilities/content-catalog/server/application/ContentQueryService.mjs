@@ -32,8 +32,12 @@ export class ContentQueryService extends IContentQueryPort {
    * @param {number} [deps.adapterTimeoutMs=3000] - Default per-adapter search timeout
    * @param {Object<string, number>} [deps.sourceTimeoutsMs] - Per-source timeout overrides (e.g., { abs: 6000 })
    */
-  constructor({ contentCatalog, mediaProgressMemory = null, prefixAliases = {}, logger = console, aliasResolver = null, adapterTimeoutMs = 3000, sourceTimeoutsMs = {}, deadline = { run: work => work } }) {
+  #clock;
+  #unwatchedCache = new Map();
+
+  constructor({ contentCatalog, mediaProgressMemory = null, prefixAliases = {}, logger = console, aliasResolver = null, adapterTimeoutMs = 3000, sourceTimeoutsMs = {}, deadline = { run: work => work }, clock = () => Date.now() }) {
     super();
+    this.#clock = clock;
     if (!contentCatalog?.search) throw new Error('ContentQueryService requires contentCatalog');
     this.#contentCatalog = contentCatalog;
     this.#mediaProgressMemory = mediaProgressMemory;
@@ -78,6 +82,30 @@ export class ContentQueryService extends IContentQueryPort {
   #within(work, ms, label) {
     if (!ms || ms <= 0) return work;
     return this.#deadline.run(work, { timeoutMs: ms, message: `${label} timeout after ${ms}ms` });
+  }
+
+  /**
+   * Build every source's search index in the background (boot calls this and
+   * does not wait). Without it the first search after a restart paid for the
+   * build and could miss its source budget. Logs each source's build time.
+   * @returns {Promise<Array<{source: string, ok: boolean, buildMs: number}>>}
+   */
+  prepareSearch() {
+    const sources = this.#contentCatalog.searchPreparableSources?.() ?? [];
+    this.#logger.info?.('content-query.search-index.building', { sources });
+    return Promise.all(sources.map(async (source) => {
+      const startedAt = performance.now();
+      try {
+        const result = await this.#contentCatalog.prepareSearch(source);
+        const buildMs = Math.round(performance.now() - startedAt);
+        this.#logger.info?.('content-query.search-index.ready', { source, buildMs, entries: result?.entries ?? null });
+        return { source, ok: true, buildMs };
+      } catch (error) {
+        const buildMs = Math.round(performance.now() - startedAt);
+        this.#logger.warn?.('content-query.search-index.failed', { source, buildMs, error: error?.message || String(error) });
+        return { source, ok: false, buildMs };
+      }
+    }));
   }
 
   /**
@@ -783,6 +811,9 @@ export class ContentQueryService extends IContentQueryPort {
    */
   #canHandle(source, query) {
     const caps = this.#contentCatalog.searchCapabilities(source);
+    // A source that searches the outside world (YouTube) answers only a
+    // search scoped to it, never an unscoped one.
+    if (caps.explicitOnly && !query.source) return false;
     const META_KEYS = ['source', 'take', 'skip', 'sort', 'withExif', 'withPeople'];
     const queryKeys = Object.keys(query).filter(k => !META_KEYS.includes(k));
 
@@ -996,6 +1027,51 @@ export class ContentQueryService extends IContentQueryPort {
     }
     this.#logger.debug?.('content-query.watch-state.enrich', { source, containerId, itemCount: items.length });
     return this.#enrichWithWatchState(items, source, containerId);
+  }
+
+  /**
+   * How many leaves under each container (a show, a season) the household
+   * has not finished, from its own progress (`watched` = 90 %), not the media
+   * server's view counts. For show and season tiles and rows (2026-11-27).
+   * At most 40 ids per call, four at a time; each answer is kept a minute;
+   * an id that cannot be read is left out.
+   * @param {string[]} contentIds
+   * @returns {Promise<Record<string, {unwatched: number, total: number}>>}
+   */
+  async unwatchedCounts(contentIds) {
+    const UNWATCHED_TTL_MS = 60_000;
+    const ids = [...new Set((contentIds ?? []).filter((id) => /^[\w-]+:.+/.test(String(id ?? ''))))].slice(0, 40);
+    const now = this.#clock();
+    const out = {};
+    const pending = [];
+    for (const id of ids) {
+      const hit = this.#unwatchedCache.get(id);
+      if (hit && now - hit.at < UNWATCHED_TTL_MS) out[id] = hit.value;
+      else pending.push(id);
+    }
+    const countOne = async (id) => {
+      const at = id.indexOf(':');
+      const source = id.slice(0, at);
+      const localId = id.slice(at + 1);
+      try {
+        const resolution = this.#contentCatalog.resolveSource(source, localId);
+        if (!resolution) return;
+        const leaves = await this.#contentCatalog.resolvePlayables(resolution, localId);
+        if (!Array.isArray(leaves)) return;
+        const enriched = await this.#enrichWithWatchState(leaves, source, id);
+        const value = { unwatched: enriched.filter((leaf) => !leaf.watched).length, total: enriched.length };
+        if (this.#unwatchedCache.size > 2000) this.#unwatchedCache.clear();
+        this.#unwatchedCache.set(id, { at: this.#clock(), value });
+        out[id] = value;
+      } catch (error) {
+        this.#logger.warn?.('content-query.unwatched.failed', { contentId: id, error: error.message });
+      }
+    };
+    for (let i = 0; i < pending.length; i += 4) {
+      await Promise.all(pending.slice(i, i + 4).map(countOne));
+    }
+    this.#logger.debug?.('content-query.unwatched.counted', { asked: ids.length, computed: pending.length, answered: Object.keys(out).length });
+    return out;
   }
 
   /**

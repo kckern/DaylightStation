@@ -142,6 +142,27 @@
     background: color-mix(in srgb, var(--media-text) 70%, transparent);
   }
 
+  // Watch marks (2026-11-27, jellyfin study rec 11): a show or season's
+  // unwatched count, or a ✓ when everything (or a finished item) is watched.
+  // An indicator on the art's top-right corner, never a control.
+  .home-tile-badge {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    min-width: 24px;
+    height: 24px;
+    padding: 0 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--media-text);
+    background: var(--media-ink);
+    pointer-events: none;
+  }
+
   // The one deliberate play: a solid amber disc on the art's bottom-right
   // corner, clear of the progress edge. 44 px target, 36 px disc. The art
   // around it opens the item; only this plays.

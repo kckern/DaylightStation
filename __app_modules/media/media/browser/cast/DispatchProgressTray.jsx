@@ -205,7 +205,9 @@ function farCopy(d, phase, name, kind) {
       const last = d.steps?.[d.steps.length - 1];
       return {
         primary: isAdd
-          ? `${title ? `Adding ${title} to ${name}` : `Adding to ${name}`}${d.appliedAs === 'add' ? ' (Add only is on)' : ''}`
+          ? (d.appliedAs === 'add'
+            ? `${title ? `Adding ${title} to the queue on ${name}` : `Adding to the queue on ${name}`}`
+            : `${title ? `Adding ${title} to ${name}` : `Adding to ${name}`}`)
           : (title ? `Sending ${title} to ${name}` : `Sending to ${name}`),
         secondary: last ? friendlyStepLabel(last.step, kind) : 'Starting…',
       };
@@ -214,10 +216,11 @@ function farCopy(d, phase, name, kind) {
       return { primary: `Sent to ${name}`, secondary: title };
     case 'confirmed':
       if (isAdd && d.appliedAs === 'add') {
-        // PLAY.10a/AC2: the screen's Add only turned this Play into an add.
+        // PLAY.10a/AC2: the screen queues what others send, so this Play became an add.
+        // Said in a person's words (Now Playing ruling 2026-11-27), not "Add only is on".
         const place = d.outcomeIdentity?.ordinal ?? d.outcomeIdentity?.queueLength;
         return {
-          primary: `${title ? `Added ${title} to ${name}` : `Added to ${name}`} (Add only is on)`,
+          primary: `${title ? `Added ${title} to the queue on ${name}` : `Added to the queue on ${name}`}`,
           secondary: Number.isInteger(place) ? `${ordinal(place)} in line` : null,
         };
       }

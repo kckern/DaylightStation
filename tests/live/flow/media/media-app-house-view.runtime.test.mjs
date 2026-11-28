@@ -118,12 +118,12 @@ test('HOUSE.2a/5a, PLAY.10a, STEER.11a: every row shows start status and who sta
 
     // RQ-PLAY-10: the row says Add only is on, and anyone can switch it off.
     expect((await call(request, 'PUT', `${base}/session/add-only`, { enabled: true })).status).toBe(200);
-    await expect(observer.page.getByTestId(`house-add-only-${DEVICE}`)).toContainText('Add only is on', { timeout: 15000 });
+    await expect(observer.page.getByTestId(`house-add-only-${DEVICE}`)).toContainText('Queue what others send is on', { timeout: 15000 });
     await shot(observer.page, 'house-row-add-only-tablet');
     await observer.page.getByTestId(`house-add-only-off-${DEVICE}`).click();
     await expect.poll(async () => (await state(request))?.controls?.addOnly, { timeout: 15000 }).toBe(false);
     await expect(observer.page.getByTestId(`house-add-only-${DEVICE}`)).toHaveCount(0, { timeout: 15000 });
-    await expect(observer.page.getByTestId('dispatch-tray')).toContainText('Add only is off on Acceptance receiver');
+    await expect(observer.page.getByTestId('dispatch-tray')).toContainText('Stopped queueing what others send on Acceptance receiver');
 
     // RQ-STEER-13: Pause all from the house view, Resume all brings back exactly it.
     await observer.page.getByTestId('house-pause-all').click();

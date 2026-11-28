@@ -68,6 +68,9 @@ export const mediaLog = {
   playbackError:          error('playback.error'),
   playbackAdvanced:       info('playback.advanced'),
   playbackProblem:        warn('playback.problem'),
+  playbackDuplicateSkipped: info('playback.duplicate-skipped'),
+  playbackNoticeReplaced: info('playback.notice-replaced'),
+  unwatchedCountsFailed:  warn('browse.unwatched-counts-failed'),
   playbackRecovered:      info('playback.recovered'),
   searchIssued:           debug('search.issued'),
   searchResultChunk:      debug('search.result-chunk'),
@@ -96,6 +99,8 @@ export const mediaLog = {
   // or a click), and an aimed screen that left the fleet being let go.
   searchDestinationCycled: info('search.destination-cycled'),
   searchDestinationStale: info('search.destination-stale'),
+  destListOpened:         info('dest.list-opened'),
+  destListPicked:         info('dest.list-picked'),
   aimRestored:            info('aim.restored'),
   aimActivity:            sampled('aim.activity', { maxPerMinute: 30, aggregate: true }),
   aimExpired:             info('aim.expired'),
@@ -191,6 +196,14 @@ export const mediaLog = {
   // Owner ruling 2026-11-26: the info view's More ⋯ (browse/DetailView.jsx).
   detailMoreOpened:       info('detail.more-opened'),
   detailMorePicked:       info('detail.more-picked'),
+  // Browse headers and navigation (2026-11-27).
+  parentOpened:           info('browse.parent-opened'),
+  browseHeaderShown:      info('browse.header-shown'),
+  browseSoleSeason:       info('browse.sole-season'),
+  browseSummaryExpanded:  info('browse.summary-expanded'),
+  browsePrefetched:       debug('browse.prefetched'),
+  browseCrumbOpened:      info('browse.crumb-opened'),
+  playFromStart:          info('play.from-start'),
   remoteProblemReported:  warn('remote-problem.reported'),
   screenHandleShown:      info('screen-handle.shown'),
   screenHandleHidden:     debug('screen-handle.hidden'),
@@ -245,6 +258,20 @@ export const mediaLog = {
   previewStarted:         info('preview.started'),
   previewStopped:         info('preview.stopped'),
   previewFailed:          warn('preview.failed'),
+  // Now Playing (ruling 2026-11-27, shell/NowPlayingView.jsx): the view came
+  // up ({ kind, expanded, hasQueue }); a collapsed part of the queue opened
+  // ({ part: 'earlier'|'later', count, target }); the end-of-queue choice
+  // changed ({ target, from, to }); Play on… / More ⋯ opened; expand toggled.
+  nowPlayingMounted:          info('nowplaying.mounted'),
+  nowPlayingQueueExpanded:    info('nowplaying.queue-expanded'),
+  nowPlayingEndActionChanged: info('nowplaying.end-action-changed'),
+  nowPlayingPlayOnOpened:     info('nowplaying.play-on-opened'),
+  nowPlayingMoreOpened:       debug('nowplaying.more-opened'),
+  nowPlayingExpanded:         info('nowplaying.expanded'),
+  // Stop on the bottom bar clears the item (shell/handleStop.js): { target:
+  // 'local' | <screen id>, contentId }; a screen's stop that failed or was refused.
+  miniPlayerStopped:          info('miniplayer.stopped'),
+  miniPlayerStopFailed:       warn('miniplayer.stop-failed'),
 };
 
 export default mediaLog;

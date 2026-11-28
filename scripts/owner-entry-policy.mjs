@@ -546,6 +546,8 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__capabilities/content-catalog/browser/picker-controller.mjs': null,
   '__capabilities/content-catalog/browser/descriptor.mjs': null,
   '__capabilities/content-catalog/browser/source-labels.mjs': null,
+  // Kinds named by library (Audiobook, Book, Author, Song, Film), 2026-11-27.
+  '__capabilities/content-catalog/browser/kind-labels.mjs': null,
   '__capabilities/playback/browser/surround-frame.mjs': null,
   '__capabilities/playback/browser/surround-registry.mjs': null,
   '__capabilities/playback/browser/surround-override.mjs': null,

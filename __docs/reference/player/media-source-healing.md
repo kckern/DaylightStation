@@ -89,8 +89,18 @@ Response: `{ state, contentId, unreadableSince?, unreadableMs?, steps[] }`, wher
 |---|---|---|
 | `readable` | Plex reports every part accessible | reload (resume after a wait) |
 | `unreadable` | the file exists but Plex cannot open it | wait and poll |
-| `missing` | Plex reports the file does not exist | ordinary recovery ladder |
+| `missing` | Plex reports the file does not exist. The healer asks Plex to rescan the folder above the file's folder (a partial scan, once per folder per 10 min), so a file renamed or moved outside Plex is found again | ordinary recovery ladder |
 | `unknown` | not a Plex item, a container (`reason: 'not-a-leaf'`), or Plex itself did not answer | ladder, or keep waiting if already waiting (a screen also keeps waiting on a confirmed refusal) |
+
+**Missing files and renames.** The NAS mount gives Plex no change events, so a
+folder renamed outside Plex leaves Plex holding the old path: every play
+answers 404 and `checkFiles` says `exists: false`. On 2026-11-27 an audiobook
+rename that dropped `?` and `:` from folder names left 270 tracks this way. A
+`missing` answer now runs the `plex-rescan` step
+(`PlexSourceProbe.rescanFolder` → `GET /library/sections/:id/refresh?path=`,
+logged `media.source.heal.rescan-requested`); Plex keeps the item's rating key
+and progress when it finds the renamed file. The play that found it still
+fails; the next one works.
 
 **Episodes.** The first `unreadable` answer opens an episode for that file. The
 host rung runs at most once every `hostHealCooldownMs` (20s) per file. The push

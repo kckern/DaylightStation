@@ -6,7 +6,7 @@
 // passes in — not SearchMode itself (see SearchMode.test.jsx).
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { CastTargetProvider, CAST_TARGET_KEY } from "../cast/CastTargetProvider.jsx";
 import { useCastTarget } from "../cast/useCastTarget.js";
@@ -25,8 +25,8 @@ vi.mock('@/lib/ui/useCompactViewport.js', () => ({ useCompactViewport: () => com
 vi.mock("./FleetIndicator.jsx", () => ({
   FleetIndicator: () => <div data-testid="fleet-indicator-stub" />,
 }));
-vi.mock("../cast/CastTargetChip.jsx", () => ({
-  CastTargetChip: () => <div data-testid="cast-target-chip-stub" />,
+vi.mock("../search/DestinationChip.jsx", () => ({
+  DestinationChip: ({ compact }) => <div data-testid="destination-chip-stub" data-compact={compact ? 'yes' : 'no'} />,
 }));
 vi.mock("../controller/useSessionController.js", () => ({
   useSessionController: () => ({ lifecycle: { reset: lifecycleReset } }),
@@ -87,14 +87,17 @@ describe('Dock', () => {
   it('desktop: no header "Playing on" control — the destination lives in the search box, first-use hint on its chip', () => {
     compact.value = false;
     renderDock({ onOpenSearch: vi.fn() });
-    expect(screen.queryByTestId('cast-target-chip-stub')).toBeNull();
+    expect(screen.queryByTestId('destination-chip-stub')).toBeNull();
     expect(screen.getByTestId('media-content-search-stub')).toHaveAttribute('data-first-use', 'chip');
   });
 
-  it('phone: keeps the header destination control with the first-use hint', () => {
+  it('phone: no header "Playing on" control — the same chip rides the search launcher, first-use hint on it', () => {
     compact.value = true;
     renderDock({ onOpenSearch: vi.fn() });
-    expect(screen.getByTestId('cast-target-chip-stub')).toBeInTheDocument();
+    const row = screen.getByTestId('media-search-launcher-row');
+    expect(within(row).getByTestId('media-search-launcher')).toHaveTextContent('Search media…');
+    expect(within(row).getByTestId('destination-chip-stub')).toHaveAttribute('data-compact', 'yes');
+    expect(screen.queryByText('Playing on')).toBeNull();
     expect(screen.getByTestId('media-content-search-stub')).toHaveAttribute('data-first-use', 'none');
   });
 

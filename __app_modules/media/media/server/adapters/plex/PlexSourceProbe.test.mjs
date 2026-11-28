@@ -74,4 +74,15 @@ describe('PlexSourceProbe', () => {
     const client = { request: vi.fn(async () => ({ MediaContainer: { Metadata: [{ type: 'episode', title: 'x' }] } })) };
     expect((await new PlexSourceProbe({ client }).probe('1')).reason).toBe('not-a-leaf');
   });
+
+  it('carries the library section, and rescans one folder of it on request', async () => {
+    const client = {
+      request: vi.fn(async () => ({ MediaContainer: { Metadata: [{ title: 'Book', librarySectionID: 9, Media: [{ Part: [{ file: '/data/a/b/c.mp3', exists: false }] }] }] } })),
+    };
+    const probe = new PlexSourceProbe({ client });
+    expect((await probe.probe('505134'))).toMatchObject({ state: 'missing', sectionId: '9' });
+    expect(await probe.rescanFolder('9', '/data/media/audio/audiobooks/Mario Livio')).toEqual({ ok: true });
+    expect(client.request).toHaveBeenLastCalledWith('/library/sections/9/refresh?path=%2Fdata%2Fmedia%2Faudio%2Faudiobooks%2FMario%20Livio', { deadline: 15_000 });
+    expect(await probe.rescanFolder('9; rm', '/x')).toMatchObject({ ok: false });
+  });
 });

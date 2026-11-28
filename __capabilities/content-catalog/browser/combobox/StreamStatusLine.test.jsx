@@ -5,7 +5,10 @@
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { StreamStatusLine } from "./StreamStatusLine.jsx";
+import { MantineProvider } from '@mantine/core';
+
+const renderM = (ui) => render(ui, { wrapper: ({ children }) => <MantineProvider>{children}</MantineProvider> });
+import { StreamStatusLine, SourceFailureNote, failurePlacement } from "./StreamStatusLine.jsx";
 
 describe('StreamStatusLine', () => {
   it('renders a "Searching N sources…" line while sources are still pending', () => {
@@ -87,6 +90,7 @@ describe('StreamStatusLine', () => {
         }}
         widening={{ from: 'Audiobooks', active: true }}
         onRetry={vi.fn()}
+        scopeParams="source=plex"
       />
     );
 
@@ -104,10 +108,42 @@ describe('StreamStatusLine', () => {
           results: [], phase: 'partial', failedSources: ['plex'],
         }}
         onRetry={vi.fn()}
+        scopeParams="source=plex,files"
       />
     );
 
     expect(screen.getByText('Plex did not answer')).toBeVisible();
     expect(screen.getByText(/Still searching/)).toBeVisible();
+  });
+});
+
+describe('source failures by scope (owner 2026-11-27: "Photos did not answer" on a cartoon search)', () => {
+  const state = (failedSources) => ({
+    query: 'bluey', scope: '', sources: Object.fromEntries(failedSources.map((s) => [s, 'failed'])),
+    results: [], phase: 'partial', failedSources,
+  });
+
+  it('an everything search names no source at the top', () => {
+    const { container } = render(<StreamStatusLine state={state(['immich', 'familyphotos'])} onRetry={vi.fn()} scopeParams="take=50" />);
+    expect(container).toBeEmptyDOMElement();
+    expect(screen.queryByText(/did not answer/)).toBeNull();
+  });
+
+  it('an everything search says it once, quietly, with one Retry for every failed source', () => {
+    const onRetry = vi.fn();
+    renderM(<SourceFailureNote failedSources={['immich', 'familyphotos']} scopeParams="take=50" onRetry={onRetry} />);
+    const note = screen.getByTestId('search-failure-note');
+    expect(note).toHaveTextContent("Some libraries didn't answer");
+    expect(note).not.toHaveTextContent(/Photos|Familyphotos/);
+    fireEvent.click(screen.getByTestId('search-failure-note-retry'));
+    expect(onRetry.mock.calls.map(([s]) => s)).toEqual(['immich', 'familyphotos']);
+  });
+
+  it('a source the scope does not ask for is never mentioned', () => {
+    expect(failurePlacement(['familyphotos', 'plex'], 'source=plex&mediaType=video')).toEqual({ rows: ['plex'], note: [] });
+    render(<StreamStatusLine state={state(['familyphotos'])} onRetry={vi.fn()} scopeParams="source=plex&mediaType=video" />);
+    expect(screen.queryByText(/did not answer/)).toBeNull();
+    renderM(<SourceFailureNote failedSources={['familyphotos']} scopeParams="source=plex&mediaType=video" onRetry={vi.fn()} />);
+    expect(screen.queryByTestId('search-failure-note')).toBeNull();
   });
 });

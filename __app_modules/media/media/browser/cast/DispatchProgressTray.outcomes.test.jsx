@@ -264,7 +264,7 @@ describe('DispatchProgressTray outcomes', () => {
       outcomeIdentity: { queueLength: 5, ordinal: 5 } }));
     render(<MantineProvider><DispatchProgressTray /></MantineProvider>);
     const tray = screen.getByTestId('dispatch-tray');
-    expect(tray).toHaveTextContent('Added Faith to Living Room TV (Add only is on)');
+    expect(tray).toHaveTextContent('Added Faith to the queue on Living Room TV');
     expect(tray).toHaveTextContent('5th in line');
   });
 });

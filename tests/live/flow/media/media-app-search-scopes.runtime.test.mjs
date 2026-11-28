@@ -136,8 +136,10 @@ async function visibleResultKinds(page, isPhone) {
   }), isPhone);
 }
 
+// Kinds are named by library since 2026-11-27 (a movie reads "Film"), and an
+// episode row may lead with its number ("E3 · 12 min").
 function hasVideoKindSubtitle(subtitle) {
-  return subtitle.split(/\s+[·•]\s+/u).some((token) => /^(movie|tv show|series|season|episode|video)$/i.test(token.trim()));
+  return subtitle.split(/\s+[·•]\s+/u).some((token) => /^(film|movie|tv show|series|season|episode|video|clip|E\d+)$/i.test(token.trim()));
 }
 
 async function closeSearch(page, input, isPhone) {
@@ -243,8 +245,8 @@ for (const [surface, viewport, isPhone] of surfaces) {
     expect(videoResultIds.length, 'the configured Video query should render its actual results').toBeGreaterThan(0);
     const videoKinds = await visibleResultKinds(page, isPhone);
     expect(videoKinds.length, 'each result exposes its dedicated kind subtitle').toBe(videoResultIds.length);
-    expect(videoKinds.every(hasVideoKindSubtitle),
-      'the dedicated result-kind subtitles returned by Video scope should identify video kinds').toBe(true);
+    expect(videoKinds.filter((kind) => !hasVideoKindSubtitle(kind)),
+      'the dedicated result-kind subtitles returned by Video scope should identify video kinds').toEqual([]);
 
     await closeSearch(page, input, isPhone);
     if (isPhone) {
@@ -297,5 +299,83 @@ for (const [surface, viewport, isPhone] of surfaces) {
     await expect.poll(() => resultRows(page, isPhone).count(), { timeout: 20000 })
       .toBeGreaterThan(0);
     expect(await visibleResultIds(page, isPhone).then((ids) => ids.length)).toBeGreaterThan(0);
+  });
+}
+
+// A picked scope is honoured (2026-11-27). Books › Scripture searched "Nephi"
+// and found nothing (the scripture search only knew Bible book names), and the
+// search then widened to everything on its own, so the person saw unrelated
+// results under the Scripture chip.
+function findScope(scopes, key) {
+  for (const scope of scopes) {
+    if (scope.key === key) return { scope, parent: null };
+    const child = (scope.children || []).find((c) => c.key === key);
+    if (child) return { scope: child, parent: scope };
+  }
+  return { scope: null, parent: null };
+}
+
+async function pickScope(page, isPhone, scopes, key) {
+  const { scope, parent } = findScope(scopes, key);
+  expect(scope, `the live media config must offer the "${key}" scope`).toBeTruthy();
+  if (parent) await scopeChip(page, isPhone, parent.key).click();
+  await scopeChip(page, isPhone, key).click();
+  await expect(scopeChip(page, isPhone, key)).toHaveAttribute('aria-pressed', 'true');
+  return scope;
+}
+
+for (const [surface, viewport, isPhone] of surfaces) {
+  test(`[SCOPE.honoured] ${surface}: Books › Scripture finds "Nephi" in the Book of Mormon`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    const input = await openSearch(page, isPhone);
+    const scopes = await readLiveScopes(page);
+    const scripture = await pickScope(page, isPhone, scopes, 'books-scripture');
+
+    const request = streamRequestFor(page, 'Nephi', scripture);
+    await input.fill('Nephi');
+    await request;
+    await waitForSearchSettled(page);
+    await expect.poll(() => resultRows(page, isPhone).count(), { timeout: 30000 }).toBeGreaterThan(0);
+    const text = (await visibleResultText(page, isPhone)).join('\n');
+    expect(text).toMatch(/1 Nephi/);
+    expect(text).toMatch(/2 Nephi/);
+    await expect(scopeChip(page, isPhone, 'books-scripture')).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  test(`[SCOPE.honoured] ${surface}: a picked scope with nothing stays picked and offers Search everything`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    const input = await openSearch(page, isPhone);
+    const scopes = await readLiveScopes(page);
+    const scripture = await pickScope(page, isPhone, scopes, 'books-scripture');
+    const words = 'zzqx nothing here';
+
+    const unscoped = [];
+    page.on('request', (r) => {
+      const url = new URL(r.url());
+      if (url.pathname.endsWith('/api/v1/content/query/search/stream')
+        && url.searchParams.get('text') === words
+        && !url.searchParams.get('source')) unscoped.push(url.search);
+    });
+    const request = streamRequestFor(page, words, scripture);
+    await input.fill(words);
+    await request;
+
+    const notice = page.getByTestId(isPhone ? 'search-mode-scope-empty' : 'combobox-scope-empty');
+    await expect(notice).toContainText(`Nothing for “${words}” in ${scripture.label}`, { timeout: 30000 });
+    await expect(resultRows(page, isPhone)).toHaveCount(0);
+    await expect(scopeChip(page, isPhone, 'books-scripture')).toHaveAttribute('aria-pressed', 'true');
+    await page.waitForTimeout(1500); // nothing widens behind the person's back
+    expect(unscoped).toEqual([]);
+
+    const all = scopes[0];
+    const widened = streamRequestFor(page, words, all);
+    if (isPhone) {
+      await page.getByTestId('search-mode-widen').click();
+    } else {
+      // A keyboard row: Enter on the empty scope searches everything.
+      await input.press('Enter');
+    }
+    await widened;
+    expect(unscoped.length).toBe(1);
   });
 }

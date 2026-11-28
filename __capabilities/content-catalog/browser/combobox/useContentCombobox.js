@@ -101,9 +101,17 @@ function ancestorToCrumb(crumb, fallbackSource) {
  *   `scopeKey: null`, no behavior change.
  * @param {string} [args.scopeLabel] - human label for `scopeKey` (e.g. "Ambient"),
  *   included alongside it in `search.fallback_to_all` for log readability. Optional.
+ * @param {'auto'|'offer'} [args.widenOnEmpty='auto'] - what an empty scoped settle
+ *   does once `fallbackSearchParams` is set. 'auto' re-runs catalog-wide on its
+ *   own (a scope the caller chose, e.g. the music picker's library). 'offer'
+ *   is for a scope the PERSON picked (Media's scope chips): the search stays
+ *   in that scope, `scopeEmpty` turns true, and only `widenSearch()` widens it.
+ *   2026-11-27: Books › Scripture found nothing for "Nephi" and silently
+ *   showed results from everywhere, which read as "the filter does nothing".
  */
 export function useContentCombobox({
   value, onChange, searchParams = '', fallbackSearchParams, scopeKey, scopeLabel,
+  widenOnEmpty = 'auto',
   appResults = false, selectContainers = false, allowFreeform = true, logApp = 'admin', retainQueryOnEscape = false,
   // Media: closing the list never throws the query away — clicking elsewhere,
   // Tab, Escape, or opening a result. Reopening shows the same words and the
@@ -226,6 +234,8 @@ export function useContentCombobox({
   // catalog-wide fallback keep that owner even when their request params differ.
   const searchAttemptRef = useRef(null);
   const [fellBackToAll, setFellBackToAll] = useState(false);
+  // 'offer' mode: the picked scope settled empty and nothing widened it yet.
+  const [scopeEmpty, setScopeEmpty] = useState(false);
   const clearBatchSearch = useCallback(() => {
     cancelBatch();
     setBatchLoading(false);
@@ -257,7 +267,7 @@ export function useContentCombobox({
     setDebouncePending(false);
     log.info('search.dispatch', { text: q, mode, scopeKey: scopeKey ?? null });
     searchAttemptRef.current = q.length >= 2
-      ? { text: q, params: searchParams, logged: false, retried: false, widened: false }
+      ? { text: q, params: searchParams, logged: false, retried: false, widened: false, offered: false }
       : null;
     if (supportsSSE()) streamSearch(q);
     else doBatchSearch(q);
@@ -266,6 +276,7 @@ export function useContentCombobox({
   const retireSearch = useCallback(() => {
     searchAttemptRef.current = null;
     setFellBackToAll(false);
+    setScopeEmpty(false);
     if (supportsSSE()) cancelStream();
     else clearBatchSearch();
   }, [cancelStream, clearBatchSearch]);
@@ -665,6 +676,20 @@ export function useContentCombobox({
     if (fallbackSearchParams == null) return;
     if (searchParams === fallbackSearchParams) return;
     if (attempt.widened) return;
+    if (widenOnEmpty === 'offer') {
+      // A scope the person picked is honoured: say it came up empty and offer
+      // the wider search (widenSearch) instead of running it for them.
+      if (attempt.offered) return;
+      attempt.offered = true;
+      setScopeEmpty(true);
+      log.info('search.scope-empty', {
+        textLength: text.length,
+        scopeKey: scopeKey ?? null,
+        scopeLabel: scopeLabel ?? null,
+        searchParams: searchParams || null,
+      });
+      return;
+    }
     attempt.widened = true;
     setFellBackToAll(true);
     log.info('search.fallback_to_all', {
@@ -678,8 +703,29 @@ export function useContentCombobox({
     else doBatchSearch(text, fallbackSearchParams);
   }, [
     attempt, searchSettled, sourceErrors, rawResults, rawResultCount, searchParams, fallbackSearchParams,
-    scopeKey, scopeLabel, streamSearch, retryStream, doBatchSearch, log,
+    scopeKey, scopeLabel, widenOnEmpty, streamSearch, retryStream, doBatchSearch, log,
   ]);
+
+  // 'offer' mode's one action: the person asked for the same words everywhere.
+  // Same transport and notice as the automatic widening (fellBackToAll), so
+  // the list then reads "Nothing in ‹scope› — showing N from everywhere".
+  const widenSearch = useCallback((via = 'pointer') => {
+    const current = searchAttemptRef.current;
+    if (!current || current.widened || fallbackSearchParams == null) return;
+    current.widened = true;
+    setScopeEmpty(false);
+    setFellBackToAll(true);
+    log.info('search.widened-by-user', {
+      textLength: current.text.length,
+      scopeKey: scopeKey ?? null,
+      scopeLabel: scopeLabel ?? null,
+      searchParams: current.params || null,
+      fallbackSearchParams: fallbackSearchParams || null,
+      via,
+    });
+    if (supportsSSE()) streamSearch(current.text, fallbackSearchParams, { preserveFailures: true });
+    else doBatchSearch(current.text, fallbackSearchParams);
+  }, [fallbackSearchParams, scopeKey, scopeLabel, streamSearch, doBatchSearch, log]);
 
   // `visibleResults`: the list as the person sees it, when the surface reorders
   // or collapses results (transformResults). The highlight indexes THAT list,
@@ -800,6 +846,10 @@ export function useContentCombobox({
     // `fallbackSearchParams` after a clean empty settle. Surfaces use this to
     // render "Nothing in ‹scope› — showing N results from everywhere."
     fellBackToAll,
+    // 'offer' mode: the picked scope settled empty; `widenSearch(via)` searches
+    // everywhere when the person asks.
+    scopeEmpty: scopeEmpty && searchSettled,
+    widenSearch,
     // Flag truncation so the UI can offer a "refine your search" affordance
     // (audit S6 / F6). Two independent caps can bite: the machine caps every
     // transport's results at RENDER_CAP (the SSE stream is otherwise uncapped

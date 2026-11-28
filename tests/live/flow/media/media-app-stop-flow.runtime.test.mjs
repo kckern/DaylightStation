@@ -9,7 +9,7 @@ test.describe('MediaApp — Stop flow', () => {
     await page.addInitScript(() => { try { (() => { const k = 'media-app.first-use-done'; const v = localStorage.getItem(k); localStorage.clear(); if (v) localStorage.setItem(k, v); })(); } catch {} });
   });
 
-  test('Stop keeps the queue reachable and separates Clear', async ({ page }) => {
+  test('Stop on the bar clears the item at once, and Undo in the toast brings it back paused (owner ruling 2026-11-27)', async ({ page }) => {
     await page.goto('/media');
     const search = page.getByRole('textbox', { name: 'Search media…' });
     await expect(search).toBeVisible({ timeout: 30000 });
@@ -19,13 +19,22 @@ test.describe('MediaApp — Stop flow', () => {
     await playResultHere(page, option); // a row only opens the info view; PLAY plays
     await expect(page.getByTestId('mini-toggle')).toBeVisible({ timeout: 15000 });
 
-    // Stop
+    // Stop: the bar is gone at once — no "Ready to play / Resume" leftover.
     await page.getByTestId('mini-stop').click();
+    await expect(page.getByTestId('media-mini-player')).toHaveCount(0);
+    const row = page.locator('[data-testid^="dispatch-row-"]').filter({ hasText: /Stopped Lonesome Day/ });
+    await expect(row).toBeVisible({ timeout: 5000 });
 
-    await expect(page.getByTestId('media-mini-player')).toHaveText(/Lonesome Day.*Ready to play.*Play/s); // a stopped queue restarts with Play (nothing to resume)
-    await expect(page.getByTestId('mini-player-open-nowplaying')).toBeVisible();
-    await page.getByTestId('mini-player-open-nowplaying').click();
-    await expect(page.getByTestId('queue-clear')).toBeVisible();
-    await expect(page.getByTestId('queue-clear')).toBeEnabled();
+    // Undo restores it (paused) while the toast offers it.
+    await row.getByTestId('item-action-undo').click();
+    await expect(page.getByTestId('media-mini-player')).toHaveText(/Lonesome Day/, { timeout: 5000 });
+    await page.getByTestId('mini-stop').click();
+    await expect(page.getByTestId('media-mini-player')).toHaveCount(0);
+
+    // Nothing brings the stopped session back on reload.
+    await page.reload();
+    await expect(page.getByRole('textbox', { name: 'Search media…' })).toBeVisible({ timeout: 30000 });
+    await page.waitForTimeout(1500);
+    await expect(page.getByTestId('media-mini-player')).toHaveCount(0);
   });
 });

@@ -1,6 +1,8 @@
 // frontend/src/modules/Media/shell/SessionControlsPanel.jsx
-// The session controls row of the one controls surface — the same for this
-// device (Now Playing) and for another screen (its Remote), STEER.1b:
+// The session controls of the one controls surface — the same for this
+// device (Now Playing) and for another screen (its Remote), STEER.1b. The
+// status part (this panel) shows what is happening now; the settings live in
+// the player's More ⋯ (SessionControlMenuItems, Now Playing ruling 2026-11-27):
 //   - the next-episode countdown, visible and cancellable (RQ-STEER-20)
 //   - the sleep timer: minutes or end of this item, time left, and later
 //     "continue from where the timer was set" (RQ-STEER-12)
@@ -14,15 +16,15 @@
 import React, { useContext, useMemo, useState } from 'react';
 import { Button, Group, Menu, Text } from '@mantine/core';
 import {
-  IconMoon, IconPlayerStop, IconPlaylistAdd, IconArrowBackUp, IconPlayerTrackNext, IconX,
+  IconMoon, IconPlayerStop, IconPlaylistAdd, IconArrowBackUp, IconPlayerTrackNext, IconX, IconCheck,
 } from '@tabler/icons-react';
 import { useDisplayClock } from '@/lib/hooks/useDisplayClock.js';
-import { ActionMenu } from '@/lib/ui/ActionMenu.jsx';
 import { useFocusAfterRemoval, useFocusRegion } from '@/lib/ui';
 import { useSessionControls, secondsUntil, formatClock } from "../controller/useSessionControls.js";
 import { useSessionController } from "../controller/useSessionController.js";
 import { DispatchContext } from "../cast/DispatchProvider.jsx";
 import mediaLog from "../logging/mediaLog.js";
+import { ADD_ONLY_COPY } from "../controller/addOnlyCopy.js";
 import "./SessionControls.scss";
 
 export const SLEEP_MINUTE_CHOICES = [15, 30, 45, 60, 90];
@@ -43,27 +45,18 @@ function noteAge(at, now) {
   return m < 60 ? `${m} min ago` : `${Math.round(m / 60)} h ago`;
 }
 
-export function SessionControlsPanel({ target, targetName = null }) {
-  const { kind, controls, actions, available, reason, supports } = useSessionControls(target);
-  const { snapshot, transport } = useSessionController(target);
+/**
+ * One session-control command runner for a target: logged, pending while in
+ * flight, and a failure becomes an outcome naming what could not be changed
+ * and where. Shared by the status panel and the More ⋯ menu items.
+ */
+export function useSessionControlRun(target, targetName = null) {
+  const sessionControls = useSessionControls(target);
+  const { kind, actions } = sessionControls;
   const outcomes = useContext(DispatchContext);
   const isLocal = kind === 'local';
   const targetId = isLocal ? 'local' : target?.deviceId ?? null;
-  const ticking = !!controls?.countdown || controls?.sleepTimer?.mode === 'minutes'
-    || (controls?.notes ?? []).some((note) => note.putBack);
-  const now = useDisplayClock(ticking);
   const [busy, setBusy] = useState(null);
-  const { regionProps, focus } = useFocusRegion(false);
-  const countdownFocusProps = useFocusAfterRemoval(focus);
-
-  const hasItem = !!snapshot?.currentItem;
-  const sleepTimer = controls?.sleepTimer ?? null;
-  const countdown = controls?.countdown ?? null;
-  const sleepResume = controls?.sleepResume ?? null;
-  const notes = useMemo(() => (supports.notes ? (controls?.notes ?? []) : []), [controls?.notes, supports.notes]);
-
-  // One command: logged, pending while in flight, and a failure becomes an
-  // outcome naming what could not be changed and where.
   const run = async (action, label, thunk, value) => {
     if (!actions || busy) return;
     setBusy(action);
@@ -84,6 +77,22 @@ export function SessionControlsPanel({ target, targetName = null }) {
     }
     return result;
   };
+  return { ...sessionControls, isLocal, targetId, outcomes, busy, run };
+}
+
+export function SessionControlsPanel({ target, targetName = null }) {
+  const { controls, actions, available, reason, supports, isLocal, targetId, outcomes, busy, run } = useSessionControlRun(target, targetName);
+  const { snapshot, transport } = useSessionController(target);
+  const ticking = !!controls?.countdown || controls?.sleepTimer?.mode === 'minutes'
+    || (controls?.notes ?? []).some((note) => note.putBack);
+  const now = useDisplayClock(ticking);
+  const { regionProps, focus } = useFocusRegion(false);
+  const countdownFocusProps = useFocusAfterRemoval(focus);
+
+  const hasItem = !!snapshot?.currentItem;
+  const countdown = controls?.countdown ?? null;
+  const sleepResume = controls?.sleepResume ?? null;
+  const notes = useMemo(() => (supports.notes ? (controls?.notes ?? []) : []), [controls?.notes, supports.notes]);
 
   const putBack = (note) => run('putBack', 'what was playing', async () => {
     const result = await actions.putBack(note.id);
@@ -97,11 +106,18 @@ export function SessionControlsPanel({ target, targetName = null }) {
   }, note.id);
 
   const disabledReason = !available ? reason : null;
-  const controlsDisabled = !available || !actions;
-
-  const addOnlyReason = actions?.unsupportedReasons?.addOnly ?? 'Add only is not available here';
+  // Nothing happening now: no empty band in the page (the settings are in More ⋯).
+  // The region stays mounted (zero height) so focus has somewhere to land when
+  // the countdown it was in goes away.
+  const empty = !countdown && !sleepResume && !disabledReason && notes.length === 0;
   return (
-    <div className="session-controls" data-testid="session-controls-panel">
+    <div
+      className={`session-controls${empty ? ' session-controls--empty' : ''}`}
+      data-testid="session-controls-panel"
+      role="group"
+      aria-label="Session status"
+      {...regionProps}
+    >
       {countdown && (
         <div className="session-controls-countdown" data-testid="countdown-banner" role="status" {...countdownFocusProps}>
           <Text size="sm" className="session-controls-countdown-text">
@@ -156,92 +172,6 @@ export function SessionControlsPanel({ target, targetName = null }) {
         </div>
       )}
 
-      <Group gap="xs" className="session-controls-row" wrap="wrap" role="group" aria-label="Session controls" {...regionProps}>
-        <ActionMenu position="top-start" withinPortal shadow="md" disabled={controlsDisabled}
-          dropdownProps={{ 'data-testid': 'sleep-timer-menu' }}
-          trigger={
-            <Button
-              data-testid="sleep-timer-button"
-              className="session-controls-btn"
-              size="sm"
-              variant={sleepTimer ? 'light' : 'default'}
-              leftSection={<IconMoon size={16} />}
-              aria-pressed={!!sleepTimer}
-              disabled={controlsDisabled}
-            >
-              {sleepTimer ? <span data-testid="sleep-timer-left">{sleepLabel(sleepTimer, now)}</span> : 'Sleep timer'}
-            </Button>
-          }>
-          <Menu.Label>Stop playback</Menu.Label>
-          {SLEEP_MINUTE_CHOICES.map((minutes) => (
-            <Menu.Item
-              key={minutes}
-              data-testid={`sleep-option-${minutes}`}
-              className="session-controls-menu-item"
-              onClick={() => run('sleepTimer', 'the sleep timer', () => actions.setSleepTimer({ minutes }), minutes)}
-            >
-              In {minutes} minutes
-            </Menu.Item>
-          ))}
-          <Menu.Item
-            data-testid="sleep-option-end"
-            className="session-controls-menu-item"
-            disabled={!hasItem}
-            onClick={() => run('sleepTimer', 'the sleep timer', () => actions.setSleepTimer({ atEnd: 'item' }), 'item')}
-          >
-            At the end of this item
-          </Menu.Item>
-          {sleepTimer && (
-            <Menu.Item
-              data-testid="sleep-option-off"
-              className="session-controls-menu-item"
-              onClick={() => run('cancelSleepTimer', 'the sleep timer', () => actions.cancelSleepTimer())}
-            >
-              Turn the sleep timer off
-            </Menu.Item>
-          )}
-        </ActionMenu>
-
-        <Button
-          data-testid="stop-after-current"
-          className="session-controls-btn"
-          size="sm"
-          variant={controls?.stopAfterCurrent ? 'light' : 'default'}
-          leftSection={<IconPlayerStop size={16} />}
-          aria-pressed={controls?.stopAfterCurrent === true}
-          disabled={controlsDisabled || !hasItem || busy === 'setStopAfterCurrent'}
-          onClick={() => run('setStopAfterCurrent', 'Stop after this one',
-            () => actions.setStopAfterCurrent(!controls?.stopAfterCurrent), !controls?.stopAfterCurrent)}
-        >
-          Stop after this one{controls?.stopAfterCurrent ? ': on' : ''}
-        </Button>
-
-        <Button
-          data-testid="add-only-toggle"
-          className="session-controls-btn"
-          size="sm"
-          variant={controls?.addOnly ? 'light' : (supports.addOnly ? 'default' : 'subtle')}
-          color={supports.addOnly ? undefined : 'gray'}
-          leftSection={<IconPlaylistAdd size={16} />}
-          aria-pressed={controls?.addOnly === true}
-          disabled={controlsDisabled || !supports.addOnly || busy === 'setAddOnly'}
-          title={available && !supports.addOnly ? addOnlyReason : undefined}
-          aria-describedby={available && !supports.addOnly ? 'add-only-unsupported' : undefined}
-          onClick={() => run('setAddOnly', 'Add only', () => actions.setAddOnly(!controls?.addOnly), !controls?.addOnly)}
-        >
-          Add only: {controls?.addOnly ? 'on' : 'off'}
-        </Button>
-      </Group>
-      {available && !supports.addOnly && (
-        <span id="add-only-unsupported" className="media-sr-only" data-testid="add-only-unsupported">
-          {addOnlyReason}
-        </span>
-      )}
-      {controls?.addOnly && (
-        <Text size="xs" className="session-controls-hint" data-testid="add-only-hint">
-          Plays from other devices are added to this queue instead of replacing it.
-        </Text>
-      )}
       {disabledReason && (
         <Text size="xs" className="session-controls-hint" role="status" data-testid="session-controls-unavailable">
           {disabledReason}
@@ -279,6 +209,102 @@ export function SessionControlsPanel({ target, targetName = null }) {
         </ul>
       )}
     </div>
+  );
+}
+
+/** A person's words for Add only (RQ-PLAY-10): one source, `controller/addOnlyCopy.js`. */
+export { ADD_ONLY_COPY };
+
+/**
+ * The session settings as items of the player's More ⋯ (Now Playing ruling
+ * 2026-11-27): Sleep timer (its choices open in place), Stop after this one,
+ * Queue what others send. Toggles keep the menu open so the new state shows.
+ */
+export function SessionControlMenuItems({ target, targetName = null }) {
+  const { controls, actions, available, supports, run, busy } = useSessionControlRun(target, targetName);
+  const { snapshot } = useSessionController(target);
+  const now = useDisplayClock(controls?.sleepTimer?.mode === 'minutes');
+  const [sleepOpen, setSleepOpen] = useState(false);
+  const hasItem = !!snapshot?.currentItem;
+  const sleepTimer = controls?.sleepTimer ?? null;
+  const disabled = !available || !actions;
+  const stopAfter = controls?.stopAfterCurrent === true;
+  const addOnly = controls?.addOnly === true;
+  return (
+    <>
+      <Menu.Item
+        data-testid="sleep-timer-button"
+        className="session-controls-menu-item"
+        leftSection={<IconMoon size={16} />}
+        closeMenuOnClick={false}
+        disabled={disabled}
+        aria-expanded={sleepOpen}
+        onClick={() => setSleepOpen((open) => !open)}
+      >
+        {sleepTimer ? <span data-testid="sleep-timer-left">{sleepLabel(sleepTimer, now)}</span> : 'Sleep timer'}
+      </Menu.Item>
+      {sleepOpen && !disabled && (
+        <div className="np-more-sub" role="group" aria-label="Stop playback" data-testid="sleep-timer-menu">
+          {SLEEP_MINUTE_CHOICES.map((minutes) => (
+            <Menu.Item
+              key={minutes}
+              data-testid={`sleep-option-${minutes}`}
+              className="session-controls-menu-item np-more-sub-item"
+              onClick={() => { setSleepOpen(false); run('sleepTimer', 'the sleep timer', () => actions.setSleepTimer({ minutes }), minutes); }}
+            >
+              In {minutes} minutes
+            </Menu.Item>
+          ))}
+          <Menu.Item
+            data-testid="sleep-option-end"
+            className="session-controls-menu-item np-more-sub-item"
+            disabled={!hasItem}
+            onClick={() => { setSleepOpen(false); run('sleepTimer', 'the sleep timer', () => actions.setSleepTimer({ atEnd: 'item' }), 'item'); }}
+          >
+            At the end of this item
+          </Menu.Item>
+          {sleepTimer && (
+            <Menu.Item
+              data-testid="sleep-option-off"
+              className="session-controls-menu-item np-more-sub-item"
+              onClick={() => { setSleepOpen(false); run('cancelSleepTimer', 'the sleep timer', () => actions.cancelSleepTimer()); }}
+            >
+              Turn the sleep timer off
+            </Menu.Item>
+          )}
+        </div>
+      )}
+      <Menu.Item
+        data-testid="stop-after-current"
+        className="session-controls-menu-item"
+        role="menuitemcheckbox"
+        aria-checked={stopAfter}
+        aria-pressed={stopAfter}
+        closeMenuOnClick={false}
+        leftSection={stopAfter ? <IconCheck size={16} /> : <IconPlayerStop size={16} />}
+        disabled={disabled || !hasItem || busy === 'setStopAfterCurrent'}
+        onClick={() => run('setStopAfterCurrent', 'Stop after this one',
+          () => actions.setStopAfterCurrent(!stopAfter), !stopAfter)}
+      >
+        Stop after this one
+      </Menu.Item>
+      <Menu.Item
+        data-testid="add-only-toggle"
+        className="session-controls-menu-item np-more-explained"
+        role="menuitemcheckbox"
+        aria-checked={addOnly}
+        aria-pressed={addOnly}
+        closeMenuOnClick={false}
+        leftSection={addOnly ? <IconCheck size={16} /> : <IconPlaylistAdd size={16} />}
+        disabled={disabled || !supports.addOnly || busy === 'setAddOnly'}
+        onClick={() => run('setAddOnly', ADD_ONLY_COPY.label, () => actions.setAddOnly(!addOnly), !addOnly)}
+      >
+        <span className="np-more-label">{ADD_ONLY_COPY.label}</span>
+        <span className="np-more-explain" data-testid={supports.addOnly ? 'add-only-hint' : 'add-only-unsupported'}>
+          {supports.addOnly ? ADD_ONLY_COPY.explain : ADD_ONLY_COPY.unavailable}
+        </span>
+      </Menu.Item>
+    </>
   );
 }
 

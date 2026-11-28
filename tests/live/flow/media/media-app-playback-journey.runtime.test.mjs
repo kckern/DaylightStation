@@ -1,7 +1,9 @@
 import { test, expect } from '@playwright/test';
+import { closeMenus, pressStop, rateControl, stopHere, volumeStep } from './lib/playerBar.mjs';
 import { markFirstUseDone } from './lib/firstUse.mjs';
 import { playResultHere, playResult } from './lib/search.mjs';
 import { aimHere } from './lib/aim.mjs';
+import { showFleetCard } from './lib/receivers.mjs';
 
 test.beforeEach(async ({ context }) => { await markFirstUseDone(context); });
 
@@ -55,12 +57,7 @@ test.afterEach(async ({ page }, testInfo) => {
   await testInfo.attach('native-playback-observations', {
     body: JSON.stringify(observations, null, 2), contentType: 'application/json',
   });
-  const stop = page.getByTestId('np-stop');
-  if (!(await stop.isVisible())) {
-    const open = page.getByTestId('mini-player-open-nowplaying');
-    if (await open.isVisible()) await open.click();
-  }
-  if (await stop.isVisible()) await stop.click();
+  await stopHere(page);
   const sessions = sessionEvidence.get(page);
   if (process.env.MEDIA_EXPECT_HLS === '1' && sessions?.observed.size) {
     await expect.poll(() => [...sessions.observed].every(id => {
@@ -200,6 +197,8 @@ test('[PLACE.1a/AC3][PLACE.1a/AC4][STEER.1b] opening a screen\'s controls does n
   await page.goto('/media');
   await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible({ timeout: 30000 });
   await page.getByRole('navigation', { name: 'Primary' }).getByRole('button', { name: /^(?:\d+\s+)?Devices$/ }).click();
+  // A screen not heard from lately sits under the Devices page's More.
+  await showFleetCard(page, 'fleet-peek-acceptance-media');
   await page.getByTestId('fleet-peek-acceptance-media').click();
   await expect(page.getByTestId('peek-panel')).toBeVisible();
   await playMovie(page);
@@ -330,7 +329,7 @@ test('[STEER.2a/AC1][STEER.2a/AC2] focused video expands and shrinks without rep
       && Math.abs(bounds.width - window.innerWidth) <= 1
       && Math.abs(bounds.height - window.innerHeight) <= 1;
   }), { message: 'Expanded player surface fills the viewport, not a centered content column' }).toBe(true);
-  for (const control of ['np-toggle', 'np-stop', 'np-seek']) {
+  for (const control of ['np-toggle', 'np-more', 'np-seek']) {
     expect(await page.getByTestId(control).evaluate(el => {
       const bounds = el.getBoundingClientRect();
       return bounds.width > 0 && bounds.height > 0 && bounds.left >= 0 && bounds.top >= 0
@@ -388,20 +387,22 @@ test('[STEER.2a/AC3] expanded audio keeps its actual node while showing artwork 
   await page.getByRole('button', { name: 'Expand audio', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Shrink audio', exact: true })).toBeVisible();
   await expect(page.getByTestId('np-meta-art')).toBeVisible();
-  await expect(page.getByTestId('np-meta-title')).toHaveText(audioTitle);
+  await expect(page.getByTestId('now-playing-title')).toContainText(audioTitle);
   await page.getByRole('button', { name: 'Shrink audio', exact: true }).click();
   await expect.poll(() => original.evaluate((el, position) => el.isConnected && !el.paused && el.currentTime > position, before)).toBe(true);
 });
 
 test('[STEER.6a/AC1][STEER.6a/AC2][STEER.7a/AC2] stop ends actual playback and keeps the queue reachable', async ({ page }) => {
   await startMovie(page);
-  await page.getByTestId('np-stop').click();
+  await pressStop(page);
   await expect.poll(() => page.locator('video, audio').evaluateAll(els => els.every(el => el.paused || el.ended))).toBe(true);
-  await expect(page.getByTestId('mini-player-open-nowplaying')).toBeVisible();
+  // Now Playing is the one status: its hero names the kept item (the bottom bar never shows here).
+  await expect(page.getByTestId('now-playing-title')).toContainText('Ready to play');
   await page.getByTestId('now-playing-back').click();
   await page.getByTestId('mini-player-open-nowplaying').click();
   await expect(page.getByTestId('now-playing-view')).toContainText(title);
-  await page.getByTestId('mini-toggle').click();
+  // On Now Playing the hero's own Play restarts it (the bottom bar is not shown here).
+  await page.getByTestId('np-toggle').click();
   const restartedVideo = page.getByTestId('now-playing-host').locator('video');
   await expect(restartedVideo).toHaveCount(1, { timeout: 30000 });
   await expect.poll(() => restartedVideo.evaluate(el => !el.paused && el.currentTime > 0 && el.readyState >= 2), {
@@ -411,7 +412,7 @@ test('[STEER.6a/AC1][STEER.6a/AC2][STEER.7a/AC2] stop ends actual playback and k
 
 test('[STEER.6a/AC2] Stop explicitly says how many queue items were kept', async ({ page }) => {
   await startMovie(page);
-  await page.getByTestId('np-stop').click();
+  await pressStop(page);
   await expect.poll(() => page.locator('video, audio').evaluateAll(els => els.every(el => el.paused || el.ended))).toBe(true);
   const feedback = page.getByText('Queue kept: 1 item', { exact: true });
   await expect(feedback).toBeVisible();
@@ -433,11 +434,11 @@ test('[STEER.5a/AC1] volume step buttons change actual playback and show its lev
   await page.getByTestId('np-volume').focus();
   await page.keyboard.press('End');
   await expect.poll(() => video.evaluate(el => el.volume)).toBe(1);
-  await page.getByRole('button', { name: /decrease volume|volume down/i }).click();
+  await volumeStep(page, -1);
   await expect.poll(() => video.evaluate(el => el.volume)).toBeLessThan(1);
   const reduced = await video.evaluate(el => Math.round(el.volume * 100));
   await expect(page.getByTestId('np-volume-level')).toHaveText(`${reduced}%`);
-  await page.getByRole('button', { name: /increase volume|volume up/i }).click();
+  await volumeStep(page, +1);
   await expect.poll(() => video.evaluate(el => el.volume)).toBe(1);
   await expect(page.getByTestId('np-volume-level')).toHaveText('100%');
 });
@@ -461,19 +462,21 @@ test('[STEER.1a/AC3] full local controls hide duplicate compact controls without
 
 test('[STEER.5a/AC2] chosen playback speed survives Stop and retained-queue restart', async ({ page }) => {
   const video = await startMovie(page);
-  await page.getByTestId('np-rate').click();
+  await (await rateControl(page)).click();
   await expect.poll(() => video.evaluate(el => el.playbackRate)).toBe(1.25);
-  await expect(page.getByTestId('np-rate')).toHaveText('1.25×');
-  await page.getByTestId('np-stop').click();
-  await expect(page.getByTestId('mini-toggle')).toBeVisible();
-  await page.getByTestId('mini-toggle').click();
+  await expect(page.getByTestId('np-rate')).toContainText('1.25×');
+  await expect(page.getByTestId('np-rate-chip')).toHaveText('1.25×');
+  await closeMenus(page);
+  await pressStop(page);
+  await expect(page.getByTestId('np-toggle')).toBeEnabled();
+  await page.getByTestId('np-toggle').click();
   const restarted = page.getByTestId('now-playing-host').locator('video');
   await expect(restarted).toHaveCount(1, { timeout: 30000 });
   await expect.poll(() => restarted.evaluate(el => !el.paused && el.readyState >= 2), { timeout: 30000 }).toBe(true);
   const before = await restarted.evaluate(el => el.currentTime);
   await expect.poll(() => restarted.evaluate(el => el.currentTime)).toBeGreaterThan(before + 0.25);
   await expect.poll(() => restarted.evaluate(el => el.playbackRate)).toBe(1.25);
-  await expect(page.getByTestId('np-rate')).toHaveText('1.25×');
+  await expect(page.getByTestId('np-rate-chip')).toHaveText('1.25×');
 });
 
 test('[PLAY.1a] selecting another title does not restart the previously paused movie', async ({ page }) => {

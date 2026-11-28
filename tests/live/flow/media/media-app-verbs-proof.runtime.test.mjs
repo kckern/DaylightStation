@@ -177,7 +177,8 @@ test('[PLAY.2a/AC1][PLAY.2a/AC2][PLAY.2a/AC3][PLAY.3a/AC1][PLAY.3a/AC2][PLAY.3a/
   await searchFor(page, 'Baby Joy Joy', ALBUM);
   await resultRow(page, vp, ALBUM).click();
   await expect(page.getByTestId('browse-dispatch-header')).toBeVisible({ timeout: 40000 });
-  await expect(page.getByTestId('browse-dispatch-shuffle')).toBeVisible();
+  // Shuffle sits in the header's More ⋯ (2026-11-27: the info view's row 1).
+  await expect(page.getByTestId('browse-dispatch-more')).toBeVisible();
   await page.getByTestId('browse-dispatch-play').click();
   await expect.poll(() => queueIds(request), { timeout: 90000 }).toEqual(ALBUM_TRACKS);
   let snap = await receiverState(request, A);
@@ -189,6 +190,7 @@ test('[PLAY.2a/AC1][PLAY.2a/AC2][PLAY.2a/AC3][PLAY.3a/AC1][PLAY.3a/AC2][PLAY.3a/
   await expectStarted(page, { screen: A_NAME }); // the receiver's own queue proved the parts above
 
   // PLAY.3a/AC2+AC3: Shuffle turns shuffle on, the queue holds the same parts, the screen reads shuffle as on.
+  await page.getByTestId('browse-dispatch-more').click();
   await page.getByTestId('browse-dispatch-shuffle').click();
   await expect.poll(async () => (await receiverState(request, A))?.config?.shuffle, { timeout: 90000 }).toBe(true);
   snap = await receiverState(request, A);

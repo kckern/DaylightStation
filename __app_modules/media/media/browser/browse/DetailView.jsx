@@ -11,30 +11,21 @@
 // (InfoPreview: muted, on this device, records nothing); every verb that
 // sends the item anywhere (play, queue, show briefly) stops that preview first —
 // a queue verb landing in an empty local queue starts a play.
-import React, { useEffect, useRef, useState } from 'react';
-import { Stack, Title, Text, Button, Group, Menu } from '@mantine/core';
-import { IconPlayerPlayFilled, IconPlayerPauseFilled, IconPlayerTrackNext, IconRowInsertTop, IconPlaylistAdd, IconCast, IconDeviceRemote, IconRotate, IconDots, IconArrowsShuffle, IconPlaylist, IconPhoto, IconAdjustments } from '@tabler/icons-react';
-import { ActionMenu } from '@/lib/ui/ActionMenu.jsx';
+import React, { useEffect, useRef } from 'react';
+import { Stack, Title, Text, Button, Group } from '@mantine/core';
+import { IconPlayerPlayFilled, IconPlayerPauseFilled, IconDeviceRemote } from '@tabler/icons-react';
 import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import { EmptyState } from '@/lib/ui/states.jsx';
 import { useRetryRegion } from '@/lib/ui/useRetryRegion.js';
 import { LoadErrorLine } from "../shared/LoadErrorLine.jsx";
 import { useContentInfo } from "./useContentInfo.js";
-import { useContentDispatch } from "../search/useContentDispatch.js";
 import { useNav } from "../shell/NavProvider.jsx";
 import Skeleton from '@/lib/ui/Skeleton.jsx';
 import { isContainer } from "../../../../../__capabilities/content-catalog/browser/combobox-state.mjs";
-import { ItemDestinationPicker } from "../actions/ItemDestinationPicker.jsx";
 import { useItemVerbs } from "../household/useItemVerbs.jsx";
-import { useFavourites, useHouseholdEntry } from "../household/useHousehold.js";
+import { useHouseholdEntry } from "../household/useHousehold.js";
 import { spotsSummary, formatLeft, whereLine } from "../household/householdModel.js";
-import { IconHeart, IconHeartFilled, IconEye, IconEyeOff } from '@tabler/icons-react';
-import { itemMenuEntries, menuItemKind, MENU_LABELS } from "../actions/itemMenuTable.js";
-import { usePlaybackQuality } from "../quality/PlaybackQualityProvider.jsx";
-import { supportsQualityOverrides } from "../quality/PlaybackQualityButtons.jsx";
 import { useStartingOn } from "../cast/useStartingOn.js";
-import { usePressHoldOffer } from "../../../../../frontend/src/lib/ui/usePressHoldOffer.js";
-import mediaLog from "../logging/mediaLog.js";
 import { resultSubtitle } from "../search/resultPresentation.js";
 import { usePlayDestination } from "../habits/usePlayDestination.js";
 import { usePrepareStart } from "../cast/usePrepareStart.js";
@@ -42,82 +33,10 @@ import { InfoPreview } from "./InfoPreview.jsx";
 import { usePlayingOn } from "../fleet/usePlayingOn.js";
 import { usePhoneKeeps, useWatchPhoneKeeps } from "../cast/usePhoneKeeps.jsx";
 import { KEEP_PROBLEM_STATES } from "../cast/phoneKeeps.js";
-
-// More ⋯ entries keep the test ids their buttons had before the owner's
-// 2026-11-26 ruling moved them here.
-const MORE_TEST_ID = {
-  shuffle: 'detail-shuffle', playNext: 'detail-play-next', playFirst: 'detail-up-next', add: 'detail-add',
-  addOn: 'detail-add-on', showBrieflyOn: 'detail-show-briefly', quality: 'detail-quality',
-  favourite: 'detail-favourite', unfavourite: 'detail-favourite', watched: 'detail-watched', unwatched: 'detail-unwatched',
-};
-const MORE_ICON = {
-  shuffle: IconArrowsShuffle, playNext: IconPlayerTrackNext, playFirst: IconRowInsertTop, add: IconPlaylistAdd,
-  addOn: IconPlaylist, showBrieflyOn: IconPhoto, quality: IconAdjustments,
-  favourite: IconHeart, unfavourite: IconHeartFilled, watched: IconEye, unwatched: IconEyeOff,
-};
-
-// "720p" / "Custom" beside Quality… when this item has an override.
-function qualitySummary(quality, item) {
-  if (!quality || !supportsQualityOverrides(item)) return null;
-  const overrides = quality.getOverrides(item.contentId ?? item.id);
-  if (overrides.maxResolution) return `${overrides.maxResolution}p`;
-  return Object.keys(overrides).length ? 'Custom' : null;
-}
-
-// The info view's More ⋯: every verb that is not row 1, grouped by the table's
-// dividers. Esc closes it and leaves focus on More (ActionMenu), never the page.
-function DetailMoreMenu({ contentId, entries, qualitySummary: summary, playNextHold, onPick }) {
-  const pick = (kind) => () => {
-    mediaLog.detailMorePicked({ contentId, verb: kind });
-    onPick(kind);
-  };
-  return (
-    <ActionMenu
-      withinPortal
-      position="bottom-end"
-      shadow="sm"
-      onOpen={() => mediaLog.detailMoreOpened({ contentId, entries: entries.filter((e) => !e.divider).length })}
-      dropdownProps={{ 'data-testid': 'detail-more-menu' }}
-      trigger={(
-        <Button variant="default" data-testid="detail-more" rightSection={<IconDots size={16} />}>
-          {MENU_LABELS.more}
-        </Button>
-      )}
-    >
-      {entries.map((entry, index) => {
-        if (entry.divider) return <Menu.Divider key={`divider-${index}`} />;
-        const Icon = MORE_ICON[entry.kind];
-        const leftSection = Icon ? <Icon size={16} /> : null;
-        if (entry.kind === 'playNext') {
-          return (
-            <React.Fragment key="playNext">
-              <Menu.Item data-testid={MORE_TEST_ID.playNext} leftSection={leftSection}
-                closeMenuOnClick={!playNextHold.offered} {...playNextHold.bind}
-                onClick={playNextHold.guardClick(pick('playNext'))}>
-                {entry.label}
-              </Menu.Item>
-              {playNextHold.offered && (
-                <Menu.Item data-testid="detail-play-next-front" leftSection={<IconRowInsertTop size={16} />}
-                  onClick={() => { playNextHold.dismiss(); pick('playNextFront')(); }}>
-                  {MENU_LABELS.playNextFront}
-                </Menu.Item>
-              )}
-            </React.Fragment>
-          );
-        }
-        return (
-          <Menu.Item key={entry.kind}
-            data-testid={MORE_TEST_ID[entry.kind] ?? (/^keepOn:/.test(entry.kind) ? 'detail-keep-on' : /^unkeepOn:/.test(entry.kind) ? 'detail-unkeep-on' : /^cancelKeepOn:/.test(entry.kind) ? 'detail-cancel-keep' : undefined)}
-            leftSection={leftSection}
-            rightSection={entry.kind === 'quality' && summary ? <Text size="xs" c="dimmed">{summary}</Text> : null}
-            onClick={pick(entry.kind)}>
-            {entry.label}
-          </Menu.Item>
-        );
-      })}
-    </ActionMenu>
-  );
-}
+import { ItemActionRow } from "./ItemActionRow.jsx";
+import mediaLog from "../logging/mediaLog.js";
+import { ParentChip, ClampedSummary } from "./HeaderParts.jsx";
+import { parentOf, pathFor } from "./browseHeaderModel.js";
 
 // `focusPlay`: opened from search — PLAY takes focus once it can be pressed,
 // so a second Enter plays by that button's own activation (no key handler
@@ -125,7 +44,6 @@ function DetailMoreMenu({ contentId, entries, qualitySummary: summary, playNextH
 // page may still be held when PLAY takes focus: its auto-repeat keydowns
 // (repeat: true) are default-prevented, so one long press is not two.
 export function DetailView({ contentId, focusPlay = false }) {
-  const [oneShot, setOneShot] = useState(null);
   const playRef = useRef(null);
   const previewRef = useRef(null);
   // Synchronously, before any play verb dispatches: a preview never overlaps a play.
@@ -133,26 +51,19 @@ export function DetailView({ contentId, focusPlay = false }) {
   const playFocusedRef = useRef(false);
   const { info, loading, error, reload } = useContentInfo(contentId);
   const { regionProps, retry } = useRetryRegion(reload, loading);
-  const { dispatchLeafVerb } = useContentDispatch();
   const { pop, push, backDestination } = useNav();
-  const { run, overlays, nameFor } = useItemVerbs();
+  const { nameFor } = useItemVerbs();
   // "Keep on Phone": audio only; the phone reports what it keeps (downloads hardening §H).
   const phoneKeeps = usePhoneKeeps();
   useWatchPhoneKeeps(info ? { id: contentId, ...info } : null);
-  const { destinationFor, labelsFor } = usePlayDestination();
-  const favourites = useFavourites();
-  const quality = usePlaybackQuality();
+  const { destinationFor } = usePlayDestination();
   const { entry, pending: pendingResume } = useHouseholdEntry(contentId);
-  // PLAY.5a/AC3: pressing and holding Play Next offers "At the very front".
-  const { startingOnFor, isStarting } = useStartingOn();
+  const { startingOnFor } = useStartingOn();
   const startingOn = startingOnFor(contentId);
-  // Addendum item 6: PLAY spins while this item's own start is in flight.
-  const starting = isStarting(contentId);
   // Addendum item 5: already on a screen → "On <screen>", Pause / Open, and
-  // PLAY is the explicit Start over there.
-  const { playingOnFor, toggle: toggleOn, startOver: startOverOn, open: openOn } = usePlayingOn();
+  // PLAY is the explicit Start over there (ItemActionRow).
+  const { playingOnFor, toggle: toggleOn, open: openOn } = usePlayingOn();
   const on = playingOnFor(contentId);
-  const playNextHold = usePressHoldOffer({ onOffered: () => mediaLog.playNextHoldOffered({ surface: 'detail' }) });
   const playReady = !!info && !loading && !error;
   // Prepare on look: warm the start on the screen PLAY names (server-side
   // only — nothing reaches that screen until PLAY).
@@ -195,23 +106,26 @@ export function DetailView({ contentId, focusPlay = false }) {
       ? (spotsSummary(entry, nameFor)
         ?? [formatLeft(entry.playhead, entry.duration), whereLine(entry, nameFor)].filter(Boolean).join(' · '))
       : null;
-    const favourite = favourites.has(contentId);
     // FIND.8a/AC2: what kind of thing it is and how long, in words ("Movie · 1 hr 56 min").
     const facts = resultSubtitle(detailItem);
     const description = info.description || info.metadata?.summary || null;
-    // Where Play, Shuffle and the queue verbs go (the aim, else the usual
-    // screen for this kind of thing, else here) — named on the page.
-    const where = destinationFor(detailItem);
-    const elsewhere = where.targetIds.length > 0;
-    const whereName = elsewhere ? labelsFor(detailItem).short : null;
     const keep = phoneKeeps.forItem(detailItem);
+    // One tap to the author, artist or show this item belongs to.
+    const parent = parentOf(detailItem);
 
     body = (
       <>
         <InfoPreview ref={previewRef} item={detailItem} />
         <Title order={1}>{info.title ?? contentId}</Title>
+        {parent && (
+          <ParentChip parent={parent} testId="detail-parent"
+            onOpen={() => {
+              mediaLog.parentOpened({ from: contentId, to: parent.contentId, surface: 'detail' });
+              push('browse', { path: pathFor(parent.contentId), label: parent.title });
+            }} />
+        )}
         {facts && <Text size="sm" c="dimmed" data-testid="detail-facts">{facts}</Text>}
-        {description && <Text c="dimmed">{description}</Text>}
+        {description && <ClampedSummary text={description} testId="detail-summary" />}
         {progress && <Text size="sm" data-testid="detail-progress">{progress}</Text>}
         {keep.lines.map((k) => (
           <Group key={k.key} gap="xs" data-testid="detail-kept-row">
@@ -238,61 +152,8 @@ export function DetailView({ contentId, focusPlay = false }) {
         )}
         {/* Owner ruling 2026-11-26: row 1 is PLAY, Play here and Play on…;
             everything else sits behind More ⋯ (one table: actions/itemMenuTable.js). */}
-        <Group className="detail-actions detail-row-one" gap="sm" data-testid="detail-row-one">
-          <Button
-            data-testid="detail-play-now"
-            className="detail-play-primary"
-            ref={playRef}
-            onKeyDown={(e) => { if (e.key === 'Enter' && e.repeat) e.preventDefault(); }}
-            leftSection={on ? <IconRotate size={18} /> : elsewhere ? <IconCast size={18} /> : <IconPlayerPlayFilled size={18} />}
-            loading={(!collection && pendingResume) || starting}
-            data-busy={starting || undefined}
-            onClick={() => {
-              stopPreview();
-              if (on) { startOverOn(on, contentId); return; }
-              const route = collection ? dispatchLeafVerb('playNow', contentId, detailItem) : run('playNow', detailItem, { entry });
-              if (route === 'ask') setOneShot({ kind: 'playOn', item: detailItem });
-            }}
-          >
-            {on ? `Start over on ${on.name}` : labelsFor(detailItem).sentence}
-          </Button>
-          {/* Play here whenever ▶ goes to a screen: the aim's, or the one the
-              item is already on (where PLAY is Start over). */}
-          {(elsewhere || on) && (
-            <Button
-              data-testid="detail-play-here"
-              variant="default"
-              onClick={() => { stopPreview(); dispatchLeafVerb('playNow', contentId, detailItem, { targetIds: [] }); }}
-            >
-              {MENU_LABELS.playHere}
-            </Button>
-          )}
-          <Button variant="default" data-testid="detail-play-on" onClick={() => { stopPreview(); setOneShot({ kind: 'playOn', item: detailItem }); }}>{MENU_LABELS.playOn}</Button>
-          <DetailMoreMenu
-            contentId={contentId}
-            entries={itemMenuEntries({
-              surface: 'detail',
-              kind: menuItemKind({ collection }),
-              where: { elsewhere, short: whereName },
-              favourite,
-              quality: !!quality && supportsQualityOverrides(detailItem),
-              keep: keep.entries,
-            })}
-            qualitySummary={qualitySummary(quality, detailItem)}
-            playNextHold={playNextHold}
-            onPick={(kind) => {
-              if (kind === 'quality') { quality.openForItem(detailItem); return; }
-              if (phoneKeeps.run(kind, detailItem)) return;
-              if (kind === 'favourite' || kind === 'unfavourite' || kind === 'watched' || kind === 'unwatched') { run(kind, detailItem); return; }
-              stopPreview();
-              if (kind === 'addOn' || kind === 'showBrieflyOn') { setOneShot({ kind, item: detailItem }); return; }
-              if (kind === 'playNextFront') { mediaLog.playNextFrontChosen({ surface: 'detail' }); dispatchLeafVerb('playFirst', contentId, detailItem); return; }
-              if (dispatchLeafVerb(kind, contentId, detailItem) === 'ask') setOneShot({ kind: 'playOn', item: detailItem });
-            }}
-          />
-        </Group>
-        <ItemDestinationPicker action={oneShot} onClose={() => setOneShot(null)} />
-        {overlays}
+        <ItemActionRow item={detailItem} contentId={contentId} collection={collection}
+          entry={entry} pendingResume={pendingResume} playRef={playRef} stopPreview={stopPreview} />
       </>
     );
   } else {

@@ -1746,7 +1746,7 @@ read at send time, so screens name the device in notes.
 **Add only result.** A `homeline` `load` step or `/load` result carrying
 `appliedAs: "add"` turns that attempt into an add (`kind`/`operation: "add"`,
 `appliedAs: "add"`), resolved by its `queue` step and read as
-"Added X to Y (Add only is on) · Nth in line".
+"Added X to the queue on Y · Nth in line" (no "Add only" wording; the setting reads "Queue what others send", `controller/addOnlyCopy.js`).
 
 **Add to this queue.** `SearchLauncherContext.openAddToQueue({ deviceId, name })`
 (provided by the shell) opens `SearchMode` with `addTo`: every pick is
@@ -2842,6 +2842,8 @@ dot-delimited namespaces. Every event SHOULD include `clientId`,
 | `media-app.unmounted` | info | App unmounts. | — |
 | `item.opened` | info | A tap opened a playable item's detail page (a look — nothing played). | `contentId`, `via` (`tap`, `tile`, `open`, `played-earlier`) |
 | `search.destination-cycled` | info | Tab, Shift+Tab or a click moved the search box's destination chip. | `from`, `to`, `via` (`tab`\|`click`) |
+| `dest.list-opened` | info | The destination chip's ▾ list opened (▾, Alt+↓ or ↓ on the chip). Opening contacts nothing. | `current` (row id or null), `screens` |
+| `dest.list-picked` | info | A destination was picked from that list (sticky, like a cycle step). | `from`, `to` (`local` = This device), `rank` |
 | `search.returned` | info | Back or Esc from a search-opened info view restored the search. | `contentId`, `surface` (`dock`\|`sheet`) |
 | `play.prepared` | info | The look-time prepare answered (never started anything). | `contentId`, `targetIds`, `ms` |
 | `play.prepare-unavailable` | warn | The server has no prepare route; logged once. | — |

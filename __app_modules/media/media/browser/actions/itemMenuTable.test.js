@@ -1,6 +1,6 @@
 // Addendum item 7: one menu table, so labels never drift between menus.
 import { describe, it, expect } from 'vitest';
-import { itemMenuEntries, moveMenuEntries, MENU_LABELS, splitItemMenu } from "./itemMenuTable.js";
+import { itemMenuEntries, moveMenuEntries, MENU_LABELS, splitItemMenu, resumeLabel } from "./itemMenuTable.js";
 
 const labels = (entries) => entries.filter((e) => !e.divider).map((e) => e.label);
 const kinds = (entries) => entries.filter((e) => !e.divider).map((e) => e.kind);
@@ -116,5 +116,31 @@ describe('splitItemMenu (smart long lists)', () => {
     const entries = splitItemMenu(itemMenuEntries({ surface: 'tile', kind: 'collection', continueLabel: 'Continue S2E7', playingOn: { name: 'Office Screen' } }));
     expect(entries.filter((e) => !e.more).map((e) => e.label)).toEqual(['Continue S2E7', 'Play on…', 'Play Next', 'Add to Queue']);
     expect(entries.filter((e) => e.more).map((e) => e.kind)).toEqual(expect.arrayContaining(['playNow', 'openScreen', 'shuffle']));
+  });
+});
+
+describe('resume names its point (jellyfin study rec 10, owner-approved 2026-11-27)', () => {
+  it('PLAY reads Resume … · 42:10 and More offers From the start', () => {
+    expect(resumeLabel('Play on Office Screen', 2530)).toBe('Resume on Office Screen · 42:10');
+    expect(resumeLabel('Play here', 3723)).toBe('Resume here · 1:02:03');
+    expect(resumeLabel('Play on Office Screen', null)).toBe('Resume on Office Screen');
+    const entries = itemMenuEntries({ surface: 'detail', kind: 'leaf', resumable: true });
+    expect(entries[0]).toEqual({ kind: 'fromStart', label: 'From the start' });
+    expect(itemMenuEntries({ surface: 'detail', kind: 'leaf' }).map((e) => e.kind)).not.toContain('fromStart');
+  });
+});
+
+describe('itemMenuEntries: a queue row ⋯ (Now Playing ruling 2026-11-27)', () => {
+  const kinds = (entries) => entries.map((e) => (e.divider ? '|' : e.kind));
+  it('a later row: Play Now, move up / down, remove, then its detail', () => {
+    const entries = itemMenuEntries({ surface: 'queue', queue: { current: false, first: false, last: false } });
+    expect(kinds(entries)).toEqual(['playNow', 'moveUp', 'moveDown', 'remove', '|', 'details']);
+    expect(entries.map((e) => e.label).filter(Boolean)).toEqual(['Play Now', 'Move up', 'Move down', 'Remove from queue', 'Open detail']);
+  });
+  it('the current row has no Play Now; the ends cannot move past the ends', () => {
+    expect(kinds(itemMenuEntries({ surface: 'queue', queue: { current: true, first: true, last: false } })))
+      .toEqual(['moveDown', 'remove', '|', 'details']);
+    expect(kinds(itemMenuEntries({ surface: 'queue', queue: { current: false, first: false, last: true } })))
+      .toEqual(['playNow', 'moveUp', 'remove', '|', 'details']);
   });
 });

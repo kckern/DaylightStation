@@ -17,19 +17,73 @@ $np-amber-ink: $on-accent;
   }
 }
 
-// ---- View scaffold ---------------------------------------------------------
+// ---- View scaffold (Now Playing ruling 2026-11-27) ------------------------
+// One hero (picture, title once, subtitle, where), one control bar, then the
+// queue. On a wide screen the queue sits beside the hero (849 px is too short
+// to stack); on a phone the hero is sticky with its transport.
+.now-playing-view[data-testid] {
+  max-width: none;
+}
+
 .now-playing-view {
   display: flex;
   flex-direction: column;
-  gap: var(--mantine-spacing-md);
+  gap: var(--mantine-spacing-sm);
+  width: 100%;
 
-  .now-playing-title {
-    margin: 0;
-    font-size: clamp(20px, 4vw, 28px);
-    line-height: 1.2;
-    font-weight: 700;
-    color: var(--mantine-color-dark-0);
-    overflow-wrap: anywhere;
+  .now-playing-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .np-back-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 44px;
+    padding: 0 10px;
+    border-radius: var(--mantine-radius-sm);
+    color: var(--mantine-color-dark-1);
+    font-size: 14px;
+
+    &:hover { background: var(--mantine-color-dark-5); color: var(--mantine-color-dark-0); }
+    @include np-focus-ring;
+  }
+
+  .np-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--mantine-spacing-xl);
+    align-items: start;
+  }
+
+  @media (min-width: 1100px) {
+    .np-layout {
+      grid-template-columns: minmax(0, 760px) minmax(320px, 460px);
+    }
+  }
+
+  .np-hero { min-width: 0; }
+
+  .np-stage {
+    display: flex;
+    flex-direction: column;
+    gap: var(--mantine-spacing-sm);
+    min-width: 0;
+  }
+
+  .now-playing-host {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: var(--mantine-color-dark-8);
+    border-radius: var(--mantine-radius-md);
+    overflow: hidden;
+
+    &:empty { display: none; }
+
+    .media-player-host { width: 100%; height: 100%; }
+    video, audio, iframe { width: 100%; height: 100%; }
   }
 
   .now-playing-host--poster {
@@ -38,157 +92,143 @@ $np-amber-ink: $on-accent;
     background-repeat: no-repeat;
   }
 
-  .np-state {
-    font-size: 13px;
-    color: var(--mantine-color-dark-1);
-  }
+  // Audio: the art is the picture; the player's own visual stays out of view.
+  &.now-playing-view--audio .now-playing-host { display: none; }
 
-  .np-toolbar-status {
-    display: flex;
-    align-items: center;
-    gap: var(--mantine-spacing-sm);
-  }
-
-  .np-expand-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    min-height: 44px;
-    padding: 0 12px;
-    background: var(--mantine-color-dark-5);
-    border: 1px solid var(--media-control-line);
-    border-radius: var(--mantine-radius-sm);
-    color: var(--mantine-color-dark-0);
-    font: inherit;
-    font-size: 14px;
-    cursor: pointer;
-
-    &:hover { background: var(--mantine-color-dark-4); }
-    @include np-focus-ring;
-  }
-
-  &.now-playing-view--expanded {
-    position: fixed;
-    inset: 0;
-    z-index: 1000;
-    max-width: none;
-    height: 100dvh;
-    box-sizing: border-box;
-    padding: calc(var(--mantine-spacing-md) + var(--browser-safe-area-top))
-      calc(var(--mantine-spacing-md) + var(--browser-safe-area-right))
-      calc(var(--mantine-spacing-md) + var(--browser-safe-area-bottom))
-      calc(var(--mantine-spacing-md) + var(--browser-safe-area-left));
-    background: var(--mantine-color-dark-8);
-    overflow: auto;
-
-    .now-playing-title,
-    .np-back-btn {
-      display: none;
-    }
-
-    .now-playing-toolbar {
-      justify-content: flex-end;
-      flex-shrink: 0;
-    }
-
-    .now-playing-host {
-      flex: 1 1 auto;
-      min-height: 0;
-      aspect-ratio: auto;
-      border-radius: 0;
-    }
-
-    .np-seekbar,
-    .np-transport {
-      flex-shrink: 0;
-    }
-  }
-
-  .np-back-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    min-height: 44px;
-    padding: 0 12px;
-    background: none;
-    border: none;
-    border-radius: var(--mantine-radius-sm);
-    color: var(--mantine-color-dark-1);
-    font: inherit;
-    font-size: 14px;
-    cursor: pointer;
-
-    &:hover { background: var(--mantine-color-dark-5); color: var(--mantine-color-dark-0); }
-    @include np-focus-ring;
-  }
-}
-
-.np-handoff-label {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--mantine-color-dark-0);
-  margin-bottom: var(--mantine-spacing-xs);
-}
-
-// ---- Artwork + metadata block ------------------------------------------------
-.np-meta {
-  display: flex;
-  align-items: center;
-  gap: var(--mantine-spacing-md);
-  padding: 0;
-
-  .np-art,
-  .np-art-placeholder {
-    width: 96px;
-    height: 96px;
-    flex-shrink: 0;
-    border-radius: var(--mantine-radius-sm);
+  .np-art {
+    width: min(280px, 60vw);
+    aspect-ratio: 1 / 1;
+    object-fit: cover;
+    border-radius: var(--mantine-radius-md);
     background: var(--mantine-color-dark-8);
   }
 
-  .np-art { object-fit: cover; }
-
-  .np-art-placeholder {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--mantine-color-dark-3);
-  }
-
-  .np-meta-lines {
-    flex: 1;
+  .np-titles {
     display: flex;
     flex-direction: column;
     gap: 2px;
     min-width: 0;
   }
 
-  .np-meta-title {
-    font-weight: 600;
-    font-size: 1.25rem;
+  .now-playing-title {
+    margin: 0;
+    font-size: clamp(20px, 2.2vw, 26px);
     line-height: 1.25;
-    color: var(--media-text);
+    font-weight: 700;
+    color: var(--mantine-color-dark-0);
     overflow-wrap: anywhere;
   }
 
-  // The show/album this item came from (container expansion context line).
-  .np-meta-context {
-    font-size: 0.9375rem;
-    color: var(--media-muted);
+  .np-subtitle {
+    font-size: 15px;
+    color: var(--media-muted, var(--mantine-color-dark-1));
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .np-meta-sub {
-    font-size: 0.8125rem;
-    color: var(--media-muted);
-    display: flex;
-    align-items: center;
-    gap: 6px;
+  .np-where {
+    font-size: 13px;
+    color: var(--mantine-color-dark-1);
+  }
 
-    .np-meta-dot { color: var(--mantine-color-dark-3); }
+  .np-state { color: var(--mantine-color-dark-0); }
+
+  .np-queue { min-width: 0; }
+}
+
+// Audio on a wide screen: art beside the titles, controls under both.
+.now-playing-view .np-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mantine-spacing-sm);
+  min-width: 0;
+}
+
+@media (min-width: 700px) {
+  .now-playing-view--audio:not(.now-playing-view--expanded) .np-head {
+    flex-direction: row;
+    align-items: flex-end;
+    gap: var(--mantine-spacing-lg);
+
+    .np-art { width: 200px; flex-shrink: 0; }
+    .np-titles { padding-bottom: var(--mantine-spacing-xs); }
+  }
+}
+
+// ---- Expanded: the picture fills the view, the bar sits under it ----------
+.now-playing-view.now-playing-view--expanded {
+  --np-controls-h: 150px;
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  height: 100dvh;
+  box-sizing: border-box;
+  padding: calc(var(--mantine-spacing-sm) + var(--browser-safe-area-top))
+    calc(var(--mantine-spacing-md) + var(--browser-safe-area-right))
+    calc(var(--mantine-spacing-sm) + var(--browser-safe-area-bottom))
+    calc(var(--mantine-spacing-md) + var(--browser-safe-area-left));
+  background: var(--mantine-color-dark-8);
+  overflow: auto;
+  justify-content: center;
+
+  .np-layout { display: block; }
+
+  // Bounded so the controls stay in view: the stage is as wide as a 16:9
+  // picture that leaves room for the bar, and everything aligns to it.
+  .np-stage {
+    width: min(100%, calc((100dvh - var(--np-controls-h)) * 16 / 9));
+    margin: 0 auto;
+  }
+
+  .now-playing-host { border-radius: 0; }
+
+  &.now-playing-view--audio .np-art {
+    width: min(100%, calc(100dvh - var(--np-controls-h) - 40px));
+    max-width: 520px;
+    margin: 0 auto;
+  }
+
+  &.now-playing-view--audio .np-head { align-items: center; }
+
+  .np-stage > .session-control-frame {
+    transition: opacity var(--ds-motion-fast) ease;
+  }
+
+  &.np-idle {
+    cursor: none;
+
+    .np-stage > .session-control-frame { opacity: 0; }
+  }
+}
+
+// ---- Phone (the hero sticks with its transport; the queue scrolls under) ---
+@media (max-width: 600px) {
+  .now-playing-view:not(.now-playing-view--expanded) {
+    .np-hero {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: var(--mantine-color-body);
+      padding-bottom: var(--mantine-spacing-xs);
+      border-bottom: 1px solid var(--media-control-line);
+    }
+
+    .np-layout { gap: var(--mantine-spacing-sm); }
+
+    // Audio: a small cover beside the titles, so the sticky hero stays short.
+    &.now-playing-view--audio .np-head { flex-direction: row; align-items: center; gap: var(--mantine-spacing-sm); }
+    .np-art { width: 72px; flex-shrink: 0; }
+    .np-stage { gap: 6px; }
+    // The sticky hero must leave the queue room: one title line, small lines.
+    // Title on its own line; the subtitle (shortened if need be) and where it plays share the next.
+    .np-titles { display: grid; grid-template-columns: minmax(0, max-content) auto; justify-content: start; align-items: baseline; }
+    .now-playing-title { grid-column: 1 / -1; font-size: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .np-subtitle { min-width: 0; font-size: 13px; }
+    .np-where { font-size: 13px; white-space: nowrap; }
+    .np-where:first-child, .now-playing-title + .np-where { grid-column: 1 / -1; }
+    .np-subtitle + .np-where::before { content: '\00a0·\00a0'; color: var(--mantine-color-dark-2); }
+    .np-icon-btn--primary { width: 52px; height: 52px; }
   }
 }
 
@@ -296,32 +336,78 @@ $np-amber-ink: $on-accent;
   }
 }
 
-// ---- Transport -------------------------------------------------------------------
+// ---- Control bar -----------------------------------------------------------------
 .np-transport {
   display: flex;
   flex-direction: column;
+  gap: var(--mantine-spacing-xs);
+  min-width: 0;
+  max-width: 100%;
+}
+
+// Three zones: lead (title, expanded only) · centre (transport) · end (settings).
+.np-bar {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
   gap: var(--mantine-spacing-sm);
+  flex-wrap: wrap;
 
-  .np-transport-main {
+  .np-bar-centre,
+  .np-bar-end {
     display: flex;
     align-items: center;
-    justify-content: flex-start;
-    gap: var(--mantine-spacing-sm);
+    gap: var(--mantine-spacing-xs);
   }
 
-  .np-transport-secondary {
-    display: flex;
-    align-items: center;
-    justify-content: flex-start;
-    gap: var(--mantine-spacing-sm);
+  .np-bar-end {
+    margin-left: auto;
     flex-wrap: wrap;
+    justify-content: flex-end;
   }
 
-  .np-target-label {
-    align-self: flex-start;
-    color: var(--mantine-color-dark-2);
-    font-size: 13px;
-    font-weight: 600;
+  &.np-bar--lead {
+    display: grid;
+    // The end group never wraps; the title gives way (ellipsis) instead.
+    grid-template-columns: minmax(0, 1fr) auto minmax(max-content, 1fr);
+
+    .np-bar-lead { min-width: 0; }
+    .np-bar-end { margin-left: 0; flex-wrap: nowrap; }
+  }
+
+  .np-bar-lead {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+
+    .now-playing-title { font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .np-subtitle { font-size: 13px; }
+    .np-where { display: none; }
+  }
+}
+
+// Phone: the same order, stacked — transport centred, then the settings row.
+@media (max-width: 600px) {
+  .np-bar,
+  .np-bar.np-bar--lead {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--mantine-spacing-xs);
+
+    .np-bar-centre { justify-content: center; }
+    .np-bar-end { margin-left: 0; justify-content: space-between; flex-wrap: nowrap; gap: 2px; }
+    .np-volume-group--steps .np-volume-icon { display: none; }
+    // Play on… keeps its icon and name in the accessible label; the word goes on a phone.
+    .np-play-on {
+      width: 44px;
+      min-width: 44px;
+      height: 44px;
+      padding: 0;
+      .mantine-Button-label { display: none; }
+      .mantine-Button-section { margin: 0; }
+    }
   }
 }
 
@@ -365,8 +451,8 @@ $np-amber-ink: $on-accent;
 
   // Big play/pause.
   &--primary {
-    width: 64px;
-    height: 64px;
+    width: 56px;
+    height: 56px;
     background: var(--mantine-color-amber-5);
     border-color: transparent;
     color: $np-amber-ink;
@@ -381,72 +467,96 @@ $np-amber-ink: $on-accent;
   }
 }
 
-// Playback speed — a text chip that cycles.
+// The bar's secondary controls are quieter than the transport (still 44 px targets, NF-DEV-02).
+.np-bar-end .np-icon-btn {
+  width: 44px;
+  height: 44px;
+  background: transparent;
+}
+
+// Speed shows in the bar only when it is not 1× (it is set in ⚙).
+.np-rate-chip {
+  padding: 2px 8px;
+  border: 1px solid var(--media-control-line);
+  border-radius: 999px;
+  color: var(--mantine-color-dark-0);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.np-menu-aside {
+  color: var(--mantine-color-dark-2);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+// A track chip (CC / audio) in the bar: an icon and a short language.
 .np-rate-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 56px;
+  gap: 4px;
+  min-width: 44px;
   min-height: 44px;
-  padding: 0 12px;
-  background: var(--mantine-color-dark-5);
+  padding: 0 10px;
+  background: transparent;
   border: 1px solid var(--media-control-line);
   border-radius: 999px;
   color: var(--mantine-color-dark-0);
-  font: inherit;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
-  font-variant-numeric: tabular-nums;
   cursor: pointer;
 
-  &:hover { background: var(--mantine-color-dark-4); }
+  &:hover:not(:disabled) { background: var(--mantine-color-dark-5); }
   @include np-focus-ring;
+  &:disabled { color: var(--mantine-color-dark-3); cursor: default; }
+}
 
-  &--engaged {
-    color: var(--media-text, var(--mantine-color-dark-0));
-    border-color: var(--media-text, var(--mantine-color-dark-0));
-  }
+.np-play-on {
+  min-height: 44px;
 }
 
 .np-volume-group {
   display: inline-flex;
   align-items: center;
-  gap: var(--mantine-spacing-xs);
+  gap: 4px;
   color: var(--mantine-color-dark-1);
 
   .np-volume {
-    width: min(200px, 40vw);
-    height: 44px; // full-height hit area; accent-color comes from MediaShell.scss
+    width: 96px;
+    height: 44px;
     margin: 0;
     cursor: pointer;
-    @include np-focus-ring;
-  }
-
-  .np-volume-step {
-    min-width: 44px;
-    min-height: 44px;
-    border: 1px solid var(--media-control-line);
-    border-radius: var(--mantine-radius-sm);
-    background: var(--mantine-color-dark-5);
-    color: var(--mantine-color-dark-0);
-    font: inherit;
-    font-size: 20px;
-    cursor: pointer;
+    &, &[type="range"] { accent-color: var(--mantine-color-dark-0); }
     @include np-focus-ring;
 
-    &:disabled {
-      color: var(--mantine-color-dark-3);
-      cursor: default;
-    }
+    &:disabled { cursor: default; opacity: 0.5; }
   }
 
-  .np-volume-level {
-    min-width: 36px;
-    color: var(--mantine-color-dark-1);
-    font-size: 13px;
-    font-variant-numeric: tabular-nums;
-    text-align: center;
+  .np-volume-icon { flex-shrink: 0; }
+}
+
+// More ⋯ / ⚙: a setting's one-line explanation sits under its label.
+.np-more-menu {
+  min-width: 240px;
+  z-index: 1100; // above the expanded view (1000)
+  max-width: min(340px, calc(100vw - 32px));
+
+  .np-more-explained .mantine-Menu-itemLabel {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
   }
+
+  .np-more-explain {
+    font-size: 12px;
+    line-height: 1.35;
+    color: var(--mantine-color-dark-2);
+    white-space: normal;
+  }
+
+  .np-more-sub-item { padding-left: 40px; }
 }
 
 // ---- Mini player additions ----------------------------------------------------
@@ -571,4 +681,53 @@ $np-amber-ink: $on-accent;
     }
     .screen-handle-action { padding: 0 8px; }
   }
+}
+
+// ---- A screen's Remote (Peek) uses the same hero head ----------------------
+.peek-panel {
+  max-width: 900px;
+
+  .np-head--remote {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-end;
+    gap: var(--mantine-spacing-md);
+    margin: var(--mantine-spacing-xs) 0;
+  }
+
+  .np-art--remote {
+    width: 200px;
+    aspect-ratio: 16 / 9;
+    object-fit: cover;
+    border-radius: var(--mantine-radius-md);
+    background: var(--mantine-color-dark-8);
+    flex-shrink: 0;
+  }
+
+  .np-titles { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+
+  .peek-item-title {
+    margin: 0;
+    font-size: 22px;
+    line-height: 1.25;
+    font-weight: 700;
+    color: var(--mantine-color-dark-0);
+    overflow-wrap: anywhere;
+  }
+
+  .np-subtitle { font-size: 14px; color: var(--media-muted, var(--mantine-color-dark-1)); }
+
+  @media (max-width: 600px) {
+    .np-head--remote { align-items: center; }
+    .np-art--remote { width: 112px; }
+    .peek-item-title { font-size: 18px; }
+  }
+}
+
+// A track chip names the choice, shortened to fit the bar.
+.pf-chip--compact .pf-chip-short {
+  max-width: 7em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

@@ -1,8 +1,9 @@
 // frontend/src/modules/Media/shell/Dock.jsx
 // Tablet+: the persistent row — search (with the destination chip inside the
 // box: where ▶ plays, Tab cycles it — search/DestinationChip.jsx), fleet
-// indicator, settings. The header "Playing on" control is phone-only now: on
-// desktop the one destination is shown where you type. Mobile: a launcher only. A 360px dock used to split the row
+// indicator, settings. One destination, shown where you type, on every
+// width: the phone's launcher box carries the same chip + ▾ at its right end
+// (the old header "Playing on" control is gone). Mobile: a launcher only. A 360px dock used to split the row
 // between a scope control, a search input, and a 168px icon cluster; the
 // input landed at ~50px (its own placeholder didn't fit) and a CSS rule hid
 // the scope control at the one moment it mattered (focus). Mobile now gets
@@ -20,7 +21,8 @@ import { MediaContentSearch } from "../search/MediaContentSearch.jsx";
 import { FleetIndicator } from "./FleetIndicator.jsx";
 import { SettingsMenu } from "./SettingsMenu.jsx";
 import { StartFreshDialog } from "./StartFreshDialog.jsx";
-import { CastTargetChip } from "../cast/CastTargetChip.jsx";
+import { UnstyledButton } from '@mantine/core';
+import { DestinationChip } from "../search/DestinationChip.jsx";
 import { FirstUseCard } from "../identity/FirstUseCard.jsx";
 import { DestinationInteractionContext } from "../cast/destinationInteraction.js";
 
@@ -35,24 +37,24 @@ export function Dock({ onOpenSearch, searchInputRef, launcherRef, destinationCon
   return (
     <DestinationInteractionContext.Provider value={destinationInteraction}>
     <header className="media-dock" data-testid="media-dock">
-      {/* Phone: the destination control, where the next Play goes; the
-          first-use naming popover anchors to it. Desktop: the destination
-          chip in the search box carries both (MediaContentSearch below). */}
-      {isPhone && (
-        <div className="media-dock-destination">
-          <FirstUseCard><CastTargetChip controlRef={destinationControlRef} /></FirstUseCard>
-        </div>
-      )}
-      <button
-        type="button"
-        ref={launcherRef}
-        className="media-search-launcher"
-        data-testid="media-search-launcher"
-        onClick={() => onOpenSearch?.()}
-      >
-        <UiIcon name="search" size={18} />
-        <span>Search media…</span>
-      </button>
+      {/* Phone: the launcher looks like the search box it opens, with the
+          destination chip (and its ▾ list) at its right end — the same chip
+          the desktop box and the phone search sheet carry. The first-use
+          naming popover anchors to it. */}
+      <div className="media-search-launcher" data-testid="media-search-launcher-row">
+        <UnstyledButton
+          ref={launcherRef}
+          className="media-search-launcher-open"
+          data-testid="media-search-launcher"
+          onClick={() => onOpenSearch?.()}
+        >
+          <UiIcon name="search" size={18} />
+          <span>Search media…</span>
+        </UnstyledButton>
+        {isPhone && (
+          <FirstUseCard><DestinationChip compact controlRef={destinationControlRef} /></FirstUseCard>
+        )}
+      </div>
       {/* No wrapper div: MediaContentSearch's own root, `.media-search-bar`,
           must stay a DIRECT flex child of `.media-dock` — it carries
           `flex: 1` itself (MediaShell.scss), and a wrapper wraps it in an

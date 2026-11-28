@@ -13,7 +13,22 @@ import { createLocalSessionController } from "../session/LocalSessionController.
 import { createRemoteSessionController } from "../peek/RemoteSessionController.js";
 import { createFleetStore } from "../fleet/fleetStore.js";
 import { createAckRouter } from "../peek/ackRouter.js";
-import { SessionControlsPanel } from "./SessionControlsPanel.jsx";
+import { SessionControlsPanel, SessionControlMenuItems } from "./SessionControlsPanel.jsx";
+import { Menu } from '@mantine/core';
+
+// The status panel plus the settings as they appear in the player's More ⋯
+// (Now Playing ruling 2026-11-27), the menu held open.
+function Controls(props) {
+  return (
+    <>
+      <SessionControlsPanel {...props} />
+      <Menu opened>
+        <Menu.Target><span /></Menu.Target>
+        <Menu.Dropdown><SessionControlMenuItems {...props} /></Menu.Dropdown>
+      </Menu>
+    </>
+  );
+}
 import { EndOfQueueChoice } from "./EndOfQueueChoice.jsx";
 import { MiniPlayer } from "./MiniPlayer.jsx";
 
@@ -86,19 +101,18 @@ describe('SessionControlsPanel — this device', () => {
   it('sets a sleep timer from the menu and shows the time left on the controls and the handle', async () => {
     const local = localSetup();
     local.queue.playNow({ contentId: 'plex:a', title: 'Audiobook', format: 'audio', duration: 3600 });
-    render(<Providers local={local} outcomes={outcomes}><SessionControlsPanel target="local" /><MiniPlayer /></Providers>);
+    render(<Providers local={local} outcomes={outcomes}><Controls target="local" /><MiniPlayer /></Providers>);
     fireEvent.click(screen.getByTestId('sleep-timer-button'));
     fireEvent.click(await screen.findByTestId('sleep-option-30'));
     await waitFor(() => expect(screen.getByTestId('sleep-timer-left').textContent).toMatch(/^Sleep in (30:00|29:5\d)$/));
     expect(screen.getByTestId('mini-player-open-nowplaying').getAttribute('aria-label')).toMatch(/\. Sleep timer: (30:00|29:5\d) left$/);
     expect(screen.getByTestId('mini-sleep').getAttribute('aria-hidden')).toBe('true');
-    expect(screen.getByTestId('sleep-timer-button').getAttribute('aria-pressed')).toBe('true');
   });
 
   it('offers the end of this item, and turning the timer off', async () => {
     const local = localSetup();
     local.queue.playNow({ contentId: 'plex:a', title: 'Ep', format: 'video', type: 'episode', duration: 600 });
-    render(<Providers local={local} outcomes={outcomes}><SessionControlsPanel target="local" /><MiniPlayer /></Providers>);
+    render(<Providers local={local} outcomes={outcomes}><Controls target="local" /><MiniPlayer /></Providers>);
     fireEvent.click(screen.getByTestId('sleep-timer-button'));
     fireEvent.click(await screen.findByTestId('sleep-option-end'));
     await waitFor(() => expect(screen.getByTestId('sleep-timer-left').textContent).toBe('Sleep at end of this item'));
@@ -114,7 +128,7 @@ describe('SessionControlsPanel — this device', () => {
     local.queue.playNow({ contentId: 'plex:a', title: 'Audiobook', format: 'audio', duration: 3600 });
     local.store.dispatch({ type: 'PLAYER_STATE', playerState: 'playing' });
     local.onPlayerPositionTick(120, 'plex:a');
-    render(<Providers local={local} outcomes={outcomes}><SessionControlsPanel target="local" /></Providers>);
+    render(<Providers local={local} outcomes={outcomes}><Controls target="local" /></Providers>);
     await act(async () => { await local.sessionControls.setSleepTimer({ minutes: 15 }); });
     await act(async () => {
       local.onPlayerPositionTick(900, 'plex:a');
@@ -131,7 +145,7 @@ describe('SessionControlsPanel — this device', () => {
   it('Stop after this one is one step and shows it is on', async () => {
     const local = localSetup();
     local.queue.playNow({ contentId: 'plex:a', title: 'Ep', format: 'video', duration: 600 });
-    render(<Providers local={local} outcomes={outcomes}><SessionControlsPanel target="local" /></Providers>);
+    render(<Providers local={local} outcomes={outcomes}><Controls target="local" /></Providers>);
     const toggle = screen.getByTestId('stop-after-current');
     expect(toggle.getAttribute('aria-pressed')).toBe('false');
     await act(async () => { fireEvent.click(toggle); });
@@ -143,7 +157,7 @@ describe('SessionControlsPanel — this device', () => {
     const local = localSetup();
     local.queue.playNow({ contentId: 'plex:e1', title: 'Hospital', format: 'video', type: 'episode', duration: 420 });
     local.queue.add({ contentId: 'plex:e2', title: 'Keepy Uppy', format: 'video', type: 'episode', duration: 420 });
-    render(<Providers local={local} outcomes={outcomes}><SessionControlsPanel target="local" /></Providers>);
+    render(<Providers local={local} outcomes={outcomes}><Controls target="local" /></Providers>);
     act(() => { local.onPlayerEnded('plex:e1'); });
     const banner = await screen.findByTestId('countdown-banner');
     expect(banner.textContent).toMatch(/Next: Keepy Uppy in 1?\ds/);
@@ -155,9 +169,11 @@ describe('SessionControlsPanel — this device', () => {
   it('shows Add only unavailable on this device, with the reason, rather than hiding it (RQ-STEER-03)', () => {
     const local = localSetup();
     local.queue.playNow({ contentId: 'plex:a', title: 'A', format: 'audio', duration: 60 });
-    render(<Providers local={local} outcomes={outcomes}><SessionControlsPanel target="local" /></Providers>);
+    render(<Providers local={local} outcomes={outcomes}><Controls target="local" /></Providers>);
     expect(screen.getByTestId('add-only-toggle').disabled).toBe(true);
-    expect(screen.getByTestId('add-only-unsupported').textContent).toMatch(/screen other devices play to/);
+    // In a person's words (Now Playing ruling 2026-11-27), never "Add only is for a screen…".
+    expect(screen.getByTestId('add-only-unsupported').textContent).toBe('This device only plays what you start on it.');
+    expect(document.body.textContent).not.toMatch(/Add only/);
   });
 
   it('announces the countdown once: the ticking seconds are hidden from assistive tech', async () => {
@@ -165,7 +181,7 @@ describe('SessionControlsPanel — this device', () => {
     local.queue.playNow({ contentId: 'plex:e1', title: 'E1', format: 'video', type: 'episode', duration: 60 });
     local.queue.add({ contentId: 'plex:e2', title: 'E2', format: 'video', type: 'episode', duration: 60 });
     act(() => local.store.dispatch({ type: 'PLAYER_STATE', playerState: 'playing' }));
-    render(<Providers local={local} outcomes={outcomes}><SessionControlsPanel target="local" /></Providers>);
+    render(<Providers local={local} outcomes={outcomes}><Controls target="local" /></Providers>);
     act(() => local.onPlayerEnded('plex:e1'));
     const seconds = await screen.findByTestId('countdown-seconds');
     expect(seconds.closest('[aria-hidden="true"]')).not.toBeNull();
@@ -176,23 +192,24 @@ describe('SessionControlsPanel — another screen (same controls, same layout)',
   it('Add only is one step, sent to that screen, and shown from what it publishes', async () => {
     const local = localSetup();
     const { ctl, http, ackRouter, publish } = remoteSetup(baseControls);
-    render(<Providers local={local} remote={ctl} outcomes={outcomes}><SessionControlsPanel target={{ deviceId: 'tv' }} targetName="Living Room TV" /></Providers>);
+    render(<Providers local={local} remote={ctl} outcomes={outcomes}><Controls target={{ deviceId: 'tv' }} targetName="Living Room TV" /></Providers>);
     const toggle = screen.getByTestId('add-only-toggle');
-    expect(toggle.textContent).toBe('Add only: off');
+    expect(toggle).toHaveTextContent('Queue what others send');
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
     await act(async () => { fireEvent.click(toggle); });
     expect(http).toHaveBeenCalledWith('api/v1/device/tv/session/add-only', expect.objectContaining({ enabled: true }), 'PUT');
     await act(async () => {
       ackRouter.resolve({ commandId: 'cmd-1', ok: true });
       publish({ ...baseControls, addOnly: true });
     });
-    await waitFor(() => expect(screen.getByTestId('add-only-toggle').textContent).toBe('Add only: on'));
-    expect(screen.getByTestId('add-only-hint').textContent).toMatch(/added to this queue instead of replacing/);
+    await waitFor(() => expect(screen.getByTestId('add-only-toggle').getAttribute('aria-checked')).toBe('true'));
+    expect(screen.getByTestId('add-only-hint').textContent).toMatch(/join the queue instead of replacing/);
   });
 
   it('a refused command becomes an outcome naming the screen', async () => {
     const local = localSetup();
     const { ctl, ackRouter } = remoteSetup(baseControls);
-    render(<Providers local={local} remote={ctl} outcomes={outcomes}><SessionControlsPanel target={{ deviceId: 'tv' }} targetName="Living Room TV" /></Providers>);
+    render(<Providers local={local} remote={ctl} outcomes={outcomes}><Controls target={{ deviceId: 'tv' }} targetName="Living Room TV" /></Providers>);
     await act(async () => { fireEvent.click(screen.getByTestId('stop-after-current')); });
     await act(async () => { ackRouter.resolve({ commandId: 'cmd-1', ok: false, code: 'DEVICE_OFFLINE', error: 'offline' }); });
     await waitFor(() => expect(outcomes.recordLocal).toHaveBeenCalledWith(expect.objectContaining({
@@ -208,7 +225,7 @@ describe('SessionControlsPanel — another screen (same controls, same layout)',
       notes: [{ id: 'n1', kind: 'paused', label: "Paused by Dad's phone", count: 2, at: new Date().toISOString(), origin: null, putBack: { availableUntil: until } },
         { id: 'n0', kind: 'stopped', label: 'Stopped by Kitchen', count: 1, at: new Date(Date.now() - 120000).toISOString(), origin: null, putBack: null }],
     });
-    render(<Providers local={local} remote={ctl} outcomes={outcomes}><SessionControlsPanel target={{ deviceId: 'tv' }} targetName="Living Room TV" /></Providers>);
+    render(<Providers local={local} remote={ctl} outcomes={outcomes}><Controls target={{ deviceId: 'tv' }} targetName="Living Room TV" /></Providers>);
     const notes = screen.getByTestId('screen-notes');
     expect(within(notes).getAllByTestId('remote-note-label').map((n) => n.textContent)).toEqual(["Paused by Dad's phone", 'Stopped by Kitchen']);
     expect(within(screen.getByTestId('screen-note-n1')).getByText(/\(2×\)/)).toBeTruthy();
@@ -224,7 +241,7 @@ describe('SessionControlsPanel — another screen (same controls, same layout)',
   it('a screen that cannot report controls shows them unavailable with a reason, not missing', () => {
     const local = localSetup();
     const { ctl } = remoteSetup(null);
-    render(<Providers local={local} remote={ctl} outcomes={outcomes}><SessionControlsPanel target={{ deviceId: 'tv' }} /></Providers>);
+    render(<Providers local={local} remote={ctl} outcomes={outcomes}><Controls target={{ deviceId: 'tv' }} /></Providers>);
     expect(screen.getByTestId('sleep-timer-button').disabled).toBe(true);
     expect(screen.getByTestId('add-only-toggle').disabled).toBe(true);
     expect(screen.getByTestId('session-controls-unavailable').textContent).toMatch(/not reported its session controls/);
@@ -235,7 +252,7 @@ describe('SessionControlsPanel — another screen (same controls, same layout)',
     const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
     const endsAt = new Date(Date.now() + 20000).toISOString();
     const { ctl, http } = remoteSetup({ ...baseControls, countdown: { endsAt, next: { title: 'Next episode' } } });
-    const view = render(<Providers remote={ctl}><SessionControlsPanel target={{ deviceId: 'tv' }} /></Providers>);
+    const view = render(<Providers remote={ctl}><Controls target={{ deviceId: 'tv' }} /></Providers>);
     act(() => {
       visibility.mockReturnValue('hidden');
       document.dispatchEvent(new Event('visibilitychange'));
@@ -260,26 +277,26 @@ describe('SessionControlsPanel — another screen (same controls, same layout)',
     const local = localSetup();
     const endsAt = new Date(Date.now() + 7000).toISOString();
     const { ctl, http, publish } = remoteSetup({ ...baseControls, countdown: { seconds: 10, endsAt, remainingSeconds: 7, next: { contentId: 'plex:2', title: 'Keepy Uppy', queueItemId: 'q2' }, current: { contentId: 'plex:1', title: 'Hospital' } } });
-    render(<Providers local={local} remote={ctl} outcomes={outcomes}><SessionControlsPanel target={{ deviceId: 'tv' }} /></Providers>);
+    render(<Providers local={local} remote={ctl} outcomes={outcomes}><SessionControlsPanel target={{ deviceId: 'tv' }} /><button type="button" data-testid="other-control">Other</button></Providers>);
     expect(screen.getByTestId('countdown-banner').textContent).toMatch(/Next: Keepy Uppy in [67]s/);
     const cancel = screen.getByTestId('countdown-cancel');
     cancel.focus();
     await act(async () => { fireEvent.click(cancel); });
     expect(http).toHaveBeenCalledWith('api/v1/device/tv/session/countdown/cancel', expect.any(Object), 'POST');
-    const controlsRow = screen.getByTestId('sleep-timer-button').closest('.session-controls-row');
+    const controlsRow = screen.getByTestId('session-controls-panel');
     await act(async () => { publish(baseControls); });
     await waitFor(() => expect(screen.queryByTestId('countdown-banner')).toBeNull());
     expect(controlsRow).toHaveFocus();
   });
 
-  it('keeps focus on Sleep timer when the countdown disappears after focus moves', async () => {
+  it('keeps focus on another control when the countdown disappears after focus moves', async () => {
     const local = localSetup();
     const endsAt = new Date(Date.now() + 7000).toISOString();
     const { ctl, publish } = remoteSetup({ ...baseControls, countdown: { seconds: 10, endsAt, remainingSeconds: 7, next: { contentId: 'plex:2', title: 'Keepy Uppy', queueItemId: 'q2' }, current: { contentId: 'plex:1', title: 'Hospital' } } });
-    render(<Providers local={local} remote={ctl} outcomes={outcomes}><SessionControlsPanel target={{ deviceId: 'tv' }} /></Providers>);
+    render(<Providers local={local} remote={ctl} outcomes={outcomes}><SessionControlsPanel target={{ deviceId: 'tv' }} /><button type="button" data-testid="other-control">Other</button></Providers>);
     const cancel = screen.getByTestId('countdown-cancel');
     cancel.focus();
-    const sleepTimer = screen.getByTestId('sleep-timer-button');
+    const sleepTimer = screen.getByTestId('other-control');
     await act(async () => {
       sleepTimer.focus();
       await Promise.resolve();
@@ -315,7 +332,7 @@ describe('EndOfQueueChoice (STEER.13a)', () => {
     local.queue.playNow({ contentId: 'plex:a', title: 'A', format: 'video', duration: 60 });
     act(() => local.store.dispatch({ type: 'PLAYER_STATE', playerState: 'playing' }));
     await act(async () => { await local.sessionControls.setSleepTimer({ atEnd: 'item' }); });
-    render(<Providers local={local} outcomes={outcomes}><SessionControlsPanel target="local" /></Providers>);
+    render(<Providers local={local} outcomes={outcomes}><Controls target="local" /></Providers>);
     act(() => local.onPlayerEnded('plex:a'));
     const btn = await screen.findByTestId('sleep-continue-stopped');
     expect(btn.textContent).toBe('Play it again');

@@ -59,6 +59,14 @@
   overflow: hidden;
 }
 
+// On-screen keyboard up: the scale is held (PianoDesignScale), so pin the
+// canvas to the top instead of centring it in the half-height viewport.
+.piano-design-viewport.is-keyboard-open {
+  align-items: flex-start;
+
+  .piano-design-canvas { transform-origin: top center; }
+}
+
 .piano-design-canvas {
   position: relative;
   flex: 0 0 auto;

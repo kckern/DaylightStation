@@ -7,7 +7,7 @@
 // Contract: __docs/reference/android/phone.md, "Page bridge on the phone:
 // pinning media". Nothing here logs the content id or the label.
 import React, { useContext, useEffect, useRef, useState } from 'react';
-import { Button } from '@mantine/core';
+import { Button, Menu } from '@mantine/core';
 import { IconHomePlus } from '@tabler/icons-react';
 import { canPinMedia, pinMedia } from "../../../../../frontend/src/lib/fkb.js";
 import { DispatchContext } from "../cast/DispatchProvider.jsx";
@@ -20,7 +20,7 @@ export const PIN_COOLDOWN_MS = 5000;
 /**
  * @param {{target: {contentId: string, label: string, kind: string}|null}} props
  */
-export function AddToHomeScreenButton({ target }) {
+function useHomeScreenPin(target) {
   const outcomes = useContext(DispatchContext);
   const contentId = target?.contentId ?? null;
   const kind = target?.kind ?? null;
@@ -35,8 +35,6 @@ export function AddToHomeScreenButton({ target }) {
   }, [contentId, kind]);
 
   useEffect(() => () => clearTimeout(timerRef.current), []);
-
-  if (!available || !target) return null;
 
   const onPin = () => {
     if (coolingDown) return;
@@ -56,6 +54,12 @@ export function AddToHomeScreenButton({ target }) {
     });
   };
 
+  return { available: available && !!target, coolingDown, onPin };
+}
+
+export function AddToHomeScreenButton({ target }) {
+  const { available, coolingDown, onPin } = useHomeScreenPin(target);
+  if (!available) return null;
   return (
     <Button
       variant="default"
@@ -67,6 +71,22 @@ export function AddToHomeScreenButton({ target }) {
     >
       Add to home screen
     </Button>
+  );
+}
+
+/** The same request as a More ⋯ item on Now Playing (phone app only). */
+export function AddToHomeScreenItem({ target }) {
+  const { available, coolingDown, onPin } = useHomeScreenPin(target);
+  if (!available) return null;
+  return (
+    <Menu.Item
+      data-testid="np-add-to-home-screen"
+      leftSection={<IconHomePlus size={16} aria-hidden />}
+      disabled={coolingDown}
+      onClick={onPin}
+    >
+      Add to home screen
+    </Menu.Item>
   );
 }
 

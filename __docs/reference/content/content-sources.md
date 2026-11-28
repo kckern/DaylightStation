@@ -58,8 +58,8 @@ Validated by `IContentSource.mjs`:
 | `getCapabilities(localId)` | — | Return the list of capabilities for a specific item |
 | `getContainerType(id)` | — | Return a container type string for selection strategy inference (see Content Progress) |
 | `getStoragePath(id)` | — | Return a persistence key for watch state storage |
-| `getSearchCapabilities()` | `searchable` | Report supported search filters and query mappings |
-| `directIdPatterns` (getter) | — | `[{ pattern: RegExp, toId: (match) => 'source:id', priority? }]`: unprefixed text that is unambiguously one of this source's ids. Search looks such text up directly (via `getItem`) and leads with the hit, while the text search still runs. Plex declares `/^\d{2,}$/` (rating keys; 2-digit floor because search rejects text under 2 characters), Immich declares UUIDs. Candidates not yet declared (no adapter with an unambiguous id and get-by-id): YouTube 11-character ids |
+| `getSearchCapabilities()` | `searchable` | Report supported search filters and query mappings. `explicitOnly: true` keeps the source out of unscoped searches: it answers only a search with `source=` naming it (YouTube, which searches the outside world through Piped) |
+| `directIdPatterns` (getter) | — | `[{ pattern: RegExp, toId: (match) => 'source:id', priority? }]`: unprefixed text that is unambiguously one of this source's ids. Search looks such text up directly (via `getItem`) and leads with the hit, while the text search still runs. Plex declares `/^\d{2,}$/` (rating keys; 2-digit floor because search rejects text under 2 characters), Immich declares UUIDs. Candidates not yet declared (no adapter with an unambiguous id and get-by-id): YouTube 11-character ids. YouTube text search (`source=youtube`) goes through Piped `/search?filter=videos` and returns playable `youtube:<id>` video leaves; live streams are left out |
 
 ### How Playable Data Is Returned
 
@@ -109,8 +109,8 @@ Tiers let the frontend get fast results first and defer expensive work until the
 | Driver | Tier 1 | Tier 2 | Difference |
 |--------|--------|--------|------------|
 | **plex** | `hubSearch()` only → filter to show/movie/artist/album/collection → return without hydration (~300ms) | Full: hubSearch + `_searchPlaylists` + `_searchCollections` + `getItem()` per result (~8-18s) | 30-80x fewer API calls |
-| **immich** | Same as tier 2 | 4 parallel searches (assets, people, tags, albums) (~50-200ms) | No difference — already fast |
-| **audiobookshelf** | Same as tier 2 | Library scan + author detail fetch (~100-500ms) | No difference — already fast |
+| **immich** | Same as tier 2 | Asset search + cached people/tags/albums lists (~10-60ms) | No difference — already fast |
+| **audiobookshelf** | Same as tier 2 | Local index of each library (built at boot, 1 h TTL; ~5-20ms) | No difference — already fast |
 | **filesystem** | Same as tier 2 | Local file scan (~<50ms) | No difference — local I/O |
 
 Adapters that are already fast (<500ms) ignore the tier parameter and always do their full search. Only adapters with expensive multi-phase search need to differentiate.
@@ -180,6 +180,7 @@ Connects to an Immich photo/video management server.
 - **Date filtering**: `time` accepts a single day (`2025-12-25`), month (`2025-12`), year (`2025`), or range (`2024..2025`). A single day expands to a same-day window. Date filters are forwarded to Immich as `takenAfter`/`takenBefore`.
 - **Rich metadata (opt-in)**: add `withExif=1` and/or `withPeople=1` to a `query/search` request. These pass straight through to Immich's `/api/search/metadata`, so exif and people/faces come back in a single call (no per-asset hydration). Output is normalized into a curated `metadata.exif` block (`capturedAt, city, state, country, latitude, longitude, make, model, lensModel, fNumber, iso, exposureTime, focalLength`) and `metadata.people` (with face bounding boxes). Tags are not available on the search path.
 - **Empty fields**: `null`/`[]`/`{}` members are stripped from item payloads at the API boundary to reduce response size.
+- **Text search name lists**: people (with photo counts), tags and albums are loaded once (`prepareSearch` at boot, ~0.5 s) and reused for 10 minutes, an older copy served while the next loads; a search costs only the asset search (~10-60 ms). Loading them per search (the people list takes one statistics request per named person) cost 1.6 s cold and timed out the first search after a restart.
 
 ### audiobookshelf (source name: `abs`)
 
@@ -192,6 +193,7 @@ Connects to an Audiobookshelf server. A single ABS instance can produce both pla
 - **Config**: host, API key
 - **Resume**: Audiobooks use seconds-based playhead. Ebooks use EPUB CFI (Canonical Fragment Identifiers). 90% = complete.
 - **Container aliases**: `libraries`, `authors`, `series`, `narrators`
+- **Search**: matches a local index per library: every item's title, subtitle, author, series and narrator (minified item list fetched in pages of 1000, so the server keeps answering between pages) plus the library's author list. Built at boot (`prepareSearch`, ~14 s for ~31k items, ~28 MB), reused for 1 hour, an older index served while the next builds. Until the first build is done, the server's own `/api/libraries/:id/search` answers (books and authors in one request). An author with no picture borrows the cover of their first book in the index. The library list is cached for 10 minutes. Why: the server's search costs ~0.5 s per library for a new word and serves one request at a time (~0.9-1.3 s per everything search), and the older code downloaded each library's whole author list (~13 MB) per search (6 s, the `abs` budget, under load). Search rows carry no descriptions; the info view reads the full item by id.
 
 ### komga
 
@@ -223,6 +225,13 @@ Reads files from the local filesystem. Behavior varies by `content_format` confi
 - **Capabilities**: `playable`, `listable`, `searchable`, `displayable`
 - **Multi-instance**: Yes — one instance per directory
 - **Config**: `data_path` (YAML metadata), `media_path` (audio/video files), content_format, allowed extensions
+- **Search (`files` source)**: matches directory and media-file names under the media root (depth 5; `.`/`_` entries skipped).
+  It reads a name index built by ONE shared walk and reused for 10 minutes (an older index is served while the next builds), so
+  searches never walk the tree per keystroke — per-search walks of ~450k entries starved the other sources (photo libraries
+  timed out at 3 s only while a walk ran). Excluded by default: `video/fitness/` and `fitness/` (workout footage and session
+  snapshots); `files.includeExcluded=true` searches them with a direct walk. Override the list with `mediaSearchExcludePaths`.
+- **Index at boot**: boot calls `ContentQueryService.prepareSearch()` without waiting; every adapter with a `prepareSearch()` (`files`, `singalong`, `abs`, the immich sources) builds its index then, logged as `content-query.search-index.ready` `{source, buildMs, entries}` (or `.failed`). A `files` search that arrives during the first build waits up to 1.5 s, then matches the names walked so far and returns `partial: true` — never a timeout.
+- **Search (`singalong` source)**: matches titles and numbers in an index of `{collection, number, title}` (TTL 10 minutes, stale served while rebuilding); only the matches are built with `getItem`, each once per index. Building every song per search (~650 YAML + audio scans + MP3 header reads) took ~1 s alone and 8 s (its budget) beside the other sources.
 
 #### Data/Media Path Split
 
@@ -325,6 +334,17 @@ The `scripture` resolver handles multiple input forms:
 - Volume names (`bom`, `nt`) → resolved to next unread chapter via watch history
 - Full paths (`bom/sebom/31103`) → direct lookup
 - Version-qualified paths (`kjvf/john-1`) → explicit text version, audio from defaults
+
+**Search** (`search(query, dataPath, { version, defaults, take })`) covers every volume
+(ot, nt, bom, dc, pgp). A full reference ("Genesis 1", "D&C 4", "Alma 32:21") resolves
+through `scripture-guide` to the chapter holding those verses. A book name, with or
+without a chapter ("Nephi", "1 Nephi", "Alma 32", "Doctrine and Covenants", "D&C",
+"Moses"), matches the book slugs in the chapter file names (`<firstVerseId>-<book>-<chapter>.yml`),
+whole word or a 3+ letter word prefix; when several books match, each one's first
+chapter leads. Otherwise chapter headings are searched (cached per version folder).
+A requested `version` (the Media Scripture scope sends `readalong.version=nirv`)
+applies only to volumes that have it; any other volume reads its manifest default,
+then its first folder. A version never drops a volume.
 
 **Multi-version support**: The manifest's `defaults` section maps collection sections to preferred text and audio versions. The resolver produces separate `textPath` and `audioPath`, allowing different text and audio recordings for the same content (e.g., read KJV text while listening to a dramatized NRSV recording).
 

@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { queueVerb } from './lib/playerBar.mjs';
 import { resetHouseholdAt } from './lib/household.mjs';
 import { scriptReceiver, failWake, SCRIPTED } from './lib/scriptedReceiver.mjs';
 import {
@@ -64,13 +65,15 @@ for (const [label, vp] of Object.entries(VIEWPORTS)) {
     else await page.getByTestId('mini-player-open-nowplaying').click();
     const queue = page.getByTestId('queue-panel');
     await expect(queue).toBeVisible({ timeout: 30000 });
-    const removeButtons = queue.locator('[data-testid^="queue-remove-"]');
-    const countBefore = await removeButtons.count();
+    // A row's edits are in its ⋯ (Now Playing ruling 2026-11-27).
+    const queueRows = queue.locator('li[data-testid^="queue-item-"]');
+    const countBefore = await queueRows.count();
     expect(countBefore).toBeGreaterThanOrEqual(3);
-    await removeButtons.last().click();
+    const lastId = (await queueRows.last().getAttribute('data-testid')).replace('queue-item-', '');
+    await (await queueVerb(queue, 'remove', lastId)).click();
     await expect(rowWith(page, /Removed .* from the queue here/)).toBeVisible({ timeout: 15000 });
     await page.getByTestId('item-action-undo').last().click();
-    await expect(removeButtons).toHaveCount(countBefore, { timeout: 15000 });
+    await expect(queueRows).toHaveCount(countBefore, { timeout: 15000 });
     // RELY.1a/AC1: the Undo is itself an action on the queue and confirms on its own.
     await expect(rowWith(page, /Put back .* here/)).toBeVisible({ timeout: 15000 });
     await page.getByTestId('queue-clear').click();
@@ -78,7 +81,7 @@ for (const [label, vp] of Object.entries(VIEWPORTS)) {
     // Undo of a Clear confirms in its own words, and the queue is back.
     await page.getByTestId('item-action-undo').last().click();
     await expect(rowWith(page, 'Put the queue back here')).toBeVisible({ timeout: 15000 });
-    await expect(removeButtons).toHaveCount(countBefore, { timeout: 15000 });
+    await expect(queueRows).toHaveCount(countBefore, { timeout: 15000 });
     await page.getByTestId('queue-clear').click();
     await expect(rowWith(page, 'Cleared the queue here')).toBeVisible({ timeout: 15000 });
     // AC3: quiet and brief: it leaves on its own.

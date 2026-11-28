@@ -1,7 +1,8 @@
 // frontend/src/modules/Media/shell/EndOfQueueChoice.jsx
 // What happens when the queue ends — stop, repeat, or keep similar things
-// playing — shown at the bottom of the queue with the current choice
-// (STEER.13a, RQ-STEER-19). The same for this device and another screen.
+// playing — ONE compact segmented control under the queue showing the current
+// choice (STEER.13a, RQ-STEER-19; Now Playing ruling 2026-11-27). The same for
+// this device and another screen.
 import React, { useContext, useId, useState } from 'react';
 import { Text } from '@mantine/core';
 import { useSessionControls } from "../controller/useSessionControls.js";
@@ -39,6 +40,7 @@ export function EndOfQueueChoice({ target, targetName = null }) {
   const choose = async (mode) => {
     if (disabled || mode === current || pending) return;
     setPending(mode);
+    mediaLog.nowPlayingEndActionChanged({ target: targetId, from: current, to: mode });
     if (kind !== 'local') mediaLog.sessionControlCommand({ target: targetId, action: 'setEndOfQueue', value: mode });
     let result;
     try { result = await actions.setEndOfQueue(mode); } catch (error) { result = { ok: false, error: error?.message }; }
@@ -56,8 +58,9 @@ export function EndOfQueueChoice({ target, targetName = null }) {
   const status = endOfQueueStatusText(controls?.endOfQueueStatus);
   return (
     <div className="queue-end-choice" data-testid="queue-end-choice">
-      <Text size="sm" fw={600} id={`queue-end-label-${targetId}`}>When the queue ends</Text>
-      <div className="queue-end-options" role="radiogroup" aria-labelledby={`queue-end-label-${targetId}`}>
+      <div className="queue-end-row">
+      <Text size="sm" className="queue-end-label" id={`queue-end-label-${targetId}`}>When the queue ends</Text>
+      <div className="queue-end-options queue-end-segmented" role="radiogroup" aria-labelledby={`queue-end-label-${targetId}`}>
         {END_OF_QUEUE_CHOICES.map((choice) => (
           <MediaRadioOption
             key={choice.value}
@@ -73,6 +76,7 @@ export function EndOfQueueChoice({ target, targetName = null }) {
             {choice.label}
           </MediaRadioOption>
         ))}
+      </div>
       </div>
       {status && <Text size="xs" className="queue-end-status" data-testid="queue-end-status" role="status">{status}</Text>}
       {disabled && reason && <Text size="xs" className="queue-end-status" data-testid="queue-end-unavailable">{reason}</Text>}

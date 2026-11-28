@@ -1,9 +1,9 @@
-import { ActiveQualityButton } from "../quality/PlaybackQualityButtons.jsx";
+import { QualityMenuItem } from "../quality/PlaybackQualityButtons.jsx";
 // frontend/src/modules/Media/shell/PeekPanel.jsx
 // Remote control for one device. The shared TransportBar remains target-bound;
 // this panel supplies only the remote overlay policy (predicted state and
 // pending fields) rather than a second set of transport controls.
-import React, { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Button, Title, Text, Group, Stack, Badge, Menu } from '@mantine/core';
 import { ActionMenu } from '@/lib/ui/ActionMenu.jsx';
 import { IconPlaylistAdd, IconSwitchHorizontal } from '@tabler/icons-react';
@@ -20,11 +20,12 @@ import { useNav } from "./NavProvider.jsx";
 import { QueuePanel } from "./QueuePanel.jsx";
 import { SeekBar } from "./SeekBar.jsx";
 import { TransportBar } from "./TransportBar.jsx";
-import { remoteStatusLine } from "./stateCopy.js";
+import { remoteStatusLine, playbackStateLabel } from "./stateCopy.js";
+import { heroSubtitle } from "./nowPlayingModel.js";
 import { useRemoteStopFeedback } from "./useRemoteStopFeedback.js";
 import { SessionControlFrame } from "../controller/SessionControlFrame.jsx";
 import { GlobalAimLabel } from "../cast/AimLabel.jsx";
-import { SessionControlsPanel } from "./SessionControlsPanel.jsx";
+import { SessionControlsPanel, SessionControlMenuItems } from "./SessionControlsPanel.jsx";
 import { useSearchLauncher } from "./SearchLauncherContext.js";
 import { LineUpOffer } from "./LineUpOffer.jsx";
 import { MoveToMenu } from "./MoveToMenu.jsx";
@@ -88,6 +89,11 @@ export function PeekPanel({ deviceId }) {
   const snap = statusView.get(deviceId);
 
   const itemTitle = snap?.currentItem?.title ?? snap?.currentItem?.contentId ?? null;
+  const heroIndex = snap?.queue?.currentIndex ?? -1;
+  const heroEntry = heroIndex >= 0 ? snap?.queue?.items?.[heroIndex] ?? null : null;
+  const heroSub = heroSubtitle(snap?.currentItem ?? null, heroEntry);
+  const heroArt = snap?.currentItem?.thumbnail ?? heroEntry?.thumbnail ?? null;
+  const [artFailed, setArtFailed] = useState(null);
   const statusLine = remoteStatusLine(snap?.state, itemTitle);
   const location = deviceLocation(device);
   const pendingFields = snap?._pending;
@@ -131,7 +137,7 @@ export function PeekPanel({ deviceId }) {
   }), [currentItemPending, pendingFields, statePending]);
 
   return (
-    <Stack data-testid="peek-panel" className="peek-panel" gap="md">
+    <Stack data-testid="peek-panel" className="peek-panel" gap="sm">
       <Group justify="space-between">
         <Button data-testid="peek-back" variant="subtle" color="gray" onClick={() => pop()}>
           <UiIcon name="back" /> {backDestination ?? 'Home'}
@@ -171,16 +177,27 @@ export function PeekPanel({ deviceId }) {
       </Title>
       {location && <Text size="sm" c="dimmed" className="peek-location">{location}</Text>}
 
-      <Text
-        size="sm"
-        className="peek-status"
-        data-pending={statePending || currentItemPending ? 'true' : undefined}
-      >
-        {statusLine}
-      </Text>
-      {snap?.currentItem && (
-        <StartedByLine deviceId={deviceId} contentId={snap.currentItem.contentId ?? null} />
-      )}
+      {/* One hero for the far session (Now Playing ruling 2026-11-27): its
+          picture, the title once, a subtitle, and the state on this screen. */}
+      <div className={`np-head np-head--remote${heroArt ? '' : ' np-head--bare'}`}>
+        {heroArt && artFailed !== heroArt && (
+          <img className="np-art np-art--remote" data-testid="peek-art" src={heroArt} alt="" onError={() => setArtFailed(heroArt)} />
+        )}
+        <div className="np-titles">
+          {snap?.currentItem && <h2 className="now-playing-title peek-item-title" data-testid="peek-item-title">{itemTitle}</h2>}
+          {heroSub && <div className="np-subtitle">{heroSub}</div>}
+          <Text
+            size="sm"
+            className="peek-status np-where"
+            data-pending={statePending || currentItemPending ? 'true' : undefined}
+          >
+            {snap?.currentItem ? `${playbackStateLabel(snap?.state) || 'Waiting'} on ${deviceName(device, deviceId)}` : statusLine}
+          </Text>
+          {snap?.currentItem && (
+            <StartedByLine deviceId={deviceId} contentId={snap.currentItem.contentId ?? null} />
+          )}
+        </div>
+      </div>
 
       <GlobalAimLabel />
 
@@ -194,14 +211,22 @@ export function PeekPanel({ deviceId }) {
 
       <TransportBar
         target={{ deviceId }}
+        seekReason={false}
         snapshot={snap}
         targetLabel={deviceName(device, deviceId)}
         onCommand={handleCommand}
         pendingActions={pendingActions}
         availability={availability}
+        playOn={snap?.currentItem ? (
+          <MoveToMenu key={deviceId} sourceId={deviceId} available={availability.available !== false} title={itemTitle}
+            captureLocalMoveNavigation={captureLocalMoveNavigation} />
+        ) : null}
+        settingsItems={availability.available
+          ? <QualityMenuItem target={{ deviceId }} targetLabel={deviceName(device, deviceId)} />
+          : null}
+        moreItems={<SessionControlMenuItems target={{ deviceId }} targetName={deviceName(device, deviceId)} />}
       />
 
-      {availability.available && <ActiveQualityButton target={{ deviceId }} targetLabel={deviceName(device, deviceId)} />}
       <SessionControlsPanel target={{ deviceId }} targetName={deviceName(device, deviceId)} />
       {availability.available && <LineUpOffer target={{ deviceId }} targetName={deviceName(device, deviceId)} />}
 
@@ -223,15 +248,13 @@ export function PeekPanel({ deviceId }) {
       )}
 
       <Group gap="xs">
-        {snap?.currentItem && (
-          <MoveToMenu key={deviceId} sourceId={deviceId} available={availability.available !== false} title={itemTitle}
-            captureLocalMoveNavigation={captureLocalMoveNavigation} />
-        )}
         {searchLauncher && (
           <Button
             data-testid="peek-add-to-queue"
             className="session-controls-btn"
-            variant="light"
+            variant="default"
+            size="sm"
+            radius="xl"
             leftSection={<IconPlaylistAdd size={16} />}
             disabled={availability.available === false}
             onClick={() => searchLauncher.openAddToQueue({ deviceId, name: deviceName(device, deviceId) })}

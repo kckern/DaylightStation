@@ -92,8 +92,12 @@ export function MoveToMenu({ sourceId, available = true, title = null, captureLo
       trigger={
         <Button
           data-testid="peek-move-to"
-          className="session-controls-btn"
+          className="session-controls-btn np-play-on"
           variant="default"
+          size="sm"
+          radius="xl"
+          aria-label="Move to…"
+          title="Move to…"
           leftSection={<IconArrowForwardUp size={16} />}
           disabled={!available || moving}
           loading={moving}

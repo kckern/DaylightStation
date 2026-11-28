@@ -9,7 +9,8 @@
 // Screen"). No Play bar, no slab: a disc on the thumbnail.
 import React, { useState } from 'react';
 import { Loader, UnstyledButton } from '@mantine/core';
-import { IconPlayerPlayFilled, IconPlayerPauseFilled, IconCast } from '@tabler/icons-react';
+import { IconPlayerPlayFilled, IconPlayerPauseFilled, IconCast, IconCheck } from '@tabler/icons-react';
+import { useUnwatchedCount } from "./unwatchedCounts.js";
 import { ItemMenu } from "../household/ItemMenu.jsx";
 import { tileKind } from "./tilePresentation.js";
 import { usePlayingOn } from "../fleet/usePlayingOn.js";
@@ -45,6 +46,13 @@ export function HomeTile({
   const on = item?.id ? playingOnFor(item.id) : null;
   const starting = !!item?.id && isStarting(item.id);
   const onLine = on ? `On ${on.name}` : null;
+  // Watch marks: a show or season's unwatched count, or ✓ when all of it (or
+  // this finished item) is watched.
+  const unwatched = useUnwatchedCount(item);
+  const allWatched = unwatched ? unwatched.total > 0 && unwatched.unwatched === 0 : watched === true;
+  const badge = unwatched && unwatched.unwatched > 0
+    ? { text: unwatched.unwatched > 99 ? '99+' : String(unwatched.unwatched), label: `${unwatched.unwatched} unwatched` }
+    : allWatched ? { text: null, label: 'Watched' } : null;
   const metaLines = (Array.isArray(meta) ? meta : [meta]).filter(Boolean)
     .filter((line) => !onLine || line !== `Now on ${on.name}`);
   const verb = (k) => (k === 'openScreen' && on ? open(on) : onVerb?.(k));
@@ -80,6 +88,11 @@ export function HomeTile({
           {Number.isFinite(progress) && progress > 0 && (
             <span className="home-tile-progress" aria-hidden>
               <span className="home-tile-progress-fill" style={{ width: `${Math.min(100, Math.max(2, progress))}%` }} />
+            </span>
+          )}
+          {badge && (
+            <span className="home-tile-badge" data-testid={`${testId}-badge`} role="img" aria-label={badge.label}>
+              {badge.text ?? <IconCheck size={14} aria-hidden />}
             </span>
           )}
         </UnstyledButton>

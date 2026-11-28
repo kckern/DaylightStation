@@ -750,6 +750,20 @@ export function loadYamlFromPath(filePath) {
 }
 
 /**
+ * Async twin of loadYamlFromPath: parsed YAML, or null when the file is
+ * missing, unreadable or not valid YAML. Never blocks the event loop on the read.
+ * @param {string} filePath - Full path with extension
+ * @returns {Promise<any|null>}
+ */
+export async function loadYamlFromPathAsync(filePath) {
+  try {
+    return yaml.load(await fs.promises.readFile(filePath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Load YAML from a known path without hiding read or parse failures.
  *
  * Use this when a caller must distinguish a missing file from corrupt or

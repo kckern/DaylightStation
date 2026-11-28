@@ -15,7 +15,7 @@ import { useLiveSearch } from "../search/useLiveSearch.js";
 import { displayTitle, resultSubtitle } from "../search/resultPresentation.js";
 import { SearchEmptyState } from "../search/SearchEmptyState.jsx";
 import { LoadErrorLine } from "../shared/LoadErrorLine.jsx";
-import { StreamStatusLine } from "../../../../../__capabilities/content-catalog/browser/search-status.mjs";
+import { StreamStatusLine, SourceFailureNote } from "../../../../../__capabilities/content-catalog/browser/search-status.mjs";
 import { describeBusy } from "../cast/castCopy.js";
 import { useDispatch } from "../cast/useDispatch.js";
 import { useHotkey } from "@/lib/hooks/useHotkey.js";
@@ -195,6 +195,11 @@ export function FleetPlayPicker({ deviceId, onClose, openerRef }) {
           }}
           />
         </ul>
+      )}
+      {/* An everything search: libraries that did not answer are one quiet
+          line under the results, never a row per source above them. */}
+      {!liveSearch.isSearching && state.phase !== 'idle' && (
+        <SourceFailureNote failedSources={state.failedSources ?? []} onRetry={retry} />
       )}
     </div>
   );

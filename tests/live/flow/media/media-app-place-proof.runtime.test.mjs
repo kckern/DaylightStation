@@ -9,7 +9,7 @@ import {
   newAppPage, gotoMedia, warmMedia, openHouse, openRemote, expectStarted,
 } from './lib/receivers.mjs';
 import { isPhone, goArea, openSearch, closeSearch, resultRow, searchSurface, detailVerb, openDetailMore, openRowMenuAll, openTileMenuAll, showAllRows } from './lib/search.mjs';
-import { aimAt, aimHere, aimLabel } from './lib/aim.mjs';
+import { aimAt, aimHere, aimLabel, seedAim } from './lib/aim.mjs';
 
 // PLACE — where things go: the aim, Play on…, the receiver picker states, and
 // the stale-screen rule. Receivers are real mounted screen pages; the screens
@@ -22,34 +22,19 @@ test.beforeAll(async ({ browser }) => { test.setTimeout(300000); await warmMedia
 test.beforeEach(async ({ request, baseURL }) => { await resetHouseholdAt(request, baseURL); });
 
 const AIM = 'dispatch-aim'; // marker only; the aim is read from whichever aim label the surface has
-const aimNodes = (page) => page.locator('[data-testid="search-destination-chip"], [data-testid="destination-control-name"], [data-testid="destination-line-name"], [data-testid="aim-label"]');
+const aimNodes = (page) => page.locator('[data-testid="search-destination-chip"], [data-testid="destination-line-name"], [data-testid="aim-label"]');
 
-// Several screens are aimed with the phone header's "Playing on" control (one
-// checkbox per screen). The wider screens' search box chip names ONE screen
-// (one destination, shown where you type), so a multi-screen aim is a phone
-// journey. `add`: widen the aim by these screens instead of replacing it.
+// The chip names ONE screen (one destination, shown where you type) on every
+// width; no control aims at several. A stored aim can still name several and
+// the surfaces must read it, so several screens are seeded (`seedAim`).
+// `add`: widen the aim by these screens instead of replacing it.
 async function setAim(page, vp, deviceIds, { add = false } = {}) {
-  if (!isPhone(vp)) {
-    if (add || deviceIds.length !== 1) throw new Error('setAim: the search box chip names one screen; aim several on a phone');
+  if (!add && deviceIds.length === 1) {
     await aimAt(page, deviceIds[0]);
     return;
   }
-  const header = page.getByTestId('cast-target-chip');
-  await expect(header).toBeVisible({ timeout: 30000 });
-  await header.click();
-  await expect(page.getByTestId('cast-popover')).toBeVisible();
-  await showAllRows(page, 'cast-target'); // the aim list leads with four screens
-  if (!add) {
-    for (const box of await page.locator('[data-testid^="cast-target-checkbox-"]').all()) {
-      if (await box.isChecked()) await box.uncheck();
-    }
-  }
-  for (const id of deviceIds) {
-    const box = page.getByTestId(`cast-target-checkbox-${id}`);
-    if (!(await box.isChecked())) await box.check();
-  }
-  await header.click();
-  await expect(page.getByTestId('cast-popover')).toBeHidden();
+  const current = add ? await page.evaluate(() => JSON.parse(localStorage.getItem('media-app.cast-target') || '{}').targetIds ?? []) : [];
+  await seedAim(page, [...new Set([...current, ...deviceIds])]);
 }
 
 for (const [label, vp] of Object.entries(VIEWPORTS)) {
@@ -107,8 +92,8 @@ test('[PLACE.1a/AC2] the aim reads as the screen\'s name and room, "This device 
   // (the room is the screen's configured location: "Virtual browser" for the fixture screens)
   await expect(label).toContainText('Virtual browser');
   await context.close();
-  // Two screens: both names. Four: a count. (Several screens are aimed on a phone: the
-  // header's "Playing on" control; the wider screens' chip names one destination.)
+  // Two screens: both names. Four: a count. (No control aims at several; the
+  // stored aim is seeded and every surface must read it.)
   const pvp = VIEWPORTS.phone;
   const phone = await newAppPage(browser, pvp);
   await gotoMedia(phone.page);
@@ -163,7 +148,10 @@ test('[PLACE.3a/AC1][PLACE.3a/AC2][PLACE.3a/AC3] Play on… is offered on items 
   await openDetailMore(page);
   await expect(page.getByTestId('detail-add-on')).toBeVisible();
   await page.keyboard.press('Escape');
-  await expect(page.getByTestId('detail-view').getByRole('button', { name: 'Play on…', exact: true }).first()).toBeVisible();
+  // Play on… on the info view: its own button, or PLAY itself when ▶ would ask where
+  // ("Play on…", or "Resume on… · 30:00" for an unfinished item; ItemActionRow never
+  // asks the same question twice).
+  await expect(page.getByTestId('detail-view').getByRole('button', { name: /^(Play|Resume) on…/ }).first()).toBeVisible();
   await gotoMedia(page);
   await expect(page.getByTestId('home-row-recent')).toBeVisible({ timeout: 60000 });
   await openTileMenuAll(page, `home-tile-recent-${ITEM.ARRIVAL}`); // Add on… is behind the tile menu's More (k)

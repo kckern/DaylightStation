@@ -76,7 +76,7 @@ for (const [label, viewport, surface] of surfaces) {
       await expect(collection).toBeVisible({ timeout: 30000 });
       await collection.click();
       await expect(page.getByTestId('browse-dispatch-header')).toBeVisible();
-      // The phone header's "Playing on" names the same aim.
+      // The phone launcher's chip names the same aim.
       await expect.poll(() => aimLabel(page)).toContain('Acceptance');
       await page.getByTestId('browse-crumb-home').click();
     } else {

@@ -99,3 +99,16 @@ describe('sourceRootPresentation', () => {
     expect(sourceRootPresentation(row).title).toBe(displayTitle(row));
   });
 });
+
+describe('resultSubtitle by library kind (2026-11-27: audiobooks read "Track")', () => {
+  it('an audiobook track never says Track', () => {
+    const book = { type: 'track', duration: 32681, metadata: { type: 'track', librarySectionTitle: 'Audiobooks', artist: 'Mario Livio' } };
+    expect(resultSubtitle(book)).not.toMatch(/Track/);
+    expect(resultSubtitle(book)).toMatch(/^Audiobook · Mario Livio/);
+  });
+  it('a music track is a Song; a film without a section is a Film', () => {
+    expect(resultSubtitle({ type: 'track', metadata: { type: 'track', librarySectionTitle: 'Music' } })).toBe('Music · Song');
+    expect(resultSubtitle({ type: 'movie', duration: 6000 })).toBe('Film · 1 hr 40 min');
+    expect(resultSubtitle({ type: 'movie', duration: 6000, metadata: { librarySectionTitle: 'Movies' } })).toBe('Film · 1 hr 40 min');
+  });
+});

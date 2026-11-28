@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { stopHere } from './lib/playerBar.mjs';
 import { markFirstUseDone } from './lib/firstUse.mjs';
 import { aimHere } from './lib/aim.mjs';
 
@@ -9,12 +10,7 @@ test.afterEach(async ({ page }) => {
   if (page.isClosed()) return;
   const closeSearch = page.getByTestId('search-mode-close');
   if (await closeSearch.isVisible()) await closeSearch.click();
-  const stop = page.getByTestId('np-stop');
-  if (!(await stop.isVisible())) {
-    const open = page.getByTestId('mini-player-open-nowplaying');
-    if (await open.isVisible()) await open.click();
-  }
-  if (await stop.isVisible()) await stop.click();
+  await stopHere(page);
 });
 
 test('[FIND.1a/AC5] phone a row opens the info view (nothing plays) and only PLAY starts actual media', async ({ page }) => {
@@ -31,7 +27,7 @@ test('[FIND.1a/AC5] phone a row opens the info view (nothing plays) and only PLA
   const result = search.getByTestId('search-mode-results').getByText(title, { exact: true });
   await expect(result).toHaveCount(1, { timeout: 15000 });
   const row = result.locator('xpath=ancestor::li');
-  await expect(row.getByText('Movie', { exact: true })).toBeVisible();
+  await expect(row.getByText('Film', { exact: true })).toBeVisible();
   expect(await row.locator('img, [data-testid="result-artwork-placeholder"]').count()).toBeGreaterThan(0);
 
   await row.getByRole('button', { name: 'More actions' }).click();

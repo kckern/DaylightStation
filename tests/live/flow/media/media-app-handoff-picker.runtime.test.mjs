@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { openPlayOn } from './lib/playerBar.mjs';
 import { markFirstUseDone } from './lib/firstUse.mjs';
 import { playResultHere } from './lib/search.mjs';
 
@@ -21,7 +22,9 @@ test('NowPlaying hand-off shows truthful aim plus an explicit move/keep choice',
   await expect(page.getByTestId('media-mini-player')).toHaveCount(0);
   await expect(page.getByTestId('queue-panel')).toBeVisible();
 
-  // NowPlaying view contains a DispatchTargetPicker for hand-off
+  // Now Playing's one Play on… opens the picker for hand-off (no inline device list).
+  await expect(page.getByTestId('handoff-section')).toHaveCount(0);
+  await openPlayOn(page);
   const handoffPicker = page.locator('[data-testid="handoff-section"] [data-testid="dispatch-target-picker"]');
   await expect(handoffPicker).toBeVisible({ timeout: 5000 });
   // On this (wide) viewport the search box's destination chip carries the aim:

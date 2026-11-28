@@ -4,6 +4,9 @@ import { HttpClient } from '#system/services/HttpClient.mjs';
 
 const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 const PIPED_TIMEOUT_MS = 5000;
+// A new search is slower than a stream lookup (measured 2-10 s cold); stays
+// under the youtube source budget (ContentRuntimePolicy, 9 s).
+const PIPED_SEARCH_TIMEOUT_MS = 8500;
 const CIRCUIT_BREAK_THRESHOLD = 3;
 const CIRCUIT_BREAK_DURATION_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -74,6 +77,65 @@ export class YouTubeAdapter {
 
       return null;
     }
+  }
+
+  /**
+   * Search YouTube videos by text through Piped (`/search?filter=videos`).
+   * Live streams and anything without a length are left out: a search result
+   * is something to play from the start. Failures count toward the same
+   * circuit breaker as stream lookups and answer an empty list.
+   * @param {string} text
+   * @param {Object} [opts]
+   * @param {number} [opts.take=20]
+   * @returns {Promise<Array<{videoId, title, thumbnail, uploader, duration}>>}
+   */
+  async search(text, { take = 20 } = {}) {
+    const q = String(text || '').trim();
+    if (!q) return [];
+    if (Date.now() < this.#circuitBrokenUntil) {
+      this.#logger.debug?.('youtube.adapter.circuit-open', { op: 'search' });
+      return [];
+    }
+
+    const cacheKey = `search:${q.toLowerCase()}`;
+    let data = this.#getFromCache(cacheKey);
+    if (!data) {
+      try {
+        const res = await this.#httpClient.get(
+          `${this.#host}/search?q=${encodeURIComponent(q)}&filter=videos`,
+          { timeout: PIPED_SEARCH_TIMEOUT_MS }
+        );
+        data = res.data;
+        this.#consecutiveFailures = 0;
+        this.#putInCache(cacheKey, data);
+      } catch (err) {
+        this.#consecutiveFailures++;
+        this.#logger.warn?.('youtube.adapter.search.failed', {
+          error: err.message,
+          consecutiveFailures: this.#consecutiveFailures,
+        });
+        if (this.#consecutiveFailures >= CIRCUIT_BREAK_THRESHOLD) {
+          this.#circuitBrokenUntil = Date.now() + CIRCUIT_BREAK_DURATION_MS;
+        }
+        return [];
+      }
+    }
+
+    const results = [];
+    for (const entry of data?.items || []) {
+      if (entry?.type !== 'stream') continue;
+      const videoId = String(entry.url || '').match(/[?&]v=([\w-]{6,})/)?.[1];
+      if (!videoId || !(entry.duration > 0)) continue;
+      results.push({
+        videoId,
+        title: entry.title || videoId,
+        thumbnail: entry.thumbnail || null,
+        uploader: entry.uploaderName || null,
+        duration: entry.duration,
+      });
+      if (results.length >= take) break;
+    }
+    return results;
   }
 
   /**

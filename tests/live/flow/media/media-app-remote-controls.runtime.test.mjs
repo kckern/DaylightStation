@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { stopControl } from './lib/playerBar.mjs';
 import { markFirstUseDone } from './lib/firstUse.mjs';
 import { aimAt, aimHere, aimLabel } from './lib/aim.mjs';
 
@@ -554,7 +555,7 @@ test('Peek Stop retains the receiver queue and Play resumes the stopped item', a
   }));
   expect(queueBeforeStop.length).toBeGreaterThan(0);
   const videoHandle = await video.elementHandle();
-  const stop = sender.getByTestId('np-stop');
+  const stop = await stopControl(sender.getByTestId('peek-panel'));
   await expect(stop).toBeEnabled();
   await issueThroughControl(sender, 'stop', () => stop.click());
   await expect.poll(async () => {
@@ -592,7 +593,7 @@ test('Peek Stop retains the receiver queue and Play resumes the stopped item', a
   for (const item of queueBeforeStop) {
     const queueRow = sender.getByTestId(`queue-item-${item.queueItemId}`);
     await expect(queueRow).toBeVisible();
-    await expect(sender.getByTestId(`queue-jump-${item.queueItemId}`)).toContainText(item.title);
+    await expect(sender.getByTestId(`queue-open-${item.queueItemId}`)).toContainText(item.title);
   }
   await openQueue.click();
   await expect(queuePanel).toBeVisible();

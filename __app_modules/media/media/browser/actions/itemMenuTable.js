@@ -32,9 +32,30 @@ export const MENU_LABELS = Object.freeze({
   watched: 'Mark watched',
   unwatched: 'Mark unwatched',
   hide: 'Remove from household list',
+  moveUp: 'Move up',
+  moveDown: 'Move down',
+  removeFromQueue: 'Remove from queue',
   moveHeading: 'Move this playback to',
   moveHere: 'This device',
+  fromStart: 'From the start',
 });
+
+/** "42:10" / "1:02:03" for a playhead in seconds. */
+function clock(seconds) {
+  const t = Math.max(0, Math.floor(seconds));
+  const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), sec = t % 60;
+  const pad = (n) => String(n).padStart(2, '0');
+  return h ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`;
+}
+
+/**
+ * PLAY names the resume point (jellyfin study rec 10, owner-approved
+ * 2026-11-27): "Play on Office Screen" → "Resume on Office Screen · 42:10".
+ */
+export function resumeLabel(sentence, seconds) {
+  const words = String(sentence).replace(/^Play\b/, 'Resume');
+  return Number.isFinite(seconds) && seconds > 0 ? `${words} · ${clock(seconds)}` : words;
+}
 
 /** The kinds the table knows: a playable leaf, a collection, or a still to show. */
 export function menuItemKind({ collection = false, show = false } = {}) {
@@ -53,13 +74,16 @@ const SURFACES = Object.freeze({
   // Play here and Play on…, so More holds everything else — the queue verbs
   // (named for the screen they go to; this replaces the old caption line),
   // Show briefly on…, Quality…, then the household verbs.
-  detail: ['shuffleOn', 'playNext', 'playFirst', 'add', 'addOn', '|', 'showBriefly', '|', 'quality', '|', 'keep', '|', 'favourite', 'watched', 'unwatched'],
+  detail: ['fromStart', 'shuffleOn', 'playNext', 'playFirst', 'add', 'addOn', '|', 'showBriefly', '|', 'quality', '|', 'keep', '|', 'favourite', 'watched', 'unwatched'],
+  // A queue row's ⋯ on Now Playing / a Remote (ruling 2026-11-27): the row
+  // itself opens the info view, so the queue edits live here.
+  queue: ['jump', 'moveUp', 'moveDown', 'remove', '|', 'details'],
 });
 
 /**
  * The entries of one item menu.
  * @param {object} p
- * @param {'row'|'tile'|'detail'} p.surface
+ * @param {'row'|'tile'|'detail'|'queue'} p.surface
  * @param {'leaf'|'collection'|'show'} p.kind
  * @param {{ elsewhere?: boolean, short?: string|null, sentence?: string|null, ask?: boolean }} [p.where]
  *   where ▶ goes: `sentence` is the Play Now words when it goes to a screen
@@ -70,13 +94,16 @@ const SURFACES = Object.freeze({
  * @param {boolean} [p.removable] shown in a household list
  * @param {boolean} [p.quality] the item takes quality overrides
  * @param {boolean} [p.household] offer the household verbs at all (favourite, watched, hide)
+ * @param {boolean} [p.resumable] PLAY resumes a saved spot: More offers From the start
+ * @param {{ current?: boolean, first?: boolean, last?: boolean }|null} [p.queue] a queue row's place (surface 'queue')
  * @param {Array<{kind:string,label:string}>} [p.keep] Keep on Phone entries for this item
  *   (cast/phoneKeeps.js keepEntries: keep / cancel / remove, one per phone install)
  * @returns {Array<{ kind: string, label: string, hold?: string }|{ divider: true }>}
  */
 export function itemMenuEntries({
   surface, kind = 'leaf', where = {}, playingOn = null, continueLabel = null,
-  favourite = false, watched = null, removable = false, quality = false, household = true, keep = [],
+  favourite = false, watched = null, removable = false, quality = false, household = true, keep = [], resumable = false,
+  queue = null,
 }) {
   const order = SURFACES[surface];
   if (!order) throw new Error(`itemMenuEntries: unknown surface ${surface}`);
@@ -85,6 +112,7 @@ export function itemMenuEntries({
   const collection = kind === 'collection';
   const entry = {
     continue: continueLabel ? { kind: 'continue', label: continueLabel } : null,
+    fromStart: resumable ? { kind: 'fromStart', label: MENU_LABELS.fromStart } : null,
     openScreen: playingOn?.name ? { kind: 'openScreen', label: MENU_LABELS.openScreen(playingOn.name) } : null,
     playNow: { kind: 'playNow', label: elsewhere && where.sentence ? where.sentence : MENU_LABELS.playNow },
     playHere: elsewhere ? { kind: 'playHere', label: MENU_LABELS.playHere } : null,
@@ -103,6 +131,10 @@ export function itemMenuEntries({
     watched: household && !collection && watched !== true ? { kind: 'watched', label: MENU_LABELS.watched } : null,
     unwatched: household && !collection && watched !== false ? { kind: 'unwatched', label: MENU_LABELS.unwatched } : null,
     hide: household && removable ? { kind: 'hide', label: MENU_LABELS.hide } : null,
+    jump: queue && !queue.current ? { kind: 'playNow', label: MENU_LABELS.playNow } : null,
+    moveUp: queue && !queue.first ? { kind: 'moveUp', label: MENU_LABELS.moveUp } : null,
+    moveDown: queue && !queue.last ? { kind: 'moveDown', label: MENU_LABELS.moveDown } : null,
+    remove: queue ? { kind: 'remove', label: MENU_LABELS.removeFromQueue } : null,
   };
   const out = [];
   for (const key of order) {

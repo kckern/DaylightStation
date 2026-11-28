@@ -28,11 +28,11 @@ import { useWatchPhoneKeeps } from "../cast/usePhoneKeeps.jsx";
 import { isKeepable } from "../cast/phoneKeeps.js";
 import { LoadErrorLine } from "../shared/LoadErrorLine.jsx";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Button } from '@mantine/core';
+import { ActionIcon, Button, UnstyledButton } from '@mantine/core';
 import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import { ActionMenu } from '@/lib/ui/ActionMenu.jsx';
 import { useContentCombobox } from "../../../../../__capabilities/content-catalog/browser/picker-controller.mjs";
-import { StreamStatusLine, SearchSkeletonRows } from "../../../../../__capabilities/content-catalog/browser/search-status.mjs";
+import { StreamStatusLine, SourceFailureNote, SearchSkeletonRows } from "../../../../../__capabilities/content-catalog/browser/search-status.mjs";
 import { ResultRow } from "../../../../../__capabilities/content-catalog/browser/result-row.mjs";
 import { useSearchContext } from "./useSearchContext.js";
 import { ScopeChips } from "./ScopeChips.jsx";
@@ -55,6 +55,7 @@ import { rankByHabits } from "../habits/mediaHabits.js";
 import { TopMoreList } from '@/lib/ui/TopMore.jsx';
 import { SEARCH_RESULTS_SHOWN } from "./searchLimits.js";
 import { isContainer } from "../../../../../__capabilities/content-catalog/browser/combobox-state.mjs";
+import { useSearchRecents } from "./useSearchRecents.js";
 import "./Search.scss";
 import "../shell/SessionControls.scss";
 
@@ -88,7 +89,7 @@ function rememberSearchText(text) {
 
 export function SearchMode({ onClose, addTo = null, restoreSearchFocus, keepScope = false }) {
   const [oneShotAction, setOneShotAction] = useState(null);
-  const { scopes, currentScopeKey, currentScope, resetScope } = useSearchContext();
+  const { scopes, currentScopeKey, currentScope, resetScope, setScopeKey } = useSearchContext();
   const { dispatch, dispatchLeafVerb, playContainerAsQueue, addToScreen } = useContentDispatch();
   const { rowLabelsFor, continueFor, screenFor } = useRowLabels();
   const { extraActions, runHousehold } = useHouseholdResultActions();
@@ -96,10 +97,21 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus, keepScop
   const { push } = useNav();
   const { scoresFor, rememberedFor, recordPick } = usePlayDestination();
   const { cycle: cycleDestination } = useDestinationCycle();
+  // The careful choice: the chip's ▾ list, also opened by Alt+↓ in the box.
+  const [destListOpen, setDestListOpen] = useState(false);
   const log = useMemo(() => getLogger().child({ component: 'search-mode' }), []);
   // The words on screen when a row is opened or played (set below, read by
   // the handlers, which are defined before the combobox that owns the text).
   const searchTextRef = useRef('');
+  // The empty box offers Continue and recent searches (owner ruling
+  // 2026-11-27); words are remembered with their scope only when acted on.
+  const recents = useSearchRecents({ enabled: !addTo, allScopeKey: scopes[0]?.key ?? null });
+  const currentScopeRef = useRef(currentScope);
+  currentScopeRef.current = currentScope;
+  const rememberWords = useCallback(() => {
+    const words = searchTextRef.current;
+    if (!addTo && words && words.trim().length >= 2) recents.remember(words.trim(), currentScopeRef.current);
+  }, [recents, addTo]);
   const dialogRef = useRef(null);
   const searchInputRef = useRef(null);
   const handleDialogKeys = useDialogFocus(true, dialogRef, searchInputRef);
@@ -179,6 +191,7 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus, keepScop
     if (addTo) { addOnce(id, item, 'tap'); return; }
     log.info('select', { contentId: id, title: item?.title ?? null, type: item?.type ?? null });
     recordPick(searchTextRef.current, { ...item, id }, 'open');
+    rememberWords();
     // From search: the info view lands on its PLAY, and Back from it reopens
     // this search with the same words (MediaAppShell).
     const route = dispatch(id, item, { replaceHistoryEntry: true, from: 'search', via: 'tap' });
@@ -187,7 +200,7 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus, keepScop
     // both navigate, so the marker entry is handed over and the surface
     // exits. (A camera shown here is the one tap that does not navigate.)
     if (route === 'browse' || route === 'detail') closeSurface('dispatch', { navigated: true });
-  }, [dispatch, log, closeSurface, addTo, addOnce, recordPick]);
+  }, [dispatch, log, closeSurface, addTo, addOnce, recordPick, rememberWords]);
 
   // Trailing ▶ on a container row (Task 14, spec D6): explicitly send the
   // whole container to the current destination, replacing the queue. This is
@@ -198,6 +211,7 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus, keepScop
     if (addTo) { addOnce(id, item, 'playAll'); return; }
     log.info('select', { contentId: id, title: item?.title ?? null, type: item?.type ?? null, verb: 'playAll' });
     recordPick(searchTextRef.current, item, 'play');
+    rememberWords();
     // A playable row's own ▶: play it where the ▶ says. Playback is not
     // navigation, so Search stays open for the next pick.
     // A film nobody has chosen a screen for asks where (its ▶ read "Play on…").
@@ -221,7 +235,7 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus, keepScop
     const route = playContainerAsQueue(id, item);
     ask(route);
     log.info('dispatch', { contentId: id, route, verb: 'playAll' });
-  }, [playContainerAsQueue, dispatchLeafVerb, continueFor, log, addTo, addOnce, recordPick]);
+  }, [playContainerAsQueue, dispatchLeafVerb, continueFor, log, addTo, addOnce, recordPick, rememberWords]);
 
   // Trailing ⋯ on a leaf row: Play Now / Play Next / Up Next / Add to Queue
   // / Open detail. Reuses the exact appliers BrowseView rows use (queueOps
@@ -231,7 +245,7 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus, keepScop
     if (!id) return;
     log.info('row_action', { contentId: id, action });
     if (addTo && action !== 'detail' && action !== 'details') { addOnce(id, item, action); return; }
-    if (['playNow', 'playHere', 'playOn', 'detail', 'details'].includes(action)) recordPick(searchTextRef.current, item, action);
+    if (['playNow', 'playHere', 'playOn', 'detail', 'details'].includes(action)) { recordPick(searchTextRef.current, item, action); rememberWords(); }
     if (runHousehold(action, item)) return;
     if (action === 'openScreen') {
       const deviceId = screenFor(item);
@@ -258,14 +272,17 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus, keepScop
     // 'detail' is the only verb that navigates; queue mutations leave search
     // and its marker untouched.
     if (action === 'detail' || action === 'details') closeSurface('dispatch', { navigated: true });
-  }, [queue, pushOverSurface, log, closeSurface, dispatchLeafVerb, addTo, addOnce, runHousehold, recordPick, screenFor]);
+  }, [queue, pushOverSurface, log, closeSurface, dispatchLeafVerb, addTo, addOnce, runHousehold, recordPick, screenFor, rememberWords]);
 
   const combo = useContentCombobox({
     value: '',
     onChange: handleChange,
     searchParams: currentScope?.params ?? '',
-    // D5: scopes[0] is the catalog-wide ("All") scope by convention.
+    // D5: scopes[0] is the catalog-wide ("All") scope by convention. A picked
+    // scope is honoured: empty reads "Nothing for … in ‹scope›" and offers
+    // Search everything (2026-11-27), it never widens on its own.
     fallbackSearchParams: scopes[0]?.params ?? '',
+    widenOnEmpty: 'offer',
     scopeKey: currentScopeKey,
     scopeLabel: currentScope?.label ?? null,
     appResults: true,
@@ -276,6 +293,7 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus, keepScop
   const {
     state, searchState, handleInput, isSearching, pendingSources, sourceErrors,
     streamError, retrySource = () => {}, fellBackToAll, searchSettled,
+    scopeEmpty = false, widenSearch = () => {},
   } = combo;
   const searchText = state.search ?? '';
   searchTextRef.current = searchText;
@@ -333,7 +351,35 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus, keepScop
     retrySource(source);
   }, [retrySource, searchText, log]);
 
-  const showHint = results.length === 0 && !isSearching && searchText.trim().length < 2;
+  // The empty box: Continue, then recent searches, at once from cache.
+  const idleActive = !addTo && searchText === '' && (recents.continueItems.length + recents.searches.length) > 0;
+  const idleShownRef = useRef(false);
+  useEffect(() => {
+    if (!idleActive) { idleShownRef.current = false; return; }
+    if (idleShownRef.current) return;
+    idleShownRef.current = true;
+    log.info('search.recents-shown', { continue: recents.continueItems.length, searches: recents.searches.length });
+  }, [idleActive]); // eslint-disable-line react-hooks/exhaustive-deps
+  const recentsRef = useRef(null);
+  const pickRecentSearch = useCallback((entry, via) => {
+    log.info('search.recent-picked', { kind: 'search', scopeKey: entry.scopeKey ?? null, via });
+    const known = scopes.some((sc) => sc.key === entry.scopeKey || (sc.children || []).some((c) => c.key === entry.scopeKey));
+    if (entry.scopeKey && known) setScopeKey?.(entry.scopeKey);
+    else resetScope?.();
+    handleInput(entry.text);
+    searchInputRef.current?.focus();
+  }, [log, scopes, setScopeKey, resetScope, handleInput]);
+  // ↓ from the box goes into the list; ↑ / ↓ move between its rows.
+  const moveInRecents = useCallback((dir, from = null) => {
+    const rows = [...(recentsRef.current?.querySelectorAll('[data-recents-row]') ?? [])];
+    if (!rows.length) return false;
+    const at = from ? rows.indexOf(from) : -1;
+    const next = at + dir;
+    if (next < 0) { searchInputRef.current?.focus(); return true; }
+    rows[Math.min(next, rows.length - 1)]?.focus();
+    return true;
+  }, []);
+  const showHint = !idleActive && results.length === 0 && !isSearching && searchText.trim().length < 2;
   // A completed transport can still retain an individually failed source.
   // Keep that recovery state distinct from a successful empty search.
   const hasUnresolvedSourceFailures = sourceErrors.length > 0;
@@ -342,8 +388,12 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus, keepScop
   // Addendum item 4: until the words typed are the words searched, the list
   // holds its shape (skeleton rows) and never says "No results".
   const awaitingResults = searchText.trim().length >= 2 && searchSettled === false && !streamError;
-  const showEmpty = results.length === 0 && !isSearching && !awaitingResults && !streamError && !hasUnresolvedSourceFailures && searchText.trim().length >= 2 && !fellBackToAll;
-  const emptyMessage = `No results for “${searchText}”. Try a different word or change the scope.`;
+  // A picked scope that came up empty offers the wider search instead.
+  const showScopeEmpty = scopeEmpty && results.length === 0 && !isSearching && !streamError;
+  const showEmpty = !showScopeEmpty && results.length === 0 && !isSearching && !awaitingResults && !streamError && !hasUnresolvedSourceFailures && searchText.trim().length >= 2 && !fellBackToAll;
+  const emptyMessage = showScopeEmpty
+    ? `Nothing for “${searchText}” in ${currentScope?.label || 'this scope'}`
+    : `No results for “${searchText}”. Try a different word or change the scope.`;
   // D5 widening notice (Finding 2 of the final review). The hook widens a
   // scope that settled empty and ContentCombobox says so on desktop — but this
   // surface, the one the whole remediation exists for, rendered nothing: the
@@ -382,11 +432,27 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus, keepScop
           // Tab / Shift+Tab in the box cycle where ▶ plays (an add-to-one-screen
           // search has no destination to change).
           onKeyDown={(e) => {
+            if (e.key === 'ArrowDown' && e.altKey && !addTo) {
+              // Stopped here: the same keydown reaching the document would
+              // read as a press outside the list it just opened.
+              e.preventDefault();
+              e.stopPropagation();
+              setDestListOpen(true);
+              return;
+            }
+            if (e.key === 'ArrowDown' && idleActive) { if (moveInRecents(1)) e.preventDefault(); return; }
             if (e.key !== 'Tab' || addTo || e.altKey || e.ctrlKey || e.metaKey) return;
             if (cycleDestination(e.shiftKey ? -1 : 1, 'tab')) e.preventDefault();
           }}
         />
-        {!addTo && <DestinationChip compact />}
+        {!addTo && (
+          <DestinationChip
+            compact
+            listOpen={destListOpen}
+            onListOpenChange={setDestListOpen}
+            returnFocusRef={searchInputRef}
+          />
+        )}
       </div>
 
       {addTo && (
@@ -415,10 +481,11 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus, keepScop
           ? { active: true, from: scopeThatCameUpEmpty, resultCount: results.length, testId: 'search-mode-widening-notice' }
           : null}
         onRetry={handleStreamRetry}
+        scopeParams={currentScope?.params ?? ''}
       />
 
       <div className="media-sr-only" role="status" aria-live="polite" aria-atomic="true" data-testid="search-mode-empty-announcement">
-        {showEmpty ? emptyMessage : ''}
+        {showEmpty || showScopeEmpty ? emptyMessage : ''}
       </div>
 
       {streamError && (
@@ -429,6 +496,80 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus, keepScop
         {showHint && (
           <li className="search-mode-hint" data-testid="search-mode-hint">Type to search…</li>
         )}
+        {idleActive && (
+          <li
+            className="search-mode-recents"
+            data-testid="search-mode-recents"
+            ref={recentsRef}
+            onKeyDown={(e) => {
+              if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+              const row = e.target.closest?.('[data-recents-row]');
+              if (!row) return;
+              e.preventDefault();
+              moveInRecents(e.key === 'ArrowDown' ? 1 : -1, row);
+            }}
+          >
+            {recents.continueItems.length > 0 && (
+              <>
+                <div className="search-mode-recents-head">Continue</div>
+                <ul className="search-mode-recents-list">
+                  {recents.continueItems.map((item) => (
+                    <li key={item.id} className="result-row" data-recents-row tabIndex={-1}
+                      onKeyDown={(e) => { if (e.key === 'Enter' && e.target === e.currentTarget) { e.preventDefault(); log.info('search.recent-picked', { kind: 'continue', contentId: item.id, via: 'keyboard' }); handleChange(item.id, item); } }}>
+                      <SearchResultRow
+                        item={item}
+                        title={displayTitle(item)}
+                        subtitle={rowLabelsFor(item)?.subtitle ?? resultSubtitle(item)}
+                        thumbnail={item.thumbnail}
+                        onTap={() => { log.info('search.recent-picked', { kind: 'continue', contentId: item.id, via: 'tap' }); handleChange(item.id, item); }}
+                        onPlayAll={() => handlePlayAll(item)}
+                        rowLabels={rowLabelsFor(item)}
+                        onAction={handleMore}
+                        extraActions={extraActions}
+                        testId={`search-mode-continue-${item.id}`}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+            {recents.searches.length > 0 && (
+              <>
+                <div className="search-mode-recents-head">
+                  <span>Recent searches</span>
+                  <UnstyledButton className="search-mode-recents-clear" data-testid="search-mode-recent-clear" onClick={() => recents.clear()}>
+                    Clear
+                  </UnstyledButton>
+                </div>
+                <ul className="search-mode-recents-list">
+                  {recents.searches.map((entry, j) => (
+                    <li key={entry.key} className="search-mode-recent">
+                      <UnstyledButton
+                        className="search-mode-recent-pick"
+                        data-recents-row
+                        data-testid={`search-mode-recent-${j}`}
+                        onClick={(e) => pickRecentSearch(entry, e.detail === 0 ? 'keyboard' : 'tap')}
+                      >
+                        <UiIcon name="search" size={16} />
+                        <span className="search-mode-recent-text">{entry.text}</span>
+                        {entry.tag && <span className="search-mode-recent-tag">· {entry.tag}</span>}
+                      </UnstyledButton>
+                      <ActionIcon
+                        variant="subtle"
+                        size="lg"
+                        aria-label={`Forget ${entry.text}`}
+                        data-testid={`search-mode-recent-forget-${j}`}
+                        onClick={() => recents.forget(entry.text)}
+                      >
+                        <UiIcon name="close" size={16} />
+                      </ActionIcon>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </li>
+        )}
         {(isSearching || awaitingResults) && results.length === 0 && (
           <li className="search-mode-skeleton" data-testid="search-mode-loading">
             <SearchSkeletonRows testId="search-mode-skeleton" />
@@ -437,6 +578,20 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus, keepScop
         {showEmpty && (
           <li className="search-mode-hint" data-testid="search-mode-empty">
             {emptyMessage}
+          </li>
+        )}
+        {showScopeEmpty && (
+          <li className="search-mode-scope-empty" data-testid="search-mode-scope-empty">
+            <span className="search-mode-hint">{emptyMessage}</span>
+            <Button
+              variant="default"
+              size="md"
+              className="search-mode-widen"
+              data-testid="search-mode-widen"
+              onClick={() => widenSearch('tap')}
+            >
+              Search everything
+            </Button>
           </li>
         )}
         {/* Smart long lists: the first eight, then Show all N (stays open
@@ -472,6 +627,17 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus, keepScop
           </li>
           )}
         />
+        {/* Everything-search failures: one quiet line after the results,
+            never a row per source above them (failurePlacement). */}
+        {!isSearching && sourceErrors.length > 0 && (
+          <li className="search-mode-failure-note">
+            <SourceFailureNote
+              failedSources={sourceErrors.map(({ source }) => source)}
+              scopeParams={currentScope?.params ?? ''}
+              onRetry={handleStreamRetry}
+            />
+          </li>
+        )}
       </ul>
       <ItemDestinationPicker
         action={oneShotAction}

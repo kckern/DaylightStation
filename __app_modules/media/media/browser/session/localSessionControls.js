@@ -31,11 +31,12 @@
 import { createScreenSessionControls } from "../../../../../__capabilities/screen-host/browser/session.mjs";
 import { createContinuationResolver } from "../../../../../__capabilities/screen-host/browser/session.mjs";
 import mediaLog from "../logging/mediaLog.js";
+import { ADD_ONLY_COPY } from "../controller/addOnlyCopy.js";
 
 export const LOCAL_CONTROLS_STORAGE_PREFIX = 'media-app.session-controls.v1:';
 
 const UNSUPPORTED = Object.freeze({
-  addOnly: 'Add only is for a screen other devices play to',
+  addOnly: ADD_ONLY_COPY.unavailable,
   putBack: 'Put it back is offered on the screen that was changed',
 });
 

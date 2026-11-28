@@ -32,6 +32,7 @@ vi.mock("../house/HouseQuietControls.jsx", () => ({ HouseQuietBar: () => <div da
 vi.mock("../house/houseApi.js", async (orig) => ({ ...(await orig()), houseApi: houseApi }));
 
 import { FleetView } from "./FleetView.jsx";
+import { ADD_ONLY_COPY } from "../controller/addOnlyCopy.js";
 
 const controllers = {};
 const recordLocal = vi.fn();
@@ -77,10 +78,12 @@ describe('FleetView house rows', () => {
     expect(screen.getByTestId('house-quiet-bar')).toBeInTheDocument();
   });
 
-  it('labels Add only and lets anyone switch it off from the row', async () => {
+  it('labels Add only in Now Playing\'s words and lets anyone switch it off from the row', async () => {
     controllers['livingroom-tv'] = { sessionControls: { setAddOnly: vi.fn(async () => ({ ok: true })) }, transport: {} };
     renderFleet();
-    expect(screen.getByTestId('house-add-only-livingroom-tv')).toHaveTextContent('Add only is on');
+    const notice = screen.getByTestId('house-add-only-livingroom-tv');
+    expect(notice).toHaveTextContent(`${ADD_ONLY_COPY.label} is on`);
+    expect(notice.textContent).not.toMatch(/Add only/);
     expect(screen.queryByTestId('house-add-only-speaker-white')).toBeNull();
     fireEvent.click(screen.getByTestId('house-add-only-off-livingroom-tv'));
     await waitFor(() => expect(controllers['livingroom-tv'].sessionControls.setAddOnly).toHaveBeenCalledWith(false));

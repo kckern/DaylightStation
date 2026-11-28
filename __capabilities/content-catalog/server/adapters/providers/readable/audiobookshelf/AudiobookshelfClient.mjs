@@ -82,6 +82,7 @@ export class AudiobookshelfClient {
    * @param {string} [options.filter] - ABS filter string (e.g., 'genres.BASE64')
    * @param {string} [options.sort] - Sort field (e.g., 'media.metadata.title')
    * @param {boolean} [options.desc] - Sort descending when true
+   * @param {boolean} [options.minified] - Ask for the minified item shape (no files/chapters)
    * @returns {Promise<{results: Array, total: number, page: number, limit: number}>}
    */
   async getLibraryItems(libraryId, options = {}) {
@@ -92,6 +93,7 @@ export class AudiobookshelfClient {
     if (options.filter) params.set('filter', options.filter);
     if (options.sort) params.set('sort', options.sort);
     if (options.desc != null) params.set('desc', options.desc ? '1' : '0');
+    if (options.minified) params.set('minified', '1');
 
     const response = await this.#httpClient.get(
       `${this.#host}/api/libraries/${libraryId}/items?${params}`,

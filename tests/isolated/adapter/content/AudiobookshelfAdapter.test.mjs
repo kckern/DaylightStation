@@ -510,10 +510,9 @@ describe('AudiobookshelfAdapter', () => {
     });
 
     test('search filters by text query', async () => {
-      // Production with text query routes through three high-level client
-      // calls — getLibraries, getAuthors (per library), and searchLibrary
-      // (returns { book: [{libraryItem}] }). Drive them via httpClient.get
-      // routed by URL.
+      // A text query: the (cached) libraries, then one native searchLibrary
+      // per library (returns { book: [{libraryItem}], authors }). Drive them
+      // via httpClient.get routed by URL.
       mockHttpClient.get.mockImplementation(async (url) => {
         if (url.endsWith('/api/libraries')) {
           return { data: { libraries: [{ id: 'lib-1', name: 'Books' }] } };
@@ -549,6 +548,100 @@ describe('AudiobookshelfAdapter', () => {
 
       expect(result.total).toBe(1);
       expect(result.items[0].title).toBe('The Magic Garden');
+    });
+
+    // 2026-11-27: every text search downloaded each library's whole author
+    // list (~13 MB, 11k+ names) to filter it here: 1.4 s alone, 6 s (the abs
+    // budget) beside the other sources, so "hymn" timed out. Before the local
+    // index is built, the server's search answers books and authors at once.
+    test('before the index is built, text search asks the server search and never waits for the index', async () => {
+      mockHttpClient.get.mockImplementation(async (url) => {
+        if (url.endsWith('/api/libraries')) {
+          return { data: { libraries: [{ id: 'lib-1' }, { id: 'lib-2' }] } };
+        }
+        if (url.includes('/items?')) return new Promise(() => {}); // index build never finishes
+        if (url.includes('/search')) {
+          const lib = url.includes('lib-1') ? 'lib-1' : 'lib-2';
+          return {
+            data: {
+              book: [],
+              authors: lib === 'lib-1'
+                ? [{ id: 'a-1', name: 'Hymn Writer', imagePath: '/img.jpg', numBooks: 3 }]
+                : [{ id: 'a-2', name: 'Another Hymnist', numBooks: 1 }],
+            },
+          };
+        }
+        if (url.includes('/api/authors/a-2')) {
+          return { data: { id: 'a-2', name: 'Another Hymnist', libraryItems: [{ id: 'book-9' }] } };
+        }
+        throw new Error(`unexpected ${url}`);
+      });
+
+      const adapter = new AudiobookshelfAdapter(
+        { host: 'http://localhost:13378', token: 'test-token' },
+        { httpClient: mockHttpClient }
+      );
+
+      const first = await adapter.search({ text: 'hymn' });
+      await adapter.search({ text: 'hymn' });
+
+      const urls = mockHttpClient.get.mock.calls.map(([url]) => url);
+      expect(urls.some((url) => /\/libraries\/[^/]+\/authors/.test(url))).toBe(false);
+      expect(urls.filter((url) => url.endsWith('/api/libraries'))).toHaveLength(1);
+      // Only the author with no picture is fetched (for a book cover).
+      expect(urls.filter((url) => url.includes('/api/authors/'))).toEqual([
+        'http://localhost:13378/api/authors/a-2?include=items',
+        'http://localhost:13378/api/authors/a-2?include=items',
+      ]);
+      expect(first.items.map((i) => i.title)).toEqual(['Hymn Writer', 'Another Hymnist']);
+      expect(first.items[1].thumbnail).toBe('/api/v1/proxy/abs/items/book-9/cover');
+    });
+
+    // The server's own search costs ~0.5 s per library for a new word and runs
+    // one request at a time (~0.9-1.3 s for an everything search). Once the
+    // library index is built, search answers from it without a request.
+    test('after prepareSearch, text search answers from the local index without a request', async () => {
+      const page = (n, start) => Array.from({ length: n }, (_, i) => ({
+        id: `item-${start + i}`,
+        libraryId: 'lib-1',
+        media: { numAudioFiles: 1, duration: 60, metadata: { title: `Filler ${start + i}`, authorName: 'Nobody' } },
+      }));
+      mockHttpClient.get.mockImplementation(async (url) => {
+        if (url.endsWith('/api/libraries')) return { data: { libraries: [{ id: 'lib-1' }] } };
+        if (url.includes('/items?')) {
+          expect(url).toContain('minified=1');
+          const p = Number(new URL(url).searchParams.get('page'));
+          if (p === 0) return { data: { results: page(1000, 0) } };
+          return {
+            data: {
+              results: [
+                { id: 'book-1', libraryId: 'lib-1', media: { numAudioFiles: 2, duration: 3600, metadata: { title: 'Battle Hymn of the Republic', authorName: 'Jane Poet', seriesName: 'Songs' } } },
+                { id: 'book-2', libraryId: 'lib-1', media: { numAudioFiles: 0, ebookFormat: 'epub', metadata: { title: 'Quiet Pages', authorName: 'Hymnal Smith' } } },
+              ],
+            },
+          };
+        }
+        if (url.includes('/libraries/lib-1/authors')) {
+          return { data: { authors: [{ id: 'a-7', name: 'Hymnal Smith', numBooks: 1 }] } };
+        }
+        throw new Error(`unexpected ${url}`);
+      });
+
+      const adapter = new AudiobookshelfAdapter(
+        { host: 'http://localhost:13378', token: 'test-token' },
+        { httpClient: mockHttpClient }
+      );
+      expect(await adapter.prepareSearch()).toEqual({ entries: 1002 });
+      mockHttpClient.get.mockClear();
+
+      const result = await adapter.search({ text: 'hymn' });
+      expect(mockHttpClient.get).not.toHaveBeenCalled();
+      expect(result.items.map((i) => i.id)).toEqual(['abs:author:a-7', 'abs:book-1', 'abs:book-2']);
+      // The author borrows the cover of their first book in the index.
+      expect(result.items[0].thumbnail).toBe('/api/v1/proxy/abs/items/book-2/cover');
+      expect(result.items[1].mediaType).toBe('audio');
+      expect(result.items[2].format).toBe('epub');
+      expect((await adapter.search({ text: 'songs', mediaType: 'audio' })).items.map((i) => i.id)).toEqual(['abs:book-1']);
     });
   });
 });
