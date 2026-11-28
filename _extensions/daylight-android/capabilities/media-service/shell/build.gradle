@@ -7,6 +7,16 @@ android {
     // build when they are used without an opt-in. The library session's callbacks
     // (onSetMediaItems among them) are such parts in this version.
     lint { disable 'UnsafeOptInUsageError' }
+
+    // `-PsubscriberProbe` adds a debug-only activity: a real subscribed browser for checking that
+    // a keep saved, ready or removed reaches Android Auto's open list (see phone.md, Lookup and
+    // browse). It is exported, so it is never in the build verify-build.mjs checks.
+    if (project.hasProperty('subscriberProbe')) {
+        sourceSets.debug {
+            java.srcDir 'src/probe/java'
+            manifest.srcFile 'src/probe/AndroidManifest.xml'
+        }
+    }
 }
 
 dependencies {
@@ -17,5 +27,7 @@ dependencies {
     implementation 'androidx.media3:media3-session:1.1.1'
     implementation 'androidx.media3:media3-exoplayer:1.1.1'
     // Real org.json for JVM tests; android.jar ships stubs that return defaults.
+    // The subscriber probe (src/probe) uses the legacy browser Android Auto uses (already in the app through media3-session).
+    if (project.hasProperty('subscriberProbe')) debugImplementation 'androidx.media:media:1.6.0'
     testImplementation 'org.json:json:20231013'
 }

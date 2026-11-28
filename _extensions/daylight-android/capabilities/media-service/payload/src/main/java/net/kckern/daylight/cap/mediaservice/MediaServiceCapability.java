@@ -580,6 +580,8 @@ public final class MediaServiceCapability implements Capability {
             nodes = new ArrayList<>();
         } else if (id.kind == MediaId.Kind.ROOT) {
             nodes = BrowseTree.roots((String) core.settings().get(ROOTS));
+        } else if (!BrowseCache.cacheable(id.kind)) {
+            nodes = load(id, pageSize);
         } else {
             nodes = cache.get(parent, clock.getAsLong(), () -> load(id, pageSize));
         }

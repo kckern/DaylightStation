@@ -160,6 +160,7 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
 
     @Override
     public void onDisconnected(MediaSession session, MediaSession.ControllerInfo controller) {
+        legacyFollowers.removeAll(controller);
         if (DrivingRadio.isCar(controller)) cancelHandoff.run();
     }
 
@@ -220,6 +221,7 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
                         }
                     }
                     List<MediaItem> nodes = NodeItems.nodes(entries);
+                    Log.i(TAG, "library: " + parentId + " page " + page + " answers " + nodes.size() + " of " + entries.size());
                     if (!entries.isEmpty()) lastPages.put(parentId + "#" + page, nodes);
                     future.set(LibraryResult.ofItemList(nodes, params));
                 } catch (BrowseAnswer.Failed refused) {
@@ -234,6 +236,46 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
             future.set(LibraryResult.<ImmutableList<MediaItem>>ofError(LibraryResult.RESULT_ERROR_INVALID_STATE));
         }
         return future;
+    }
+
+    /** The legacy browsers (Android Auto's) following each parent: a broadcast does not reach them (SubscriptionBook). */
+    private final SubscriptionBook<MediaSession.ControllerInfo> legacyFollowers = new SubscriptionBook<>();
+
+    private static boolean isLegacy(MediaSession.ControllerInfo browser) {
+        return browser.getControllerVersion() == MediaSession.ControllerInfo.LEGACY_CONTROLLER_VERSION;
+    }
+
+    /** Tells every browser following {@code parentId} to ask again: Media3's own by broadcast, legacy ones one by one. Main thread. */
+    void childrenChanged(MediaLibrarySession session, String parentId) {
+        session.notifyChildrenChanged(parentId, 0, null);
+        for (MediaSession.ControllerInfo legacy : legacyFollowers.of(parentId)) {
+            try {
+                session.notifyChildrenChanged(legacy, parentId, 0, null);
+            } catch (RuntimeException gone) {
+                legacyFollowers.removeAll(legacy);
+            }
+        }
+    }
+
+    /**
+     * Media3 1.1.1's default refuses every subscription, so {@code notifyChildrenChanged}
+     * reached no browser. A browser that asks to follow a parent is accepted, so a keep
+     * saved, ready or removed reaches Android Auto's open list (KeptChanges).
+     */
+    @Override
+    public ListenableFuture<LibraryResult<Void>> onSubscribe(MediaLibrarySession session, MediaSession.ControllerInfo browser,
+                                                             String parentId, LibraryParams params) {
+        if (!KeptChanges.subscribable(parentId)) return Futures.immediateFuture(LibraryResult.<Void>ofError(LibraryResult.RESULT_ERROR_BAD_VALUE));
+        Log.i(TAG, "library: " + browser.getPackageName() + " subscribed to " + parentId);
+        if (isLegacy(browser)) legacyFollowers.add(parentId, browser);
+        return Futures.immediateFuture(LibraryResult.ofVoid());
+    }
+
+    @Override
+    public ListenableFuture<LibraryResult<Void>> onUnsubscribe(MediaLibrarySession session, MediaSession.ControllerInfo browser, String parentId) {
+        Log.i(TAG, "library: " + browser.getPackageName() + " unsubscribed from " + parentId);
+        legacyFollowers.remove(parentId, browser);
+        return Futures.immediateFuture(LibraryResult.ofVoid());
     }
 
     /**
@@ -259,7 +301,7 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
                     // A session is used from the application's main thread.
                     new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
                         try {
-                            session.notifyChildrenChanged(NodeItems.ROOT, 1, null);
+                            childrenChanged(session, NodeItems.ROOT);
                         } catch (Throwable released) {
                             // The session was released while waiting.
                         }

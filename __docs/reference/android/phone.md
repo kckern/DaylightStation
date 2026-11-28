@@ -1250,9 +1250,29 @@ button to this app's search at all for a sideloaded app.
 | `media.pageSize` | 50 | Entries of one level (10 to 200). A longer container ends with a browsable entry, "More (51 to 100 of 120)" |
 | `media.controllerPins` | empty | The apps that may connect beside this app and the system: `package=sha256, ...` (see "Who may connect") |
 
-A level is kept in memory for a minute and served from there; when the backend is
+A level is kept in memory for a minute and served from there, except the **kept list**
+(`kept`, the "On this phone" tab): it is read from the phone's own files and is never held
+(`BrowseCache.cacheable`), so a keep shows at once. When the backend is
 out of reach the last answer is served, however old; a level never loaded fails
-(an empty shelf would read as an empty library). An image is given to a browser
+(an empty shelf would read as an empty library).
+
+**Lists update when a keep lands.** Media3 1.1.1's `MediaLibrarySession.Callback.onSubscribe`
+refuses every subscription by default, so a `notifyChildrenChanged` reached no browser. The
+library callback now accepts a subscription to any named parent (`KeptChanges.subscribable`)
+and `onUnsubscribe`. When a keep is **saved** (it starts listing), becomes **ready** or is
+**removed**, `KeepStore` (comparing the kept index with the last look: `KeptChanges.change`)
+tells the service, which notifies `kept` and `root` (`KeptChanges.nodes`) and logs
+`library: children changed <node> (<change>)`. Media3 broadcasts that to its own browsers
+but not to a legacy `MediaBrowserCompat` one (Android Auto), which subscribes under its own
+callback; so the callback also keeps its legacy followers per parent (`SubscriptionBook`) and
+notifies each directly (`LibraryCallback.childrenChanged`). The Driving Radio list and the
+"payload is up" root notice go through the same call. A build made with `-PsubscriberProbe` (debug only, never the verified build) carries
+`SubscriberProbeActivity` (exported, own task): it connects a legacy and a Media3 browser,
+subscribes both to `kept,root` (`--es parents`) and logs every callback under the tag
+`Daylight-Probe`; saving, finishing and removing a keep on the emulator showed both
+browsers re-asking the list within a few milliseconds. A same-`versionCode` reinstall does
+not replace the extracted payload (`p0-baked-v<n>.jar`): remove it and `shell-version` with
+`run-as` to test a payload change. An image is given to a browser
 only when it is an https URL on the backend; anything else is left out, in the
 payload and again in the installed service.
 
@@ -1666,7 +1686,9 @@ keeps the scope, a later one-track keep adds to it, and **Keep the album** widen
 whole (2026-11-27: Keep on one track kept its whole two-track album). On mobile data with
 keeps held to Wi-Fi, the keep sheet says so in its header and offers **Download now on
 mobile data (this time)** (the same once-flag as Use mobile data once), beside keeping it
-for Wi-Fi; any other Keep shows the same two choices first.
+for Wi-Fi; any other Keep shows the same two choices first. The once-flag outlives the sync it
+starts by 90 s (`KeepChoices.mobileOnceDone`): that sync sees every older keep ready and used
+to end the "this time" before the new keep was listed, leaving it waiting for Wi-Fi.
 
 **States.** Each kept item has one state, the same words on every surface (the Play tab,
 On this phone, Now playing's ⋮, the notification, the web through the inbox report). They

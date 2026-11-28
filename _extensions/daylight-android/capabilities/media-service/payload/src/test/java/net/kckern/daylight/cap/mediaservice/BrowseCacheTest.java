@@ -58,4 +58,12 @@ public class BrowseCacheTest {
         assertEquals(1, load("recent", 1).size());
         assertNotNull(new ArrayList<>(first));
     }
+
+    /** R4: the kept list is read from the phone's own files, so a keep saved or removed shows at once, not a minute later. */
+    @Test public void theKeptListIsNeverServedFromTheCache() {
+        assertFalse(BrowseCache.cacheable(MediaId.Kind.KEPT));
+        assertTrue(BrowseCache.cacheable(MediaId.Kind.CONTINUE));
+        assertTrue(BrowseCache.cacheable(MediaId.Kind.RECENT));
+        assertTrue(BrowseCache.cacheable(MediaId.Kind.CONTAINER));
+    }
 }

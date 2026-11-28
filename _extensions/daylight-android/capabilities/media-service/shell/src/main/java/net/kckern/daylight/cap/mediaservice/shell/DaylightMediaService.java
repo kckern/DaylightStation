@@ -204,7 +204,19 @@ public class DaylightMediaService extends MediaLibraryService {
     private final android.content.SharedPreferences.OnSharedPreferenceChangeListener driveChanged = (prefs, key) -> {
         if (session != null && DrivingRadioSettings.affectsDrive(key)) {
             cancelRadioHandoff();
-            session.notifyChildrenChanged(DrivingRadio.DRIVE, radio.staples().size() + (radio.enabled() ? 1 : 0), null);
+            if (callback != null) callback.childrenChanged(session, DrivingRadio.DRIVE);
+        }
+    };
+    /** A keep saved, ready or removed: browsers subscribed to the kept list and the root are told (R4). */
+    private final java.util.function.Consumer<String> keptChanged = change -> {
+        MediaLibrarySession s = session;
+        LibraryCallback c = callback;
+        if (s == null || c == null) return;
+        for (String node : KeptChanges.nodes(change)) {
+            try {
+                c.childrenChanged(s, node);
+                Log.i(TAG, "library: children changed " + node + " (" + change + ")");
+            } catch (RuntimeException released) { /* the session is going */ }
         }
     };
     private final Handler widgetUpdates = new Handler(Looper.getMainLooper());
@@ -463,6 +475,7 @@ public class DaylightMediaService extends MediaLibraryService {
         session = builder.build();
         radioPrefs = getSharedPreferences(DrivingRadioSettings.PLAYLIST_PREFS, MODE_PRIVATE);
         radioPrefs.registerOnSharedPreferenceChangeListener(driveChanged);
+        try { KeepStore.get(this).addKeptListener(keptChanged); } catch (RuntimeException noStore) { Log.w(TAG, "kept changes not watched"); }
 
         setListener(new Listener() {
             @Override public void onForegroundServiceStartNotAllowedException() {
@@ -722,6 +735,7 @@ public class DaylightMediaService extends MediaLibraryService {
     public void onDestroy() {
         if (radioPrefs != null) radioPrefs.unregisterOnSharedPreferenceChangeListener(driveChanged);
         if (current == this) current = null;
+        try { KeepStore.get(this).removeKeptListener(keptChanged); } catch (RuntimeException noStore) { /* never watched */ }
         widgetUpdates.removeCallbacks(widgetTick);
         widgetUpdates.removeCallbacks(retryHeld);
         recovery.release();

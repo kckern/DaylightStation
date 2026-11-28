@@ -201,6 +201,20 @@ final class KeepStore {
         if (!started) notifyOutcome(mediaId, title, line, null);
     }
 
+    private final List<Consumer<String>> keptListeners = new java.util.concurrent.CopyOnWriteArrayList<>();
+    /** What the last refresh saw listed and ready; null until the first refresh (nothing to compare). Local executor only. */
+    private Set<String> lastListed, lastReady;
+
+    /** Told ({@link KeptChanges#SAVED}, READY, REMOVED) on the main thread when the kept list changes. */
+    void addKeptListener(Consumer<String> l) { keptListeners.add(l); }
+
+    void removeKeptListener(Consumer<String> l) { keptListeners.remove(l); }
+
+    private void keptChanged(String change) {
+        Log.i(TAG, "kept list " + change);
+        main.post(() -> { for (Consumer<String> l : keptListeners) l.accept(change); });
+    }
+
     void addAttemptListener(Consumer<Attempt> l) { attemptListeners.add(l); }
 
     void removeAttemptListener(Consumer<Attempt> l) { attemptListeners.remove(l); }
@@ -591,7 +605,7 @@ final class KeepStore {
                 Log.w(TAG, "keep failed: " + failed.getClass().getSimpleName());
                 line = "Could not keep this on the phone";
             }
-            refreshSoon();
+            refreshNowAt();
             ended(mediaId, line, started);
             say(done, line);
         });
@@ -664,7 +678,7 @@ final class KeepStore {
             long freed = removeNowFreed(contentId, reason, false);
             String line = freed < 0 ? "Could not remove it"
                     : freed > 0 ? "Removed from this phone · " + KeptIndex.size(freed) + " freed" : "Removed from this phone";
-            refreshSoon();
+            refreshNowAt();
             say(done, line);
         });
     }
@@ -2137,6 +2151,12 @@ final class KeepStore {
 
     void refresh() { refreshSoon(); }
 
+    /** A keep saved or removed is listed now, not a second from now (a car's "On this phone" waits on it). */
+    private void refreshNowAt() {
+        main.removeCallbacks(refreshNow);
+        main.post(refreshNow);
+    }
+
     private void refreshOnce() {
         try {
             JSONObject reply = keptReply();
@@ -2161,6 +2181,7 @@ final class KeepStore {
                 for (String id : mine) holders.merge(id, 1, Integer::sum);
             }
             JSONArray index = new JSONArray(), report = new JSONArray();
+            Set<String> listedNow = new HashSet<>(), readyNow = new HashSet<>();
             Map<String, Layout> nextLayout = new HashMap<>();
             Set<String> covers = new HashSet<>();
             int notMet = manager.getNotMetRequirements();
@@ -2201,6 +2222,8 @@ final class KeepStore {
                 f.waitingStorage = (notMet & Requirements.DEVICE_STORAGE_NOT_LOW) != 0;
                 f.wasReady = prefs.getBoolean("wasReady." + cid, false);
                 String state = f.state();
+                listedNow.add(cid);
+                if (KeptIndex.READY.equals(state)) readyNow.add(cid);
                 if (KeptIndex.READY.equals(state) && !f.wasReady) {
                     prefs.edit().putBoolean("wasReady." + cid, true).apply();
                     long started = prefs.getLong("startedAt." + cid, 0);
@@ -2246,6 +2269,10 @@ final class KeepStore {
                 report.put(reportItem(e, free, limit));
             }
             layout = nextLayout;
+            String change = KeptChanges.change(lastListed, lastReady, listedNow, readyNow);
+            lastListed = listedNow;
+            lastReady = readyNow;
+            if (change != null) keptChanged(change);
             liveTickSoon();
             // Kept while away, and being checked: shown, and told to the web.
             JSONArray away = pending();

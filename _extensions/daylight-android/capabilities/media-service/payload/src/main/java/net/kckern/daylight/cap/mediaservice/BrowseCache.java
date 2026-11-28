@@ -32,6 +32,15 @@ final class BrowseCache {
         };
     }
 
+    /**
+     * The kept list is read from the phone's own files in a moment; held for a minute it would
+     * show a keep saved, ready or removed that long late (a car's "On this phone"). Every
+     * other level comes from home and is worth holding.
+     */
+    static boolean cacheable(MediaId.Kind kind) {
+        return kind != MediaId.Kind.KEPT;
+    }
+
     List<MediaNode> get(String key, long nowMs, Loader loader) throws Exception {
         Kept known;
         synchronized (this) { known = entries.get(key); }
